@@ -1,0 +1,6 @@
+http:
+  addr: ${env:LISTEN_ADDR:-:8080}
+
+database:
+  # sqlite:<path> (no setup) or postgres://user:pass@host:5432/db
+  url: ${env:DATABASE_URL:-sqlite:.work/hydrogen.db}

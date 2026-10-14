@@ -1,0 +1,12 @@
+package main
+
+import (
+	"github.com/hydrogencms/hydrogen"
+	"github.com/hydrogencms/hydrogen/modules/postgres"
+	"github.com/hydrogencms/hydrogen/modules/sqlite"
+)
+
+// configure assembles the project: modules now; hooks, access rules and endpoints as they arrive.
+func configure(h *hydrogen.Builder) {
+	h.Use(sqlite.Module(), postgres.Module())
+}

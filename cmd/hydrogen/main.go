@@ -1,0 +1,142 @@
+// Command hydrogen is the developer tool: it creates projects, runs them with live reload, and runs a
+// project's own commands (serve, migrate, config:check, …) by building the project in the current directory.
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+
+	"github.com/hydrogencms/hydrogen"
+	"github.com/hydrogencms/hydrogen/internal/devwatch"
+	"github.com/hydrogencms/hydrogen/internal/scaffold"
+)
+
+const usage = `Usage:
+  hydrogen new [-module path] [-core dir] [-no-tidy] <dir>   create a project
+  hydrogen dev [command args]                                 run with live reload (default: serve)
+  hydrogen version                                            print the version
+  hydrogen <command> [args]                                   build the project here and run one of its
+                                                              commands: serve, migrate, config:check, …
+`
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	code := run(ctx, os.Args[1:], os.Stdout, os.Stderr)
+	stop()
+	os.Exit(code)
+}
+
+func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
+		fmt.Fprint(stdout, usage)
+		return 0
+	}
+	var err error
+	switch args[0] {
+	case "version":
+		fmt.Fprintln(stdout, "hydrogen", hydrogen.Version())
+		return 0
+	case "new":
+		err = newProject(ctx, args[1:], stdout, stderr)
+	case "dev":
+		err = dev(ctx, args[1:], stdout, stderr)
+	default:
+		var code int
+		code, err = passthrough(ctx, args, stdout, stderr)
+		if err == nil {
+			return code
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, "hydrogen:", err)
+		return 1
+	}
+	return 0
+}
+
+func newProject(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("new", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	module := fs.String("module", "", "Go module path (default: the directory name)")
+	core := fs.String("core", "", "use a local hydrogen checkout (replace directives) instead of published versions")
+	noTidy := fs.Bool("no-tidy", false, "skip go mod tidy")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("new: give exactly one target directory")
+	}
+	dir := fs.Arg(0)
+	if err := scaffold.Write(scaffold.Options{Dir: dir, Module: *module, Core: *core}); err != nil {
+		return err
+	}
+	if !*noTidy {
+		cmd := exec.CommandContext(ctx, "go", "mod", "tidy")
+		cmd.Dir, cmd.Stdout, cmd.Stderr = dir, stderr, stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("go mod tidy failed (%v); fix and rerun it in %s", err, dir)
+		}
+	}
+	fmt.Fprintf(stdout, "Created %s. Next:\n  cd %s\n  hydrogen dev\n", dir, dir)
+	return nil
+}
+
+func projectDir() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	if !devwatch.IsProject(dir) {
+		return "", errors.New("not in a Hydrogen project (no go.mod requiring github.com/hydrogencms/hydrogen); see hydrogen new")
+	}
+	return dir, nil
+}
+
+func dev(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	dir, err := projectDir()
+	if err != nil {
+		return err
+	}
+	return devwatch.Run(ctx, devwatch.Options{Dir: dir, Args: args, Stdout: stdout, Stderr: stderr})
+}
+
+// passthrough builds the project and runs one of its commands, forwarding signals and the exit code.
+func passthrough(ctx context.Context, args []string, stdout, stderr io.Writer) (int, error) {
+	dir, err := projectDir()
+	if err != nil {
+		return 1, err
+	}
+	bin := filepath.Join(dir, ".work", "bin", "app")
+	if err := devwatch.Build(ctx, dir, bin, stderr); err != nil {
+		return 1, fmt.Errorf("build failed")
+	}
+	cmd := exec.Command(bin, args...)
+	cmd.Dir, cmd.Stdin, cmd.Stdout, cmd.Stderr = dir, os.Stdin, stdout, stderr
+	if err := cmd.Start(); err != nil {
+		return 1, err
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err = <-done:
+	case <-ctx.Done():
+		_ = cmd.Process.Signal(os.Interrupt)
+		err = <-done
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode(), nil
+	}
+	if err != nil {
+		return 1, err
+	}
+	return 0, nil
+}

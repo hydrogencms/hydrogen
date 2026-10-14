@@ -1,0 +1,11 @@
+version: "2"
+linters:
+  settings:
+    errcheck:
+      # Writing to stdout/stderr: there is nothing useful to do with these errors.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        # rows.Err() is checked instead.
+        - (*database/sql.Rows).Close

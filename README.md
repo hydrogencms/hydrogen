@@ -26,6 +26,23 @@ else is built from.
   update content under the same permissions, validation and review as people.
 - **No lock-in.** Open source, documented storage, portable export and import, open API specs.
 
-Status: early development; not yet usable.
+Status: early development. The foundations (kernel, configuration, SQLite and Postgres adapters, outbox, audit,
+`hydrogen new` and `hydrogen dev`) work; content features are next.
+
+## Try it (from a checkout, until releases exist)
+
+```sh
+go build -o bin/hydrogen ./cmd/hydrogen
+bin/hydrogen new -module example.com/mysite -core . ../mysite
+cd ../mysite && ../hydrogen/bin/hydrogen dev    # http://localhost:8080/healthz, SQLite in .work/
+```
+
+## Development
+
+```sh
+make build test vet lint   # every module in the repo
+make db-up                 # Postgres 17 on localhost:5436 for the Postgres adapter tests
+make smoke                 # new project → migrate → serve, with binary size, start-up and memory budgets
+```
 
 Go module: `github.com/hydrogencms/hydrogen`. License: [MIT](LICENSE).

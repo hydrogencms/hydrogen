@@ -11,6 +11,34 @@ module.
 If `planning/` exists, read [`planning/README.md`](planning/README.md) first. It is private and gitignored:
 never commit it, quote it in commit messages or public docs, or move its content into tracked files unless asked.
 
+## Layout
+
+- Core module `github.com/hydrogencms/hydrogen` at the repo root: `hydrogen.go` (project entry point and
+  commands), `kernel/`, `config/`, `store/` (interfaces; `store/storetest` is the adapter conformance suite),
+  `outbox/`, `audit/`, `clock/`, `ids/`, `cmd/hydrogen` (developer CLI), `internal/scaffold`, `internal/devwatch`.
+- `modules/<name>`: optional modules. Those with third-party dependencies have their own `go.mod`
+  (`modules/sqlite`: modernc.org/sqlite; `modules/postgres`: pgx). `go.work` joins everything for development;
+  each module also builds alone (`GOWORK=off`).
+- `examples/minimal`: the smallest project; its tests boot `serve` on SQLite and Postgres.
+
+## Commands
+
+```sh
+make build test vet lint tidy   # all modules
+make db-up                      # Postgres 17 on localhost:5436 (hydrogen/hydrogen) for adapter tests
+make smoke                      # hydrogen new → config:check → migrate → serve + D0 budget checks
+```
+
+Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) and skip without it unless
+`HYDROGEN_TEST_REQUIRE_POSTGRES=1` (CI). Use `modules/postgres/pgtest.Scratch(t)` for a throwaway database.
+
+## Gotchas
+
+- Core packages never write SQL. Storage features are an interface in `store`, an implementation in every
+  adapter, and a check in `storetest`.
+- macOS scans a newly built binary on first launch (~300 ms); measure start-up from the second run.
+- Scratch projects inside the repo (`.work/`) need `GOWORK=off`, or the repo's `go.work` claims them.
+
 ## Rules
 
 - General-purpose headless: core never renders a public site and has no web assumptions; URLs, the page tree and
