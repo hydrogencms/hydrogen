@@ -54,6 +54,7 @@ type DB interface {
 type Tx interface {
 	Outbox() OutboxStore
 	Audit() AuditStore
+	Content() ContentStore
 	// Notify queues a notification on channel, sent after commit.
 	Notify(channel, payload string) error
 }

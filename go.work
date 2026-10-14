@@ -5,4 +5,5 @@ use (
 	./examples/minimal
 	./modules/postgres
 	./modules/sqlite
+	./tests
 )

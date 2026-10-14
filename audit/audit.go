@@ -17,6 +17,28 @@ type Actor struct {
 
 var System = Actor{Kind: "system"}
 
+func (a Actor) String() string {
+	if a.ID == "" {
+		return a.Kind
+	}
+	return a.Kind + ":" + a.ID
+}
+
+type actorKey struct{}
+
+// WithActor attaches the acting user, agent or system to ctx; services record it in audit entries.
+func WithActor(ctx context.Context, a Actor) context.Context {
+	return context.WithValue(ctx, actorKey{}, a)
+}
+
+// ActorFrom returns the actor in ctx, or System.
+func ActorFrom(ctx context.Context) Actor {
+	if a, ok := ctx.Value(actorKey{}).(Actor); ok {
+		return a
+	}
+	return System
+}
+
 type Entry struct {
 	Actor   Actor
 	Action  string // e.g. "item.publish"
