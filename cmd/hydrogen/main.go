@@ -22,6 +22,7 @@ import (
 const usage = `Usage:
   hydrogen new [-module path] [-core dir] [-no-tidy] <dir>   create a project
   hydrogen dev [command args]                                 run with live reload (default: serve)
+  hydrogen generate [-go dir] [-ts file]                      write typed Go and TypeScript from the schema
   hydrogen version                                            print the version
   hydrogen <command> [args]                                   build the project here and run one of its
                                                               commands: serve, migrate, config:check, …
@@ -48,6 +49,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		err = newProject(ctx, args[1:], stdout, stderr)
 	case "dev":
 		err = dev(ctx, args[1:], stdout, stderr)
+	case "generate":
+		err = generate(ctx, args[1:], stdout, stderr)
 	default:
 		var code int
 		code, err = passthrough(ctx, args, stdout, stderr)
@@ -106,6 +109,21 @@ func dev(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	return devwatch.Run(ctx, devwatch.Options{Dir: dir, Args: args, Stdout: stdout, Stderr: stderr})
+}
+
+// generate builds the project (bootstrapping gen/ from the schema files if stale generated code breaks the
+// build) and runs its generate command, which includes module schema changes.
+func generate(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	dir, err := projectDir()
+	if err != nil {
+		return err
+	}
+	bin := filepath.Join(dir, ".work", "bin", "app")
+	if err := devwatch.Prepare(ctx, dir, bin, stderr); err != nil {
+		return err
+	}
+	_, err = devwatch.Generate(ctx, dir, bin, args, stdout, stderr)
+	return err
 }
 
 // passthrough builds the project and runs one of its commands, forwarding signals and the exit code.

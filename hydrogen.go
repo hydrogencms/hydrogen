@@ -17,22 +17,93 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"syscall"
 	"text/tabwriter"
 
+	"github.com/hydrogencms/hydrogen/codegen"
 	"github.com/hydrogencms/hydrogen/config"
+	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/hooks"
 	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/schema"
 	"github.com/hydrogencms/hydrogen/store"
 )
 
-// Builder collects a project's modules and customisations.
+// Builder collects a project's modules and customisations. Generated typed handles register hooks on it
+// (it implements content.HookRegistrar).
 type Builder struct {
-	modules []kernel.Module
+	modules    []kernel.Module
+	hooks      []hooks.Hook
+	schemas    []func(*schema.Builder) error
+	migrations []content.Migration
+	commands   []kernel.Command
 }
 
 // Use adds modules to the project.
 func (b *Builder) Use(mods ...kernel.Module) { b.modules = append(b.modules, mods...) }
+
+// AddHook registers a content hook. Prefer the typed handles in the generated gen/content package.
+func (b *Builder) AddHook(h hooks.Hook) error {
+	var check hooks.Registry
+	if err := check.Add(h); err != nil {
+		return err
+	}
+	b.hooks = append(b.hooks, h)
+	return nil
+}
+
+// Schema changes the compiled schema after modules have (add fields, types or groups in code).
+func (b *Builder) Schema(fn func(*schema.Builder) error) { b.schemas = append(b.schemas, fn) }
+
+// Migration registers a content migration, applied by content:migrate.
+func (b *Builder) Migration(m content.Migration) { b.migrations = append(b.migrations, m) }
+
+// Command adds a command to the project binary.
+func (b *Builder) Command(c kernel.Command) { b.commands = append(b.commands, c) }
+
+// all returns the modules plus the project itself, which registers after every module.
+func (b *Builder) all() []kernel.Module { return append(slices.Clone(b.modules), project{b}) }
+
+// project is the project's own registrations as a module named "project", ordered after all others.
+type project struct{ b *Builder }
+
+func (project) Name() string { return "project" }
+
+func (p project) Requires() []string {
+	names := make([]string, len(p.b.modules))
+	for i, m := range p.b.modules {
+		names[i] = m.Name()
+	}
+	return names
+}
+
+func (p project) Register(r *kernel.Registry) error {
+	for _, h := range p.b.hooks {
+		if err := r.AddHook(h); err != nil {
+			return err
+		}
+	}
+	for _, m := range p.b.migrations {
+		r.ContentMigration(m)
+	}
+	for _, c := range p.b.commands {
+		if err := r.Command(c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p project) Schema(sb *schema.Builder) error {
+	for _, fn := range p.b.schemas {
+		if err := fn(sb); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // Main runs the project binary's command line and exits.
 func Main(configure func(*Builder)) {
@@ -56,7 +127,9 @@ type RunOptions struct {
 var core = []struct{ name, summary string }{
 	{"serve", "run the server (applies migrations automatically in dev)"},
 	{"migrate", "apply pending database migrations"},
-	{"config:check", "validate configuration and modules (-db: also check the database)"},
+	{"config:check", "validate configuration, schema and modules (-db: also check the database)"},
+	{"content:migrate", "apply pending content migrations"},
+	{"generate", "write typed Go (gen/content) and TypeScript (gen/types.ts) from the schema"},
 	{"version", "print the Hydrogen version"},
 }
 
@@ -87,6 +160,8 @@ func Run(ctx context.Context, args []string, configure func(*Builder), o RunOpti
 		return err
 	case "config:check":
 		return configCheck(ctx, b, o, rest)
+	case "generate":
+		return generate(b, o, rest)
 	}
 
 	app, err := newApp(ctx, b, o)
@@ -105,6 +180,8 @@ func Run(ctx context.Context, args []string, configure func(*Builder), o RunOpti
 			return fmt.Errorf("migrate takes no arguments")
 		}
 		return migrate(ctx, app, o)
+	case "content:migrate":
+		return contentMigrate(ctx, app, o)
 	}
 	if c, ok := app.Command(name); ok {
 		return c.Run(ctx, app, rest)
@@ -117,7 +194,7 @@ func newApp(ctx context.Context, b *Builder, o RunOptions) (*kernel.App, error) 
 	if err != nil {
 		return nil, err
 	}
-	return kernel.New(ctx, kernel.Options{Config: cfg, DB: o.DB, Stderr: o.Stderr}, b.modules...)
+	return kernel.New(ctx, kernel.Options{Config: cfg, DB: o.DB, Stderr: o.Stderr}, b.all()...)
 }
 
 func serve(ctx context.Context, app *kernel.App, o RunOptions) error {
@@ -135,7 +212,93 @@ func serve(ctx context.Context, app *kernel.App, o RunOptions) error {
 			return err
 		}
 	}
+	if err := readyContent(ctx, app); err != nil {
+		return err
+	}
 	return app.Run(ctx, o.Listening)
+}
+
+// readyContent checks that stored content matches the schema: breaking changes need migrations, which apply
+// automatically in dev, and the current schema is recorded as a revision.
+func readyContent(ctx context.Context, app *kernel.App) error {
+	s := app.Services()
+	breaking, err := s.Content.BreakingChanges(ctx)
+	if err != nil {
+		return err
+	}
+	if len(breaking) > 0 {
+		return fmt.Errorf("schema changes need a content migration:\n  %s", strings.Join(breaking, "\n  "))
+	}
+	pending, err := s.Content.PendingMigrations(ctx)
+	if err != nil {
+		return err
+	}
+	if len(pending) > 0 {
+		if s.Env != config.DevEnv {
+			return fmt.Errorf("%d pending content migrations; run content:migrate first", len(pending))
+		}
+		s.Log.Info("applying content migrations", "names", pending)
+		if _, err := s.Content.Migrate(ctx); err != nil {
+			return err
+		}
+	}
+	_, err = s.Content.EnsureSchemaRev(ctx)
+	return err
+}
+
+func contentMigrate(ctx context.Context, app *kernel.App, o RunOptions) error {
+	pending, err := app.Pending(ctx)
+	if err != nil {
+		return err
+	}
+	if len(pending) > 0 {
+		return fmt.Errorf("%d pending database migrations; run migrate first", len(pending))
+	}
+	applied, err := app.Services().Content.Migrate(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := app.Services().Content.EnsureSchemaRev(ctx); err != nil {
+		return err
+	}
+	if len(applied) == 0 {
+		fmt.Fprintln(o.Stdout, "content is up to date")
+	}
+	for _, name := range applied {
+		fmt.Fprintln(o.Stdout, "applied", name)
+	}
+	return nil
+}
+
+func generate(b *Builder, o RunOptions, args []string) error {
+	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
+	fs.SetOutput(o.Stderr)
+	goDir := fs.String("go", "gen/content", "directory of the generated Go package")
+	pkg := fs.String("package", "content", "name of the generated Go package")
+	tsFile := fs.String("ts", "gen/types.ts", "generated TypeScript file (empty: skip)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	cfg, err := config.Load(*o.Config)
+	if err != nil {
+		return err
+	}
+	s, err := kernel.CompileSchema(cfg, b.all()...)
+	if err != nil {
+		return err
+	}
+	n, err := codegen.WriteGo(*goDir, s.Types(), s.Groups(), codegen.GoOptions{Package: *pkg})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(o.Stdout, "wrote %d Go files to %s\n", n, *goDir)
+	if *tsFile != "" {
+		if err := codegen.WriteTypeScript(*tsFile, s.Types(), s.Groups(), codegen.TSOptions{}); err != nil {
+			return err
+		}
+		fmt.Fprintf(o.Stdout, "wrote %s\n", *tsFile)
+	}
+	return nil
 }
 
 func migrate(ctx context.Context, app *kernel.App, o RunOptions) error {
@@ -167,7 +330,7 @@ func configCheck(ctx context.Context, b *Builder, o RunOptions, args []string) e
 	if err != nil {
 		return err
 	}
-	if err := kernel.Check(cfg, b.modules...); err != nil {
+	if err := kernel.Check(cfg, b.all()...); err != nil {
 		return err
 	}
 	if *withDB {
@@ -187,6 +350,13 @@ func configCheck(ctx context.Context, b *Builder, o RunOptions, args []string) e
 			fmt.Fprintf(o.Stdout, "database: %d pending migrations\n", len(pending))
 		} else {
 			fmt.Fprintln(o.Stdout, "database: up to date")
+			breaking, err := app.Services().Content.BreakingChanges(ctx)
+			if err != nil {
+				return err
+			}
+			if len(breaking) > 0 {
+				return fmt.Errorf("schema changes need a content migration:\n  %s", strings.Join(breaking, "\n  "))
+			}
 		}
 	}
 	_, err = fmt.Fprintf(o.Stdout, "config ok (env %s)\n", cfg.Env())
@@ -201,7 +371,7 @@ func usage(ctx context.Context, b *Builder, o RunOptions) error {
 	}
 	cfg, err := config.Load(*o.Config)
 	if err == nil {
-		err = kernel.Check(cfg, b.modules...)
+		err = kernel.Check(cfg, b.all()...)
 	}
 	if err == nil {
 		if app, err2 := newApp(ctx, b, o); err2 == nil {

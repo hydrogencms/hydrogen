@@ -1,0 +1,6 @@
+types:
+  settings:
+    singleton: true
+    fields:
+      siteName:    { type: string, translatable: true, required: true }
+      footerLinks: { type: list, of: { type: ref, to: [page], on_delete: nullify } }

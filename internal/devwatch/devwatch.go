@@ -31,14 +31,17 @@ type stamp struct {
 	size int64
 }
 
+// scan stamps the watched files under dir. The project's gen/ directory is skipped: generation runs as part
+// of every build, so its output never needs to trigger one.
 func scan(dir string) (map[string]stamp, error) {
 	out := map[string]stamp{}
+	gen := filepath.Join(dir, "gen")
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if p != dir && skipped[d.Name()] {
+			if p != dir && (skipped[d.Name()] || p == gen) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -84,6 +87,7 @@ func Run(ctx context.Context, o Options) error {
 	bin := filepath.Join(o.Dir, ".work", "bin", "app")
 	logf := func(format string, args ...any) { fmt.Fprintf(o.Stderr, "hydrogen dev: "+format+"\n", args...) }
 
+	// The baseline is taken before building, so a file saved during a build still counts as a change.
 	state, err := scan(o.Dir)
 	if err != nil {
 		return err
@@ -117,12 +121,11 @@ func Run(ctx context.Context, o Options) error {
 	}
 	defer stop()
 
-	if err := Build(ctx, o.Dir, bin, o.Stderr); err != nil {
+	if err := prepareAndGenerate(ctx, o.Dir, bin, o.Stderr); err != nil {
 		logf("build failed; waiting for changes")
 	} else {
 		start()
 	}
-
 	tick := time.NewTicker(o.Interval)
 	defer tick.Stop()
 	for {
@@ -151,7 +154,7 @@ func Run(ctx context.Context, o Options) error {
 		}
 		state = next
 		logf("change detected; rebuilding")
-		if err := Build(ctx, o.Dir, bin, o.Stderr); err != nil {
+		if err := prepareAndGenerate(ctx, o.Dir, bin, o.Stderr); err != nil {
 			if proc != nil {
 				logf("build failed; the previous server keeps running")
 			}

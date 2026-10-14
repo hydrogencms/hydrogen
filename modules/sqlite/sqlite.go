@@ -129,8 +129,9 @@ type tx struct {
 	notes    []store.Notification
 }
 
-func (t *tx) Outbox() store.OutboxStore { return outboxStore{t.tx} }
-func (t *tx) Audit() store.AuditStore   { return auditStore{t.tx} }
+func (t *tx) Outbox() store.OutboxStore   { return outboxStore{t.tx} }
+func (t *tx) Audit() store.AuditStore     { return auditStore{t.tx} }
+func (t *tx) Content() store.ContentStore { return contentStore{t.tx} }
 
 func (t *tx) Notify(channel, payload string) error {
 	if t.readOnly {

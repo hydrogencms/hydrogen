@@ -30,6 +30,7 @@ type Schema struct {
 	byName map[string]*Type
 	groups []*Group // sorted by name
 	hash   string
+	opts   map[*Field]map[string]any // type-specific options by field, for the canonical encoding
 }
 
 func (s *Schema) Types() []*Type { return s.types }
@@ -165,13 +166,77 @@ type FieldError struct {
 
 func (e FieldError) Error() string { return e.Path + ": " + e.Message }
 
-// Report collects field errors in document order.
-type Report struct {
-	errs []FieldError
+// maxReportErrors caps a Report: after this many errors it stops collecting and appends one too_many_errors.
+const maxReportErrors = 100
+
+type pathSeg struct {
+	key string
+	idx int // >= 0: an array index, key unused
 }
 
+// Report collects field errors in document order, at most maxReportErrors of them. Validators track their
+// position with Enter/EnterIndex/Leave, so the path of a field is only built when an error is reported.
+type Report struct {
+	errs []FieldError
+	segs []pathSeg
+	cut  bool
+	adds int // attempts to add an error, including dropped ones
+}
+
+// Add records an error at an absolute path.
 func (r *Report) Add(path Path, code, format string, args ...any) {
+	if !r.accept() {
+		return
+	}
 	r.errs = append(r.errs, FieldError{Path: string(path), Code: code, Message: fmt.Sprintf(format, args...)})
+}
+
+// Fail records an error at the current position (see Enter).
+func (r *Report) Fail(code, format string, args ...any) {
+	if !r.accept() {
+		return
+	}
+	r.errs = append(r.errs, FieldError{Path: string(r.here()), Code: code, Message: fmt.Sprintf(format, args...)})
+}
+
+// Enter descends into the object member name; pair it with Leave.
+func (r *Report) Enter(name string) { r.segs = append(r.segs, pathSeg{key: name, idx: -1}) }
+
+// EnterIndex descends into the array element i; pair it with Leave.
+func (r *Report) EnterIndex(i int) { r.segs = append(r.segs, pathSeg{idx: i}) }
+
+// Leave undoes the last Enter or EnterIndex.
+func (r *Report) Leave() { r.segs = r.segs[:len(r.segs)-1] }
+
+func (r *Report) here() Path {
+	var p Path
+	for _, sg := range r.segs {
+		if sg.idx >= 0 {
+			p = p.Index(sg.idx)
+		} else {
+			p = p.Key(sg.key)
+		}
+	}
+	return p
+}
+
+// accept reports whether one more error may be recorded; at the cap it appends the too_many_errors marker.
+func (r *Report) accept() bool {
+	r.adds++
+	return !r.full()
+}
+
+// full reports whether the report holds its maximum; validators stop descending once it does.
+func (r *Report) full() bool {
+	if len(r.errs) < maxReportErrors {
+		return false
+	}
+	if !r.cut {
+		r.cut = true
+		r.errs = append(r.errs, FieldError{Code: "too_many_errors",
+			Message: fmt.Sprintf("too many errors; only the first %d are reported", maxReportErrors)})
+	}
+	return true
 }
 
 func (r *Report) Errors() []FieldError { return r.errs }
@@ -193,8 +258,9 @@ func (p Path) Index(i int) Path { return Path(string(p) + "[" + strconv.Itoa(i) 
 // Config is a compiled field type: what the rest of Hydrogen needs from one field. Values passed in are
 // decoded JSON (objects map[string]any, arrays []any, numbers json.Number) and never nil.
 type Config interface {
-	// Validate reports problems with v at path.
-	Validate(v any, path Path, mode Mode, r *Report)
+	// Validate reports problems with v with r.Fail, and wraps nested values in r.Enter/EnterIndex and
+	// r.Leave. Once the report is full, Fail does nothing.
+	Validate(v any, mode Mode, r *Report)
 	// IsEmpty reports whether v counts as missing for `required`.
 	IsEmpty(v any) bool
 	// JSONSchema describes valid values (draft 2020-12).
@@ -217,11 +283,6 @@ type RefValue struct {
 	To       string // item id
 	Kind     string // "field" or "link"
 	OnDelete string // "block", "nullify", "warn"
-}
-
-// Common returns the field-spec keys every field type shares; FieldType implementations receive the rest.
-func Common() []string {
-	return []string{"type", "label", "description", "required", "translatable", "default", "index", "when", "ai", "admin"}
 }
 
 // SplitName turns "blogPost" into "Blog post" for default labels.

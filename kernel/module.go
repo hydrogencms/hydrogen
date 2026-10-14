@@ -14,7 +14,10 @@ import (
 	"regexp"
 	"sort"
 
+	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/hooks"
 	"github.com/hydrogencms/hydrogen/outbox"
+	"github.com/hydrogencms/hydrogen/schema"
 	"github.com/hydrogencms/hydrogen/store"
 )
 
@@ -32,6 +35,12 @@ type Requirer interface {
 // modules.<name> before Register.
 type Configurable interface {
 	Config() any
+}
+
+// Schemer modules change the schema before it compiles (add types, groups or fields), after the project's
+// schema files load. They run in dependency order.
+type Schemer interface {
+	Schema(b *schema.Builder) error
 }
 
 type Booter interface {
@@ -64,6 +73,9 @@ type Registry struct {
 	routes     []registered[route]
 	commands   map[string]registered[Command]
 	provided   map[reflect.Type]any
+	fieldTypes []registered[schema.FieldType]
+	hooks      hooks.Registry
+	contentMig []registered[content.Migration]
 }
 
 type registered[T any] struct {
@@ -106,6 +118,22 @@ func (r *Registry) Migrations(m MigrationSource) {
 
 func (r *Registry) Consumer(c outbox.Consumer) {
 	r.consumers = append(r.consumers, c)
+}
+
+// FieldType adds a schema field type.
+func (r *Registry) FieldType(ft schema.FieldType) {
+	r.fieldTypes = append(r.fieldTypes, registered[schema.FieldType]{r.current, ft})
+}
+
+// AddHook registers a content hook; generated typed handles call it (content.HookRegistrar).
+func (r *Registry) AddHook(h hooks.Hook) error {
+	h.Module = r.current
+	return r.hooks.Add(h)
+}
+
+// ContentMigration registers a content migration (applied by content:migrate).
+func (r *Registry) ContentMigration(m content.Migration) {
+	r.contentMig = append(r.contentMig, registered[content.Migration]{r.current, m})
 }
 
 // Handle adds an HTTP route (net/http ServeMux pattern syntax).

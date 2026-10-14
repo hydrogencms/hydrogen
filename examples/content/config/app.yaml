@@ -1,0 +1,11 @@
+http:
+  addr: ${env:LISTEN_ADDR:-:8080}
+
+database:
+  url: ${env:DATABASE_URL:-sqlite:.work/hydrogen.db}
+
+content:
+  schema_dir: ${env:SCHEMA_DIR:-schema}
+
+manage:
+  token: ${env:MANAGE_TOKEN:-dev-token}

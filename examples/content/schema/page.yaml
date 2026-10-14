@@ -1,0 +1,6 @@
+types:
+  page:
+    page: true
+    fields:
+      title: { type: string, translatable: true, required: true }
+      intro: { type: text, translatable: true }

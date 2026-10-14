@@ -18,8 +18,12 @@ import (
 	"github.com/hydrogencms/hydrogen/audit"
 	"github.com/hydrogencms/hydrogen/clock"
 	"github.com/hydrogencms/hydrogen/config"
+	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/hooks"
 	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/manage"
 	"github.com/hydrogencms/hydrogen/outbox"
+	"github.com/hydrogencms/hydrogen/schema"
 	"github.com/hydrogencms/hydrogen/store"
 )
 
@@ -46,24 +50,43 @@ type OutboxConfig struct {
 	Lease time.Duration `yaml:"lease"`
 }
 
+type ContentConfig struct {
+	SchemaDir     string `yaml:"schema_dir"`     // default "schema"
+	DefaultLocale string `yaml:"default_locale"` // default "en"
+}
+
+type ManageConfig struct {
+	// Token authorises the management API (Authorization: Bearer). Until user accounts exist (H5), it is the
+	// only credential: required outside dev, "dev-token" in dev when unset.
+	Token string `yaml:"token" config:"secret"`
+}
+
+// DevManageToken is the management API token in dev when manage.token is unset.
+const DevManageToken = "dev-token"
+
 type CoreConfig struct {
 	HTTP     HTTPConfig
 	Database DatabaseConfig
 	Log      LogConfig
 	Outbox   OutboxConfig
+	Content  ContentConfig
+	Manage   ManageConfig
 }
 
 // Services are the core services modules receive in Boot.
 type Services struct {
-	Env    string
-	Config *config.Config
-	Core   CoreConfig
-	Log    *slog.Logger
-	Clock  clock.Clock
-	IDs    *ids.Generator
-	DB     store.DB
-	Outbox *outbox.Outbox
-	Audit  *audit.Log
+	Env     string
+	Config  *config.Config
+	Core    CoreConfig
+	Log     *slog.Logger
+	Clock   clock.Clock
+	IDs     *ids.Generator
+	DB      store.DB
+	Outbox  *outbox.Outbox
+	Audit   *audit.Log
+	Schema  *schema.Schema
+	Hooks   *hooks.Registry
+	Content *content.Service
 
 	reg *Registry
 }
@@ -97,7 +120,7 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 	if o.Stderr == nil {
 		o.Stderr = os.Stderr
 	}
-	p, err := prepare(o.Config, mods)
+	p, err := prepare(o.Config, mods, true)
 	if err != nil {
 		return nil, err
 	}
@@ -118,14 +141,30 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 		}
 		a.ownDB = true
 	}
-	ob, err := outbox.New(db, o.Clock, log, reg.consumers, outbox.Options{Poll: core.Outbox.Poll, Lease: core.Outbox.Lease})
+	// Async hooks become outbox consumers; their handlers reach the content service, built just below.
+	var svc *content.Service
+	consumers := append(slices.Clone(reg.consumers), content.AsyncHookConsumers(reg.hooks.Async(), func() *content.Service { return svc })...)
+	ob, err := outbox.New(db, o.Clock, log, consumers, outbox.Options{Poll: core.Outbox.Poll, Lease: core.Outbox.Lease})
+	if err != nil {
+		a.closeDB(db)
+		return nil, err
+	}
+	hookReg := &reg.hooks
+	migrations := make([]content.Migration, 0, len(reg.contentMig))
+	for _, m := range reg.contentMig {
+		migrations = append(migrations, m.value)
+	}
+	gen := ids.NewGenerator(o.Clock, o.Rand)
+	al := audit.New(o.Clock)
+	svc, err = content.New(content.Options{DB: db, Schema: p.schema, Hooks: hookReg, Outbox: ob, Audit: al,
+		Clock: o.Clock, IDs: gen, DefaultLocale: core.Content.DefaultLocale, Migrations: migrations})
 	if err != nil {
 		a.closeDB(db)
 		return nil, err
 	}
 	a.services = &Services{
-		Env: cfg.Env(), Config: cfg, Core: core, Log: log, Clock: o.Clock,
-		IDs: ids.NewGenerator(o.Clock, o.Rand), DB: db, Outbox: ob, Audit: audit.New(o.Clock), reg: reg,
+		Env: cfg.Env(), Config: cfg, Core: core, Log: log, Clock: o.Clock, IDs: gen, DB: db, Outbox: ob,
+		Audit: al, Schema: p.schema, Hooks: hookReg, Content: svc, reg: reg,
 	}
 	for _, m := range ordered {
 		if b, ok := m.(Booter); ok {
@@ -166,31 +205,37 @@ type plan struct {
 	ordered []Module
 	core    CoreConfig
 	reg     *Registry
+	schema  *schema.Schema
 }
 
-// prepare orders modules, decodes core and module configuration, and runs Register. It opens nothing.
-func prepare(cfg *config.Config, mods []Module) (*plan, error) {
+// prepare orders modules, decodes core and module configuration, runs Register and compiles the schema. It
+// opens nothing. With runtime false (code generation) it decodes only what the schema needs, so runtime
+// settings and their secrets don't have to be present.
+func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 	ordered, err := order(mods)
 	if err != nil {
 		return nil, err
 	}
 	core := CoreConfig{
-		HTTP: HTTPConfig{Addr: ":8080", ReadHeaderTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second},
-		Log:  LogConfig{Level: "info"},
+		HTTP:    HTTPConfig{Addr: ":8080", ReadHeaderTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second},
+		Log:     LogConfig{Level: "info"},
+		Content: ContentConfig{SchemaDir: "schema", DefaultLocale: "en"},
 	}
-	for _, d := range []struct {
+	sections := []struct {
 		path   string
 		target any
-	}{{"http", &core.HTTP}, {"database", &core.Database}, {"log", &core.Log}, {"outbox", &core.Outbox}} {
+	}{{"content", &core.Content}}
+	if runtime {
+		sections = append(sections, []struct {
+			path   string
+			target any
+		}{{"http", &core.HTTP}, {"database", &core.Database}, {"log", &core.Log}, {"outbox", &core.Outbox},
+			{"manage", &core.Manage}}...)
+	}
+	for _, d := range sections {
 		if err := cfg.Decode(d.path, d.target); err != nil {
 			return nil, err
 		}
-	}
-	if core.Database.URL == "" {
-		if cfg.Env() != config.DevEnv {
-			return nil, fmt.Errorf("database.url is required outside %s", config.DevEnv)
-		}
-		core.Database.URL = DefaultDevDatabase
 	}
 	reg := newRegistry()
 	for _, m := range ordered {
@@ -205,21 +250,86 @@ func prepare(cfg *config.Config, mods []Module) (*plan, error) {
 		}
 	}
 	reg.current = ""
+	s, err := compileSchema(core.Content.SchemaDir, ordered, reg)
+	if err != nil {
+		return nil, err
+	}
+	p := &plan{ordered: ordered, core: core, reg: reg, schema: s}
+	if runtime {
+		if err := p.checkRuntime(cfg); err != nil {
+			return nil, err
+		}
+	}
+	return p, nil
+}
+
+// checkRuntime fills runtime defaults and rejects what a server can't run with.
+func (p *plan) checkRuntime(cfg *config.Config) error {
 	if err := cfg.Unused(); err != nil {
+		return err
+	}
+	dev := cfg.Env() == config.DevEnv
+	if p.core.Database.URL == "" {
+		if !dev {
+			return fmt.Errorf("database.url is required outside %s", config.DevEnv)
+		}
+		p.core.Database.URL = DefaultDevDatabase
+	}
+	// The management API exists only when there is content to manage; then it needs a token.
+	if p.core.Manage.Token == "" && len(p.schema.Types()) > 0 {
+		if !dev {
+			return fmt.Errorf("manage.token is required outside %s (the schema defines content types)", config.DevEnv)
+		}
+		p.core.Manage.Token = DevManageToken
+	}
+	if _, err := opener(p.reg, p.core.Database.URL); err != nil {
+		return err
+	}
+	_, err := newLogger(p.core.Log, cfg.Env(), io.Discard)
+	return err
+}
+
+// compileSchema loads the project's schema files, lets Schemer modules transform them in dependency order,
+// and compiles the result with the core and module field types.
+func compileSchema(dir string, ordered []Module, reg *Registry) (*schema.Schema, error) {
+	types := schema.NewRegistry()
+	for _, ft := range reg.fieldTypes {
+		if err := types.Register(ft.value); err != nil {
+			return nil, fmt.Errorf("module %s: field type %s: %w", ft.module, ft.value.Name(), err)
+		}
+	}
+	b := schema.NewBuilder(types)
+	if err := b.LoadDir(dir); err != nil {
 		return nil, err
 	}
-	if _, err := opener(reg, core.Database.URL); err != nil {
+	for _, m := range ordered {
+		if sm, ok := m.(Schemer); ok {
+			b.SetOrigin("module " + m.Name())
+			if err := sm.Schema(b); err != nil {
+				return nil, fmt.Errorf("module %s: schema: %w", m.Name(), err)
+			}
+		}
+	}
+	s, err := b.Compile()
+	if err != nil {
+		return nil, fmt.Errorf("schema:\n%w", err)
+	}
+	return s, nil
+}
+
+// CompileSchema returns the project's compiled schema (files plus module transforms) without opening the
+// database, for code generation.
+func CompileSchema(cfg *config.Config, mods ...Module) (*schema.Schema, error) {
+	p, err := prepare(cfg, mods, false)
+	if err != nil {
 		return nil, err
 	}
-	if _, err := newLogger(core.Log, cfg.Env(), io.Discard); err != nil {
-		return nil, err
-	}
-	return &plan{ordered: ordered, core: core, reg: reg}, nil
+	return p.schema, nil
 }
 
 // Check validates configuration and module wiring without opening the database (config:check).
 func Check(cfg *config.Config, mods ...Module) error {
-	_, err := prepare(cfg, mods)
+	_, err := prepare(cfg, mods, true)
 	return err
 }
 
@@ -291,6 +401,15 @@ func (a *App) Handler() (http.Handler, error) {
 		_, _ = io.WriteString(w, "ok\n")
 	})
 	mux.HandleFunc("GET /readyz", a.ready)
+	if len(a.services.Schema.Types()) > 0 {
+		const prefix = "/api/manage/v1"
+		api, err := manage.New(manage.Options{Content: a.services.Content, Token: a.services.Core.Manage.Token,
+			Log: a.services.Log, Prefix: prefix})
+		if err != nil {
+			return nil, err
+		}
+		mux.Handle(prefix+"/", http.StripPrefix(prefix, api))
+	}
 	for _, rt := range a.reg.routes {
 		if err := handle(mux, rt.value.pattern, rt.value.handler); err != nil {
 			return nil, fmt.Errorf("module %s: route %q: %w", rt.module, rt.value.pattern, err)
@@ -399,6 +518,9 @@ func (a *App) Run(ctx context.Context, listening func(addr string)) error {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
 	s.Log.Info("serving", "addr", ln.Addr().String(), "env", s.Env, "db", s.DB.Dialect(), "modules", a.Modules())
+	if s.Core.Manage.Token == DevManageToken {
+		s.Log.Warn("the management API accepts the dev token; set manage.token before exposing this server")
+	}
 	if listening != nil {
 		listening(ln.Addr().String())
 	}

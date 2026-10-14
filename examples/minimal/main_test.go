@@ -17,7 +17,7 @@ import (
 
 // boot runs `serve` against databaseURL, checks the health endpoints, and shuts down.
 func boot(t *testing.T, databaseURL string, env string) {
-	vars := map[string]string{"DATABASE_URL": databaseURL, "LISTEN_ADDR": "127.0.0.1:0"}
+	vars := map[string]string{"DATABASE_URL": databaseURL, "LISTEN_ADDR": "127.0.0.1:0", "MANAGE_TOKEN": "test-token"}
 	opts := &config.Options{Dir: "config", Env: env,
 		LookupEnv: func(k string) (string, bool) { v, ok := vars[k]; return v, ok }}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -72,7 +72,7 @@ func TestServePostgresProd(t *testing.T) {
 }
 
 func TestServeRefusesPendingMigrationsOutsideDev(t *testing.T) {
-	vars := map[string]string{"DATABASE_URL": "sqlite:" + filepath.Join(t.TempDir(), "h.db")}
+	vars := map[string]string{"DATABASE_URL": "sqlite:" + filepath.Join(t.TempDir(), "h.db"), "MANAGE_TOKEN": "test-token"}
 	opts := &config.Options{Dir: "config", Env: "prod",
 		LookupEnv: func(k string) (string, bool) { v, ok := vars[k]; return v, ok }}
 	err := hydrogen.Run(context.Background(), []string{"serve"}, configure, hydrogen.RunOptions{Config: opts, Stderr: io.Discard})

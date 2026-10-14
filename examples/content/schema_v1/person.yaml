@@ -1,0 +1,6 @@
+types:
+  person:
+    name: "{fullName}"
+    fields:
+      fullName: { type: string, required: true }
+      bio:      { type: text, translatable: true }
