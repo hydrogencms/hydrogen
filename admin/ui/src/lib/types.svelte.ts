@@ -33,6 +33,8 @@ export interface CompiledType {
   description?: string;
   singleton?: boolean;
   page?: boolean;
+  /** Its blocks field can be embedded with a shared block. */
+  blockset?: boolean;
   namePattern?: string;
   admin?: { group?: string; icon?: string; list?: string[] };
   options?: Record<string, unknown>;

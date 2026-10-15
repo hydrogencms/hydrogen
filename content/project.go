@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -243,7 +242,7 @@ func (s *Service) checkRefs(ctx context.Context, c store.ContentStore, t *schema
 			if r.Kind != "field" {
 				continue
 			}
-			if msg := refProblem(t, r, found); msg != "" {
+			if msg := refProblem(r, found); msg != "" {
 				o.errs = append(o.errs, schema.FieldError{Path: r.Path, Code: "ref_target", Message: msg})
 			}
 		}
@@ -251,7 +250,7 @@ func (s *Service) checkRefs(ctx context.Context, c store.ContentStore, t *schema
 	return nil
 }
 
-func refProblem(t *schema.Type, r schema.RefValue, found map[ids.UUID]string) string {
+func refProblem(r schema.RefValue, found map[ids.UUID]string) string {
 	id, err := ids.Parse(r.To)
 	if err != nil {
 		return fmt.Sprintf("%q is not an item id", r.To)
@@ -260,46 +259,10 @@ func refProblem(t *schema.Type, r schema.RefValue, found map[ids.UUID]string) st
 	if !ok {
 		return fmt.Sprintf("item %s does not exist", r.To)
 	}
-	if to := refTo(t, r.Path); len(to) > 0 && !slices.Contains(to, typ) {
-		return fmt.Sprintf("item %s is a %s; allowed: %s", r.To, typ, strings.Join(to, ", "))
+	if len(r.Types) > 0 && !slices.Contains(r.Types, typ) {
+		return fmt.Sprintf("item %s is a %s; allowed: %s", r.To, typ, strings.Join(r.Types, ", "))
 	}
 	return ""
-}
-
-// refTo finds the allowed target types of the ref field at a document path such as "tags[2]" or "seo.card".
-func refTo(t *schema.Type, path string) []string {
-	var f *schema.Field
-	fields := t.Fields
-	for path != "" {
-		switch path[0] {
-		case '.':
-			path = path[1:]
-		case '[':
-			end := strings.IndexByte(path, ']')
-			if end < 0 || f == nil || f.Of == nil {
-				return nil
-			}
-			if _, err := strconv.Atoi(path[1:end]); err != nil {
-				return nil
-			}
-			f, fields, path = f.Of, f.Of.Fields, path[end+1:]
-		default:
-			end := strings.IndexAny(path, ".[")
-			if end < 0 {
-				end = len(path)
-			}
-			idx := slices.IndexFunc(fields, func(x *schema.Field) bool { return x.Name == path[:end] })
-			if idx < 0 {
-				return nil
-			}
-			f = fields[idx]
-			fields, path = f.Fields, path[end:]
-		}
-	}
-	if f == nil {
-		return nil
-	}
-	return f.Shape.To
 }
 
 // maxSearchRunes keeps a document's search text under Postgres' 1 MB tsvector limit; it equals the

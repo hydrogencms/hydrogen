@@ -94,6 +94,17 @@ func (a *API) verifyPreview(tok string) (*claims, error) {
 	return &cl, nil
 }
 
+// VerifyPreviewToken checks a preview token's signature and expiry and returns the channel it belongs to and
+// the item it is limited to ("" for the whole channel). Modules that serve pages themselves use it to accept
+// ?preview=.
+func (a *API) VerifyPreviewToken(tok string) (chanName, item string, err error) {
+	cl, err := a.verifyPreview(tok)
+	if err != nil {
+		return "", "", err
+	}
+	return cl.Channel, cl.Item, nil
+}
+
 func previewToken(r *http.Request) string {
 	if v := r.Header[previewHeader]; len(v) > 0 {
 		return v[0]
@@ -242,10 +253,14 @@ func (a *API) previewURL(ctx context.Context, ch *channel.Channel, item ids.UUID
 			return "", false, err
 		}
 	}
-	u, ok := ch.PreviewURL(v.Type, item.String(), locale, func(name string) (string, bool) {
+	path, ok := ch.PreviewPath(v.Type, item.String(), locale, func(name string) (string, bool) {
 		return plainText(v.Fields[name])
 	})
-	return u, ok, nil
+	if !ok {
+		return "", false, nil
+	}
+	_, abs := a.patternURL(ch, path)
+	return abs, true, nil
 }
 
 // plainText formats a scalar field value for a URL. Drafts decode numbers as json.Number, which is printed

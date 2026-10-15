@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="{{.Locale}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{{meta}}<link rel="stylesheet" href="{{asset "site.css"}}">
+</head>
+<body>
+<div class="site" data-h-root>
+<a class="skip-link" href="#main">{{t "skip"}}</a>
+{{template "partials/header.html" .}}
+<main id="main">
+{{block "content" .}}{{end}}
+</main>
+{{template "partials/footer.html" .}}
+</div>
+</body>
+</html>

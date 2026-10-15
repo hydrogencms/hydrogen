@@ -11,8 +11,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hydrogencms/bridge": "file:../../packages/bridge",
     "@hydrogencms/client": "file:../../packages/client",
     "@hydrogencms/next": "file:../../packages/next",
+    "@hydrogencms/react": "file:../../packages/react",
     "@hydrogencms/router": "file:../../packages/router",
     "next": "^16.4.1",
     "react": "^19.0.0",

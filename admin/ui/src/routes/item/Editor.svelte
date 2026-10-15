@@ -6,7 +6,8 @@
   import { channels } from '../../lib/channels.svelte';
   import { provideFields } from '../../lib/fields/context';
   import Fields from '../../lib/fields/Fields.svelte';
-  import { untrack } from 'svelte';
+  import { untrack, type Component } from 'svelte';
+  import '../../lib/messages/preview';
   import { copyTranslatable, fieldsPatch, hydrate, initialValues, cleanDoc, unroutedErrors, type Doc } from '../../lib/fields/logic';
   import { itemLocales, knownLocales, localeState } from '../../lib/fields/locales';
   import { Form } from '../../lib/form.svelte';
@@ -21,6 +22,7 @@
   import Menu, { type MenuItem } from '../../lib/ui/Menu.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
+  import type { PreviewChannel } from '../../lib/preview/PreviewPane.svelte';
   import Select from '../../lib/ui/Select.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import Time from '../../lib/ui/Time.svelte';
@@ -117,6 +119,7 @@
   provideFields({
     error: (p) => form.error(p),
     clearError: (p) => form.clearError(p),
+    errors: () => form.errors,
     get readonly() {
       return !canEdit;
     },
@@ -133,6 +136,7 @@
 
   function apply(d: ItemData) {
     data = d;
+    paused = false;
     const t0 = types.get(d.type);
     const v: Values = { fields: hydrate(t0?.fields ?? [], d.fields), key: d.key ?? '', alwaysAvailable: d.alwaysAvailable };
     form.reset(v);
@@ -223,6 +227,11 @@
   }
 
   function onkey(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p' && !previewReason) {
+      e.preventDefault();
+      togglePreview();
+      return;
+    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
       if (form.dirty || isNew) void save();
@@ -263,29 +272,78 @@
   const previewReason = $derived(
     !data ? t('collections.previewSave') : !session.can('content.preview', { type: type?.name }) ? t('collections.previewForbidden') : previewChannels.length === 0 ? t('collections.previewNoChannel') : '',
   );
-  async function preview(channel: string) {
-    if (!data) return;
-    const c = channels.items.find((x) => x.name === channel);
-    const w = window.open('about:blank', '_blank');
-    try {
-      const r = await api.post('/preview-tokens', {
-        body: { channel, item: data.id, ...(c?.languages.includes(locale) ? { locale } : {}) },
-      });
-      if (r.url) {
-        if (w) {
-          w.opener = null;
-          w.location.href = r.url;
-        } else window.open(r.url, '_blank', 'noopener');
-      } else {
-        w?.close();
-        toast.info(t('collections.noPreviewUrl', { channel }));
-      }
-    } catch (e) {
-      w?.close();
-      toast.error(e instanceof ApiError && e.status === 403 ? errorMessage(e) : t('collections.previewFailed'));
-    }
+  // The pane: a lazy chunk, opened by the header toggle or Mod-Shift-P.
+  let previewOpen = $state(false);
+  let paneTab = $state<'preview' | 'details'>('preview');
+  let PreviewPane = $state.raw<Component<any> | null>(null);
+  let saveState = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  function togglePreview() {
+    previewOpen = !previewOpen;
+    paneTab = 'preview';
+    if (!previewOpen) saveState = 'idle';
   }
-  const previewMenu = $derived<MenuItem[]>(previewChannels.map((c) => ({ label: c.name, icon: 'eye', onselect: () => void preview(c.name) })));
+  $effect(() => {
+    if (previewOpen && !PreviewPane) void import('../../lib/preview/PreviewPane.svelte').then((m) => (PreviewPane = m.default));
+  });
+  const previewChans = $derived<PreviewChannel[]>(previewChannels.map((c) => ({ name: c.name, languages: c.languages })));
+  const previewDoc = $derived(previewOpen && type ? { fields: cleanDoc(type.fields, $state.snapshot(form.values.fields) as Doc) } : null);
+
+  // Reload-mode frontends render from the saved draft, so the pane asks for a save after each pause in typing.
+  // A draft save replaces the draft in place: it records an audit event, never a version.
+  // It pauses on a conflict (never overwrites), skips while fields have errors and leaves 1.5 s between saves.
+  let autosaving: Promise<boolean> | undefined;
+  let paused = $state(false);
+  let kept = $state(false);
+  let saveMessage = $state('');
+  let lastAutosave = 0;
+  function autosave(): Promise<boolean> {
+    return (autosaving ??= (async () => {
+      if (!type || !data || !canEdit || !target || paused) return false;
+      if (!form.dirty) return true;
+      if (Object.keys(form.errors).length) {
+        saveState = 'error';
+        saveMessage = t('preview.saveErrors');
+        return false;
+      }
+      const wait = lastAutosave + 1500 - Date.now();
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      saveMessage = '';
+      saveState = 'saving';
+      const v = $state.snapshot(form.values) as Values;
+      const patch = fieldsPatch(type.fields, saved.fields, v.fields);
+      const body: Record<string, unknown> = { fields: patch };
+      if (locale) body.locale = locale;
+      if (v.key !== saved.key) body.key = v.key;
+      if (v.alwaysAvailable !== saved.alwaysAvailable) body.alwaysAvailable = v.alwaysAvailable;
+      if (!Object.keys(patch).length && !('key' in body) && !('alwaysAvailable' in body)) {
+        saved = structuredClone(v);
+        form.markSavedAs(v);
+        saveState = 'saved';
+        return true;
+      }
+      try {
+        const result = await itemApi.update(target, body, cc());
+        data = result;
+        saved = structuredClone(v);
+        form.markSavedAs(v);
+        saveState = 'saved';
+        return true;
+      } catch (e) {
+        saveState = 'error';
+        if (isConflict(e) || (e instanceof ApiError && e.status === 409)) {
+          paused = true;
+          kept = false;
+        } else if (e instanceof ApiError && e.status >= 400 && e.status < 500) {
+          form.setErrors(e.fields);
+          form.formError = e.fields?.length ? t('form.invalid') : e.message;
+        }
+        return false;
+      } finally {
+        lastAutosave = Date.now();
+        autosaving = undefined;
+      }
+    })());
+  }
 
   // ---- dialogs
   let dialogs = $state<ActionDialogs>();
@@ -353,7 +411,42 @@
   });
   $effect(() => {
     if (inline) panelOpen = false;
+    else if (previewOpen) panelOpen = true;
   });
+  $effect(() => {
+    if (!previewOpen && !inline) panelOpen = false;
+  });
+
+  // The preview pane's width: remembered, never narrower than 360 px nor wider than 80% of the editor.
+  const widthKey = 'h.preview.width';
+  let rootW = $state(1200);
+  let paneW = $state(Number(localStorage.getItem(widthKey)) || 0);
+  const paneWidth = $derived(Math.round(Math.max(360, Math.min(paneW || rootW * 0.45, rootW * 0.8))));
+  $effect(() => {
+    if (!root || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([e]) => (rootW = e?.contentRect.width ?? rootW));
+    ro.observe(root);
+    return () => ro.disconnect();
+  });
+  function resizeStart(e: PointerEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const start = paneWidth;
+    const move = (ev: PointerEvent) => (paneW = start + (startX - ev.clientX));
+    const up = () => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      localStorage.setItem(widthKey, String(paneWidth));
+    };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+  }
+  function resizeKey(e: KeyboardEvent) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    paneW = paneWidth + (e.key === 'ArrowLeft' ? 24 : -24);
+    localStorage.setItem(widthKey, String(paneWidth));
+  }
 
   // The unsaved-changes bar shows while the form is dirty and the page header has scrolled out of sight.
   let headEl = $state<HTMLElement>();
@@ -434,7 +527,7 @@
     {/if}
     {#if !canEdit}<p class="h-muted" role="status">{t('collections.readOnly')}</p>{/if}
 
-    <div class="h-item__grid">
+    <div class="h-item__grid" class:h-item__grid--preview={previewOpen} style:--h-preview-w="{paneWidth}px">
       <div class="h-item__main">
         {#if data && locale !== data.mainLocale && hasTranslatable && canEdit}
           <div class="h-item__translate">
@@ -464,13 +557,72 @@
         </form>
       </div>
       {#if panelOpen && !inline}<button type="button" class="h-item__scrim" tabindex="-1" aria-label={t('editor.inspectorClose')} onclick={() => (panelOpen = false)}></button>{/if}
-      <aside class="h-item__side" class:h-item__side--open={panelOpen} aria-label={t('collections.details')}>
+      <aside
+        class="h-item__side"
+        class:h-item__side--open={panelOpen}
+        class:h-item__side--preview={previewOpen}
+        aria-label={previewOpen ? t('preview.tabs') : t('collections.details')}
+      >
+        {#if previewOpen}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+          <div
+            class="h-item__resize"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t('preview.resize')}
+            aria-valuemin={360}
+            aria-valuenow={paneWidth}
+            tabindex="0"
+            onpointerdown={resizeStart}
+            onkeydown={resizeKey}
+          ></div>
+        {/if}
         {#if !inline}
           <div class="h-item__side-head">
-            <IconButton icon="x" size="sm" label={t('editor.inspectorClose')} onclick={() => (panelOpen = false)} />
+            <IconButton icon="x" size="sm" label={t('editor.inspectorClose')} onclick={() => (previewOpen ? togglePreview() : (panelOpen = false))} />
           </div>
         {/if}
-        <SidePanels {data} {item} {type} {locale} {locales} {form} {mode} onrefresh={extRefresh} />
+        {#if previewOpen}
+          <div class="h-item__panetabs">
+            <Segmented
+              label={t('preview.tabs')}
+              size="sm"
+              options={[
+                { value: 'preview', label: t('preview.tabPreview'), icon: 'eye' },
+                { value: 'details', label: t('preview.tabDetails'), icon: 'panel-left' },
+              ]}
+              value={paneTab}
+              onchange={(v) => (paneTab = v as 'preview' | 'details')}
+            />
+            <IconButton icon="x" size="sm" label={t('preview.toggleHide')} onclick={togglePreview} />
+          </div>
+          <div class="h-item__panebody" class:h-item__panebody--off={paneTab !== 'preview'}>
+            {#if PreviewPane && data}
+              <PreviewPane
+                item={data.id}
+                itemType={data.type}
+                title={data.name || t('editor.untitled')}
+                {locale}
+                channels={previewChans}
+                doc={previewDoc}
+                save={autosave}
+                {saveState}
+                {saveMessage}
+                paused={paused && !kept}
+                onreload={() => {
+                  if (confirmDiscard(form.dirty, (m) => confirm(m))) reloadTick++;
+                }}
+                onkeep={() => (kept = true)}
+                principal={session.principalKey}
+              />
+            {:else}
+              <Skeleton shape="block" height="20rem" />
+            {/if}
+          </div>
+        {/if}
+        <div class="h-item__panebody" hidden={previewOpen && paneTab !== 'details'}>
+          <SidePanels {data} {item} {type} {locale} {locales} {form} {mode} onrefresh={extRefresh} />
+        </div>
       </aside>
     </div>
     <Slot at="editor.after" props={slotProps} />
@@ -528,12 +680,8 @@
       <Button icon="eye" disabled>{t('collections.preview.button')}</Button>
       <span class="h-sr">{previewReason}</span>
     </span>
-  {:else if previewMenu.length === 1}
-    <Button icon="eye" onclick={() => void preview(previewChannels[0]!.name)}>{t('collections.preview.button')}</Button>
   {:else}
-    <Menu items={previewMenu} label={t('collections.preview.choose')} triggerClass="h-pill">
-      {#snippet trigger()}<Icon name="eye" size={16} />{t('collections.preview.button')}{/snippet}
-    </Menu>
+    <Button icon="eye" aria-pressed={previewOpen} title={t('preview.toggleTitle')} onclick={togglePreview}>{t('collections.preview.button')}</Button>
   {/if}
   <Button
     variant={isNew ? 'primary' : 'secondary'}
@@ -684,6 +832,74 @@
   .h-item:not(.h-item--inline) .h-item__side--open {
     visibility: visible;
     transform: none;
+  }
+  .h-item--inline .h-item__grid--preview {
+    grid-template-columns: minmax(0, 1fr) var(--h-preview-w);
+    gap: var(--h-space-3);
+  }
+  .h-item__side--preview {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--h-space-2);
+  }
+  .h-item--inline .h-item__side--preview {
+    height: calc(100vh - var(--h-topbar-height) - var(--h-space-5));
+  }
+  .h-item--embedded.h-item--inline .h-item__side--preview {
+    height: calc(100vh - var(--h-topbar-height) - var(--h-space-7));
+  }
+  .h-item:not(.h-item--inline) .h-item__side--preview {
+    width: min(48rem, 100vw);
+    height: auto;
+  }
+  .h-item__panetabs {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--h-space-2);
+  }
+  .h-item__panebody {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .h-item__panebody[hidden] {
+    display: none;
+  }
+  /* The preview stays laid out (not display: none) while the Details tab shows, so the frame keeps rendering. */
+  .h-item__panebody--off {
+    position: absolute;
+    inset: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .h-item__resize {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: -10px;
+    z-index: 2;
+    width: 10px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .h-item__resize::after {
+    content: '';
+    position: absolute;
+    inset-block: 30% 30%;
+    inset-inline-start: 4px;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--h-border-strong);
+    opacity: 0;
+    transition: opacity var(--h-dur-fast);
+  }
+  .h-item__resize:hover::after,
+  .h-item__resize:focus-visible::after {
+    opacity: 1;
+  }
+  :global(.h-item .h-button[aria-pressed='true']) {
+    background: var(--h-surface-3);
   }
   .h-item__side-head {
     display: flex;

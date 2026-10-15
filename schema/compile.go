@@ -16,6 +16,7 @@ type compiler struct {
 	errs   errList
 	groups map[string]*groupState
 	opts   map[*Field]map[string]any
+	lk     *blockLookup
 }
 
 type groupState struct {
@@ -30,6 +31,7 @@ type scope struct {
 	c      *compiler
 	top    bool   // direct fields of a type
 	item   bool   // element of a list
+	block  bool   // props of a block type
 	prefix string // path prefix of the fields, for messages
 	defs   []*fieldDef
 }
@@ -38,7 +40,10 @@ type scope struct {
 func (b *Builder) Compile() (*Schema, error) {
 	c := &compiler{b: b, reg: b.reg, groups: map[string]*groupState{}, opts: map[*Field]map[string]any{}}
 	c.errs.list = slices.Clone(b.errs.list)
-	s := &Schema{byName: map[string]*Type{}, opts: c.opts}
+	c.lk = &blockLookup{byName: map[string]*BlockType{}}
+	s := &Schema{byName: map[string]*Type{}, opts: c.opts, lk: c.lk}
+	c.compileTokens(s)
+	c.compileBlocks(s)
 	for _, name := range sortedKeys(b.groups) {
 		fields, _ := c.groupFields(name)
 		def := b.groups[name]
@@ -46,6 +51,9 @@ func (b *Builder) Compile() (*Schema, error) {
 	}
 	for _, name := range sortedKeys(b.types) {
 		t := c.compileType(b.types[name])
+		if t.Blockset {
+			c.checkBlockset(b.types[name], t)
+		}
 		s.types = append(s.types, t)
 		s.byName[name] = t
 	}
@@ -105,7 +113,7 @@ func (c *compiler) groupFields(name string) ([]*Field, bool) {
 
 func (c *compiler) compileType(def *typeDef) *Type {
 	t := &Type{
-		Name: def.name, Label: def.label, Description: def.description, Singleton: def.singleton, Page: def.page,
+		Name: def.name, Label: def.label, Description: def.description, Singleton: def.singleton, Page: def.page, Blockset: def.blockset,
 		NamePattern: def.namePattern.s, Pos: def.pos,
 		Admin: TypeAdmin{Group: def.adminGroup, Icon: def.adminIcon},
 		AI:    TypeAI{Instructions: def.aiInstr},
@@ -405,10 +413,14 @@ func (o *Options) siblingBefore(name string) bool {
 }
 
 func (o *Options) checkPlacement(f *Field) {
-	if f.Translatable && !o.sc.top {
+	if f.Translatable && o.sc.block {
+		o.Errorf("translatable", "block props are not translatable on their own; set translatable on the blocks field")
+	} else if f.Translatable && !o.sc.top {
 		o.Errorf("translatable", "translatable is only allowed on top-level fields")
 	}
-	if f.Index && (!o.sc.top || !indexable(f)) {
+	if f.Index && o.sc.block {
+		o.Errorf("index", "block props cannot be indexed")
+	} else if f.Index && (!o.sc.top || !indexable(f)) {
 		o.Errorf("index", "index is only allowed on top-level scalar, ref and list-of-scalar fields")
 	}
 }

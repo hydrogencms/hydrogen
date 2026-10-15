@@ -203,7 +203,7 @@ open_preview() {
 
 draft=$(cmsjs draft "$(id aboutNode)")
 did=$(echo "$draft" | jq -r .id); tok=$(echo "$draft" | jq -r .token); purl=$(echo "$draft" | jq -r .url)
-case $purl in https://www.acme.com/preview/page/$did\?preview=*) ok ;; *) fail "unexpected preview URL $purl" ;; esac
+case $purl in https://www.acme.com/en/preview/page/$did\?preview=*) ok ;; *) fail "unexpected preview URL $purl" ;; esac
 get www.acme.com "/preview/page/$did"
 expect_status 404 "draft without preview"
 get www.acme.com "/api/hydrogen/preview?token=$tok&path=//evil.example"

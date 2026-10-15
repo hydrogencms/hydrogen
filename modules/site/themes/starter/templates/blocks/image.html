@@ -1,0 +1,6 @@
+<figure {{.Attrs}} class="image">
+<div class="container narrow">
+<img src="{{.Props.src}}" alt="{{.Props.alt}}" loading="lazy">
+{{with .Props.caption}}<figcaption>{{.}}</figcaption>{{end}}
+</div>
+</figure>

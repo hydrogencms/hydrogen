@@ -295,7 +295,13 @@ func (k *rtCheck) mark(m map[string]any, before []any) {
 	}
 }
 
+// validHref accepts item: links, mailto: addresses and absolute http(s) URLs. Backslashes and control
+// characters are refused anywhere: browsers read a backslash as a slash in http(s) URLs, so values such as
+// "/\evil.com" would redirect to another host.
 func validHref(h string) bool {
+	if strings.ContainsFunc(h, func(r rune) bool { return r == '\\' || r < 0x20 || r == 0x7f }) {
+		return false
+	}
 	if rest, ok := strings.CutPrefix(h, "item:"); ok {
 		return isUUID(rest)
 	}

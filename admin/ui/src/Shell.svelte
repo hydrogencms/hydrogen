@@ -67,7 +67,7 @@
     paletteOpen = true;
   }
   function keydown(e: KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    if (!e.defaultPrevented && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       void openPalette();
     } else if (e.key === 'Escape' && navOpen) navOpen = false;

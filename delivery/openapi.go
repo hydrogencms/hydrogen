@@ -28,6 +28,7 @@ func openAPI(s *schema.Schema, extra []Route) obj {
 	for _, t := range s.Types() {
 		fields := s.JSONSchema(t)
 		delete(fields, "$schema")
+		openapi.HoistDefs(schemas, fields)
 		schemas["Fields_"+t.Name] = fields
 		schemas["Item_"+t.Name] = itemSchema(t.Name, openapi.SchemaRef("Fields_"+t.Name))
 		itemRefs = append(itemRefs, openapi.SchemaRef("Item_"+t.Name))

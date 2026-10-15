@@ -26,6 +26,7 @@ type typeDef struct {
 	description string
 	singleton   bool
 	page        bool
+	blockset    bool
 	namePattern located
 	adminList   []located
 	adminGroup  string
@@ -75,6 +76,8 @@ func parseType(s src, reg *Registry, k, v *yaml.Node) *typeDef {
 			s.setBool(&def.singleton, e)
 		case "page":
 			s.setBool(&def.page, e)
+		case "blockset":
+			s.setBool(&def.blockset, e)
 		case "name":
 			if p, ok := s.str(e); ok {
 				def.namePattern = located{p, s.pos(e.k)}

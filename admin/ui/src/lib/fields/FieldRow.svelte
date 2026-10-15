@@ -1,5 +1,6 @@
 <script lang="ts">
   import Field from '../ui/Field.svelte';
+  import Skeleton from '../ui/Skeleton.svelte';
   import type { CompiledField } from '../types.svelte';
   import GroupWidget from './GroupWidget.svelte';
   import ListWidget from './ListWidget.svelte';
@@ -21,10 +22,11 @@
   const shown = $derived(!field.admin?.hidden && evalWhen(field.when, doc));
   const base = $derived(field.shape.base);
   const widget = $derived(ext.widget(field.admin?.widget));
+  const isBlocks = $derived(base === 'blocks');
   const nested = $derived(base === 'list' || (base === 'group' && !!field.fields));
   // Short fields flow two or three to a row in the editor's field grid; everything else spans the card.
   const short = $derived(
-    !widget && (base === 'number' || base === 'boolean' || base === 'ref' || (base === 'string' && ['enum', 'date', 'datetime'].includes(field.shape.format ?? ''))),
+    !widget && !isBlocks && (base === 'number' || base === 'boolean' || base === 'ref' || (base === 'string' && ['enum', 'date', 'datetime'].includes(field.shape.format ?? ''))),
   );
   const readonly = $derived(ctx.readonly || !!field.admin?.readonly);
 </script>
@@ -46,6 +48,13 @@
           />
         {/snippet}
       </Field>
+    {:else if isBlocks}
+      {#await import('../blocks/BlocksField.svelte')}
+        <Skeleton shape="block" height="6rem" />
+      {:then m}
+        {@const Blocks = m.default}
+        <Blocks {field} bind:value {path} {readonly} />
+      {/await}
     {:else if base === 'list'}
       <ListWidget {field} bind:value {path} {readonly} />
     {:else if nested}

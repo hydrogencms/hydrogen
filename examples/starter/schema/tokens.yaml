@@ -1,0 +1,3 @@
+tokens:
+  tone: [light, dark, brand]
+  space: [none, sm, md, lg]

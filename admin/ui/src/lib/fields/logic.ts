@@ -1,6 +1,7 @@
 // Pure logic behind the generated item form: slugs, `when`, values, patches, list operations and
 // error paths. Kept free of Svelte so it can be tested directly.
 import type { CompiledField } from '../types.svelte';
+import { cleanBlocks, hydrateBlocks } from '../blocks/clean';
 
 export type Doc = Record<string, unknown>;
 
@@ -141,6 +142,8 @@ export function cleanValue(f: CompiledField, v: unknown): unknown {
   if (v === undefined || v === null || v === '') return undefined;
   if (typeof v === 'number' && Number.isNaN(v)) return undefined;
   switch (baseOf(f)) {
+    case 'blocks':
+      return Array.isArray(v) && v.length ? cleanBlocks(v) : undefined;
     case 'group': {
       if (typeof v !== 'object' || Array.isArray(v)) return v;
       const out = cleanDoc(f.fields ?? [], v as Doc);
@@ -267,6 +270,7 @@ function pathVisible(fields: CompiledField[], path: string, doc: Doc): boolean {
   let cur: unknown = doc;
   let f: CompiledField | undefined;
   for (const seg of parsePath(path)) {
+    if (f && baseOf(f) === 'blocks') return true;
     if (typeof seg === 'number') {
       if (!f?.of) return false;
       f = f.of;
@@ -304,66 +308,6 @@ export function fromLocalInput(local: string): string {
   if (!local) return '';
   const d = new Date(local);
   return Number.isNaN(d.getTime()) ? '' : d.toISOString().replace('.000Z', 'Z');
-}
-
-// ---- rich text preview
-
-export interface PreviewLine {
-  kind: 'heading' | 'paragraph' | 'item' | 'quote' | 'code' | 'rule';
-  level?: number;
-  text: string;
-}
-
-interface RtNode {
-  type?: string;
-  text?: string;
-  attrs?: Record<string, unknown>;
-  content?: RtNode[];
-}
-
-function inlineText(n: RtNode): string {
-  if (n.type === 'text') return n.text ?? '';
-  if (n.type === 'hardBreak') return '\n';
-  return (n.content ?? []).map(inlineText).join('');
-}
-
-/** Flattens a rich text document to display lines (read-only preview until the real editor lands). */
-export function richPreview(doc: unknown): PreviewLine[] {
-  const out: PreviewLine[] = [];
-  const walk = (n: RtNode, prefix: string, quote: boolean) => {
-    switch (n.type) {
-      case 'heading':
-        out.push({ kind: 'heading', level: Number(n.attrs?.level ?? 2), text: inlineText(n) });
-        break;
-      case 'paragraph':
-        out.push({ kind: quote ? 'quote' : 'paragraph', text: prefix + inlineText(n) });
-        break;
-      case 'codeBlock':
-        out.push({ kind: 'code', text: inlineText(n) });
-        break;
-      case 'horizontalRule':
-        out.push({ kind: 'rule', text: '' });
-        break;
-      case 'blockquote':
-        for (const c of n.content ?? []) walk(c, prefix, true);
-        break;
-      case 'bulletList':
-      case 'orderedList':
-        (n.content ?? []).forEach((li, i) => {
-          const mark = n.type === 'orderedList' ? `${i + 1}. ` : '• ';
-          const [first, ...rest] = li.content ?? [];
-          const at = out.length;
-          if (first) walk(first, mark, quote);
-          if (out[at]?.kind === 'paragraph') out[at]!.kind = 'item';
-          for (const c of rest) walk(c, '  ', quote);
-        });
-        break;
-      default:
-        for (const c of n.content ?? []) walk(c, prefix, quote);
-    }
-  };
-  if (doc && typeof doc === 'object') walk(doc as RtNode, '', false);
-  return out;
 }
 
 // ---- helpers for lists and bulk work
@@ -410,6 +354,7 @@ export function hydrate(fields: CompiledField[], doc: Doc | undefined | null): D
       return g;
     }
     if (baseOf(f) === 'list' && f.of && Array.isArray(v)) return v.map((x) => walk(f.of!, x));
+    if (baseOf(f) === 'blocks') return hydrateBlocks(v);
     return v;
   };
   for (const f of fields) {

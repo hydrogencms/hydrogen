@@ -251,6 +251,88 @@ The top bar (shell) shows the breadcrumbs; the page header shows title, badge, m
 - Utility classes: `h-stack`, `h-row`, `h-spacer`, `h-muted`, `h-sr`, `h-num`, `h-alert`, `h-list`, `h-grid`.
   Screen-specific CSS goes in the screen's `<style>` block with tokens (Svelte scopes it).
 
+## Rich text editor (`lib/richtext`)
+
+`RichTextEditor.svelte` is the one editor for every richtext field and block prop. It is a thin shell that
+dynamic-imports `Editor.svelte` (ProseMirror, toolbar, link popover, "Edit as JSON" dialog) and shows a skeleton
+meanwhile; nothing under `lib/richtext` except `config.ts`, `types.ts` and the shell may be imported from the
+entry chunk.
+
+```svelte
+<RichTextEditor label={field.label} value={doc.body} config={configOf(field.options)} locale={ctx.locale}
+  {readonly} error={ctx.error(path)} id={control.id} aria-describedby={control['aria-describedby']}
+  onchange={(v) => (doc.body = v)} />
+```
+
+- Props (`types.ts`): `value` (stored doc; undefined/empty shows an empty editor), `config` (`{marks?, nodes?}` allowlists,
+  read from `field.options` with `configOf`; undefined allows everything), `locale`, `readonly`, `error`, `label`
+  (accessible name), `id`, `aria-describedby`, `placeholder`, `rows` (min height, default 8), `json` (show "Edit as
+  JSON", default true), `onchange(value)`.
+- `onchange` gets the stored ProseMirror JSON (`{type:'doc', content}`), or `undefined` when the editor is empty
+  (the server's `IsEmpty`). Null attributes are never stored (`toStored`); mark order follows the server's.
+  Outside changes to `value` (locale switch) replace the document; echoes of the editor's own output do not.
+- The schema (`schema.ts`) is built from the allowlists with the server's node/mark names and attributes
+  (headings `level`, code blocks `language`, links `href`: http(s), `mailto:` or `item:<uuid>`). A value the schema
+  cannot hold (a mark the field disallows) shows an error with "Edit as JSON" instead of the editor.
+- Keys: Mod-B/I/E bold/italic/code, Mod-K link (popover: URL or item search over readable collections),
+  Mod-Alt-0/2/3/4 paragraph/headings, Shift-Ctrl-8/9 lists, Shift-Enter hard break, Mod-Z/Shift-Mod-Z. Input rules:
+  `## `..`#### `, `- `, `* `, `1. `, `> `, ``` ```. Paste goes through the schema's DOM parser (unknown marks and
+  nodes are stripped, unsafe links dropped, h1-h6 clamp to 2-4).
+- The component instance exports `getView()` (the ProseMirror `EditorView`) for tests and embedding.
+- Tests: `schema.test.ts` (round trips, allowlists, links, input rules), `editor.test.ts` (component), e2e
+  `richtext.spec.ts`.
+
+## Block editor (`lib/blocks`)
+
+`FieldRow` renders a `blocks` field with `blocks/BlocksField.svelte`, a lazy chunk (`{#await import()}`, so nothing
+under `lib/blocks` is in the entry chunk except the pure `tree.ts` that `fields/logic.ts` uses to clean and hydrate
+block values). The block types and token sets come from `GET /blocks` through `blocksCatalog`
+(`catalog.svelte.ts`: `load()` once per session, `get`, `label`, `icon`, `allowed(rule)`, `token(set)`, `sharedTo`,
+`schema(rule)`).
+
+- Value: the stored array `[{id, type, props, slots?}]`. `tree.ts` holds the pure operations (insert, remove, move,
+  reorder, clone with new ids, `canInsert`/`canRemove`/`canMove` with their refusal reasons, move `targets`,
+  `summary`, `cleanBlocks`/`hydrateBlocks`, `routeErrors`, `uuidv7`); all return new trees and share untouched
+  subtrees. `BlocksModel` (`model.svelte.ts`) is the per-field state: open cards, selection, pointer drag, the
+  in-memory clipboard (`clipboard`), undo of deletes (a toast with an action), shared block helpers.
+- Cards (`BlockCard`) edit `props` with the generic field widgets (`Fields` over the block type's props, paths
+  `body[2].props.heading`; `token` props are a select of the set's values; richtext props use `RichTextEditor`) and
+  render slots as nested `BlockList`s. Palette (`Palette`): a popover with search and arrow keys, a second step to
+  pick a blockset item for a shared block. Disabled actions say why (`blocks.reason.*`).
+- Keyboard: Alt+Up/Down on a card header reorders, Delete removes (undo toast), "Move to..." opens `MoveDialog`.
+  Pointer: the grip drags (4 px threshold, Escape cancels, edge auto-scroll); drop targets are `[data-block-id]` and
+  `[data-drop-list]` elements, and a target the rules refuse shows no indicator.
+- Ids: new blocks get a client UUIDv7; duplicates, pastes and detached shared blocks get new ids.
+- Shared blocks (`SharedBody`): shown read-only (name, status, the block types it holds) with "Edit shared" and
+  "Detach"; "Save as shared" (`SaveSharedDialog`) creates a draft item of a blockset type and swaps the block.
+- API errors: `FieldCtx.errors()` lets the field route `body[1].slots.items[0].props.title` to the property,
+  slot-level and block-level messages to the slot or card, and anything it cannot place to a list above the field;
+  cards with errors open and show a count.
+
+## Preview pane (`lib/preview`)
+
+The item editor's "Preview" button (Ctrl/Cmd+Shift+P) opens `PreviewPane` (lazy) in the inspector column, with the
+inspector one tab away; the column resizes (min 360 px, width remembered in `h.preview.width`). Below the inline
+breakpoint it is the same slide-over as the inspector, so the pages split view gets it too.
+
+- The pane mints a token (`POST /preview-tokens {channel, item, locale, ttl: 3600}`), renews it at 50 minutes, and
+  loads the returned `url` in `<iframe sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+  referrerpolicy="no-referrer">`. The admin's CSP needs the frontend origin in `frame-src` (the server adds each
+  channel's `frontend` origin).
+- `host.ts` (`PreviewHost`) is the admin side of the bridge protocol (`docs/bridge-protocol.md`): it accepts messages
+  only from the frame window and the preview URL's origin, answers `ready` (live) with `init` `{item, itemType,
+  locale, rev, doc: {fields}}`, sends a debounced (50 ms) `patch` per change (`patch.ts` diffs plain JSON into
+  add/remove/replace operations: key by key for objects, per index for same-length arrays, adds or removes at the
+  position of a pure insertion or removal, otherwise a whole replace), answers `resync` with `init`, and in reload
+  mode (`ready.mode === 'reload'`) asks the editor to save the draft after 600 ms of quiet, then sends `reload`.
+- The document is `{fields}` of the edited locale as the form holds it (cleaned like a save). Shared blocks get
+  their `blocks` inlined from the shared item's draft, as delivery does.
+- Autosave (`Editor.svelte`, `autosave`) is a normal draft `PATCH` with `If-Match`: it replaces the draft in place,
+  writes an audit event and an `item.updated` outbox event, and never creates a version. It does not reset the form,
+  so typing is not interrupted; edits made while it runs stay dirty (`Form.markSavedAs`).
+- Status: connecting, live, reload mode (with "Saving...", "Saved" or "Not saved"), error with the frontend's message;
+  a render time badge shows `rendered.ms`. No preview address, no channel, or a missing right each explain themselves.
+
 ## Accessibility rules
 
 - Every interactive element is a real `<button>`/`<a>`/input, reachable by keyboard, with the visible focus ring

@@ -365,6 +365,7 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 		}
 	}
 	reg := newRegistry()
+	reg.env = cfg.Env()
 	if runtime {
 		reg.current = "core"
 		if err := reg.Job("auth.cleanup", "0 * * * *", cleanupSessions); err != nil {
@@ -625,6 +626,18 @@ func (a *App) mountAdmin(mux *http.ServeMux) error {
 		return nil
 	}
 	o := admin.Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: delivery.Prefix, Pages: slices.Contains(a.Modules(), "pages")}
+	for _, ch := range s.Channels.All() {
+		origin := ch.Frontend
+		for _, f := range a.reg.frameOrigins {
+			if x := f(ch); x != "" {
+				origin = x
+				break
+			}
+		}
+		if origin != "" {
+			o.FrameOrigins = append(o.FrameOrigins, origin)
+		}
+	}
 	if s.Env == config.DevEnv {
 		o.DevURL = os.Getenv("ADMIN_DEV_URL")
 		o.ElementsDevURL = os.Getenv("ADMIN_ELEMENTS_DEV_URL")

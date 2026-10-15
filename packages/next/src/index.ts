@@ -1,4 +1,4 @@
-import { createElement } from 'react'
+import { createElement, Fragment } from 'react'
 import type { ComponentType, ReactElement } from 'react'
 import { cookies, draftMode, headers } from 'next/headers'
 import { notFound, permanentRedirect, redirect } from 'next/navigation'
@@ -6,9 +6,12 @@ import { revalidateTag } from 'next/cache'
 import type { NextRequest } from 'next/server'
 import type { Metadata } from 'next'
 import { HydrogenError } from '@hydrogencms/client'
+import type { Registry } from '@hydrogencms/react'
 import type { ChannelInfo, Client, Item, TreeNode } from '@hydrogencms/client'
 import { matchSite } from '@hydrogencms/router'
 import type { Metadata as RouteMetadata, Resolved } from '@hydrogencms/router'
+import { adminOriginWarning } from './admin.js'
+import { Live } from './live.js'
 import { callCached, resolveCached, resolveFresh } from './cache.js'
 import type { Called, Cfg, Method } from './cache.js'
 import { channelInfos, clientOf, matcherHeaders, setToken } from './delivery.js'
@@ -31,9 +34,19 @@ export interface TemplateProps<F = any, T extends object = any> {
   item: Item<F>
   locale: string
   metadata: RouteMetadata
-  /** cached and tagged like the page itself; in draft mode an uncached client carrying the preview token */
+  /** draft mode: pass it, with `path="fields/body"`, to `<Blocks>` so blocks carry `data-h-path` */
+  preview: boolean
+  /** the `blocks` option (server templates only) */
+  blocks?: Registry
+  /** cached and tagged like the page itself; in draft mode an uncached client carrying the preview token. Server templates only. */
   client: Client<T>
 }
+
+/**
+ * What a client template (`'use client'`) receives: server templates' functions cannot cross to the browser, so
+ * there is no `client` or `blocks`. In draft mode only client templates update live while the admin edits.
+ */
+export type LiveTemplateProps<F = any> = Omit<TemplateProps<F>, 'client' | 'blocks'>
 
 export interface HydrogenOptions<T extends object = Record<string, unknown>> {
   /** the CMS, e.g. "https://cms.acme.com" */
@@ -59,6 +72,10 @@ export interface HydrogenOptions<T extends object = Record<string, unknown>> {
   ttl?: number
   /** where the preview route lives (default "/api/hydrogen/preview"); an expired token sends the visitor to its `exit` */
   previewRoutePath?: string
+  /** block components, handed to server templates as `blocks` */
+  blocks?: Registry
+  /** origin of the admin that embeds draft pages for live preview (default: the origin of `baseUrl`) */
+  adminOrigin?: string
 }
 
 type Params = { params: Promise<{ path?: string[] }> }
@@ -87,6 +104,13 @@ export function createHydrogen<T extends object = Record<string, unknown>>(o: Hy
     baseUrl: o.baseUrl, channel, types, fallback: !!o.fallback, ttl: o.ttl ?? 3600,
   })
   const infos = () => channelInfos(o.baseUrl, names)
+  const adminOrigin = new URL(o.adminOrigin ?? o.baseUrl).origin
+  let warned = false
+  const warnAdmin = () => {
+    const w = adminOriginWarning(adminOrigin)
+    if (w && !warned) console.warn(`@hydrogencms/next: ${w}`)
+    warned = true
+  }
   const urlOf = (h: Headers, path: string) => publicUrl(h, path, o.origin, o.trustForwarded)
 
   /** Cached client with the Client interface; template code stays unaware of caching. */
@@ -109,6 +133,16 @@ export function createHydrogen<T extends object = Record<string, unknown>>(o: Hy
     const url = urlOf(h, path)
     const all = await infos()
     return { url, path, channel: o.channels ? matchSite(url, all, h)?.channel.name : o.channel, fwd: matcherHeaders(all, h) }
+  }
+
+  /** Client templates (`'use client'` modules) get the live wrapper in draft mode; server templates render as they are. */
+  function render(T: ComponentType<any>, p: { item: Item<any>; locale: string; metadata: RouteMetadata; client: Client<T>; draft: boolean }): ReactElement {
+    const { client, draft, ...base } = p
+    if (draft) warnAdmin()
+    if ((T as { $$typeof?: symbol }).$$typeof === Symbol.for('react.client.reference'))
+      return draft ? createElement(Live, { Template: T, adminOrigin, ...base }) : createElement(T, { ...base, preview: false })
+    const el = createElement(T, { ...base, preview: draft, blocks: o.blocks, client })
+    return draft ? createElement(Fragment, null, createElement('meta', { name: 'hydrogen-preview', content: '1' }), el) : el
   }
 
   type Loaded = { r: Resolved; client: Client<T>; draft: boolean }
@@ -142,16 +176,30 @@ export function createHydrogen<T extends object = Record<string, unknown>>(o: Hy
   const treeOf = async (channel: string, a: { site?: string; locale?: string; depth?: number }) =>
     unwrap(await callCached(cfgOf(channel), 'tree', [a])).data as TreeNode[]
 
+  async function currentChannel(): Promise<string> {
+    const h = await headers()
+    const path = h.get(PATH_HEADER)
+    let channel = names[0]!
+    if (names.length > 1 && path?.startsWith('/')) {
+      try {
+        channel = matchSite(urlOf(h, path), await infos(), h)?.channel.name ?? channel
+      } catch {
+        // a malformed path keeps the first channel
+      }
+    }
+    return channel
+  }
+
   return {
     /** the default export of `app/[[...path]]/page.tsx` */
     page() {
       return async function HydrogenPage(props: Params): Promise<ReactElement> {
-        const { r, client } = await load(props)
+        const { r, client, draft } = await load(props)
         switch (r.kind) {
           case 'page': {
             const T = r.template === '*' ? o.fallback : o.templates[r.template]
             if (!T) notFound()
-            return createElement(T, { item: r.item, locale: r.locale, metadata: r.metadata, client })
+            return render(T, { item: r.item, locale: r.locale, metadata: r.metadata, client, draft })
           }
           case 'redirect':
             return r.status === 301 || r.status === 308 ? permanentRedirect(r.location) : redirect(r.location)
@@ -237,21 +285,32 @@ export function createHydrogen<T extends object = Record<string, unknown>>(o: Hy
       }
     },
 
-    /** the navigation of the request's channel (found from the path the proxy passes on); cached and tagged `nav:<site>` */
+    /** the channel of the request (found from the path the proxy passes on), for layouts: they cannot see the route's params */
+    channel: currentChannel,
+
+    /** the navigation of the request's channel; cached and tagged `nav:<site>` */
     async nav(a: { depth?: number; site?: string; locale?: string } = {}): Promise<TreeNode[]> {
-      const h = await headers()
-      const path = h.get(PATH_HEADER)
-      let channel = names[0]!
-      if (names.length > 1 && path?.startsWith('/')) {
-        try {
-          channel = matchSite(urlOf(h, path), await infos(), h)?.channel.name ?? channel
-        } catch {
-          // a malformed path keeps the first channel
-        }
-      }
+      const channel = await currentChannel()
       if (!(await draftMode()).isEnabled) return treeOf(channel, a)
       return (await clientOf(o.baseUrl, channel).tree(a)).data
     },
+
+    /** renders a template like the catch-all does (live wrapper in draft mode), for routes of your own */
+    render: (T: ComponentType<any>, p: { item: Item<any>; locale: string; metadata: RouteMetadata; draft: boolean; client?: Client<T> }) =>
+      render(T, { client: p.client ?? (clientOf(o.baseUrl, undefined) as unknown as Client<T>), ...p }),
+
+    /** the preview token in draft mode, for routes of your own */
+    async previewToken(): Promise<string | undefined> {
+      return (await draftMode()).isEnabled ? tokenFromCookie((await cookies()).get(PREVIEW_COOKIE)?.value) : undefined
+    },
+
+    /** a client of a channel for routes of your own: uncached with the preview token in draft mode, else cached and tagged */
+    async clientFor(channel: string): Promise<Client<T>> {
+      const token = (await draftMode()).isEnabled ? tokenFromCookie((await cookies()).get(PREVIEW_COOKIE)?.value) : undefined
+      return token ? (clientOf(o.baseUrl, channel, token) as unknown as Client<T>) : cachedClient(cfgOf(channel))
+    },
+
+    adminOrigin,
 
     /** the template keys (content types) for `hydrogen check-frontend -templates` */
     templates: (): string[] => [...types].sort(),

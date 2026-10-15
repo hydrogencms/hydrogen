@@ -149,6 +149,7 @@ type api struct {
 	channelsJSON []byte
 	typesJSON    []byte
 	typeJSON     map[string][]byte
+	blocksJSON   []byte
 	openapi      []byte
 	etag         string
 }
@@ -165,6 +166,7 @@ var routes = slices.Concat(coreRoutes, authRoutes)
 var coreRoutes = []route{
 	{"GET", "/types", Authenticated, (*api).listTypes},
 	{"GET", "/types/{type}", Authenticated, (*api).getType},
+	{"GET", "/blocks", Authenticated, (*api).listBlocks},
 	{"GET", "/collections/{type}/items", access.PolicyContentRead, (*api).listItems},
 	{"POST", "/collections/{type}/items", access.PolicyContentCreate, (*api).createItem},
 	{"GET", "/items/{id}", access.PolicyContentRead, (*api).getItem},

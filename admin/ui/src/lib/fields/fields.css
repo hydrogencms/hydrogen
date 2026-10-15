@@ -162,35 +162,6 @@ a.h-ref__chip:hover {
   display: flex;
   flex-direction: column;
   gap: var(--h-space-2);
-  align-items: flex-start;
-}
-.h-jsonbox > * {
-  max-width: 100%;
-}
-.h-jsonbox__preview {
-  align-self: stretch;
-  max-height: 16rem;
-  overflow: auto;
-  padding: var(--h-space-3) var(--h-space-4);
-  border-radius: var(--h-radius);
-  background: var(--h-surface-2);
-  font-size: var(--h-text-sm);
-}
-.h-jsonbox__preview p {
-  margin: 0 0 var(--h-space-2);
-  white-space: pre-wrap;
-}
-.h-jsonbox__h {
-  font-weight: 600;
-}
-.h-jsonbox__quote {
-  padding-left: var(--h-space-3);
-  border-left: 3px solid var(--h-border-strong);
-}
-.h-jsonbox__code {
-  margin: 0 0 var(--h-space-2);
-  font-family: var(--h-mono);
-  white-space: pre-wrap;
 }
 .h-jsonbox__area {
   align-self: stretch;

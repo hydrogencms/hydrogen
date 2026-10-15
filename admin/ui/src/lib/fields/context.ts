@@ -4,6 +4,8 @@ import { getContext, setContext } from 'svelte';
 export interface FieldCtx {
   error(path: string): string | undefined;
   clearError(path: string): void;
+  /** Every error of the form by path (the block editor routes `body[2].props.x` to the block). */
+  errors?(): Record<string, string>;
   /** Whole form is read-only (no edit right, or the item is gone). */
   readonly: boolean;
   /** Locale being edited (reference search shows names in it). */

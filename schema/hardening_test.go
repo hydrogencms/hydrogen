@@ -310,7 +310,7 @@ func TestJSONSchemaFileUsesRegistry(t *testing.T) {
 	js := JSONSchemaFile(reg)
 	field := js["$defs"].(map[string]any)["field"].(map[string]any)["properties"].(map[string]any)
 	enum := field["type"].(map[string]any)["enum"].([]string)
-	if len(enum) != 16 || !contains(enum, "zzmodule") {
+	if len(enum) != 18 || !contains(enum, "zzmodule") {
 		t.Fatalf("enum = %v", enum)
 	}
 	for i := 1; i < len(enum); i++ {
@@ -318,7 +318,7 @@ func TestJSONSchemaFileUsesRegistry(t *testing.T) {
 			t.Fatalf("not sorted: %v", enum)
 		}
 	}
-	if got := JSONSchemaFile(nil)["$defs"].(map[string]any)["field"].(map[string]any)["properties"].(map[string]any)["type"].(map[string]any)["enum"].([]string); len(got) != 15 {
+	if got := JSONSchemaFile(nil)["$defs"].(map[string]any)["field"].(map[string]any)["properties"].(map[string]any)["type"].(map[string]any)["enum"].([]string); len(got) != 17 {
 		t.Fatalf("nil registry: %v", got)
 	}
 }

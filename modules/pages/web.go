@@ -81,3 +81,13 @@ func (s *Service) LinkURL(ctx context.Context, from *channel.Channel, item ids.U
 	}
 	return impl.linkURL(ctx, from, item)
 }
+
+// SiteURL is the URL of a site path in a web channel: relative (the channel's prefix plus the path) and
+// absolute (with the channel's origin, empty when it has none).
+func (s *Service) SiteURL(ch *channel.Channel, path string) (rel, abs string) {
+	if s.impl == nil {
+		return path, ""
+	}
+	w := s.impl.web.of(ch)
+	return w.rel(path), w.abs(path)
+}

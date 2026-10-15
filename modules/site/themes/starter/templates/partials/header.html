@@ -1,0 +1,15 @@
+<header class="site-header">
+<div class="container bar">
+<a class="brand" href="{{.Channel.Home}}">{{with setting "siteName"}}{{.}}{{else}}{{t "home"}}{{end}}</a>
+<input class="menu-toggle" type="checkbox" id="menu-toggle" aria-label="{{t "menu"}}">
+<label class="menu-button" for="menu-toggle" aria-hidden="true"><span></span></label>
+<nav class="nav" aria-label="{{t "menu"}}">
+<ul>
+{{range nav}}<li{{if .Open}} class="open"{{end}}><a href="{{.URL}}"{{if .Active}} aria-current="page"{{end}}>{{.Name}}</a></li>
+{{end}}{{template "partials/nav-extra.html" $}}</ul>
+{{with .Alternates}}<ul class="languages" aria-label="{{t "language"}}">
+{{range .}}<li><a href="{{.URL}}" hreflang="{{.Locale}}" lang="{{.Locale}}">{{.Locale}}</a></li>
+{{end}}</ul>{{end}}
+</nav>
+</div>
+</header>

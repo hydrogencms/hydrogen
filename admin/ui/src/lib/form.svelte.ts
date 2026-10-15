@@ -38,6 +38,11 @@ export class Form<V extends object> {
     this.#base = JSON.stringify($state.snapshot(this.values));
   }
 
+  /** Treat `values` (a snapshot taken before a background save) as the saved state; later edits stay dirty. */
+  markSavedAs(values: V) {
+    this.#base = JSON.stringify(values);
+  }
+
   error(path: string): string | undefined {
     return this.errors[path];
   }

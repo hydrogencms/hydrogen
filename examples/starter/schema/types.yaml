@@ -1,0 +1,42 @@
+types:
+  page:
+    page: true
+    children: [page, landing]
+    admin: { icon: file-text }
+    fields:
+      title: { type: string, translatable: true, required: true }
+      slug: { type: slug, from: title, translatable: true, index: true }
+      body: { type: blocks, allow: [richText, cards, callout, image, shared], max: 60, translatable: true }
+
+  landing:
+    page: true
+    children: [page, landing]
+    admin: { icon: layout }
+    fields:
+      title: { type: string, translatable: true, required: true }
+      slug: { type: slug, from: title, translatable: true, index: true }
+      body: { type: blocks, allow: [hero, richText, cards, callout, image, shared], max: 60, translatable: true }
+
+  post:
+    admin: { icon: newspaper }
+    fields:
+      title: { type: string, translatable: true, required: true }
+      slug: { type: slug, from: title, translatable: true, index: true }
+      excerpt: { type: text, translatable: true }
+      body: { type: blocks, allow: [richText, callout, image, shared], max: 60, translatable: true }
+
+  sharedBlock:
+    label: Shared block
+    blockset: true
+    name: "{title}"
+    admin: { icon: link }
+    fields:
+      title: { type: string, translatable: true, required: true }
+      content: { type: blocks, allow: [hero, richText, cards, callout, image], max: 30, translatable: true }
+
+  siteSettings:
+    singleton: true
+    admin: { icon: settings }
+    fields:
+      siteName: { type: string, translatable: true, required: true }
+      footerText: { type: text, translatable: true }

@@ -18,6 +18,7 @@ type channelJSON struct {
 	Collections []string          `json:"collections"` // null: every collection
 	Frontend    string            `json:"frontend"`
 	Preview     map[string]string `json:"preview"`
+	Links       map[string]string `json:"links"`
 	Access      string            `json:"access"`
 	Settings    map[string]any    `json:"settings"`
 	Options     map[string]any    `json:"options"`
@@ -29,7 +30,7 @@ func encodeChannels(set *channel.Set) ([]byte, error) {
 	if set != nil {
 		for _, c := range set.All() {
 			items = append(items, channelJSON{Name: c.Name, Group: c.Group, Languages: c.Languages,
-				Collections: c.Collections, Frontend: c.Frontend, Preview: c.Preview, Access: c.Access,
+				Collections: c.Collections, Frontend: c.Frontend, Preview: c.Preview, Links: c.Links, Access: c.Access,
 				Settings: c.Settings, Options: c.Options})
 		}
 	}
@@ -49,7 +50,7 @@ func channelSchemas() obj {
 	free := obj{"type": "object", "additionalProperties": true}
 	return obj{
 		"Channel": obj{"type": "object",
-			"required":    []any{"name", "group", "languages", "collections", "frontend", "preview", "access", "settings", "options"},
+			"required":    []any{"name", "group", "languages", "collections", "frontend", "preview", "links", "access", "settings", "options"},
 			"description": "A delivery channel from config/channels.yaml. Delivery tokens are never listed.",
 			"properties": obj{
 				"name": openapi.Str(""), "group": openapi.Str(""),
@@ -57,6 +58,7 @@ func channelSchemas() obj {
 				"collections": obj{"type": []any{"array", "null"}, "items": openapi.Str(""), "description": "null: every collection."},
 				"frontend":    openapi.Str(""),
 				"preview":     obj{"type": "object", "additionalProperties": openapi.Str(""), "description": "Collection (or *) to URL pattern."},
+				"links":       obj{"type": "object", "additionalProperties": openapi.Str(""), "description": "Collection to URL pattern for items no module routes (links in rich text and references)."},
 				"access":      obj{"type": "string", "enum": []any{channel.AccessPublic, channel.AccessToken}},
 				"settings":    free,
 				"options":     obj{"type": "object", "additionalProperties": true, "description": "Module options by key."},

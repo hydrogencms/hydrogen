@@ -16,7 +16,7 @@ var (
 )
 
 // coreKeys are the spec keys core understands; modules add theirs as options.
-var coreKeys = []string{"access", "collections", "frontend", "group", "languages", "preview", "settings", "tokens"}
+var coreKeys = []string{"access", "collections", "frontend", "group", "languages", "links", "preview", "settings", "tokens"}
 
 type specKind int
 
@@ -47,6 +47,7 @@ type spec struct {
 	settings    field[map[string]any]
 	frontend    field[string]
 	preview     field[map[string]string]
+	links       field[map[string]string]
 	access      field[string]
 	tokens      field[map[string]string]
 	opts        map[string]*config.Node
@@ -95,7 +96,9 @@ func (cx *compiler) parseSpec(n *config.Node, kind specKind) *spec {
 		case "frontend":
 			sp.frontend = cx.parseFrontend(v)
 		case "preview":
-			sp.preview = cx.parsePreview(v)
+			sp.preview = cx.parsePatterns(v, "preview")
+		case "links":
+			sp.links = cx.parsePatterns(v, "links")
 		case "access":
 			sp.access = cx.parseAccess(v)
 		default:
@@ -267,9 +270,10 @@ func (cx *compiler) parseTokens(v *config.Node) field[map[string]string] {
 	return field[map[string]string]{m, ok, v}
 }
 
-func (cx *compiler) parsePreview(v *config.Node) field[map[string]string] {
+// parsePatterns reads a mapping of collection to URL pattern: `preview` (where "*" is a fallback) or `links`.
+func (cx *compiler) parsePatterns(v *config.Node, what string) field[map[string]string] {
 	if v.Kind() != "map" {
-		cx.fail(v, "preview must be a mapping of collection to URL pattern")
+		cx.fail(v, "%s must be a mapping of collection to URL pattern", what)
 		return field[map[string]string]{}
 	}
 	out := map[string]string{}
@@ -282,7 +286,11 @@ func (cx *compiler) parsePreview(v *config.Node) field[map[string]string] {
 			ok = false
 			continue
 		}
-		if !cx.checkPattern(pn, coll, pattern) {
+		if what == "links" && coll == "*" {
+			cx.fail(pn, "links has no fallback pattern: name the collections")
+			ok = false
+		}
+		if !cx.checkPattern(pn, what, coll, pattern) {
 			ok = false
 		}
 		out[coll] = pattern
@@ -290,32 +298,32 @@ func (cx *compiler) parsePreview(v *config.Node) field[map[string]string] {
 	return field[map[string]string]{out, ok, v}
 }
 
-func (cx *compiler) checkPattern(pn *config.Node, coll, pattern string) bool {
+func (cx *compiler) checkPattern(pn *config.Node, what, coll, pattern string) bool {
 	good := true
 	if coll != "*" && cx.o.Schema != nil && !cx.hasType(coll) {
-		cx.fail(pn, "preview for unknown collection %q (types: %s)", coll, strings.Join(cx.typeNames(), ", "))
+		cx.fail(pn, "%s for unknown collection %q (types: %s)", what, coll, strings.Join(cx.typeNames(), ", "))
 		good = false
 	}
 	if !strings.HasPrefix(pattern, "/") || strings.HasPrefix(pattern, "//") {
-		cx.fail(pn, "preview pattern %q must start with a single /", pattern)
+		cx.fail(pn, "%s pattern %q must start with a single /", what, pattern)
 		good = false
 	}
 	if strings.ContainsAny(placeholder.ReplaceAllString(pattern, ""), "{}") {
-		cx.fail(pn, "preview pattern %q has unbalanced braces", pattern)
+		cx.fail(pn, "%s pattern %q has unbalanced braces", what, pattern)
 		return false
 	}
 	for _, m := range placeholder.FindAllStringSubmatch(pattern, -1) {
-		if !cx.checkPlaceholder(pn, coll, m[1]) {
+		if !cx.checkPlaceholder(pn, what, coll, m[1]) {
 			good = false
 		}
 	}
 	return good
 }
 
-func (cx *compiler) checkPlaceholder(pn *config.Node, coll, name string) bool {
+func (cx *compiler) checkPlaceholder(pn *config.Node, what, coll, name string) bool {
 	switch {
 	case name == "":
-		cx.fail(pn, "preview pattern has an empty placeholder {}")
+		cx.fail(pn, "%s pattern has an empty placeholder {}", what)
 		return false
 	case name == "id" || name == "locale" || name == "collection" || coll == "*" || cx.o.Schema == nil:
 		return true
@@ -326,7 +334,7 @@ func (cx *compiler) checkPlaceholder(pn *config.Node, coll, name string) bool {
 	}
 	root, _, _ := strings.Cut(name, ".")
 	if _, ok := t.Field(root); !ok {
-		cx.fail(pn, "preview placeholder {%s}: %s has no field %q", name, coll, root)
+		cx.fail(pn, "%s placeholder {%s}: %s has no field %q", what, name, coll, root)
 		return false
 	}
 	return true

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/config"
 	"github.com/hydrogencms/hydrogen/delivery"
 )
@@ -39,6 +40,18 @@ func (r *Registry) DeliveryVary(v delivery.Varier) {
 // apply.
 func (r *Registry) PreviewURL(p delivery.PreviewURLer) {
 	r.previewURLs = append(r.previewURLs, p)
+}
+
+// PatternURL adds a handler that turns the path of a channel link or preview pattern into the URLs a frontend
+// serves it at (the pages module prefixes web channels). The first handler that accepts the channel wins.
+func (r *Registry) PatternURL(p delivery.PatternURLer) {
+	r.patternURLs = append(r.patternURLs, p)
+}
+
+// FrameOrigin adds a function that names the origin a channel's frontend is framed from, when it knows one the
+// channel's frontend setting does not give. It must agree with the origin of the URLs the module builds.
+func (r *Registry) FrameOrigin(f func(ch *channel.Channel) string) {
+	r.frameOrigins = append(r.frameOrigins, f)
 }
 
 // checkPublicOptions rejects public channel options no module registered.
@@ -89,6 +102,7 @@ func newDelivery(s *Services, reg *Registry) (*delivery.API, error) {
 		o.Decorators = append(o.Decorators, d.value)
 	}
 	o.PreviewURLs = reg.previewURLs
+	o.PatternURLs = reg.patternURLs
 	for _, p := range reg.publicOpts {
 		o.PublicOptions = append(o.PublicOptions, p.value)
 	}

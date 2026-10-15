@@ -23,6 +23,8 @@ type resolved struct {
 	payload  []byte
 	refs     []ids.UUID
 	fallback bool
+	draft    bool // built from the draft, not a snapshot
+	inlined  bool // shared blocks were inlined (or there are none)
 	extra    []byte
 	etag     string // the store's hex SHA-256 of payload; empty for drafts
 }
@@ -117,6 +119,9 @@ func (st *state) load(ctx context.Context, list []ids.UUID) ([]*resolved, error)
 			out = append(out, r)
 		}
 	}
+	if err := st.inline(ctx, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -171,7 +176,7 @@ func (st *state) resolveDraft(v *content.View) (*resolved, error) {
 		return nil, err
 	}
 	return &resolved{id: v.ID, typ: v.Type, locale: v.Locale, payload: payload, refs: refs,
-		fallback: v.Locale != st.eff.Languages[0]}, nil
+		fallback: v.Locale != st.eff.Languages[0], draft: true}, nil
 }
 
 // loadKey returns the item with a key as the channel shows it.
@@ -204,10 +209,11 @@ func (st *state) loadKey(ctx context.Context, key string) (*resolved, error) {
 		return nil, nil
 	}
 	r := st.pick(rows)
-	if r != nil {
-		st.look(r.id, r.typ)
+	if r == nil {
+		return nil, nil
 	}
-	return r, nil
+	st.look(r.id, r.typ)
+	return r, st.inline(ctx, []*resolved{r})
 }
 
 // loadSummaries loads listed items. Published listings fetch exactly the locale each item shows, one query per
@@ -240,6 +246,9 @@ func (st *state) loadSummaries(ctx context.Context, items []store.ItemSummary) (
 		if r != nil {
 			out = append(out, r)
 		}
+	}
+	if err := st.inline(ctx, out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -316,7 +325,7 @@ func (st *state) include(ctx context.Context, primary []*resolved, depth int) ([
 // decorate asks the decorators for extra keys and encodes them with the fallback marker.
 func (st *state) decorate(ctx context.Context, all []*resolved) error {
 	a := st.a
-	if len(a.o.Decorators) == 0 {
+	if len(a.o.Decorators) == 0 && len(st.m.ch.Links) == 0 {
 		for _, r := range all {
 			r.extra = fallbackExtra(r.fallback)
 		}
@@ -331,6 +340,9 @@ func (st *state) decorate(ctx context.Context, all []*resolved) error {
 		if err := d.Decorate(ctx, st.m.ch, items); err != nil {
 			return err
 		}
+	}
+	if err := st.patternLinks(ctx, all, items); err != nil {
+		return err
 	}
 	for i, r := range all {
 		var err error

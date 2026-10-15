@@ -132,3 +132,12 @@ func TestDevProxy(t *testing.T) {
 		t.Fatalf("config.json is not served locally: %s", c.Body)
 	}
 }
+
+func TestFrameSrcAllowsChannelFrontendsOnly(t *testing.T) {
+	got := frameSrc([]string{"http://localhost:3000/en", "https://www.acme.com", "https://www.acme.com/de",
+		"javascript:alert(1)", "https://evil.example ; script-src *", "", "ftp://files.acme.com"})
+	want := "; frame-src 'self' http://localhost:3000 https://www.acme.com"
+	if got != want {
+		t.Fatalf("frameSrc = %q, want %q", got, want)
+	}
+}

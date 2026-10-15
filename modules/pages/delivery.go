@@ -33,6 +33,8 @@ func registerDelivery(r *kernel.Registry, svc func() *Service) {
 		Summary: "Navigation of a site", OpenAPI: opTreeDelivery()})
 	r.Decorator(d)
 	r.PreviewURL(d.previewURL)
+	r.PatternURL(d.patternURL)
+	r.FrameOrigin(d.frameOrigin)
 	r.TagMapper(pageTags)
 	for _, n := range []string{optSite, optMatch, optReserved} {
 		r.PublicChannelOption(n)
@@ -88,6 +90,26 @@ func (d *deliverer) previewURL(ctx context.Context, ch *channel.Channel, item id
 		return "", false, err
 	}
 	return s.itemURL(ctx, ch, item, locale)
+}
+
+// patternURL prefixes the path of a link or preview pattern like a page route: the channel's prefix, and its
+// origin (frontend, else the matched host) for the absolute form.
+func (d *deliverer) patternURL(ch *channel.Channel, path string) (rel, abs string, ok bool) {
+	s, err := d.impl()
+	if err != nil {
+		return "", "", false
+	}
+	w := s.web.of(ch)
+	return w.rel(path), w.abs(path), true
+}
+
+// frameOrigin is the origin the admin may frame for the channel: the one its URLs are built with.
+func (d *deliverer) frameOrigin(ch *channel.Channel) string {
+	s, err := d.impl()
+	if err != nil {
+		return ""
+	}
+	return s.web.of(ch).origin()
 }
 
 func (d *deliverer) impl() (*service, error) { return d.svc().get() }

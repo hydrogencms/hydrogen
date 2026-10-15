@@ -1,0 +1,3 @@
+{{with breadcrumbs}}{{if gt (len .) 1}}<nav class="breadcrumbs" aria-label="Breadcrumb"><ol>
+{{range .}}<li><a href="{{.URL}}">{{.Name}}</a></li>
+{{end}}</ol></nav>{{end}}{{end}}

@@ -25,7 +25,7 @@ func coreTypes() []FieldType {
 		stringType{name: "string"}, stringType{name: "text", multiline: true},
 		richtextType{}, numberType{}, booleanType{}, enumType{}, dateType{name: "date"},
 		dateType{name: "datetime", datetime: true}, slugType{}, emailType{}, urlType{}, refType{}, listType{},
-		groupType{}, jsonType{},
+		groupType{}, jsonType{}, blocksType{}, tokenType{},
 	}
 }
 
@@ -311,7 +311,7 @@ func (urlConfig) Validate(v any, _ Mode, r *Report) {
 		return
 	}
 	u, err := url.Parse(s)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+	if err != nil || strings.ContainsAny(s, "\\\x00\t\r\n") || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		r.Fail("format", "must be an absolute http(s) URL or item:<id>")
 	}
 }

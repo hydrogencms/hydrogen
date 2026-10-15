@@ -259,6 +259,10 @@ func (cx *compiler) resolve(ns namedSpec, defaults *spec, groups map[string]*spe
 	if f := first(chain, func(s *spec) field[map[string]string] { return s.preview }); f.ok {
 		c.Preview = maps.Clone(f.v)
 	}
+	c.Links = map[string]string{}
+	if f := first(chain, func(s *spec) field[map[string]string] { return s.links }); f.ok {
+		c.Links = maps.Clone(f.v)
+	}
 	c.Settings = mergeSettings(chain)
 	c.Access = AccessPublic
 	if f := first(chain, func(s *spec) field[string] { return s.access }); f.ok {

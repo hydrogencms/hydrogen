@@ -1,0 +1,6 @@
+{{$href := link .Props.link -}}
+<article {{.Attrs}} class="card">
+<h3 class="card-title">{{if $href}}<a href="{{$href}}">{{.Props.title}}</a>{{else}}{{.Props.title}}{{end}}</h3>
+{{with .Props.text}}<p>{{.}}</p>{{end}}
+{{if $href}}<a class="card-link" href="{{$href}}">{{t "read_more"}}</a>{{end}}
+</article>

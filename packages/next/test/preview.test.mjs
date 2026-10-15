@@ -46,7 +46,9 @@ test('cookie values and options', () => {
 
 test('preview URL of an item without a route', () => {
   assert.deepEqual(matchPreviewPath('/preview/page/abc', '/preview'), { collection: 'page', id: 'abc' })
-  for (const p of ['/preview', '/preview/page', '/preview/page/a/b', '/other/page/abc', '/preview//abc', '/preview/%E0/abc']) {
+  // The pages module prefixes pattern URLs of a channel that has a path prefix.
+  assert.deepEqual(matchPreviewPath('/en/preview/page/abc', '/preview'), { collection: 'page', id: 'abc' })
+  for (const p of ['/preview', '/en/preview/page/a/b', '/preview/page', '/preview/page/a/b', '/other/page/abc', '/preview//abc', '/preview/%E0/abc']) {
     assert.equal(matchPreviewPath(p, '/preview'), undefined, p)
   }
 })

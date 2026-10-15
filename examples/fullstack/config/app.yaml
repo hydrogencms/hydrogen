@@ -1,0 +1,29 @@
+http:
+  addr: ${env:LISTEN_ADDR:-:8080}
+
+database:
+  url: ${env:DATABASE_URL:-sqlite:.work/hydrogen.db}
+
+content:
+  # The schema is examples/starter's, shared on purpose: the fixture and the conformance suite expect it.
+  # Copy the directory into this project to change it.
+  schema_dir: ${env:SCHEMA_DIR:-../starter/schema}
+  default_locale: en
+
+manage:
+  token: ${env:MANAGE_TOKEN:-dev-token}
+
+delivery:
+  preview_secret: ${env:PREVIEW_SECRET:-}
+
+modules:
+  pages:
+    sites: [main]
+  site:
+    root: en
+    # The origin of the admin that previews the site (required outside dev). Serve the website from a separate
+    # host in production: on a shared origin a previewed page can reach the admin.
+    admin_url: ${env:ADMIN_URL:-}
+    routes:
+      - { path: /blog, type: post, template: posts }
+      - { path: "/blog/{slug}", type: post }

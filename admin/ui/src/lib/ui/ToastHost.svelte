@@ -10,6 +10,16 @@
     <div class="h-toast h-toast--{it.kind}" role={it.kind === 'error' ? 'alert' : 'status'}>
       <span class="h-toast__icon"><Icon name={icon[it.kind]} size={18} /></span>
       <span class="h-toast__text">{it.text}</span>
+      {#if it.action}
+        <button
+          class="h-toast__action"
+          type="button"
+          onclick={() => {
+            const a = it.action!;
+            toast.dismiss(it.id);
+            a.run();
+          }}>{it.action.label}</button>
+      {/if}
       <button class="h-toast__close" type="button" aria-label={t('toast.dismiss')} onclick={() => toast.dismiss(it.id)}>
         <Icon name="x" size={14} />
       </button>

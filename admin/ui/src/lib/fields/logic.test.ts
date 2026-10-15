@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CompiledField } from '../types.svelte';
 import {
   autoSlug, hydrate, cleanDoc, copyTranslatable, errorFieldNames, evalWhen, fieldAtPath, fieldsPatch, fromLocalInput, isSlug,
-  joinPath, listAdd, listMove, listRemove, mergePatch, parsePath, richPreview, slugify, slugSource, toLocalInput,
+  joinPath, listAdd, listMove, listRemove, mergePatch, parsePath, slugify, slugSource, toLocalInput,
   runPool, unroutedErrors,
 } from './logic';
 
@@ -153,25 +153,6 @@ describe('dates', () => {
     expect(toLocalInput(iso)).toBe('2026-10-15T09:30');
     expect(fromLocalInput('')).toBe('');
     expect(toLocalInput('nonsense')).toBe('');
-  });
-});
-
-describe('rich text preview', () => {
-  it('flattens blocks', () => {
-    const doc = {
-      type: 'doc',
-      content: [
-        { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Hi' }] },
-        { type: 'paragraph', content: [{ type: 'text', text: 'a' }, { type: 'hardBreak' }, { type: 'text', text: 'b' }] },
-        { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'one' }] }] }] },
-      ],
-    };
-    expect(richPreview(doc)).toEqual([
-      { kind: 'heading', level: 2, text: 'Hi' },
-      { kind: 'paragraph', text: 'a\nb' },
-      { kind: 'item', text: '• one' },
-    ]);
-    expect(richPreview(null)).toEqual([]);
   });
 });
 

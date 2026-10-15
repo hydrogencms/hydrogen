@@ -36,6 +36,18 @@
     if (refocus) btn?.focus();
   }
 
+  // Keep the panel on screen: above the trigger when it does not fit below, and inside the window sideways.
+  $effect(() => {
+    if (!open || !box || !btn) return;
+    const r = btn.getBoundingClientRect();
+    const b = box.getBoundingClientRect();
+    let top = r.bottom + 4;
+    if (top + b.height > innerHeight - 8) top = Math.max(8, r.top - b.height - 4 > 8 ? r.top - b.height - 4 : innerHeight - b.height - 8);
+    const anchor = align === 'end' ? r.right : r.left;
+    const left = align === 'end' ? Math.max(b.width + 8, Math.min(anchor, innerWidth - 8)) : Math.max(8, Math.min(anchor, innerWidth - b.width - 8));
+    if (top !== pos.top || left !== pos.left) pos = { top, left };
+  });
+
   $effect(() => {
     if (!open) return;
     queueMicrotask(() => box?.querySelector<HTMLElement>('input,select,button,a[href]')?.focus());

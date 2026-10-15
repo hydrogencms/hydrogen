@@ -151,8 +151,8 @@ func clientScenario(t *testing.T, s *server) {
 		if err != nil || tok.Token == "" || tok.ExpiresAt.IsZero() {
 			t.Fatalf("token %+v %v", tok, err)
 		}
-		// A page that was never published has no route yet: the channel's "*" pattern gives its preview URL.
-		if want := "https://www.acme.com/preview/page/" + v.ID + "?preview=" + url.QueryEscape(tok.Token); tok.URL != want {
+		// A page that was never published has no route yet: the channel's "*" pattern gives its preview URL, with the channel prefix.
+		if want := "https://www.acme.com/en/preview/page/" + v.ID + "?preview=" + url.QueryEscape(tok.Token); tok.URL != want {
 			t.Errorf("draft page url %q, want %q", tok.URL, want)
 		}
 		// A routed page previews at its route on that channel (frontend, prefix and locale included).

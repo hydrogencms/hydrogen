@@ -16,6 +16,9 @@ import (
 type GoOptions struct {
 	// Package is the generated package name; default "content".
 	Package string
+	// Blocks and Tokens are the schema's block types and design token sets (Schema.Blocks, Schema.Tokens).
+	Blocks []*schema.BlockType
+	Tokens []*schema.TokenSet
 }
 
 const (
@@ -38,8 +41,18 @@ func Go(types []*schema.Type, groups []*schema.Group, o GoOptions) (map[string][
 	if err != nil {
 		return nil, err
 	}
+	if err := checkBlocks(o.Blocks, o.Tokens); err != nil {
+		return nil, err
+	}
 	g := &goGen{names: newNames("Types"), groups: gm}
 	files := map[string]string{}
+	if len(o.Blocks) > 0 || len(o.Tokens) > 0 {
+		body, err := g.blocks(o.Blocks, o.Tokens)
+		if err != nil {
+			return nil, err
+		}
+		files["blocks.go"] = body
+	}
 
 	var groupBody strings.Builder
 	for _, grp := range sortedGroups(groups) {
@@ -96,7 +109,7 @@ func Go(types []*schema.Type, groups []*schema.Group, o GoOptions) (map[string][
 var %[1]s = content.Handle[%[2]s]{Type: %[4]s}
 `, handle, name, t.Name, strconv.Quote(t.Name))
 		file := fileBase(t.Name)
-		if file == "doc" || file == "groups" || strings.HasSuffix(file, "_test") {
+		if file == "doc" || file == "groups" || file == "blocks" || strings.HasSuffix(file, "_test") {
 			file += "_type"
 		}
 		file += ".go"
@@ -207,7 +220,7 @@ func (g *goGen) structDecl(name, comment string, fields []*schema.Field, owner s
 // pointerable reports whether optional fields of this base use a pointer (the rest have a usable nil/empty).
 func pointerable(b schema.Base) bool {
 	switch b {
-	case schema.BaseList, schema.BaseRichText, schema.BaseJSON:
+	case schema.BaseList, schema.BaseRichText, schema.BaseJSON, schema.BaseBlocks:
 		return false
 	}
 	return true
@@ -225,6 +238,8 @@ func (g *goGen) fieldType(prefix, key string, f *schema.Field, nested *strings.B
 			return "content.Date", nil
 		case "datetime":
 			return "content.DateTime", nil
+		case "token":
+			return tokenTypeName(f.Shape.Set)
 		case "enum":
 			return g.enumDecl(prefix, key, f, nested)
 		}
@@ -240,6 +255,8 @@ func (g *goGen) fieldType(prefix, key string, f *schema.Field, nested *strings.B
 		return "content.Ref", nil
 	case schema.BaseRichText:
 		return "content.RichText", nil
+	case schema.BaseBlocks:
+		return "[]Block", nil
 	case schema.BaseJSON:
 		return "json.RawMessage", nil
 	case schema.BaseList:

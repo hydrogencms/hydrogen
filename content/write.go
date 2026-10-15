@@ -295,6 +295,7 @@ func (s *Service) prepareDraft(ctx context.Context, tx store.Tx, st *itemState, 
 		return err
 	}
 	s.o.Schema.Normalize(st.typ, doc)
+	s.o.Schema.AssignBlockIDs(st.typ, doc, func() string { return s.o.IDs.New().String() })
 	s.fillSlugs(st.typ, doc)
 	s.o.Schema.Prune(st.typ, doc)
 	errs := s.o.Schema.Validate(st.typ, doc, schema.ModeDraft)

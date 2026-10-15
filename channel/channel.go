@@ -32,6 +32,7 @@ type Channel struct {
 	Settings    map[string]any
 	Frontend    string
 	Preview     map[string]string
+	Links       map[string]string // collection → URL pattern for items no module routes
 	Access      string
 	Options     map[string]any // module option values by key, as their Decode returned them
 }

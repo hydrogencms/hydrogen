@@ -21,6 +21,7 @@ channels:
     languages: [en, de]
     frontend: https://acme.com
     preview: { article: "/n/{title}" }
+    links: { article: "/a/{title}" }
     site: main
   app:
     languages: [en]
@@ -74,6 +75,9 @@ func TestChannelsRoute(t *testing.T) {
 	}
 	if web["options"].(map[string]any)["site"] != "main" || web["settings"].(map[string]any)["cache_ttl"] != float64(300) {
 		t.Fatalf("%v", web)
+	}
+	if web["links"].(map[string]any)["article"] != "/a/{title}" {
+		t.Fatalf("%v", web["links"])
 	}
 	if web["preview"].(map[string]any)["article"] != "/n/{title}" {
 		t.Fatalf("%v", web["preview"])

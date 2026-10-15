@@ -1,0 +1,17 @@
+{{define "content"}}
+<div class="container page-head">
+{{template "partials/breadcrumbs.html" .}}
+<h1 class="page-title">{{.Title}}</h1>
+</div>
+<section class="cards">
+<div class="container">
+<div class="card-grid cols-3">
+{{range .Items}}{{$href := link .}}<article class="card">
+<h2 class="card-title">{{if $href}}<a href="{{$href}}">{{.Name}}</a>{{else}}{{.Name}}{{end}}</h2>
+{{with .Fields.excerpt}}<p>{{.}}</p>{{end}}
+{{if $href}}<a class="card-link" href="{{$href}}">{{t "read_more"}}</a>{{end}}
+</article>
+{{end}}</div>
+</div>
+</section>
+{{end}}

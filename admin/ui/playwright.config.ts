@@ -2,8 +2,12 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  // E2E_PROJECT=content runs only the extensions spec (against examples/content); the default run skips it.
-  ...(process.env.E2E_PROJECT === 'content' ? { testMatch: 'extensions.spec.ts' } : { testIgnore: 'extensions.spec.ts' }),
+  // E2E_PROJECT picks one spec file for a project other than the default (examples/multisite): content ->
+  // extensions.spec.ts, starter -> blocks.spec.ts (preview host fixture), next -> real-next.spec.ts (the Next.js
+  // starter), fullstack -> real-site.spec.ts (the site module). The default run skips all of them.
+  ...(process.env.E2E_PROJECT
+    ? { testMatch: { content: 'extensions.spec.ts', starter: 'blocks.spec.ts', next: 'real-next.spec.ts', fullstack: 'real-site.spec.ts' }[process.env.E2E_PROJECT] ?? 'none' }
+    : { testIgnore: ['extensions.spec.ts', 'blocks.spec.ts', 'real-next.spec.ts', 'real-site.spec.ts'] }),
   outputDir: '../../.work/e2e',
   timeout: 30_000,
   fullyParallel: false,
@@ -14,5 +18,5 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--disable-features=LocalNetworkAccessChecks'] } } }],
 });

@@ -1,0 +1,7 @@
+<section {{.Attrs}} class="cards space-{{.Props.space}}">
+<div class="container">
+{{with .Props.heading}}<h2 class="section-title">{{.}}</h2>{{end}}
+<div class="card-grid cols-{{.Props.columns}}">
+{{blocks .Slots.items}}</div>
+</div>
+</section>

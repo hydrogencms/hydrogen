@@ -298,25 +298,6 @@ func TestListQueryRejects(t *testing.T) {
 	}
 }
 
-func TestRefTo(t *testing.T) {
-	s := compile(t, testSchema)
-	typ, _ := s.Type("article")
-	tests := map[string][]string{
-		"author":    {"person"},
-		"refs[3]":   {"person", "article"},
-		"grp.who":   {"person"},
-		"title":     nil,
-		"nope":      nil,
-		"refs[x]":   nil,
-		"author[0]": nil,
-	}
-	for path, want := range tests {
-		if got := refTo(typ, path); !slices.Equal(got, want) {
-			t.Errorf("refTo(%q) = %v, want %v", path, got, want)
-		}
-	}
-}
-
 func TestSlugSources(t *testing.T) {
 	s, _ := New(Options{DB: nopDB{}, Schema: compile(t, testSchema), Outbox: nonNilOutbox()})
 	typ, _ := s.o.Schema.Type("article")
@@ -427,5 +408,102 @@ func TestSortMigrations(t *testing.T) {
 		if _, err := sortMigrations(bad); err == nil {
 			t.Errorf("accepted %v", bad)
 		}
+	}
+}
+
+func TestDiffBlocksAndTokens(t *testing.T) {
+	parse := func(y string) *compiledSchema {
+		b, err := compile(t, y).MarshalJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cs, err := parseCompiled(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cs
+	}
+	old := parse(`
+tokens:
+  tone: [light, dark, brand]
+  space: [sm, md]
+blocks:
+  hero:
+    props:
+      heading: { type: string }
+      sub: { type: string }
+      tone: { type: token, set: tone }
+  cards:
+    props:
+      title: { type: string }
+    slots:
+      items: { allow: [card, hero], min: 1, max: 6 }
+      extra: { allow: [card] }
+  card:
+    props: { t: { type: string } }
+  gone:
+    props: { t: { type: string } }
+types:
+  page:
+    fields:
+      body: { type: blocks, allow: [hero, cards, card, shared], max: 20 }
+      side: { type: blocks, allow: [hero] }
+  shell:
+    blockset: true
+    fields:
+      c: { type: blocks, allow: [hero] }
+`)
+	cur := parse(`
+tokens:
+  tone: [light, dark]
+  tone2: [a]
+blocks:
+  hero:
+    props:
+      heading: { type: number }
+      tone: { type: token, set: tone2 }
+  cards:
+    props:
+      title: { type: string }
+    slots:
+      items: { allow: [card], min: 2, max: 3 }
+  card:
+    props: { t: { type: string } }
+types:
+  page:
+    fields:
+      body: { type: blocks, allow: [hero, cards], max: 10 }
+      side: { type: blocks, allow: [hero], min: 1 }
+  shell:
+    fields:
+      c: { type: blocks, allow: [hero] }
+`)
+	got := diffSchemas(old, cur)
+	for _, want := range []string{
+		"block:gone: removed",
+		"block:hero.props.heading: type changed",
+		"block:hero.props.sub: removed",
+		"block:hero.props.tone: token set changed",
+		"block:cards.slots.extra: removed",
+		"block:cards.slots.items: allow narrowed (removed hero)",
+		"block:cards.slots.items: min tightened",
+		"block:cards.slots.items: max tightened",
+		"page.body: allow narrowed (removed card, shared)",
+		"page.body: max tightened",
+		"page.side: min tightened",
+		"shell: blockset removed",
+		"token:space: removed",
+		"token:tone: values removed (brand)",
+	} {
+		if !slices.Contains(got, want) {
+			t.Errorf("missing %q in %q", want, got)
+		}
+	}
+	left := unaccounted(got, []string{"block:hero", "block:cards", "block:gone", "block:shared", "token:space", "token:tone", "page.body", "page.side", "shell"})
+	if len(left) != 0 {
+		t.Errorf("unaccounted = %q", left)
+	}
+	if len(diffSchemas(old, old)) != 0 {
+		t.Error("identical schemas differ")
 	}
 }

@@ -949,6 +949,13 @@ a.h-name__title:hover {
   flex: 1;
   font-size: var(--h-text-md);
 }
+.h-toast__action {
+  border: 0;
+  background: none;
+  padding: 2px var(--h-space-1);
+  font-weight: 600;
+  text-decoration: underline;
+}
 .h-toast__close {
   border: 0;
   background: none;

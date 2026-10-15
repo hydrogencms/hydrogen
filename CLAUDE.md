@@ -58,6 +58,25 @@ never commit it, quote it in commit messages or public docs, or move its content
   gzip budgets in `packages/scripts/size.mjs`). `examples/next-site`: Next.js sample against `examples/multisite`
   (one deployment, every web channel; the proxy answers CMS redirects and 404s; `"use cache"` entries tagged from
   `Surrogate-Key`, revalidated by the signed webhook). Contract: `planning/design/sdk-h4b.md`.
+- Page builder (H6a): `schema/blocks.go` (top-level `tokens` and `blocks` schema keys, the `blocks` and `token`
+  field types, `blockset` types and the built-in `shared` block), block ids/validation/projections in the same
+  package, `manage` `GET /blocks` (block types + token sets), codegen `Block`/`Blocks<…>`/`DecodeProps`, and
+  `examples/starter` (schema, channels and the committed `fixture/` export; `make starter-fixture` rebuilds it
+  deterministically). Contract: `planning/design/pagebuilder-h6.md`.
+- Frontend starters (H6b): `starters/next` (Next.js starter on `examples/starter`), `packages/adapter-test`
+  (adapter conformance suite), `docs/adapter-kit.md` and `docs/bridge-protocol.md` (adapters; preview bridge).
+- Site module (H6c): `modules/site` renders a website with `html/template` for web channels that set `render: go`
+  (channel option; needs `match`, public access). It calls the delivery API in process (so shared blocks, links,
+  preview drafts and cache tags are delivery's), keeps its own page cache purged by the same `cache.purge`
+  notifications, and serves `/__hydrogen/bridge.js` (embedded copy of `packages/bridge`'s IIFE: `make site-bridge`,
+  verified by `site-bridge-check` in `make check`) and fingerprinted assets. Templates: project `site/templates`
+  over the embedded `themes/starter` by file name (`layout.html`, `pages/<type>.html` or `pages/default.html`,
+  `collections/<template>.html`, `blocks/<type>.html`, `404.html`; block roots carry `{{.Attrs}}`). Config
+  `modules.site` (`dir`, `admin_url` (required outside dev), `preview_csp`, `cache_bytes`, `root`, `routes`).
+  Preview pages send a strict CSP and `Referrer-Policy: no-referrer`; serve the website from a different host than
+  the admin in production (on one origin a previewed page can reach the admin; startup warns). `hydrogen site:check
+  [-db]` renders everything against schema-generated data. `examples/fullstack` (schema and fixture of
+  `examples/starter`); `make site-e2e` runs the conformance suite against it.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
@@ -72,8 +91,11 @@ make db-up                      # Postgres 17 on localhost:5436 (hydrogen/hydrog
 make smoke                      # hydrogen new → config:check → migrate → serve + D0 budget checks
 make sdk                        # packages/: install, build, test, size budgets
 make next-e2e                   # examples/next-site against examples/multisite (SQLite), curl assertions
+make starter-next-e2e           # starters/next on examples/starter (SQLite) + conformance suite
+make conformance                # the conformance suite against every frontend (Next starter; site module)
 make admin                      # admin/ui: npm ci, typecheck, vitest, build into admin/dist, gzip budgets
-make admin-e2e                  # Playwright exit scenario + axe against examples/multisite (SQLite)
+make admin-e2e                  # Playwright: admin exit scenarios + axe; page builder live preview on the real
+                                # Next starter and the fullstack site module (ADMIN_E2E_ONLY=next|fullstack)
 make admin-types                # regenerate admin/ui/src/lib/api/schema.d.ts from a running build's OpenAPI
 make example-admin              # rebuild examples/content/admin/dist (example-admin-check verifies it in make check)
 make check                      # tidy-check vet lint test smoke admin admin-dist-check (dist must be rebuilt)
@@ -133,6 +155,18 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - Take the principal's grants before opening a transaction (`Checker.Prepare`, done by the services), and put the
   open transaction on the context (`store.WithTx`) before calling the checker; limitations query through
   `store.TxFrom(ctx)`. A pooled connection that waits for another while holding one can deadlock.
+
+- Channel `links:` (collection → pattern, like `preview:`) gives items without a page route a URL: delivery fills
+  `links[id]` and `url` from it, and the pages module prefixes pattern URLs (links and previews) for its web
+  channels (`/en/blog/<slug>`). Without `links:`, references to plain-collection items have no URL in frontends.
+- Blocks are plain JSON in item fields; a merge patch replaces a blocks field whole. The service assigns UUIDv7
+  block ids to blocks without one (`Schema.AssignBlockIDs`, in the draft pipeline). Shared blocks are stored as
+  `{type: shared, props: {item}}` and inlined (`blocks`) by the delivery API when a response is built
+  (`delivery/shared.go`), never in snapshots: the shared item is looked up like any item, so its cache tag is on the
+  page response and publishing it purges the pages. Anything that reads snapshots directly must resolve shared
+  blocks itself (the `site` module goes through the delivery API, so it doesn't). Block props reuse the field types
+  but cannot be `translatable` or `index`; a blocks field is translatable as a whole. Regenerate
+  `examples/starter/fixture` after changing its schema (`make starter-fixture`) and commit it with the schema.
 
 ## Rules
 

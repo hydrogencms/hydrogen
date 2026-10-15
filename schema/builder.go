@@ -41,11 +41,14 @@ type Builder struct {
 	origin string
 	types  map[string]*typeDef
 	groups map[string]*groupDef
+	blocks map[string]*blockDef
+	tokens map[string]*tokenDef
 	errs   errList
 }
 
 func NewBuilder(reg *Registry) *Builder {
-	return &Builder{reg: reg, origin: "(code)", types: map[string]*typeDef{}, groups: map[string]*groupDef{}}
+	return &Builder{reg: reg, origin: "(code)", types: map[string]*typeDef{}, groups: map[string]*groupDef{},
+		blocks: map[string]*blockDef{}, tokens: map[string]*tokenDef{}}
 }
 
 // SetOrigin names the source of subsequent programmatic additions, e.g. "module seo"; it is the Pos.File of
@@ -130,8 +133,12 @@ func (b *Builder) addFile(file string, data []byte) error {
 			b.addNamed(s, e.v, "types", func(k, v *yaml.Node) { b.registerType(s, k, v) })
 		case "groups":
 			b.addNamed(s, e.v, "groups", func(k, v *yaml.Node) { b.registerGroup(s, k, v) })
+		case "blocks":
+			b.addNamed(s, e.v, "blocks", func(k, v *yaml.Node) { b.registerBlock(s, k, v) })
+		case "tokens":
+			b.addNamed(s, e.v, "tokens", func(k, v *yaml.Node) { b.registerTokens(s, k, v) })
 		default:
-			s.errorf(e.k, "unknown key %q (known: groups, types)", e.key)
+			s.errorf(e.k, "unknown key %q (known: blocks, groups, tokens, types)", e.key)
 		}
 	}
 	return nil
@@ -169,6 +176,52 @@ func (b *Builder) registerGroup(s src, k, v *yaml.Node) {
 		return
 	}
 	b.groups[def.name] = def
+}
+
+func (b *Builder) registerBlock(s src, k, v *yaml.Node) {
+	def := parseBlock(s, k, v)
+	if def == nil {
+		return
+	}
+	if old, dup := b.blocks[def.name]; dup {
+		s.errorf(k, "block %q is already defined at %s", def.name, old.pos)
+		return
+	}
+	b.blocks[def.name] = def
+}
+
+func (b *Builder) registerTokens(s src, k, v *yaml.Node) {
+	def := parseTokens(s, k, v)
+	if def == nil {
+		return
+	}
+	if old, dup := b.tokens[def.name]; dup {
+		s.errorf(k, "token set %q is already defined at %s", def.name, old.pos)
+		return
+	}
+	b.tokens[def.name] = def
+}
+
+// AddBlock adds a block type defined in code, with the same spec as in a schema file.
+func (b *Builder) AddBlock(name string, spec Spec) error {
+	_, existed := b.blocks[name]
+	return b.addSpec(name, spec, "block", b.registerBlock, func() {
+		if !existed {
+			delete(b.blocks, name)
+		}
+	})
+}
+
+// AddTokens adds a design token set defined in code.
+func (b *Builder) AddTokens(name string, values []string) error {
+	v, err := toNode(values)
+	if err != nil {
+		return fmt.Errorf("schema: token set %q: %w", name, err)
+	}
+	k := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: name}
+	var local errList
+	b.registerTokens(src{file: b.origin, errs: &local}, k, v)
+	return local.err()
 }
 
 // AddType adds a type defined in code. Nothing is added when the spec has problems.

@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Admin end to end: builds admin/dist, starts examples/multisite on a scratch SQLite database with a seeded
 # administrator, runs the Playwright tests in admin/ui against it and stops the server. Then does the same with
-# examples/content (its extensions spec only, on another port and database). E2E_KEEP=1 leaves the content server
-# running afterwards. Run from the repo root: make admin-e2e.
+# examples/content (its extensions spec only, on another port and database). E2E_KEEP=1 leaves the last server
+# running afterwards. A third run uses examples/starter with its fixture imported and a tiny preview host standing
+# in for the frontend (admin/ui/e2e/fixtures/preview-host): the block editor and the live and reload previews.
+# Then the H6 exit scenarios on the real frontends: examples/starter with starters/next (live preview of a page and a
+# post) and examples/fullstack (the site module, reload mode). ADMIN_E2E_ONLY=next|fullstack runs just that one.
+# Run from the repo root: make admin-e2e.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -11,8 +15,15 @@ port=${ADMIN_E2E_PORT:-18434}
 login=${ADMIN_LOGIN:-admin}
 password=${ADMIN_PASSWORD:-e2e-admin-password-1}
 pid=
+hpid=
+npid=
 
-cleanup() { [ -z "$pid" ] || kill "$pid" 2>/dev/null || true; wait 2>/dev/null || true; }
+cleanup() {
+  [ -z "$pid" ] || kill "$pid" 2>/dev/null || true
+  [ -z "$hpid" ] || kill "$hpid" 2>/dev/null || true
+  [ -z "$npid" ] || kill "$npid" 2>/dev/null || true
+  wait 2>/dev/null || true
+}
 fail() {
   echo "FAIL: $*" >&2
   [ -s "$work/server.log" ] && { echo "--- server.log (tail)"; tail -n 20 "$work/server.log"; } || true
@@ -37,7 +48,17 @@ run_playwright() {
 }
 trap cleanup EXIT
 
-rm -rf "$work" && mkdir -p "$work"
+only=${ADMIN_E2E_ONLY:-}
+port() { node -e "const s=require('net').createServer().listen(0,'127.0.0.1',()=>{console.log(s.address().port);s.close()})"; }
+stop_servers() {
+  [ -z "$pid" ] || { kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; pid=; }
+  [ -z "$hpid" ] || { kill "$hpid" 2>/dev/null || true; wait "$hpid" 2>/dev/null || true; hpid=; }
+  [ -z "$npid" ] || { kill "$npid" 2>/dev/null || true; wait "$npid" 2>/dev/null || true; npid=; }
+}
+[ -n "$only" ] || rm -rf "$work"
+mkdir -p "$work"
+export MANAGE_TOKEN=e2e-manage-token PREVIEW_SECRET=e2e-preview-secret-0123456789abcdef
+if [ -z "$only" ]; then
 echo "== build"
 "$root/scripts/npm-ci.sh" "$root/admin/ui" >/dev/null && (cd "$root/admin/ui" && npm run build >/dev/null)
 (cd "$root/examples/multisite" && go build -o "$work/multisite" .)
@@ -117,8 +138,84 @@ start_server "$work/content" "$cport"
 echo "== playwright (content extensions)"
 status=0
 run_playwright "$cport" E2E_PROJECT=content || status=$?
-if [ -n "${E2E_KEEP:-}" ]; then
-  echo "E2E_KEEP: server stays up at http://127.0.0.1:$cport/admin/ (login $login; ctrl-c to stop)"
-  sleep 86400 || true
+kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; pid=
+[ "$status" -eq 0 ] || exit "$status"
+
+echo "== build examples/starter and the preview host"
+test -f "$root/packages/bridge/dist/bridge.iife.js" || (cd "$root/packages" && npm install --no-audit --no-fund >/dev/null && npm run build -w bridge >/dev/null)
+(cd "$root/examples/starter" && go build -o "$work/starter" .)
+sport=${ADMIN_E2E_STARTER_PORT:-18436}
+hport=${ADMIN_E2E_HOST_PORT:-18601}
+swork="$work/starter-run"
+mkdir -p "$swork"
+if curl -fsS -o /dev/null "http://127.0.0.1:$hport/bridge.js" 2>/dev/null; then fail "port $hport already answers (a leftover preview host?)"; fi
+CMS_URL="http://127.0.0.1:$sport" ADMIN_ORIGIN="http://127.0.0.1:$sport" PORT="$hport" node "$root/admin/ui/e2e/fixtures/preview-host/server.mjs" >"$work/host.log" 2>&1 & hpid=$!
+export DATABASE_URL="sqlite:$swork/h.db" LISTEN_ADDR="127.0.0.1:$sport" STARTER_FRONTEND="http://127.0.0.1:$hport"
+unset SCHEMA_DIR CONFIG_DIR
+cd "$root/examples/starter"
+"$work/starter" migrate >"$work/server.log" 2>&1 || fail "starter migrate"
+"$work/starter" import fixture >>"$work/server.log" 2>&1 || fail "starter import"
+start_server "$work/starter" "$sport"
+
+echo "== playwright (starter: block editor and preview)"
+run_playwright "$sport" E2E_PROJECT=starter PREVIEW_HOST="http://127.0.0.1:$hport" || exit $?
+stop_servers
 fi
-exit $status
+
+# The same scratch CMS setup for the real frontends: a database with the fixture, an administrator, a server.
+# new_cms NAME BIN PORT FIXTURE_DIR: runs in the example's directory.
+new_cms() {
+  local name=$1 bin=$2 p=$3 fixture=$4
+  mkdir -p "$work/run-$name"
+  export DATABASE_URL="sqlite:$work/run-$name/h.db" LISTEN_ADDR="127.0.0.1:$p"
+  "$bin" migrate >"$work/server.log" 2>&1 || fail "$name migrate"
+  "$bin" import "$fixture" >>"$work/server.log" 2>&1 || fail "$name import"
+  start_server "$bin" "$p"
+}
+wait_http() { # url, seconds
+  for _ in $(seq $(($2 * 10))); do curl -fsS -o /dev/null "$1" 2>/dev/null && return 0; sleep 0.1; done
+  fail "$1 did not come up"
+}
+
+if [ -z "$only" ] || [ "$only" = next ]; then
+  echo "== build the Next.js starter"
+  (cd "$root/examples/starter" && go build -o "$work/starter" .)
+  "$root/scripts/npm-ci.sh" "$root/packages" >/dev/null
+  (cd "$root/packages" && npm run build >/dev/null)
+  (cd "$root/starters/next" && rm -rf node_modules/@hydrogencms && npm install --no-audit --no-fund >/dev/null)
+  cport=$(port); nport=$(port)
+  cms=http://127.0.0.1:$cport; nxt=http://127.0.0.1:$nport
+  unset SCHEMA_DIR CONFIG_DIR
+  export STARTER_FRONTEND="$nxt"
+  cd "$root/examples/starter"
+  new_cms next "$work/starter" "$cport" fixture
+  echo "== next build + start"
+  export HYDROGEN_URL=$cms HYDROGEN_ORIGIN=$nxt
+  (cd "$root/starters/next" && rm -rf .next && npm run build >"$work/next-build.log" 2>&1) || { tail -n 30 "$work/next-build.log"; fail "next build"; }
+  (cd "$root/starters/next" && exec node_modules/.bin/next start -p "$nport" >"$work/next.log" 2>&1) & npid=$!
+  wait_http "$nxt/en" 30
+  echo "== playwright (the starter's Next.js frontend: live preview of a page and a post)"
+  status=0
+  run_playwright "$cport" E2E_PROJECT=next FRONTEND_URL="$nxt" || status=$?
+  [ "$status" -eq 0 ] || { [ ! -s "$work/next.log" ] || { echo "--- next.log (tail)"; tail -n 15 "$work/next.log"; }; exit "$status"; }
+  stop_servers
+fi
+
+if [ -z "$only" ] || [ "$only" = fullstack ]; then
+  echo "== build examples/fullstack"
+  (cd "$root/examples/fullstack" && go build -o "$work/fullstack" .)
+  fport=$(port)
+  site=http://127.0.0.1:$fport
+  unset SCHEMA_DIR CONFIG_DIR
+  export SITE_URL="$site" ADMIN_URL="$site"
+  cd "$root/examples/fullstack"
+  new_cms fullstack "$work/fullstack" "$fport" ../starter/fixture
+  echo "== playwright (the site module: reload mode)"
+  status=0
+  run_playwright "$fport" E2E_PROJECT=fullstack || status=$?
+  if [ -n "${E2E_KEEP:-}" ]; then
+    echo "E2E_KEEP: server stays up at $site/admin/ (login $login; ctrl-c to stop)"
+    sleep 86400 || true
+  fi
+  exit $status
+fi

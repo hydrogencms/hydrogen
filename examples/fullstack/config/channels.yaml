@@ -1,0 +1,22 @@
+# One site, two languages on path prefixes; the site module renders both, so one port serves the website
+# (/en, /de), the admin (/admin) and the APIs (/api). SITE_URL is the public origin of the website: it makes
+# canonical and hreflang URLs absolute and is where the admin opens previews.
+languages:
+  en: {}
+  de: {}
+
+defaults:
+  settings: { cache_ttl: 60 }
+
+groups:
+  web:
+    site: main
+    render: go
+    frontend: ${env:SITE_URL:-http://localhost:8080}
+    reserved: [/api/*, /blog/*]
+    links: { post: "/blog/{slug}" }
+    preview: { "*": "/preview/{locale}/{collection}/{id}" }
+
+channels:
+  en: { group: web, languages: [en], match: { prefix: /en } }
+  de: { group: web, languages: [de, en], match: { prefix: /de } }

@@ -8,8 +8,12 @@ import (
 	"github.com/hydrogencms/hydrogen/schema"
 )
 
-// TSOptions configures TypeScript. It has no options yet.
-type TSOptions struct{}
+// TSOptions configures TypeScript.
+type TSOptions struct {
+	// Blocks and Tokens are the schema's block types and design token sets (Schema.Blocks, Schema.Tokens).
+	Blocks []*schema.BlockType
+	Tokens []*schema.TokenSet
+}
 
 const tsPrelude = `/** An item id (UUID string). */
 export type Ref = string & { readonly __ref?: never };
@@ -56,7 +60,7 @@ export interface ItemView<T> {
 
 // TypeScript returns one .ts file with an interface per content type and named group, the HydrogenTypes
 // map and the item envelope types. Output is deterministic and independent of the order of the inputs.
-func TypeScript(types []*schema.Type, groups []*schema.Group, _ TSOptions) ([]byte, error) {
+func TypeScript(types []*schema.Type, groups []*schema.Group, o TSOptions) ([]byte, error) {
 	if err := checkTypes(types); err != nil {
 		return nil, err
 	}
@@ -64,12 +68,23 @@ func TypeScript(types []*schema.Type, groups []*schema.Group, _ TSOptions) ([]by
 	if err != nil {
 		return nil, err
 	}
+	if err := checkBlocks(o.Blocks, o.Tokens); err != nil {
+		return nil, err
+	}
 	g := &tsGen{
 		names:  newNames("Ref", "ISODate", "ISODateTime", "RichTextNode", "RichText", "ItemView", "HydrogenTypes", "HydrogenTypeName"),
 		groups: gm,
 	}
+	if len(o.Blocks) > 0 {
+		for _, n := range []string{"Block", "Blocks", "BlockName", "HydrogenBlocks"} {
+			g.names.owner[n] = "a generated helper"
+		}
+	}
 	var b strings.Builder
 	b.WriteString("// " + header + "\n\n" + tsPrelude + "\n" + tsEnvelope)
+	if err := g.blocks(&b, o.Blocks, o.Tokens); err != nil {
+		return nil, err
+	}
 
 	for _, grp := range sortedGroups(groups) {
 		name, err := goName(grp.Name)
@@ -171,6 +186,8 @@ func (g *tsGen) fieldType(prefix, key string, f *schema.Field, nested *strings.B
 			return "ISODate", nil
 		case "datetime":
 			return "ISODateTime", nil
+		case "token":
+			return tokenTypeName(f.Shape.Set)
 		case "enum":
 			if len(f.Shape.Enum) == 0 {
 				return "never", nil
@@ -190,6 +207,8 @@ func (g *tsGen) fieldType(prefix, key string, f *schema.Field, nested *strings.B
 		return "Ref", nil
 	case schema.BaseRichText:
 		return "RichText", nil
+	case schema.BaseBlocks:
+		return tsBlocksType(f.Shape.Allow), nil
 	case schema.BaseJSON:
 		return "unknown", nil
 	case schema.BaseList:

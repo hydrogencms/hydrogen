@@ -42,10 +42,10 @@ func Bootstrap(dir string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := codegen.WriteGo(filepath.Join(dir, "gen", "content"), s.Types(), s.Groups(), codegen.GoOptions{}); err != nil {
+	if _, err := codegen.WriteGo(filepath.Join(dir, "gen", "content"), s.Types(), s.Groups(), codegen.GoOptions{Blocks: s.Blocks(), Tokens: s.Tokens()}); err != nil {
 		return err
 	}
-	return codegen.WriteTypeScript(filepath.Join(dir, "gen", "types.ts"), s.Types(), s.Groups(), codegen.TSOptions{})
+	return codegen.WriteTypeScript(filepath.Join(dir, "gen", "types.ts"), s.Types(), s.Groups(), codegen.TSOptions{Blocks: s.Blocks(), Tokens: s.Tokens()})
 }
 
 // Generate runs the project's generate command and reports whether generated files changed.

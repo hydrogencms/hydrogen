@@ -20,7 +20,22 @@ func (s *Schema) MarshalJSON() ([]byte, error) {
 		put(m, "description", g.Description)
 		groups[i] = m
 	}
-	return canonical(map[string]any{"version": 1, "types": types, "groups": groups})
+	doc := map[string]any{"version": 1, "types": types, "groups": groups}
+	if len(s.blocks) > 0 {
+		blocks := make([]any, len(s.blocks))
+		for i, b := range s.blocks {
+			blocks[i] = s.blockJSON(b)
+		}
+		doc["blocks"] = blocks
+	}
+	if len(s.tokens) > 0 {
+		tokens := make([]any, len(s.tokens))
+		for i, t := range s.tokens {
+			tokens[i] = map[string]any{"name": t.Name, "values": t.Values}
+		}
+		doc["tokens"] = tokens
+	}
+	return canonical(doc)
 }
 
 func canonical(v any) ([]byte, error) {
@@ -45,6 +60,7 @@ func (s *Schema) typeJSON(t *Type) map[string]any {
 	put(m, "description", t.Description)
 	put(m, "singleton", t.Singleton)
 	put(m, "page", t.Page)
+	put(m, "blockset", t.Blockset)
 	put(m, "namePattern", t.NamePattern)
 	if len(t.Options) > 0 {
 		m["options"] = t.Options
@@ -121,12 +137,16 @@ func (s *Schema) fieldJSON(f *Field) map[string]any {
 func shapeJSON(sh Shape) map[string]any {
 	m := map[string]any{"base": string(sh.Base)}
 	put(m, "format", sh.Format)
+	put(m, "set", sh.Set)
 	put(m, "integer", sh.Integer)
 	if len(sh.Enum) > 0 {
 		m["enum"] = sh.Enum
 	}
 	if len(sh.To) > 0 {
 		m["to"] = sh.To
+	}
+	if len(sh.Allow) > 0 {
+		m["allow"] = sh.Allow
 	}
 	return m
 }
@@ -135,6 +155,9 @@ func shapeJSON(sh Shape) map[string]any {
 func (s *Schema) JSONSchema(t *Type) map[string]any {
 	m := objectSchema(t.Fields)
 	m["$schema"] = schemaDialect
+	if defs := s.blockDefs(t); len(defs) > 0 {
+		m["$defs"] = defs
+	}
 	m["title"] = t.Label
 	put(m, "description", t.Description)
 	return m

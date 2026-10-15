@@ -1,0 +1,56 @@
+blocks:
+  hero:
+    label: Hero
+    description: Large heading with an optional call to action
+    icon: layout
+    props:
+      heading: { type: string, required: true, max: 120 }
+      subheading: { type: text }
+      tone: { type: token, set: tone, default: light }
+      ctaLabel: { type: string, max: 40 }
+      ctaLink: { type: ref, to: [page, landing, post], on_delete: nullify }
+      ctaUrl: { type: url }
+
+  richText:
+    label: Rich text
+    description: Formatted text with links to other pages
+    icon: text
+    props:
+      body: { type: richtext, required: true }
+
+  cards:
+    label: Cards
+    description: A grid of cards
+    icon: grid
+    props:
+      heading: { type: string }
+      columns: { type: enum, values: ["2", "3", "4"], default: "3" }
+      space: { type: token, set: space, default: md }
+    slots:
+      items: { label: Cards, allow: [card], min: 1, max: 12 }
+
+  card:
+    label: Card
+    description: A titled card with an optional link
+    icon: square
+    props:
+      title: { type: string, required: true }
+      text: { type: text }
+      link: { type: ref, to: [page, landing, post], on_delete: nullify }
+
+  callout:
+    label: Callout
+    description: A highlighted note
+    icon: megaphone
+    props:
+      text: { type: text, required: true }
+      tone: { type: token, set: tone, default: brand }
+
+  image:
+    label: Image
+    description: A picture with a caption
+    icon: image
+    props:
+      src: { type: url, required: true }
+      alt: { type: string }
+      caption: { type: string }

@@ -132,3 +132,28 @@ func TestManageAPIWithoutContentTypes(t *testing.T) {
 		}
 	}
 }
+
+// TestAdminFrameOriginsMatchPreviewOrigins checks the CSP frame-src names the origin the pages module builds
+// URLs with: the frontend, else https plus the matched host (and never an http dev frontend upgraded).
+func TestAdminFrameOriginsMatchPreviewOrigins(t *testing.T) {
+	clk := newClock()
+	n, err := tryNode(t, openSQLite(t, clk), clk, `
+languages: { en: {} }
+channels:
+  dev:    { languages: [en], frontend: "http://localhost:3000", match: { prefix: /dev } }
+  hosted: { languages: [en], match: { host: www.acme.com } }
+  bare:   { languages: [en], match: { prefix: /bare } }
+`, pages.Module())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	n.h.ServeHTTP(w, httptest.NewRequest("GET", "/admin/", nil))
+	csp := w.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "frame-src 'self' http://localhost:3000 https://www.acme.com") && !strings.Contains(csp, "frame-src 'self' https://www.acme.com http://localhost:3000") {
+		t.Errorf("CSP = %s", csp)
+	}
+	if strings.Contains(csp, "https://localhost") {
+		t.Errorf("an http frontend was upgraded: %s", csp)
+	}
+}

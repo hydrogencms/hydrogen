@@ -23,7 +23,7 @@ type Registry struct {
 
 // coreTypeKeys are the keys a type spec has on its own; type options may not reuse them.
 func coreTypeKeys() []string {
-	return []string{"admin", "ai", "description", "fields", "label", "name", "page", "singleton"}
+	return []string{"admin", "ai", "blockset", "description", "fields", "label", "name", "page", "singleton"}
 }
 
 // NewRegistry returns a registry with all core field types.

@@ -15,11 +15,32 @@ import (
 type compiledSchema struct {
 	Types  []compiledType  `json:"types"`
 	Groups []compiledGroup `json:"groups"`
+	Blocks []compiledBlock `json:"blocks"`
+	Tokens []compiledToken `json:"tokens"`
 }
 
 type compiledType struct {
-	Name   string          `json:"name"`
-	Fields []compiledField `json:"fields"`
+	Name     string          `json:"name"`
+	Blockset bool            `json:"blockset"`
+	Fields   []compiledField `json:"fields"`
+}
+
+type compiledBlock struct {
+	Name  string          `json:"name"`
+	Props []compiledField `json:"props"`
+	Slots []compiledSlot  `json:"slots"`
+}
+
+type compiledSlot struct {
+	Name  string   `json:"name"`
+	Allow []string `json:"allow"`
+	Min   int      `json:"min"`
+	Max   int      `json:"max"`
+}
+
+type compiledToken struct {
+	Name   string   `json:"name"`
+	Values []string `json:"values"`
 }
 
 type compiledGroup struct {
@@ -93,8 +114,13 @@ func diffSchemas(old, cur *compiledSchema) []string {
 			d.add(t.Name, "removed")
 			continue
 		}
+		if t.Blockset && !ct.Blockset {
+			d.add(t.Name, "blockset removed")
+		}
 		d.fields(t.Name, t.Fields, ct.Fields, true)
 	}
+	d.blocks(old.Blocks, cur.Blocks)
+	d.tokens(old.Tokens, cur.Tokens)
 	slices.Sort(d.out)
 	return slices.Compact(d.out)
 }
@@ -132,6 +158,7 @@ func (d *differ) fields(path string, old, cur []compiledField, top bool) {
 			if top && of.Translatable != nf.Translatable {
 				d.add(p, "translatable changed")
 			}
+			d.optionChanges(p, of, nf)
 			d.fields(p, children(of, d.oldGroups), children(nf, d.curGroups), false)
 		}
 	}
@@ -162,4 +189,105 @@ func unaccounted(changes, accounted []string) []string {
 		}
 	}
 	return out
+}
+
+// optionChanges reports narrowed blocks fields (allow, min, max) and token fields moved to another set.
+func (d *differ) optionChanges(path string, old, cur *compiledField) {
+	switch old.Type {
+	case "blocks":
+		if gone := removed(optStrings(old.Options["allow"]), optStrings(cur.Options["allow"])); len(gone) > 0 {
+			d.add(path, "allow narrowed (removed "+strings.Join(gone, ", ")+")")
+		}
+		d.limits(path, optInt(old.Options["min"]), optInt(old.Options["max"]), optInt(cur.Options["min"]), optInt(cur.Options["max"]))
+	case "token":
+		if old.Options["set"] != cur.Options["set"] {
+			d.add(path, "token set changed")
+		}
+	}
+}
+
+// limits reports a raised minimum or a lowered (or new) maximum; a maximum of 0 means none.
+func (d *differ) limits(path string, oldMin, oldMax, curMin, curMax int) {
+	if curMin > oldMin {
+		d.add(path, "min tightened")
+	}
+	if curMax > 0 && (oldMax == 0 || curMax < oldMax) {
+		d.add(path, "max tightened")
+	}
+}
+
+func (d *differ) blocks(old, cur []compiledBlock) {
+	curBy := make(map[string]compiledBlock, len(cur))
+	for _, b := range cur {
+		curBy[b.Name] = b
+	}
+	for _, ob := range old {
+		path := "block:" + ob.Name
+		nb, ok := curBy[ob.Name]
+		if !ok {
+			d.add(path, "removed")
+			continue
+		}
+		d.fields(path+".props", ob.Props, nb.Props, false)
+		slotBy := make(map[string]compiledSlot, len(nb.Slots))
+		for _, sl := range nb.Slots {
+			slotBy[sl.Name] = sl
+		}
+		for _, os := range ob.Slots {
+			sp := path + ".slots." + os.Name
+			ns, ok := slotBy[os.Name]
+			if !ok {
+				d.add(sp, "removed")
+				continue
+			}
+			if gone := removed(os.Allow, ns.Allow); len(gone) > 0 {
+				d.add(sp, "allow narrowed (removed "+strings.Join(gone, ", ")+")")
+			}
+			d.limits(sp, os.Min, os.Max, ns.Min, ns.Max)
+		}
+	}
+}
+
+func (d *differ) tokens(old, cur []compiledToken) {
+	curBy := make(map[string]compiledToken, len(cur))
+	for _, t := range cur {
+		curBy[t.Name] = t
+	}
+	for _, ot := range old {
+		nt, ok := curBy[ot.Name]
+		if !ok {
+			d.add("token:"+ot.Name, "removed")
+			continue
+		}
+		if gone := removed(ot.Values, nt.Values); len(gone) > 0 {
+			d.add("token:"+ot.Name, "values removed ("+strings.Join(gone, ", ")+")")
+		}
+	}
+}
+
+// removed lists what old has and cur lacks, in old's order.
+func removed(old, cur []string) []string {
+	var out []string
+	for _, v := range old {
+		if !slices.Contains(cur, v) {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func optStrings(v any) []string {
+	list, _ := v.([]any)
+	out := make([]string, 0, len(list))
+	for _, e := range list {
+		if s, ok := e.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func optInt(v any) int {
+	f, _ := v.(float64)
+	return int(f)
 }

@@ -425,13 +425,13 @@ func generate(b *Builder, o RunOptions, args []string) error {
 	if err != nil {
 		return err
 	}
-	n, err := codegen.WriteGo(*goDir, s.Types(), s.Groups(), codegen.GoOptions{Package: *pkg})
+	n, err := codegen.WriteGo(*goDir, s.Types(), s.Groups(), codegen.GoOptions{Package: *pkg, Blocks: s.Blocks(), Tokens: s.Tokens()})
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(o.Stdout, "wrote %d Go files to %s\n", n, *goDir)
 	if *tsFile != "" {
-		if err := codegen.WriteTypeScript(*tsFile, s.Types(), s.Groups(), codegen.TSOptions{}); err != nil {
+		if err := codegen.WriteTypeScript(*tsFile, s.Types(), s.Groups(), codegen.TSOptions{Blocks: s.Blocks(), Tokens: s.Tokens()}); err != nil {
 			return err
 		}
 		fmt.Fprintf(o.Stdout, "wrote %s\n", *tsFile)

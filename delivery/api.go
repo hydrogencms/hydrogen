@@ -96,6 +96,12 @@ type Varier func(ch *channel.Channel) []string
 // absolute URL without a preview token, and false when it has no URL for the item in that channel and locale.
 type PreviewURLer func(ctx context.Context, ch *channel.Channel, item ids.UUID, typ, locale string) (string, bool, error)
 
+// PatternURLer turns the path a channel's link or preview pattern produced into the URLs a frontend serves it
+// at: rel is relative to the channel (the pages module adds a web channel's prefix), abs adds the origin. It
+// reports false for channels it does not handle; without a handler rel is the path and abs is the channel's
+// frontend plus the path.
+type PatternURLer func(ch *channel.Channel, path string) (rel, abs string, ok bool)
+
 // Options configures New.
 type Options struct {
 	Content  *content.Service
@@ -113,6 +119,8 @@ type Options struct {
 	Decorators    []Decorator
 	// PreviewURLs are asked in order for the URL of an item when a preview token is minted for it.
 	PreviewURLs []PreviewURLer
+	// PatternURLs are asked in order for the URL of a path made from a channel pattern.
+	PatternURLs []PatternURLer
 	// PublicOptions are the channel options shown by GET /channels/{name}.
 	PublicOptions []string
 	Varies        []Varier
@@ -127,7 +135,8 @@ type API struct {
 	handler http.Handler
 	openapi []byte
 	oaETag  []string
-	single  *chanMeta // the only channel, when there is exactly one
+	single  *chanMeta           // the only channel, when there is exactly one
+	shared  map[string][]string // type → blocks fields that can hold shared blocks
 }
 
 type chanMeta struct {
@@ -158,6 +167,7 @@ func New(o Options) (*API, error) {
 		o.Clock = clock.System{}
 	}
 	a := &API{o: o, log: o.Log, meta: map[string]*chanMeta{}}
+	a.shared = a.sharedFields()
 	if a.log == nil {
 		a.log = slog.New(slog.DiscardHandler)
 	}

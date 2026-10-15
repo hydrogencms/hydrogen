@@ -3,8 +3,10 @@ go 1.26.0
 use (
 	.
 	./examples/content
+	./examples/fullstack
 	./examples/headless
 	./examples/multisite
+	./examples/starter
 	./examples/minimal
 	./modules/postgres
 	./modules/sqlite

@@ -237,7 +237,7 @@ func TestCompileErrors(t *testing.T) {
 		{"inherits cycle", "languages:\n  en: { inherits: de }\n  de: { inherits: en }\n", "inherits in a cycle"},
 		{"unknown collection", "channels:\n  a: { languages: [en], collections: [article, nope] }\n", `unknown collection "nope" (types: article, home, product)`},
 		{"empty collections", "channels:\n  a: { languages: [en], collections: [] }\n", "omit the key to allow every collection"},
-		{"unknown key", "channels:\n  a: { languages: [en], colour: red }\n", `channels.yaml:2: unknown key "colour" in channel (known: access, collections, frontend, group, languages, preview, settings, site, tokens)`},
+		{"unknown key", "channels:\n  a: { languages: [en], colour: red }\n", `channels.yaml:2: unknown key "colour" in channel (known: access, collections, frontend, group, languages, links, preview, settings, site, tokens)`},
 		{"unknown group", "channels:\n  a: { languages: [en], group: nope }\n", `unknown group "nope"`},
 		{"frontend scheme", "channels:\n  a: { languages: [en], frontend: www.acme.com }\n", "absolute http(s) URL"},
 		{"frontend query", "channels:\n  a: { languages: [en], frontend: \"https://a.com/?x=1\" }\n", "no credentials, query or fragment"},
@@ -250,6 +250,13 @@ func TestCompileErrors(t *testing.T) {
 		{"preview unknown field", "channels:\n  a: { languages: [en], preview: { article: \"/n/{nope}\" } }\n", `article has no field "nope"`},
 		{"preview relative", "channels:\n  a: { languages: [en], preview: { article: \"n/{slug}\" } }\n", "must start with a single /"},
 		{"preview braces", "channels:\n  a: { languages: [en], preview: { article: \"/n/{slug\" } }\n", "unbalanced braces"},
+		{"links unknown collection", "channels:\n  a: { languages: [en], links: { nope: \"/x\" } }\n", `links for unknown collection "nope"`},
+		{"links unknown field", "channels:\n  a: { languages: [en], links: { article: \"/n/{nope}\" } }\n", `links placeholder {nope}: article has no field "nope"`},
+		{"links relative", "channels:\n  a: { languages: [en], links: { article: \"n/{slug}\" } }\n", "links pattern \"n/{slug}\" must start with a single /"},
+		{"links protocol relative", "channels:\n  a: { languages: [en], links: { article: \"//evil.com/{slug}\" } }\n", "must start with a single /"},
+		{"links braces", "channels:\n  a: { languages: [en], links: { article: \"/n/{slug\" } }\n", "unbalanced braces"},
+		{"links fallback", "channels:\n  a: { languages: [en], links: { \"*\": \"/{id}\" } }\n", "links has no fallback pattern"},
+		{"links not a mapping", "channels:\n  a: { languages: [en], links: x }\n", "links must be a mapping"},
 		{"top key", "chanels: {}\n", `unknown key "chanels" in channels`},
 		{"duplicate channel", "channels:\n  corp_sg: { languages: [en] }\ntemplates:\n  - for: { m: [sg] }\n    name: corp_{m}\n    languages: [en]\n", `channel "corp_sg" is already defined at`},
 		{"template no for", "templates:\n  - name: x\n    languages: [en]\n", "template needs `for`"},
@@ -370,6 +377,28 @@ func TestPickLocale(t *testing.T) {
 	nc := &channel.Channel{}
 	if l, fb, ok := channel.PickLocale(nc, []string{"en"}, "en", true); l != "en" || !fb || !ok {
 		t.Fatal(l, fb, ok)
+	}
+}
+
+func TestLinkAndPreviewPatterns(t *testing.T) {
+	c := &channel.Channel{Frontend: "https://www.acme.com",
+		Preview: map[string]string{"article": "/preview/{slug}", "*": "/p/{collection}/{id}"},
+		Links:   map[string]string{"article": "/news/{slug}", "post": "/blog/{slug}"}}
+	fields := func(name string) (string, bool) { return map[string]string{"slug": "a b"}[name], name == "slug" }
+	if p, ok := c.LinkPath("post", "1", "en", fields); !ok || p != "/blog/a%20b" {
+		t.Errorf("link path %q %v", p, ok)
+	}
+	if _, ok := c.LinkPath("page", "1", "en", fields); ok {
+		t.Error("a collection without a link pattern has no link")
+	}
+	if _, ok := c.LinkPath("post", "1", "en", nil); ok {
+		t.Error("a missing field must fail")
+	}
+	// A preview pattern wins; without one the link pattern is used; then the "*" fallback.
+	for coll, want := range map[string]string{"article": "/preview/a%20b", "post": "/blog/a%20b", "page": "/p/page/1"} {
+		if p, ok := c.PreviewPath(coll, "1", "en", fields); !ok || p != want {
+			t.Errorf("preview path of %s = %q %v, want %q", coll, p, ok, want)
+		}
 	}
 }
 

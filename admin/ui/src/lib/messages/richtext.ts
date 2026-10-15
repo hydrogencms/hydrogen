@@ -1,0 +1,41 @@
+import { register } from '../i18n';
+
+// Keys for the rich text editor: prefix every key with "richtext."
+export const richtext: Record<string, string> = {
+  'richtext.toolbar': 'Formatting',
+  'richtext.loading': 'Loading the editor',
+  'richtext.loadFailed': 'The editor could not be loaded. Reload the page to try again.',
+  'richtext.placeholder': 'Start writing…',
+  'richtext.invalid': 'This document cannot be shown in the editor. Fix it as JSON.',
+  'richtext.undo': 'Undo',
+  'richtext.redo': 'Redo',
+  'richtext.bold': 'Bold',
+  'richtext.italic': 'Italic',
+  'richtext.code': 'Inline code',
+  'richtext.link': 'Link',
+  'richtext.bulletList': 'Bulleted list',
+  'richtext.orderedList': 'Numbered list',
+  'richtext.blockquote': 'Quote',
+  'richtext.codeBlock': 'Code block',
+  'richtext.horizontalRule': 'Horizontal rule',
+  'richtext.style': 'Text style',
+  'richtext.paragraph': 'Paragraph',
+  'richtext.heading': 'Heading {level}',
+  'richtext.more': 'More',
+  'richtext.editJson': 'Edit as JSON',
+  'richtext.jsonTitle': 'Edit {field} as JSON',
+  'richtext.jsonApply': 'Apply',
+  'richtext.jsonNotDoc': 'A rich text document is an object with "type": "doc".',
+  'richtext.jsonInvalid': 'Not valid JSON: {message}',
+  'richtext.jsonSchema': 'This document does not fit the field: it uses nodes or marks the field does not allow.',
+  'richtext.linkTitle': 'Link',
+  'richtext.linkUrl': 'Web address or email',
+  'richtext.linkUrlHint': 'https://example.com or name@example.com',
+  'richtext.linkBad': 'Enter an http(s) address or an email address.',
+  'richtext.linkApply': 'Apply',
+  'richtext.linkRemove': 'Remove link',
+  'richtext.linkItem': 'Or link to an item',
+  'richtext.linkItemSearch': 'Search items',
+};
+
+register(richtext);

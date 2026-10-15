@@ -28,7 +28,10 @@ func (p Pos) String() string {
 type Schema struct {
 	types  []*Type // sorted by name
 	byName map[string]*Type
-	groups []*Group // sorted by name
+	groups []*Group     // sorted by name
+	blocks []*BlockType // sorted by name
+	tokens []*TokenSet  // sorted by name
+	lk     *blockLookup
 	hash   string
 	opts   map[*Field]map[string]any // type-specific options by field, for the canonical encoding
 }
@@ -52,6 +55,7 @@ type Type struct {
 	Description string
 	Singleton   bool
 	Page        bool
+	Blockset    bool   // its single blocks field can be embedded with the built-in shared block
 	NamePattern string // e.g. "{title}"; "" means the first string field
 	Admin       TypeAdmin
 	AI          TypeAI
@@ -138,14 +142,17 @@ const (
 	BaseList     Base = "list"
 	BaseGroup    Base = "group"
 	BaseJSON     Base = "json"
+	BaseBlocks   Base = "blocks" // a tree of blocks
 )
 
 type Shape struct {
 	Base    Base
-	Format  string   // strings: "", "text", "slug", "email", "url", "date", "datetime", "enum"
+	Format  string   // strings: "", "text", "slug", "email", "url", "date", "datetime", "enum", "token"
 	Integer bool     // numbers
-	Enum    []string // Format "enum"
+	Enum    []string // Format "enum" or "token"
+	Set     string   // Format "token": the token set
 	To      []string // BaseRef: allowed collections
+	Allow   []string // BaseBlocks: allowed block types
 }
 
 // Mode selects which rules Validate applies.
@@ -182,6 +189,9 @@ type Report struct {
 	segs []pathSeg
 	cut  bool
 	adds int // attempts to add an error, including dropped ones
+
+	blockIDs map[string]bool // ids of the blocks seen so far in the document
+	blocks   int             // blocks seen so far in the document
 }
 
 // Add records an error at an absolute path.
@@ -281,9 +291,10 @@ type IndexValue struct {
 // RefValue is an item reference found in a document.
 type RefValue struct {
 	Path     string
-	To       string // item id
-	Kind     string // "field" or "link"
-	OnDelete string // "block", "nullify", "warn"
+	To       string   // item id
+	Kind     string   // "field" or "link"
+	OnDelete string   // "block", "nullify", "warn"
+	Types    []string // for fields: the types the target may have
 }
 
 // SplitName turns "blogPost" into "Blog post" for default labels.

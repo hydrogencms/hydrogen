@@ -12,6 +12,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"path"
+	"slices"
 	"strings"
 	"time"
 )
@@ -39,6 +40,8 @@ type Options struct {
 	Extensions *Extensions
 	// ElementsDevURL, when set, proxies <prefix>/x/dev/* to a dev server (Vite) for extension elements.
 	ElementsDevURL string
+	// FrameOrigins are the origins the preview pane may frame (the channels' frontends, "scheme://host[:port]").
+	FrameOrigins []string
 }
 
 // Scripts are 'self' only. Styles allow inline: extension elements written with Svelte inject their component
@@ -46,7 +49,24 @@ type Options struct {
 const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; " +
 	"connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
+// frameSrc lets the preview pane frame the channels' frontends, and nothing else.
+func frameSrc(origins []string) string {
+	src := []string{"'self'"}
+	for _, o := range origins {
+		u, err := url.Parse(o)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
+			strings.ContainsAny(u.Host, " ;,'\"") {
+			continue
+		}
+		if origin := u.Scheme + "://" + u.Host; !slices.Contains(src, origin) {
+			src = append(src, origin)
+		}
+	}
+	return "; frame-src " + strings.Join(src, " ")
+}
+
 type handler struct {
+	csp    string
 	prefix string
 	dist   fs.FS
 	index  []byte
@@ -60,7 +80,7 @@ type handler struct {
 // without stripping the prefix. index.html is served for every path that is not a file in dist (and not under assets/), with its
 // relative asset links ("./assets/…") made absolute under prefix.
 func Handler(prefix string, dist fs.FS, o Options) http.Handler {
-	h := &handler{prefix: prefix, dist: dist}
+	h := &handler{csp: csp + frameSrc(o.FrameOrigins), prefix: prefix, dist: dist}
 	if o.Extensions == nil {
 		o.Extensions, _ = Compose(prefix, nil, "")
 	}
@@ -163,7 +183,7 @@ func (h *handler) exists(name string) bool {
 
 func (h *handler) secure(w http.ResponseWriter) {
 	hd := w.Header()
-	hd.Set("Content-Security-Policy", csp)
+	hd.Set("Content-Security-Policy", h.csp)
 	hd.Set("X-Content-Type-Options", "nosniff")
 	hd.Set("X-Frame-Options", "DENY")
 	hd.Set("Referrer-Policy", "same-origin")

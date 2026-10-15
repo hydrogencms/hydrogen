@@ -15,7 +15,11 @@
       "types": "./dist/proxy.d.ts",
       "import": "./dist/proxy.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./live": {
+      "types": "./dist/live.d.ts",
+      "import": "./dist/live.js"
+    }
   },
   "files": [
     "dist"
@@ -30,7 +34,8 @@
   },
   "dependencies": {
     "@hydrogencms/client": "^0.1.0",
-    "@hydrogencms/router": "^0.1.0"
+    "@hydrogencms/router": "^0.1.0",
+    "@hydrogencms/react": "^0.1.0"
   },
   "devDependencies": {
     "next": "^16.4.1",

@@ -9,6 +9,8 @@
   import type { CompiledField } from '../types.svelte';
   import { t } from '../i18n';
   import JsonBox from './JsonBox.svelte';
+  import RichTextEditor from '../richtext/RichTextEditor.svelte';
+  import { configOf } from '../richtext/schema';
   import Reference from './Reference.svelte';
   import { useFields } from './context';
   import { autoSlug, fromLocalInput, slugify, slugSource, toLocalInput, type Doc } from './logic';
@@ -80,13 +82,26 @@
 
 {#if base === 'ref'}
   <Reference {field} bind:value {path} {readonly} {invalid} {attrs} />
-{:else if base === 'richtext' || base === 'json' || base === 'group' || base === 'list' || (base !== 'string' && base !== 'number' && base !== 'boolean')}
-  <JsonBox {field} bind:value {path} {readonly} {invalid} {attrs} rich={base === 'richtext'} />
+{:else if base === 'richtext'}
+  <RichTextEditor
+    value={value}
+    config={configOf(field.options)}
+    locale={ctx.locale}
+    {readonly}
+    error={invalid ? (ctx.error(path) ?? ' ') : undefined}
+    label={field.label}
+    id={control?.id}
+    aria-describedby={control?.['aria-describedby']}
+    placeholder={field.admin?.placeholder}
+    onchange={set}
+  />
+{:else if base === 'json' || base === 'group' || base === 'list' || (base !== 'string' && base !== 'number' && base !== 'boolean')}
+  <JsonBox {field} bind:value {path} {readonly} {invalid} {attrs} />
 {:else if base === 'boolean'}
   <Switch {...attrs} checked={value === true} disabled={readonly} onchange={(e) => set((e.currentTarget as HTMLInputElement).checked)} />
 {:else if base === 'number'}
   <Input {...attrs} type="number" step={field.shape.integer ? 1 : 'any'} value={str} {invalid} {placeholder} disabled={readonly} oninput={num} />
-{:else if format === 'enum'}
+{:else if format === 'enum' || format === 'token'}
   <Select
     {...attrs}
     value={str}

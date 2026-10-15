@@ -28,6 +28,7 @@ func OpenAPI(s *schema.Schema, extra ...Route) obj {
 	for _, t := range s.Types() {
 		fields := s.JSONSchema(t)
 		delete(fields, "$schema")
+		openapi.HoistDefs(schemas, fields)
 		schemas["Fields_"+t.Name] = fields
 		schemas["Patch_"+t.Name] = patchSchema(fields)
 		schemas["ItemView_"+t.Name] = itemView(openapi.SchemaRef("Fields_"+t.Name), t.Name)
@@ -35,6 +36,7 @@ func OpenAPI(s *schema.Schema, extra ...Route) obj {
 		schemas["Create_"+t.Name] = createRequest(openapi.SchemaRef("Fields_" + t.Name))
 		schemas["Update_"+t.Name] = updateRequest(openapi.SchemaRef("Patch_" + t.Name))
 	}
+	blockSchemas(s, schemas)
 	if len(itemViews) > 0 {
 		schemas["ItemView"] = obj{"oneOf": itemViews}
 	} else {
@@ -165,6 +167,32 @@ func updateRequest(fields obj) obj {
 }
 
 // patchSchema is the type's fields as a merge patch: all optional, null removes.
+// blockSchemas adds the block definitions (Block_<name>, Block) and the catalog GET /blocks answers with.
+func blockSchemas(s *schema.Schema, schemas obj) {
+	openapi.HoistDefs(schemas, obj{"$defs": s.BlockJSONSchemas()})
+	var of []any
+	for _, b := range s.Blocks() {
+		of = append(of, openapi.SchemaRef("Block_"+b.Name))
+	}
+	if len(of) > 0 {
+		schemas["Block"] = obj{"oneOf": of, "description": "A block of a blocks field, discriminated by type. " +
+			"Ids are UUIDv7 and assigned by the server when missing. A blocks field is replaced whole by a merge patch."}
+	} else {
+		schemas["Block"] = obj{"type": "object", "description": "A block of a blocks field; the schema defines no block types."}
+	}
+	schemas["BlockCatalog"] = obj{"type": "object", "required": []any{"blocks", "tokens"}, "properties": obj{
+		"blocks": openapi.ArrayOf(obj{"type": "object", "required": []any{"name", "label", "props"}, "properties": obj{
+			"name": openapi.Str(""), "label": openapi.Str(""), "description": openapi.Str(""), "icon": openapi.Str(""),
+			"props": obj{"type": "array", "description": "Compiled fields, as in GET /types.", "items": obj{"type": "object"}},
+			"slots": openapi.ArrayOf(obj{"type": "object", "required": []any{"name", "label", "allow"}, "properties": obj{
+				"name": openapi.Str(""), "label": openapi.Str(""), "description": openapi.Str(""),
+				"allow": openapi.ArrayOf(openapi.Str("")), "min": obj{"type": "integer"}, "max": obj{"type": "integer"}}}),
+		}}),
+		"tokens": openapi.ArrayOf(obj{"type": "object", "required": []any{"name", "values"}, "properties": obj{
+			"name": openapi.Str(""), "values": openapi.ArrayOf(openapi.Str(""))}}),
+	}}
+}
+
 func patchSchema(fields obj) obj {
 	props, _ := fields["properties"].(obj)
 	out := make(obj, len(props))
@@ -283,6 +311,8 @@ func genericPaths(paths obj, collections, singletons []*schema.Type) {
 				"options": obj{"type": "object"},
 				"admin": obj{"type": "object", "properties": obj{"group": openapi.Str(""), "icon": openapi.Str(""),
 					"list": obj{"type": "array", "items": openapi.Str("")}}}}}))}, "401", "403"))}
+	paths["/blocks"] = obj{"get": operation("listBlocks", "List block types and design tokens", nil, nil,
+		responses(obj{"200": openapi.OKResp("Compiled block types and token sets.", openapi.SchemaRef("BlockCatalog"))}, "401", "403"))}
 	paths["/types/{type}"] = obj{"get": operation("getType", "A compiled type and its JSON Schema",
 		[]any{obj{"name": "type", "in": "path", "required": true, "schema": openapi.Str("")}}, nil,
 		responses(obj{"200": openapi.OKResp("The type.", obj{"type": "object", "required": []any{"type", "jsonSchema"},

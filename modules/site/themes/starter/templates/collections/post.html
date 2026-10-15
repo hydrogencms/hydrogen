@@ -1,0 +1,10 @@
+{{define "content"}}
+<article>
+<div class="container narrow page-head">
+{{template "partials/breadcrumbs.html" .}}
+<h1 class="page-title" {{edit "fields/title"}}>{{.Title}}</h1>
+{{with .Fields.excerpt}}<p class="lead">{{.}}</p>{{end}}
+</div>
+{{blocks "body"}}
+</article>
+{{end}}

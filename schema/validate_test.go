@@ -180,6 +180,9 @@ func TestRichText(t *testing.T) {
 		{"bad attr", `[{"type":"paragraph","attrs":{"x":1}}]`, []string{"rt.content[0]:richtext"}},
 		{"bad language", `[{"type":"codeBlock","attrs":{"language":1}}]`, []string{"rt.content[0]:richtext"}},
 		{"unknown key", `[{"type":"paragraph","bogus":1}]`, []string{"rt.content[0]:richtext"}},
+		{"backslash link", `[{"type":"paragraph","content":[` + text(`,"marks":[{"type":"link","attrs":{"href":"https://a.b\\\\@evil.com"}}]`) + `]}]`, []string{"rt.content[0].content[0].marks[0]:richtext"}},
+		{"backslash scheme link", `[{"type":"paragraph","content":[` + text(`,"marks":[{"type":"link","attrs":{"href":"https:\\\\\\\\evil.com"}}]`) + `]}]`, []string{"rt.content[0].content[0].marks[0]:richtext"}},
+		{"relative backslash link", `[{"type":"paragraph","content":[` + text(`,"marks":[{"type":"link","attrs":{"href":"/\\\\evil.com"}}]`) + `]}]`, []string{"rt.content[0].content[0].marks[0]:richtext"}},
 		{"bad link", `[{"type":"paragraph","content":[` + text(`,"marks":[{"type":"link","attrs":{"href":"javascript:x"}}]`) + `]}]`, []string{"rt.content[0].content[0].marks[0]:richtext"}},
 		{"link no attrs", `[{"type":"paragraph","content":[` + text(`,"marks":[{"type":"link"}]`) + `]}]`, []string{"rt.content[0].content[0].marks[0]:richtext"}},
 		{"unknown mark", `[{"type":"paragraph","content":[` + text(`,"marks":[{"type":"blink"}]`) + `]}]`, []string{"rt.content[0].content[0].marks[0]:richtext"}},
@@ -370,7 +373,7 @@ func TestProjections(t *testing.T) {
 	refs := s.Refs(a, d)
 	wantRefs := []RefValue{
 		{Path: "body", To: id2, Kind: "link", OnDelete: "warn"},
-		{Path: "author", To: id1, Kind: "field", OnDelete: "nullify"},
+		{Path: "author", To: id1, Kind: "field", OnDelete: "nullify", Types: []string{"person"}},
 	}
 	// fields come in schema order: body precedes author
 	if !reflect.DeepEqual(refs, wantRefs) {
@@ -568,7 +571,7 @@ func TestJSONSchemaFile(t *testing.T) {
 		}
 	}
 	types := field["type"].(map[string]any)["enum"].([]string)
-	if len(types) != 15 {
+	if len(types) != 17 {
 		t.Fatalf("types = %v", types)
 	}
 	reg := NewRegistry()

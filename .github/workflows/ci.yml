@@ -41,3 +41,37 @@ jobs:
         run: make test
       - name: Smoke and budgets
         run: make smoke
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            packages/package-lock.json
+            admin/ui/package-lock.json
+      - name: Install npm dependencies and build the SDK packages
+        run: |
+          scripts/npm-ci.sh packages
+          scripts/npm-ci.sh admin/ui
+          cd packages && npm run build
+      - name: Cache Playwright browsers
+        id: playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('admin/ui/package-lock.json') }}
+      - name: Install Chromium
+        run: |
+          cd admin/ui
+          if [ "${{ steps.playwright.outputs.cache-hit }}" = "true" ]; then npx playwright install-deps chromium; else npx playwright install --with-deps chromium; fi
+      - name: Adapter conformance (Next.js starter and site module)
+        run: make conformance
+      - name: Admin end to end
+        run: make admin-e2e

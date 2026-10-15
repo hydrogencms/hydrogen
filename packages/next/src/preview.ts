@@ -37,9 +37,10 @@ export function previewCookieOptions(secure: boolean): { httpOnly: true; sameSit
 /** The token from a cookie value, if it is one. */
 export const tokenFromCookie = (v: string | undefined): string | undefined => (validToken(v) ? v : undefined)
 
-/** `/preview/<collection>/<id>`: the URL the channels' preview patterns point at for items with no route yet. */
+/** `[/<channel prefix>]/preview/<collection>/<id>`: the URL the channels' preview patterns point at for items with no route yet. */
 export function matchPreviewPath(pathname: string, base: string): { collection: string; id: string } | undefined {
-  const m = pathname.startsWith(base + '/') ? pathname.slice(base.length + 1).split('/') : []
+  const at = pathname.lastIndexOf(base + '/')
+  const m = at >= 0 ? pathname.slice(at + base.length + 1).split('/') : []
   if (m.length !== 2 || !m[0] || !m[1]) return undefined
   try {
     return { collection: decodeURIComponent(m[0]), id: decodeURIComponent(m[1]) }

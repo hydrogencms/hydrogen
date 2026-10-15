@@ -1,0 +1,8 @@
+{{$href := link .Props.ctaLink}}{{if not $href}}{{$href = .Props.ctaUrl}}{{end -}}
+<section {{.Attrs}} class="hero tone-{{.Props.tone}}">
+<div class="container">
+<h2 class="hero-title">{{.Props.heading}}</h2>
+{{with .Props.subheading}}<p class="hero-lead">{{.}}</p>{{end}}
+{{if and .Props.ctaLabel $href}}<p><a class="button" href="{{$href}}">{{.Props.ctaLabel}}</a></p>{{end}}
+</div>
+</section>

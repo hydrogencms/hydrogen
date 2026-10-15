@@ -18,7 +18,9 @@ func (a *api) buildCaches(extra []Route) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	var compiled struct {
-		Types []map[string]any `json:"types"`
+		Types  []map[string]any `json:"types"`
+		Blocks []map[string]any `json:"blocks"`
+		Tokens []map[string]any `json:"tokens"`
 	}
 	if err := dec.Decode(&compiled); err != nil {
 		return fmt.Errorf("manage: decode schema: %w", err)
@@ -45,6 +47,15 @@ func (a *api) buildCaches(extra []Route) error {
 		}
 	}
 	if a.typesJSON, err = encode(summaries); err != nil {
+		return err
+	}
+	if compiled.Blocks == nil {
+		compiled.Blocks = []map[string]any{}
+	}
+	if compiled.Tokens == nil {
+		compiled.Tokens = []map[string]any{}
+	}
+	if a.blocksJSON, err = encode(map[string]any{"blocks": compiled.Blocks, "tokens": compiled.Tokens}); err != nil {
 		return err
 	}
 	if a.channelsJSON, err = encodeChannels(a.channels); err != nil {
@@ -82,6 +93,13 @@ func (a *api) writeRaw(w http.ResponseWriter, b []byte) {
 
 func (a *api) listTypes(w http.ResponseWriter, _ *http.Request) error {
 	a.writeRaw(w, a.typesJSON)
+	return nil
+}
+
+// listBlocks answers {"blocks":[…],"tokens":[…]}: the compiled block types (props as compiled fields, slots,
+// labels, icons) and the design token sets.
+func (a *api) listBlocks(w http.ResponseWriter, _ *http.Request) error {
+	a.writeRaw(w, a.blocksJSON)
 	return nil
 }
 

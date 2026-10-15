@@ -14,6 +14,17 @@ const dashboard = 'M4 4h6.5v6.5H4zM13.5 4H20v6.5h-6.5zM4 13.5h6.5V20H4zM13.5 13.
 const fileText = 'M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7zM14 3v4h4M9 12.5h6M9 16.5h6';
 
 export const icons: Record<string, string> = {
+  layout: 'M4 5.5h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1zM3 10h18M9 10v8.5',
+  text: 'M5 6.5h14M5 11h14M5 15.5h14M5 20h8',
+  square: 'M5.5 4.5h13a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1z',
+  megaphone: 'M4 10v4a1 1 0 0 0 1 1h2.5l8 4V5l-8 4H5a1 1 0 0 0-1 1zM19 9.5v5',
+  quote: 'M5 17.5v-5a4.5 4.5 0 0 1 4.5-4.5M13.5 17.5v-5A4.5 4.5 0 0 1 18 8M5 17.5h4.5v-5H5M13.5 17.5H18v-5h-4.5',
+  columns: 'M4 5.5h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1zM12 5.5v13',
+  code: 'm9 7-5 5 5 5M15 7l5 5-5 5',
+  'panel-right': 'M5 4.5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1zM14.5 4.5v15',
+  tablet: 'M6.5 3.5h11a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1zM11 17.5h2',
+  smartphone: 'M8 3.5h8a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1zM11 18h2',
+  maximize: 'M4.5 9.5v-4h4M19.5 9.5v-4h-4M4.5 14.5v4h4M19.5 14.5v4h-4',
   home: 'M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4v-5.5H9V20H5a1 1 0 0 1-1-1z',
   dashboard,
   grid: dashboard,

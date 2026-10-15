@@ -21,8 +21,10 @@ func collectRefs(f *Field, v any, path string, out []RefValue) []RefValue {
 	switch f.Shape.Base {
 	case BaseRef:
 		if id, ok := v.(string); ok && id != "" {
-			out = append(out, RefValue{Path: path, To: id, Kind: "field", OnDelete: onDelete(f)})
+			out = append(out, RefValue{Path: path, To: id, Kind: "field", OnDelete: onDelete(f), Types: f.Shape.To})
 		}
+	case BaseBlocks:
+		out = f.Config.(*blocksConfig).refs(v, path, out)
 	case BaseRichText:
 		out = richLinks(v, path, out)
 	case BaseList:
@@ -173,6 +175,8 @@ func collectText(f *Field, v any, sb *strings.Builder) {
 		}
 	case BaseRichText:
 		richText(v, sb)
+	case BaseBlocks:
+		f.Config.(*blocksConfig).text(v, sb)
 	case BaseList:
 		if list, ok := v.([]any); ok && f.Of != nil {
 			for _, e := range list {
@@ -351,6 +355,8 @@ func removeRefValue(f *Field, v any, target string, match func(*Field) bool) (nv
 		if m, ok := v.(map[string]any); ok {
 			return v, false, removeRefs(f.Fields, m, target, match)
 		}
+	case BaseBlocks:
+		return v, false, f.Config.(*blocksConfig).removeRef(v, target, match)
 	case BaseList:
 		list, ok := v.([]any)
 		if !ok || f.Of == nil {

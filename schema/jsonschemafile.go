@@ -41,7 +41,23 @@ func JSONSchemaFile(reg *Registry) map[string]any {
 			"on_delete": map[string]any{"enum": []string{"block", "nullify", "warn"}},
 			"of":        map[string]any{"$ref": "#/$defs/field"},
 			"fields":    fieldMap,
-			"use":       str, "marks": strings, "nodes": strings,
+			"use":       str, "marks": strings, "nodes": strings, "allow": strings, "set": str,
+		},
+	}
+	blockDef := map[string]any{
+		"type": "object", "additionalProperties": false,
+		"properties": map[string]any{
+			"label": str, "description": str, "icon": str, "props": fieldMap,
+			"slots": map[string]any{
+				"type": "object", "propertyNames": map[string]any{"pattern": name, "maxLength": maxName},
+				"additionalProperties": map[string]any{
+					"type": "object", "required": []string{"allow"}, "additionalProperties": false,
+					"properties": map[string]any{
+						"label": str, "description": str, "allow": strings,
+						"min": map[string]any{"type": "integer", "minimum": 0}, "max": map[string]any{"type": "integer", "minimum": 1},
+					},
+				},
+			},
 		},
 	}
 	return map[string]any{
@@ -57,13 +73,22 @@ func JSONSchemaFile(reg *Registry) map[string]any {
 				"type": "object", "propertyNames": map[string]any{"pattern": name, "maxLength": maxName},
 				"additionalProperties": map[string]any{"$ref": "#/$defs/group"},
 			},
+			"blocks": map[string]any{
+				"type": "object", "propertyNames": map[string]any{"pattern": name, "maxLength": maxName},
+				"additionalProperties": map[string]any{"$ref": "#/$defs/block"},
+			},
+			"tokens": map[string]any{
+				"type": "object", "propertyNames": map[string]any{"pattern": name, "maxLength": maxName},
+				"additionalProperties": map[string]any{"type": "array", "items": str, "minItems": 1},
+			},
 		},
 		"$defs": map[string]any{
 			"field": field,
+			"block": blockDef,
 			"type": map[string]any{
 				"type": "object", "additionalProperties": false,
 				"properties": map[string]any{
-					"label": str, "description": str, "singleton": boolean, "page": boolean, "name": str,
+					"label": str, "description": str, "singleton": boolean, "page": boolean, "blockset": boolean, "name": str,
 					"admin": map[string]any{
 						"type": "object", "additionalProperties": false,
 						"properties": map[string]any{"list": strings, "group": str, "icon": str},

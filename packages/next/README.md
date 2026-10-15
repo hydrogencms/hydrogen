@@ -49,6 +49,29 @@ routes and pattern URLs (`/preview/<collection>/<id>`) both work. The token is a
 and redirects (`?exit=1` leaves). In draft mode the page and its templates' `client` are uncached and carry the token;
 `/preview/<collection>/<id>` (the channels' preview pattern) shows an item that has no route yet.
 
+## Live preview
+
+In draft mode the page renders a client wrapper (`@hydrogencms/next/live`, on `@hydrogencms/react/live`'s
+`useLivePreview`) around a **client template** (a `'use client'` module), so the page updates while the editor types in
+the admin: the bridge receives the working document and patches, the template re-renders from them. Client templates
+get `{ item, locale, metadata, preview }` (`LiveTemplateProps`); server templates render as before (with `client`,
+`blocks` and `preview`) and only show saved drafts. Shared blocks, which the admin's working document holds without
+their content, keep the content the page was delivered with.
+
+In draft mode the page also renders `<meta name="hydrogen-preview" content="1">`: the preview cookie is HttpOnly, so
+the bridge cannot read it. Pass `path="fields/body"` and `preview` to `<Blocks>` in templates (`@hydrogencms/react`).
+
+`createHydrogen({ ..., blocks: registry, adminOrigin })`: `blocks` (a `createRegistry` result) is handed to server
+templates as `blocks`; `adminOrigin` is the origin of the admin that embeds draft pages (default: the origin of
+`baseUrl`) and the only one the bridge talks to. It must be the origin the editor's browser reaches the admin at: if
+`baseUrl` is an internal address (`http://cms:8080`) set `adminOrigin` to the public one. In draft mode a non-https
+origin (other than localhost) or an internal-looking host logs one warning.
+
+For routes of your own (a collection the CMS does not route): `hydrogen.clientFor(channel)` (cached and tagged, or
+uncached with the token in draft mode), `hydrogen.previewToken()`, `hydrogen.render(Template, { item, locale, metadata,
+draft })` (applies the live wrapper), `hydrogen.channel()` (the request's channel, for layouts) and `hydrogen.adminOrigin`.
+See `starters/next` and `docs/adapter-kit.md`.
+
 ## Notes
 
 - Templates are server components and get `{ item, locale, metadata, client }`; their `client` is cached: pass only

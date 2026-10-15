@@ -197,12 +197,6 @@ export const collections: Record<string, string> = {
   'collections.moved': '{label} moved to position {n} of {total}',
   'collections.removed': '{label} removed',
   'collections.reorderHint': 'Alt+Up and Alt+Down reorder the focused item.',
-  'collections.preview': 'Preview of {field}',
-  'collections.richEmpty': 'Empty',
-  'collections.richNote': 'The rich text editor arrives later; edit the document as JSON for now.',
-  'collections.editJson': 'Edit as JSON',
-  'collections.hideJson': 'Hide JSON',
-  'collections.richNotDoc': 'A rich text document is an object with "type": "doc".',
   'collections.jsonInvalid': 'Not valid JSON: {message}',
 };
 

@@ -183,6 +183,9 @@ func defaultFields(fields []*Field, doc map[string]any) {
 			continue
 		}
 		walkNested(f, v, defaultFields)
+		if c, ok := f.Config.(*blocksConfig); ok {
+			c.defaults(v)
+		}
 	}
 }
 
@@ -213,6 +216,9 @@ func pruneFields(fields []*Field, doc map[string]any) {
 		}
 		if v, ok := doc[f.Name]; ok {
 			walkNested(f, v, pruneFields)
+			if c, ok := f.Config.(*blocksConfig); ok {
+				c.prune(v)
+			}
 		}
 	}
 }
@@ -261,6 +267,8 @@ func normalizeValue(f *Field, v any) (any, bool) {
 		lowerItemLinks(v)
 	case f.Shape.Base == BaseGroup:
 		walkNested(f, v, normalizeFields)
+	case f.Shape.Base == BaseBlocks:
+		f.Config.(*blocksConfig).normalize(v)
 	case f.Shape.Base == BaseList && f.Of != nil:
 		if list, ok := v.([]any); ok {
 			for i, e := range list {

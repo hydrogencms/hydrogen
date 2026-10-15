@@ -1,0 +1,21 @@
+# One site, two web channels on path prefixes. The frontend owns /blog and /api; the CMS routes pages.
+languages:
+  en: {}
+  de: {}
+
+defaults:
+  settings: { cache_ttl: 60 }
+
+groups:
+  web:
+    site: main
+    frontend: ${env:STARTER_FRONTEND:-http://localhost:3000}
+    reserved: [/api/*, /blog/*]
+    # Posts are not in the page tree: the link pattern gives their URLs (prefixed by the channel, /en/blog/x) and
+    # doubles as their preview pattern.
+    links: { post: "/blog/{slug}" }
+    preview: { "*": "/preview/{collection}/{id}" }
+
+channels:
+  en: { group: web, languages: [en], match: { prefix: /en } }
+  de: { group: web, languages: [de, en], match: { prefix: /de } }

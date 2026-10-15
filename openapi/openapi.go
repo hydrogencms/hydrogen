@@ -2,6 +2,7 @@
 package openapi
 
 import (
+	"strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -39,4 +40,33 @@ func Params(names ...string) []any {
 		out[i] = Ref("parameters", n)
 	}
 	return out
+}
+
+// HoistDefs moves the $defs of a JSON Schema into the components' schemas and points its $ref values there.
+func HoistDefs(schemas, sch Obj) {
+	defs, _ := sch["$defs"].(map[string]any)
+	delete(sch, "$defs")
+	for name, d := range defs {
+		schemas[name] = d
+		repoint(d)
+	}
+	repoint(sch)
+}
+
+func repoint(v any) {
+	switch x := v.(type) {
+	case map[string]any:
+		if ref, ok := x["$ref"].(string); ok {
+			if name, found := strings.CutPrefix(ref, "#/$defs/"); found {
+				x["$ref"] = "#/components/schemas/" + name
+			}
+		}
+		for _, c := range x {
+			repoint(c)
+		}
+	case []any:
+		for _, c := range x {
+			repoint(c)
+		}
+	}
 }
