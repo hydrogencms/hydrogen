@@ -133,6 +133,9 @@ func (t *tx) Outbox() store.OutboxStore   { return outboxStore{t.tx} }
 func (t *tx) Audit() store.AuditStore     { return auditStore{t.tx} }
 func (t *tx) Content() store.ContentStore { return contentStore{t.tx} }
 
+// Auth is a placeholder until H5a T1.
+func (t *tx) Auth() store.AuthStore { return nil }
+
 func (t *tx) Notify(channel, payload string) error {
 	if t.readOnly {
 		return errors.New("sqlite: Notify in a read-only transaction")

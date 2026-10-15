@@ -18,6 +18,9 @@ type contentStore struct{ tx pgx.Tx }
 
 func (t *tx) Content() store.ContentStore { return contentStore{t.tx} }
 
+// Auth is a placeholder until H5a T1.
+func (t *tx) Auth() store.AuthStore { return nil }
+
 // uid converts an id to a bind value; the unnamed array type is what pgx maps to uuid.
 func uid(u ids.UUID) [16]byte { return u }
 
@@ -409,7 +412,10 @@ func (s contentStore) IncomingRefs(ctx context.Context, to ids.UUID) ([]store.Re
 	return out, nil
 }
 
-func (s contentStore) ReplaceIndex(ctx context.Context, item ids.UUID, rows []store.IndexRow) error {
+func (s contentStore) ReplaceIndex(ctx context.Context, item ids.UUID, proj store.Projection, rows []store.IndexRow) error {
+	if proj != store.ProjectionPublished {
+		return errNotImplemented // H5a T2
+	}
 	n := len(rows)
 	locales, fields := make([]string, n), make([]string, n)
 	texts, nums := make([]*string, n), make([]*float64, n)
@@ -449,7 +455,10 @@ func (s contentStore) ReplaceIndex(ctx context.Context, item ids.UUID, rows []st
 	return nil
 }
 
-func (s contentStore) ReplaceSearch(ctx context.Context, item ids.UUID, docs []store.SearchDoc) error {
+func (s contentStore) ReplaceSearch(ctx context.Context, item ids.UUID, proj store.Projection, docs []store.SearchDoc) error {
+	if proj != store.ProjectionPublished {
+		return errNotImplemented // H5a T2
+	}
 	if _, err := s.tx.Exec(ctx, `DELETE FROM content_search WHERE item_id = $1`, uid(item)); err != nil {
 		return fmt.Errorf("postgres: replace search %s: %w", item, err)
 	}
@@ -504,4 +513,11 @@ func (s contentStore) ItemIDsOfType(ctx context.Context, typ string, after ids.U
 		return nil, fmt.Errorf("postgres: item ids of type %q: %w", typ, err)
 	}
 	return out, nil
+}
+
+// errNotImplemented marks H5a placeholders (T2 working projections, T1 auth store).
+var errNotImplemented = errors.New("not implemented yet (H5a)")
+
+func (s contentStore) ReplaceModuleIndex(context.Context, ids.UUID, string, []store.IndexRow) error {
+	return errNotImplemented // H5a T2
 }

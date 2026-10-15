@@ -22,7 +22,7 @@ func (s *Service) project(ctx context.Context, c store.ContentStore, st *itemSta
 	if err := c.ReplaceRefs(ctx, id, refs); err != nil {
 		return fmt.Errorf("content: project refs of %s: %w", id, err)
 	}
-	if err := c.ReplaceIndex(ctx, id, s.projectIndex(st, outs)); err != nil {
+	if err := c.ReplaceIndex(ctx, id, store.ProjectionPublished, s.projectIndex(st, outs)); err != nil {
 		return fmt.Errorf("content: project index of %s: %w", id, err)
 	}
 	docs := make([]store.SearchDoc, len(outs))
@@ -30,7 +30,7 @@ func (s *Service) project(ctx context.Context, c store.ContentStore, st *itemSta
 		text := capSearchText(strings.TrimSpace(o.name + " " + s.o.Schema.SearchText(st.typ, o.doc)))
 		docs[i] = store.SearchDoc{Locale: o.code, Text: text}
 	}
-	if err := c.ReplaceSearch(ctx, id, docs); err != nil {
+	if err := c.ReplaceSearch(ctx, id, store.ProjectionPublished, docs); err != nil {
 		return fmt.Errorf("content: project search of %s: %w", id, err)
 	}
 	return nil

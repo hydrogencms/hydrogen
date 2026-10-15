@@ -37,7 +37,7 @@ func SeedBench(tb testing.TB, db store.DB) {
 				return err
 			}
 			published := t0.Add(time.Duration(i*37%BenchItems) * time.Hour)
-			if err := c.ReplaceIndex(ctx, id, []store.IndexRow{
+			if err := c.ReplaceIndex(ctx, id, store.ProjectionPublished, []store.IndexRow{
 				txt("", "category", fmt.Sprintf("c%02d", i%20)),
 				num("", "rating", float64(i*7%100)),
 				tim("", "published", published),

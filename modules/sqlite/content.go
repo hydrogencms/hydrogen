@@ -451,7 +451,10 @@ func (s contentStore) IncomingRefs(ctx context.Context, to ids.UUID) ([]store.Re
 	return out, rows.Err()
 }
 
-func (s contentStore) ReplaceIndex(ctx context.Context, item ids.UUID, rows []store.IndexRow) error {
+func (s contentStore) ReplaceIndex(ctx context.Context, item ids.UUID, proj store.Projection, rows []store.IndexRow) error {
+	if proj != store.ProjectionPublished {
+		return errNotImplemented // H5a T2
+	}
 	if _, err := s.tx.ExecContext(ctx, `DELETE FROM field_index WHERE item_id = ?`, uid(item)); err != nil {
 		return fmt.Errorf("sqlite: replace index %s: %w", item, err)
 	}
@@ -492,7 +495,10 @@ func (s contentStore) ReplaceIndex(ctx context.Context, item ids.UUID, rows []st
 	return nil
 }
 
-func (s contentStore) ReplaceSearch(ctx context.Context, item ids.UUID, docs []store.SearchDoc) error {
+func (s contentStore) ReplaceSearch(ctx context.Context, item ids.UUID, proj store.Projection, docs []store.SearchDoc) error {
+	if proj != store.ProjectionPublished {
+		return errNotImplemented // H5a T2
+	}
 	if _, err := s.tx.ExecContext(ctx, `DELETE FROM content_search_doc WHERE item_id = ?`, uid(item)); err != nil {
 		return fmt.Errorf("sqlite: replace search %s: %w", item, err)
 	}
@@ -577,4 +583,11 @@ func (s contentStore) ItemIDsOfType(ctx context.Context, typ string, after ids.U
 		out = append(out, u)
 	}
 	return out, rows.Err()
+}
+
+// errNotImplemented marks H5a placeholders (T2 working projections, T1 auth store).
+var errNotImplemented = errors.New("not implemented yet (H5a)")
+
+func (s contentStore) ReplaceModuleIndex(context.Context, ids.UUID, string, []store.IndexRow) error {
+	return errNotImplemented // H5a T2
 }

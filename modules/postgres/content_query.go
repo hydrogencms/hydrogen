@@ -345,6 +345,9 @@ type queryer interface {
 }
 
 func (s contentStore) Query(ctx context.Context, q store.Query) (store.QueryResult, error) {
+	if q.Working || q.Scoped {
+		return store.QueryResult{}, errNotImplemented // H5a T2
+	}
 	return runQuery(ctx, s.tx, q)
 }
 

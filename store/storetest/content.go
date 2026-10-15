@@ -498,7 +498,7 @@ func testIndexReplace(t *testing.T, db store.DB) {
 		if err := c.InsertItem(ctx, newItem(id, "article", "")); err != nil {
 			return err
 		}
-		return c.ReplaceIndex(ctx, id, []store.IndexRow{num("", "rating", 5), txt("en", "title", "Old")})
+		return c.ReplaceIndex(ctx, id, store.ProjectionPublished, []store.IndexRow{num("", "rating", 5), txt("en", "title", "Old")})
 	})
 	count := func(q store.Query) int {
 		q.Type = "article"
@@ -515,21 +515,21 @@ func testIndexReplace(t *testing.T, db store.DB) {
 		t.Fatal("initial rows not queryable")
 	}
 	withContent(t, db, func(c store.ContentStore) error {
-		return c.ReplaceIndex(ctx, id, []store.IndexRow{num("", "rating", 6)})
+		return c.ReplaceIndex(ctx, id, store.ProjectionPublished, []store.IndexRow{num("", "rating", 6)})
 	})
 	if count(store.Query{Where: []store.Cond{{Field: "rating", Column: store.ColNum, Op: store.OpEq, Value: 5.0}}}) != 0 ||
 		count(store.Query{Where: []store.Cond{{Field: "title", Column: store.ColText, Op: store.OpExists, Value: true}}}) != 0 ||
 		count(store.Query{Where: []store.Cond{{Field: "rating", Column: store.ColNum, Op: store.OpEq, Value: 6.0}}}) != 1 {
 		t.Fatal("ReplaceIndex did not replace the old rows")
 	}
-	withContent(t, db, func(c store.ContentStore) error { return c.ReplaceIndex(ctx, id, nil) })
+	withContent(t, db, func(c store.ContentStore) error { return c.ReplaceIndex(ctx, id, store.ProjectionPublished, nil) })
 	if count(store.Query{Where: []store.Cond{{Field: "rating", Column: store.ColNum, Op: store.OpExists, Value: true}}}) != 0 {
 		t.Fatal("rows remain after clearing")
 	}
 
 	two := store.IndexRow{Field: "x", Text: str("a"), Num: new(float64)}
 	for name, row := range map[string]store.IndexRow{"two values": two, "no value": {Field: "x"}} {
-		if err := expectErr(db, func(c store.ContentStore) error { return c.ReplaceIndex(ctx, id, []store.IndexRow{row}) }); err == nil {
+		if err := expectErr(db, func(c store.ContentStore) error { return c.ReplaceIndex(ctx, id, store.ProjectionPublished, []store.IndexRow{row}) }); err == nil {
 			t.Fatalf("row with %s accepted", name)
 		}
 	}
@@ -618,7 +618,7 @@ func seedCatalog(t *testing.T, db store.DB) *catalog {
 					return err
 				}
 			}
-			if err := c.ReplaceIndex(ctx, id, s.index); err != nil {
+			if err := c.ReplaceIndex(ctx, id, store.ProjectionPublished, s.index); err != nil {
 				return err
 			}
 		}
@@ -911,7 +911,7 @@ func walkCatalog(t *testing.T, db store.DB) []ids.UUID {
 			if i%6 != 0 {
 				rows = append(rows, tim("", "when", t0.Add(time.Duration(i%9)*time.Hour)), bln("", "flag", i%2 == 0))
 			}
-			if err := c.ReplaceIndex(ctx, id, rows); err != nil {
+			if err := c.ReplaceIndex(ctx, id, store.ProjectionPublished, rows); err != nil {
 				return err
 			}
 		}
@@ -1153,7 +1153,7 @@ func testSearchHuge(t *testing.T, db store.DB) {
 		b.WriteByte(' ')
 	}
 	withContent(t, db, func(c store.ContentStore) error {
-		return c.ReplaceSearch(context.Background(), cat.ids['B'], []store.SearchDoc{{Locale: "en", Text: b.String()}})
+		return c.ReplaceSearch(context.Background(), cat.ids['B'], store.ProjectionPublished, []store.SearchDoc{{Locale: "en", Text: b.String()}})
 	})
 	res := cat.run(t, db, store.Query{Type: "article", Locale: "en", Search: "zebrafish"})
 	if got := cat.letters(res); got != "B" {
@@ -1172,7 +1172,7 @@ func testSearch(t *testing.T, db store.DB) {
 	}
 	withContent(t, db, func(c store.ContentStore) error {
 		for _, l := range []byte("ABCE") {
-			if err := c.ReplaceSearch(ctx, cat.ids[l], docs[l]); err != nil {
+			if err := c.ReplaceSearch(ctx, cat.ids[l], store.ProjectionPublished, docs[l]); err != nil {
 				return err
 			}
 		}
@@ -1241,7 +1241,7 @@ func testSearch(t *testing.T, db store.DB) {
 
 	// Replacing removes the old text; a locale given twice is merged.
 	withContent(t, db, func(c store.ContentStore) error {
-		return c.ReplaceSearch(ctx, cat.ids['B'], []store.SearchDoc{{Locale: "en", Text: "kiwi"}, {Locale: "en", Text: "papaya"}})
+		return c.ReplaceSearch(ctx, cat.ids['B'], store.ProjectionPublished, []store.SearchDoc{{Locale: "en", Text: "kiwi"}, {Locale: "en", Text: "papaya"}})
 	})
 	if got := cat.letters(search("en", "fox")); got != "A" {
 		t.Errorf("after replace, fox: %q", got)
@@ -1249,13 +1249,13 @@ func testSearch(t *testing.T, db store.DB) {
 	if got := cat.letters(search("en", "kiwi papaya")); got != "B" {
 		t.Errorf("after replace, merged docs: %q", got)
 	}
-	withContent(t, db, func(c store.ContentStore) error { return c.ReplaceSearch(ctx, cat.ids['B'], nil) })
+	withContent(t, db, func(c store.ContentStore) error { return c.ReplaceSearch(ctx, cat.ids['B'], store.ProjectionPublished, nil) })
 	if got := cat.letters(search("en", "kiwi")); got != "" {
 		t.Errorf("after clearing: %q", got)
 	}
 	// Replacing again after deletes still works (no stale rows from earlier documents).
 	withContent(t, db, func(c store.ContentStore) error {
-		return c.ReplaceSearch(ctx, cat.ids['B'], []store.SearchDoc{{Locale: "en", Text: "fox again"}})
+		return c.ReplaceSearch(ctx, cat.ids['B'], store.ProjectionPublished, []store.SearchDoc{{Locale: "en", Text: "fox again"}})
 	})
 	if got := cat.letters(search("en", "fox")); got != "BA" && got != "AB" {
 		t.Errorf("re-added: %q", got)
@@ -1276,7 +1276,7 @@ func testDeleteCascade(t *testing.T, db store.DB) {
 		if err := c.ReplaceRefs(ctx, a, []store.Ref{{FieldPath: "author", To: e, Kind: "field", OnDelete: "block"}}); err != nil {
 			return err
 		}
-		return c.ReplaceSearch(ctx, a, []store.SearchDoc{{Locale: "en", Text: "doomed"}})
+		return c.ReplaceSearch(ctx, a, store.ProjectionPublished, []store.SearchDoc{{Locale: "en", Text: "doomed"}})
 	})
 	viewContent(t, db, func(c store.ContentStore) error {
 		if refs, err := c.IncomingRefs(ctx, e); err != nil || len(refs) != 1 {
@@ -1445,14 +1445,14 @@ func testQueryAvailable(t *testing.T, db store.DB) {
 			if i%3 != 0 { // some items have no value, for the walk's second phase
 				rows = append(rows, txt("", "title", "x"))
 			}
-			if err := c.ReplaceIndex(ctx, id, rows); err != nil {
+			if err := c.ReplaceIndex(ctx, id, store.ProjectionPublished, rows); err != nil {
 				return err
 			}
 			text := "gadget"
 			if i%2 == 1 {
 				text = "other"
 			}
-			if err := c.ReplaceSearch(ctx, id, []store.SearchDoc{{Locale: "en", Text: text}}); err != nil {
+			if err := c.ReplaceSearch(ctx, id, store.ProjectionPublished, []store.SearchDoc{{Locale: "en", Text: text}}); err != nil {
 				return err
 			}
 		}

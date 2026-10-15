@@ -48,8 +48,13 @@ type ContentStore interface {
 	// Projections of an item's current published version; Replace* deletes the item's old rows first.
 	ReplaceRefs(ctx context.Context, from ids.UUID, refs []Ref) error
 	IncomingRefs(ctx context.Context, to ids.UUID) ([]Ref, error)
-	ReplaceIndex(ctx context.Context, item ids.UUID, rows []IndexRow) error
-	ReplaceSearch(ctx context.Context, item ids.UUID, docs []SearchDoc) error
+	// Index and search rows exist per projection: published (delivery) and working (the draft overlaid on the
+	// published version; management listings). Both replace only the content rows of that projection.
+	ReplaceIndex(ctx context.Context, item ids.UUID, p Projection, rows []IndexRow) error
+	ReplaceSearch(ctx context.Context, item ids.UUID, p Projection, docs []SearchDoc) error
+	// ReplaceModuleIndex replaces a module's index rows of an item. Field names are "<module>.<name>"; the rows
+	// apply to both projections.
+	ReplaceModuleIndex(ctx context.Context, item ids.UUID, module string, rows []IndexRow) error
 
 	Query(ctx context.Context, q Query) (QueryResult, error)
 
@@ -192,12 +197,32 @@ type Query struct {
 	// Available, when set, keeps only published items a channel can show: a published snapshot in one of these
 	// locales, or published and always available. Totals and paging respect it.
 	Available []string
-	Where     []Cond
+	// Working matches Where, indexed Sort and Search against the working projection instead of the published one.
+	Working bool
+	// Scoped restricts the query to items matching at least one Scope term (access control); with no terms it
+	// matches nothing. Totals and paging respect it.
+	Scoped bool
+	Scope  []ScopeTerm
+	Where  []Cond
 	Search    string
 	Sort      []Sort
 	Limit     int // 1..500
 	Offset    int
 }
+
+// ScopeTerm ANDs its parts: CreatedBy (any of these actors; empty = any) and Where.
+type ScopeTerm struct {
+	CreatedBy []string
+	Where     []Cond
+}
+
+// Projection selects the published or the working index and search rows.
+type Projection string
+
+const (
+	ProjectionPublished Projection = "p"
+	ProjectionWorking   Projection = "w"
+)
 
 type QueryResult struct {
 	Items []ItemSummary

@@ -62,6 +62,7 @@ type Tx interface {
 	Outbox() OutboxStore
 	Audit() AuditStore
 	Content() ContentStore
+	Auth() AuthStore
 	// SQL runs a module's own statements in this transaction.
 	SQL() SQL
 	// Notify queues a notification on channel, sent after commit.
