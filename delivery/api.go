@@ -92,6 +92,10 @@ type Route struct {
 // in-process cache key). Authorization is always listed.
 type Varier func(ch *channel.Channel) []string
 
+// PreviewURLer resolves the URL a frontend shows an item at, for preview links. It returns a path or an
+// absolute URL without a preview token, and false when it has no URL for the item in that channel and locale.
+type PreviewURLer func(ctx context.Context, ch *channel.Channel, item ids.UUID, typ, locale string) (string, bool, error)
+
 // Options configures New.
 type Options struct {
 	Content  *content.Service
@@ -107,6 +111,8 @@ type Options struct {
 	PreviewSecret []byte
 	Routes        []Route
 	Decorators    []Decorator
+	// PreviewURLs are asked in order for the URL of an item when a preview token is minted for it.
+	PreviewURLs []PreviewURLer
 	// PublicOptions are the channel options shown by GET /channels/{name}.
 	PublicOptions []string
 	Varies        []Varier

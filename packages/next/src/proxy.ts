@@ -5,7 +5,7 @@ import type { ChannelInfo } from '@hydrogencms/client'
 import type { Resolved } from '@hydrogencms/router'
 import { matchSite } from '@hydrogencms/router'
 import { channelInfos, matcherHeaders, routerOf, setToken } from './delivery.js'
-import { PREVIEW_COOKIE, matchPreviewPath, tokenFromCookie } from './preview.js'
+import { PREVIEW_COOKIE, PREVIEW_PARAM, matchPreviewPath, tokenFromCookie, validToken } from './preview.js'
 import { PATH_HEADER, publicUrl } from './url.js'
 
 export interface ProxyOptions {
@@ -26,6 +26,8 @@ export interface ProxyOptions {
   notFoundPath?: string
   /** path of the preview URLs for items without a route (default "/preview") */
   previewPath?: string
+  /** where the preview route lives (default "/api/hydrogen/preview"): `?preview=<token>` URLs go there */
+  previewRoutePath?: string
   /** paths the proxy leaves alone (default: `/_next/` and `/api/`) */
   skip?: (pathname: string) => boolean
   /** milliseconds the CMS may take before the proxy lets the request through (default 3000) */
@@ -61,6 +63,19 @@ export function createProxy(o: ProxyOptions): (req: NextRequest) => Promise<Next
       return NextResponse.rewrite(u, { status: 404 })
     }
     if (skip(pathname)) return pass()
+
+    // The CMS's preview URLs are the normal URL plus ?preview=<token>: hand the token to the preview route, which
+    // validates the path, enables draft mode and sets the cookie. Nothing is logged; the token is a bearer secret.
+    const q = new URLSearchParams(req.nextUrl.search)
+    const pv = q.get('preview')
+    if (pv !== null) {
+      q.delete('preview')
+      const rest = q.toString()
+      const u = req.nextUrl.clone()
+      u.pathname = o.previewRoutePath ?? '/api/hydrogen/preview'
+      u.search = new URLSearchParams({ [PREVIEW_PARAM]: validToken(pv) ? pv : '', path: pathname + (rest ? '?' + rest : '') }).toString()
+      return NextResponse.redirect(u, 307)
+    }
 
     const token = tokenFromCookie(req.cookies.get(PREVIEW_COOKIE)?.value)
     // An item with no route yet is shown by the page, which asks the CMS with the token itself.

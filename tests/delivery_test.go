@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -861,6 +863,12 @@ func (m *deliveryMod) Register(r *kernel.Registry) error {
 	}})
 	r.PublicChannelOption("flavour")
 	r.Decorator(urlDecorator{m})
+	r.PreviewURL(func(_ context.Context, ch *channel.Channel, item ids.UUID, typ, locale string) (string, bool, error) {
+		if typ == "person" {
+			return "", false, errors.New("resolver failed")
+		}
+		return "/" + ch.Name + "/" + locale + "/" + typ + "/" + item.String() + "?x=1", ch.Name == "web" && typ == "article", nil
+	})
 	r.DeliveryVary(func(ch *channel.Channel) []string {
 		if ch.Name == "web" {
 			return []string{"x-market"}
@@ -884,6 +892,39 @@ func (m *deliveryMod) Register(r *kernel.Registry) error {
 				"languages": delivery.Languages(r), "item": out[0], "market": r.Header.Get("X-Market")})
 		}})
 	return nil
+}
+
+func TestMintPreviewURL(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, b backend) {
+		clk := newClock()
+		n := newDeliveryNodeWith(t, b.open(t, clk), clk, &deliveryMod{})
+		art := n.create("article", "k", "en", `{"title":"Hi"}`, false)
+		mint := func(body map[string]any) map[string]any {
+			r := n.manage("POST", "/preview-tokens", body)
+			if r.Code != 200 {
+				t.Fatalf("%v: %d %s", body, r.Code, r.Body)
+			}
+			return r.json()
+		}
+		m := mint(map[string]any{"channel": "web", "item": art.String()})
+		if want := "/web/en/article/" + art.String() + "?x=1&preview=" + url.QueryEscape(m["token"].(string)); m["url"] != want {
+			t.Errorf("url %v, want %q", m["url"], want)
+		}
+		if _, ok := mint(map[string]any{"channel": "web"})["url"]; ok {
+			t.Error("url without an item")
+		}
+		if _, ok := mint(map[string]any{"channel": "app", "item": art.String()})["url"]; ok {
+			t.Error("url from a provider that declined")
+		}
+		n.previewToken(map[string]any{"channel": "web", "item": art.String(), "locale": "xx"}, 400)
+		if _, ok := mint(map[string]any{"channel": "people", "item": art.String()})["url"]; ok {
+			t.Error("url for a collection the channel does not serve")
+		}
+		person := n.create("person", "", "en", `{"fullName":"Ann"}`, false)
+		if r := n.manage("POST", "/preview-tokens", map[string]any{"channel": "web", "item": person.String()}); r.Code != 500 {
+			t.Errorf("resolver error: status %d", r.Code)
+		}
+	})
 }
 
 func TestDeliveryExtensionPoints(t *testing.T) {
@@ -1104,4 +1145,80 @@ func TestDeliveryHandlerPanicIsContained(t *testing.T) {
 		t.Errorf("an internal error leaked: %s", r.Body)
 	}
 	n.wantStatus("/items/x/y/z", 404)
+}
+
+// TestPreviewListsCoveredDraft checks that a token scoped to a never-published item lists it first, and that
+// paging through such a listing still shows every published item exactly once.
+func TestPreviewListsCoveredDraft(t *testing.T) {
+	runDelivery(t, func(t *testing.T, n *dnode) {
+		var want []string
+		for i := 1; i <= 12; i++ {
+			title := fmt.Sprintf("T%02d", i)
+			n.create("article", "", "en", fmt.Sprintf(`{"title":%q,"rank":%d}`, title, i), true)
+			want = append(want, title)
+		}
+		draft := n.create("article", "", "en", `{"title":"Draft","rank":100}`, false)
+		otherDraft := n.create("article", "", "en", `{"title":"Other","rank":101}`, false)
+		published := n.create("article", "", "en", `{"title":"Live","rank":50}`, true)
+		n.update(published, "en", `{"title":"Live v2"}`)
+		tok := n.previewToken(map[string]any{"channel": "web", "item": draft.String()}, 200)
+		q := "&preview=" + url.QueryEscape(tok)
+
+		list := func(query string) (titles []string, hasMore bool, total float64) {
+			t.Helper()
+			m := n.wantStatus("/collections/article/items?sort=rank&"+query, 200).json()
+			for _, it := range m["items"].([]any) {
+				titles = append(titles, it.(map[string]any)["fields"].(map[string]any)["title"].(string))
+			}
+			total, _ = m["total"].(float64)
+			return titles, m["hasMore"].(bool), total
+		}
+		eq := func(what string, got []string, want ...string) {
+			t.Helper()
+			if strings.Join(got, ",") != strings.Join(want, ",") {
+				t.Errorf("%s: %v, want %v", what, got, want)
+			}
+		}
+
+		got, _, _ := list("where[rank][gte]=10" + q)
+		eq("matching where", got, "Draft", "T10", "T11", "T12", "Live")
+		got, _, _ = list("where[rank][lt]=10" + q)
+		eq("where that does not match", got, "T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09")
+		got, _, _ = list("q=Draft" + q)
+		eq("with q", got)
+		got, _, _ = list("channel=web&where[rank][gte]=100")
+		eq("without a token", got)
+		other := n.previewToken(map[string]any{"channel": "web", "item": otherDraft.String()}, 200)
+		got, _, _ = list("where[rank][gte]=100&preview=" + url.QueryEscape(other))
+		eq("another item's token", got, "Other")
+		liveTok := n.previewToken(map[string]any{"channel": "web", "item": published.String()}, 200)
+		got, _, _ = list("where[rank][gte]=50&preview=" + url.QueryEscape(liveTok))
+		eq("published item", got, "Live v2")
+
+		all := append([]string{"Draft"}, want...)
+		all = append(all, "Live")
+		for _, limit := range []int{1, 5, 7, 14, 500} {
+			for _, total := range []bool{false, true} {
+				var seen []string
+				for offset := 0; offset < 20; offset += limit {
+					query := fmt.Sprintf("limit=%d&offset=%d", limit, offset)
+					if total {
+						query += "&total=true"
+					}
+					page, more, count := list(query + q)
+					if total && count != float64(len(all)) {
+						t.Errorf("limit %d offset %d: total %v, want %d", limit, offset, count, len(all))
+					}
+					seen = append(seen, page...)
+					if !more {
+						break
+					}
+					if len(page) != limit {
+						t.Errorf("limit %d offset %d: %d items but more follow", limit, offset, len(page))
+					}
+				}
+				eq(fmt.Sprintf("paging limit %d total %v", limit, total), seen, all...)
+			}
+		}
+	})
 }

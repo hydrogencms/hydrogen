@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -603,5 +604,68 @@ func TestCacheDoesNotServeAPurgedEntryWhileItWaitsForEviction(t *testing.T) {
 	c.purge("t") // must not evict the replacement twice or corrupt the accounting
 	if n, used := c.stats(); n != 0 || used != 0 {
 		t.Errorf("%d entries, %d bytes", n, used)
+	}
+}
+
+func TestMatchesWhere(t *testing.T) {
+	fsys := fstest.MapFS{"schema/s.yaml": {Data: []byte(`types:
+  doc:
+    fields:
+      slug: { type: string, index: true }
+      rating: { type: number, index: true }
+      tags: { type: list, of: { type: string }, index: true }
+      on: { type: boolean, index: true }
+      day: { type: date, index: true }
+      at: { type: datetime, index: true }
+      author: { type: ref, to: [doc], index: true }
+`)}}
+	b := schema.NewBuilder(schema.NewRegistry())
+	if err := b.LoadFS(fsys, "schema"); err != nil {
+		t.Fatal(err)
+	}
+	sch, err := b.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	typ, _ := sch.Type("doc")
+	fields := map[string]any{"slug": "hi", "rating": json.Number("3"), "tags": []any{"a", "b"}, "on": true,
+		"day": "2026-03-01", "at": "2026-03-01T10:00:00.123456Z", "author": "01A13DF6-4D9F-75A3-A35D-4FDF076E1998"}
+	empty := map[string]any{"slug": "", "author": ""}
+	author, _ := ids.Parse("01a13df6-4d9f-75a3-a35d-4fdf076e1998")
+	day := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	cases := []struct {
+		c    store.Cond
+		want bool
+	}{
+		{store.Cond{Field: "slug", Column: store.ColText, Op: store.OpEq, Value: "hi"}, true},
+		{store.Cond{Field: "slug", Column: store.ColText, Op: store.OpEq, Value: "no"}, false},
+		{store.Cond{Field: "slug", Column: store.ColText, Op: store.OpNe, Value: "no"}, true},
+		{store.Cond{Field: "missing", Column: store.ColText, Op: store.OpNe, Value: "no"}, true},
+		{store.Cond{Field: "slug", Column: store.ColText, Op: store.OpPrefix, Value: "h"}, true},
+		{store.Cond{Field: "slug", Column: store.ColText, Op: store.OpPrefix, Value: "H"}, false},
+		{store.Cond{Field: "slug", Column: store.ColText, Op: store.OpIn, Value: []string{"x", "hi"}}, true},
+		{store.Cond{Field: "rating", Column: store.ColNum, Op: store.OpGte, Value: 3.0}, true},
+		{store.Cond{Field: "rating", Column: store.ColNum, Op: store.OpLt, Value: 3.0}, false},
+		{store.Cond{Field: "tags", Column: store.ColText, Op: store.OpContains, Value: "b"}, true},
+		{store.Cond{Field: "on", Column: store.ColBool, Op: store.OpEq, Value: true}, true},
+		{store.Cond{Field: "day", Column: store.ColTime, Op: store.OpEq, Value: day}, true},
+		{store.Cond{Field: "day", Column: store.ColTime, Op: store.OpGt, Value: day.AddDate(0, -1, 0)}, true},
+		{store.Cond{Field: "at", Column: store.ColTime, Op: store.OpEq, Value: time.Date(2026, 3, 1, 10, 0, 0, 123000000, time.UTC)}, true},
+		{store.Cond{Field: "author", Column: store.ColRef, Op: store.OpEq, Value: author}, true},
+		{store.Cond{Field: "slug", Op: store.OpExists, Value: true}, true},
+		{store.Cond{Field: "missing", Op: store.OpExists, Value: true}, false},
+		{store.Cond{Field: "missing", Column: store.ColText, Op: store.OpEq, Value: "x"}, false},
+	}
+	for _, c := range cases {
+		if got := matchesWhere([]store.Cond{c.c}, sch.IndexValues(typ, fields)); got != c.want {
+			t.Errorf("%+v: %v, want %v", c.c, got, c.want)
+		}
+	}
+	// An empty string is not indexed, so it is absent.
+	vals := sch.IndexValues(typ, empty)
+	if matchesWhere([]store.Cond{{Field: "slug", Column: store.ColText, Op: store.OpEq, Value: ""}}, vals) ||
+		matchesWhere([]store.Cond{{Field: "slug", Op: store.OpExists, Value: true}}, vals) ||
+		!matchesWhere([]store.Cond{{Field: "author", Op: store.OpExists, Value: false}}, vals) {
+		t.Error("empty strings must count as absent")
 	}
 }

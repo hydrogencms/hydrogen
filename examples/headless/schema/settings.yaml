@@ -1,0 +1,5 @@
+types:
+  settings:
+    singleton: true
+    fields:
+      siteTitle: { type: string, translatable: true, required: true }

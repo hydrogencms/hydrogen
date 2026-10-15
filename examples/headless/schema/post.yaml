@@ -1,0 +1,8 @@
+types:
+  post:
+    name: "{title}"
+    fields:
+      title:  { type: string, translatable: true, required: true }
+      slug:   { type: slug, translatable: true, index: true }
+      body:   { type: text, translatable: true }
+      author: { type: ref, to: [author], on_delete: nullify, index: true }

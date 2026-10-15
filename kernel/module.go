@@ -92,6 +92,7 @@ type Registry struct {
 	decorators  []registered[delivery.Decorator]
 	publicOpts  []registered[string]
 	varies      []delivery.Varier
+	previewURLs []delivery.PreviewURLer
 	exporters   []exportfmt.NamedExporter
 }
 

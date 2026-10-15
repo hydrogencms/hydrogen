@@ -1,6 +1,8 @@
 package delivery
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"slices"
@@ -8,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/hydrogencms/hydrogen/cachetag"
+	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/manage"
 	"github.com/hydrogencms/hydrogen/store"
@@ -204,26 +207,48 @@ func (a *API) listItems(w http.ResponseWriter, r *http.Request) {
 		Fail(w, r, err)
 		return
 	}
-	limit := sq.Limit
-	probe := !wantTotal && limit < maxPage
+	ctx := r.Context()
+	pv, err := st.previewed(ctx, typ, sq)
+	if err != nil {
+		Fail(w, r, err)
+		return
+	}
+	// The previewed draft is row 0 of the listing; the store serves the rest, shifted by one.
+	limit, offset := sq.Limit, sq.Offset
+	want := limit
+	if pv != nil {
+		if offset == 0 {
+			want--
+		} else {
+			sq.Offset--
+		}
+	}
+	probe := !wantTotal && want < maxPage
+	sq.Limit = want
 	if probe {
 		sq.Limit++ // one more row than the page tells whether another page follows, and spares the count
 	}
-	ctx := r.Context()
+	sq.Limit = max(sq.Limit, 1)
 	res, err := a.o.Reader.Query(ctx, sq)
 	if err != nil {
 		Fail(w, r, err)
 		return
 	}
-	hasMore := sq.Offset+min(len(res.Items), limit) < res.Total
+	hasMore := sq.Offset+min(len(res.Items), want) < res.Total
 	if probe {
-		hasMore = len(res.Items) > limit
+		hasMore = len(res.Items) > want
 	}
-	res.Items = res.Items[:min(len(res.Items), limit)]
+	res.Items = res.Items[:min(len(res.Items), want)]
 	items, err := st.loadSummaries(ctx, res.Items)
 	if err != nil {
 		Fail(w, r, err)
 		return
+	}
+	if pv != nil {
+		res.Total++
+		if offset == 0 {
+			items = slices.Insert(items, 0, pv)
+		}
 	}
 	inc, err := st.include(ctx, items, depth)
 	if err != nil {
@@ -271,6 +296,35 @@ func (st *state) listQuery(typ string) (store.Query, error) {
 		sq.Available = st.eff.Languages
 	}
 	return sq, nil
+}
+
+// previewed returns the draft an item-scoped preview token adds to a listing: the covered item when it was
+// never published (so published listings cannot hold it and a draft has no index rows to query), is of the
+// listed type and its draft matches the filters. A search term never matches. It is shown first on the first page.
+func (st *state) previewed(ctx context.Context, typ string, sq store.Query) (*resolved, error) {
+	if st.preview == nil || st.preview.Item == "" || sq.Search != "" {
+		return nil, nil
+	}
+	id, err := ids.Parse(st.preview.Item)
+	if err != nil {
+		return nil, nil
+	}
+	v, err := st.a.o.Content.GetForChannel(ctx, id, st.eff, content.ChannelGetOptions{Draft: true})
+	if errors.Is(err, content.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if v.Type != typ || v.Status != content.StatusDraft {
+		return nil, nil
+	}
+	t, ok := st.a.o.Schema.Type(typ)
+	if !ok || !matchesWhere(sq.Where, st.a.o.Schema.IndexValues(t, v.Fields)) {
+		return nil, nil
+	}
+	st.look(id, typ)
+	return st.resolveDraft(v)
 }
 
 // maxPage is the largest page a store returns; a page that size cannot be probed with one more row.

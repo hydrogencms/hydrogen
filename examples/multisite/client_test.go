@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -149,6 +150,22 @@ func clientScenario(t *testing.T, s *server) {
 		tok, err := m.PreviewToken(ctx, client.PreviewTokenInput{Channel: "corporate_en", Item: v.ID})
 		if err != nil || tok.Token == "" || tok.ExpiresAt.IsZero() {
 			t.Fatalf("token %+v %v", tok, err)
+		}
+		// A page that was never published has no route yet: the channel's "*" pattern gives its preview URL.
+		if want := "https://www.acme.com/preview/page/" + v.ID + "?preview=" + url.QueryEscape(tok.Token); tok.URL != want {
+			t.Errorf("draft page url %q, want %q", tok.URL, want)
+		}
+		// A routed page previews at its route on that channel (frontend, prefix and locale included).
+		for _, c := range []struct{ channel, locale, path string }{
+			{"corporate_en", "", "/en/about"}, {"corporate_de", "de", "/de/uber-uns"}, {"corporate_dech", "", "/de-ch/about"},
+		} {
+			routed, err := m.PreviewToken(ctx, client.PreviewTokenInput{Channel: c.channel, Item: f.about, Locale: c.locale})
+			if want := "https://www.acme.com" + c.path + "?preview=" + url.QueryEscape(routed.Token); err != nil || routed.URL != want {
+				t.Errorf("%s: url %q, want %q (%v)", c.channel, routed.URL, want, err)
+			}
+		}
+		if _, err := m.PreviewToken(ctx, client.PreviewTokenInput{Channel: "corporate_en", Item: f.about, Locale: "de"}); err == nil {
+			t.Error("a locale the channel does not serve was accepted")
 		}
 		prev := web.With(client.WithPreview(tok.Token))
 		res, err := prev.Item(ctx, v.ID, nil)

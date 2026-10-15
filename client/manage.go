@@ -194,6 +194,7 @@ func (m *Manage) Delete(ctx context.Context, id string) error {
 type PreviewTokenInput struct {
 	Channel string
 	Item    string        // optional: only this item previews as draft
+	Locale  string        // optional, with Item: the language of the URL; default the item's main locale if the channel serves it
 	TTL     time.Duration // 0: the server's default (15 minutes); at most one hour
 }
 
@@ -201,6 +202,9 @@ type PreviewTokenInput struct {
 type PreviewToken struct {
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	// URL is where the channel's frontend shows the item, with the token appended; only when the input had an
+	// Item and a URL resolves.
+	URL string `json:"url,omitempty"`
 }
 
 // PreviewToken mints a token that makes the delivery API of a channel show drafts.
@@ -208,6 +212,9 @@ func (m *Manage) PreviewToken(ctx context.Context, in PreviewTokenInput) (*Previ
 	body := map[string]any{"channel": in.Channel}
 	if in.Item != "" {
 		body["item"] = in.Item
+	}
+	if in.Locale != "" {
+		body["locale"] = in.Locale
 	}
 	if in.TTL > 0 {
 		body["ttl"] = strconv.FormatFloat(in.TTL.Seconds(), 'f', -1, 64) + "s"

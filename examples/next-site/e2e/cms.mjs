@@ -3,6 +3,7 @@
 //   rename <id> <slug>   change the slug of an item and publish it
 //   retitle <id> <title> change the English title and publish
 //   token <channel> <item> <ttl seconds>   mint a preview token
+//   pending <id> <title>  edit the English title without publishing; mint an item-scoped preview token
 //   draft                create a page that is never published, place it, mint a preview token
 const base = `${process.env.CMS_URL}/api/manage/v1`
 const auth = { Authorization: `Bearer ${process.env.MANAGE_TOKEN}`, 'Content-Type': 'application/json' }
@@ -64,14 +65,18 @@ const commands = {
   async draft(aboutNode) {
     const v = await api('POST', '/collections/page/items', { locale: 'en', fields: t('Secret launch') }, 201)
     await api('POST', '/pages/sites/corporate/nodes', { kind: 'page', item: v.id, parent: aboutNode }, 201)
-    const { token } = await api('POST', '/preview-tokens', { channel: 'corporate_en', item: v.id })
-    return { id: v.id, token }
+    const { token, url } = await api('POST', '/preview-tokens', { channel: 'corporate_en', item: v.id, locale: 'en' })
+    return { id: v.id, token, url }
+  },
+  async pending(id, title) {
+    await api('PATCH', `/items/${id}`, { locale: 'en', fields: { title } })
+    return api('POST', '/preview-tokens', { channel: 'corporate_en', item: id, locale: 'en' })
   },
 }
 
 const [cmd, ...args] = process.argv.slice(2)
 if (!commands[cmd]) {
-  console.error('usage: cms.mjs seed|rename|retitle|token|draft')
+  console.error('usage: cms.mjs seed|rename|retitle|token|pending|draft')
   process.exit(2)
 }
 console.log(JSON.stringify(await commands[cmd](...args)))

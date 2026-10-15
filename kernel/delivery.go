@@ -34,6 +34,13 @@ func (r *Registry) DeliveryVary(v delivery.Varier) {
 	r.varies = append(r.varies, v)
 }
 
+// PreviewURL adds a resolver for the frontend URL of an item, used when a preview token is minted for it. The
+// first resolver (in registration order) that reports a URL wins; without one the channel's preview patterns
+// apply.
+func (r *Registry) PreviewURL(p delivery.PreviewURLer) {
+	r.previewURLs = append(r.previewURLs, p)
+}
+
 // checkPublicOptions rejects public channel options no module registered.
 func (r *Registry) checkPublicOptions() error {
 	known := map[string]bool{}
@@ -81,6 +88,7 @@ func newDelivery(s *Services, reg *Registry) (*delivery.API, error) {
 	for _, d := range reg.decorators {
 		o.Decorators = append(o.Decorators, d.value)
 	}
+	o.PreviewURLs = reg.previewURLs
 	for _, p := range reg.publicOpts {
 		o.PublicOptions = append(o.PublicOptions, p.value)
 	}

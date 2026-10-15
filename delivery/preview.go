@@ -1,6 +1,7 @@
 package delivery
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -8,9 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/hydrogencms/hydrogen/channel"
+	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/manage"
 )
@@ -108,11 +114,13 @@ func (st *state) previews(id ids.UUID) bool {
 type previewRequest struct {
 	Channel string          `json:"channel"`
 	Item    string          `json:"item"`
+	Locale  string          `json:"locale"`
 	TTL     json.RawMessage `json:"ttl"`
 }
 
-// PreviewTokenRoute is the management route POST /preview-tokens {channel, item?, ttl?} that mints preview
-// tokens. ttl is a number of seconds or a Go duration string ("15m"); at most one hour, default 15 minutes.
+// PreviewTokenRoute is the management route POST /preview-tokens {channel, item?, locale?, ttl?} that mints
+// preview tokens. ttl is a number of seconds or a Go duration string ("15m"); at most one hour, default 15
+// minutes. For an item it also answers with the frontend URL to open, when one resolves.
 func (a *API) PreviewTokenRoute() manage.Route {
 	type m = map[string]any
 	errRef := func(code string) m { return m{"$ref": "#/components/responses/" + code} }
@@ -123,19 +131,25 @@ func (a *API) PreviewTokenRoute() manage.Route {
 			"operationId": "createPreviewToken",
 			"summary":     "Mint a delivery preview token",
 			"description": "The token goes in X-Hydrogen-Preview (or ?preview=) on delivery requests of that channel; " +
-				"they then show draft content, uncached. An item-scoped token previews only that item.",
+				"they then show draft content, uncached. An item-scoped token previews only that item. For an item, url is " +
+				"where the channel's frontend shows it with ?preview=token appended: from a module's resolver (the pages " +
+				"module: the item's route), else the channel's preview pattern for its collection. It is absent when " +
+				"none resolves; a channel without a frontend gives a path.",
 			"requestBody": m{"required": true, "content": m{"application/json": m{"schema": m{
 				"type": "object", "required": []any{"channel"}, "additionalProperties": false,
 				"properties": m{
 					"channel": m{"type": "string"},
 					"item":    m{"type": "string", "format": "uuid"},
+					"locale": m{"type": "string",
+						"description": "A language of the channel; default the item's main locale if the channel serves it, else its first language."},
 					"ttl": m{"oneOf": []any{m{"type": "integer", "minimum": 1, "maximum": 3600}, m{"type": "string"}},
 						"description": "Seconds or a duration such as 15m; at most 1h, default 15m."},
 				}}}}},
 			"responses": m{
 				"200": m{"description": "The token.", "content": m{"application/json": m{"schema": m{
 					"type": "object", "required": []any{"token", "expiresAt"},
-					"properties": m{"token": m{"type": "string"}, "expiresAt": m{"type": "string", "format": "date-time"}}}}}},
+					"properties": m{"token": m{"type": "string"}, "expiresAt": m{"type": "string", "format": "date-time"},
+						"url": m{"type": "string", "description": "The preview link; only with item, when a URL resolves."}}}}}},
 				"400": errRef("BadRequest"), "401": errRef("Unauthorized"), "413": errRef("TooLarge"), "415": errRef("UnsupportedMedia"),
 			},
 		},
@@ -161,8 +175,13 @@ func (a *API) mintHandler(w http.ResponseWriter, r *http.Request) {
 		manage.Fail(w, r, err)
 		return
 	}
-	if _, ok := a.o.Channels.Get(in.Channel); !ok {
+	ch, ok := a.o.Channels.Get(in.Channel)
+	if !ok {
 		manage.Fail(w, r, manage.BadRequest("unknown channel %q", in.Channel))
+		return
+	}
+	if in.Locale != "" && !slices.Contains(ch.Languages, in.Locale) {
+		manage.Fail(w, r, manage.BadRequest("channel %q does not serve locale %q", ch.Name, in.Locale))
 		return
 	}
 	tok, exp, err := a.MintPreviewToken(in.Channel, item, ttl)
@@ -170,7 +189,85 @@ func (a *API) mintHandler(w http.ResponseWriter, r *http.Request) {
 		manage.Fail(w, r, manage.BadRequest("%s", strings.TrimPrefix(err.Error(), "delivery: ")))
 		return
 	}
-	manage.WriteJSON(w, http.StatusOK, map[string]any{"token": tok, "expiresAt": exp.Format(time.RFC3339)})
+	out := map[string]any{"token": tok, "expiresAt": exp.Format(time.RFC3339)}
+	if !item.IsZero() {
+		u, found, err := a.previewURL(r.Context(), ch, item, in.Locale)
+		if err != nil {
+			manage.Fail(w, r, err)
+			return
+		}
+		if found {
+			out["url"] = withPreview(u, tok)
+		}
+	}
+	manage.WriteJSON(w, http.StatusOK, out)
+}
+
+// previewURL resolves where the channel's frontend shows the item: the registered resolvers first, then the
+// channel's preview pattern read from the item's draft.
+func (a *API) previewURL(ctx context.Context, ch *channel.Channel, item ids.UUID, locale string) (string, bool, error) {
+	v, err := a.o.Content.Get(ctx, item, content.GetOptions{Draft: true})
+	if errors.Is(err, content.ErrNotFound) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if !ch.AllowsCollection(v.Type) {
+		return "", false, nil
+	}
+	if locale == "" {
+		locale = v.MainLocale
+		if !slices.Contains(ch.Languages, locale) && len(ch.Languages) > 0 {
+			locale = ch.Languages[0]
+		}
+	}
+	for _, p := range a.o.PreviewURLs {
+		if u, ok, err := p(ctx, ch, item, v.Type, locale); err != nil || ok {
+			return u, ok, err
+		}
+	}
+	if locale != v.Locale {
+		if v, err = a.o.Content.Get(ctx, item, content.GetOptions{Draft: true, Locale: locale}); err != nil {
+			return "", false, err
+		}
+	}
+	u, ok := ch.PreviewURL(v.Type, item.String(), locale, func(name string) (string, bool) {
+		return plainText(v.Fields[name])
+	})
+	return u, ok, nil
+}
+
+// plainText formats a scalar field value for a URL. Drafts decode numbers as json.Number, which is printed
+// without an exponent.
+func plainText(v any) (string, bool) {
+	switch x := v.(type) {
+	case string:
+		return x, true
+	case bool:
+		return strconv.FormatBool(x), true
+	case json.Number:
+		if !strings.ContainsAny(x.String(), "eE") {
+			return x.String(), true
+		}
+		f, err := x.Float64()
+		return strconv.FormatFloat(f, 'f', -1, 64), err == nil
+	}
+	return "", false
+}
+
+// withPreview appends the preview token as the query parameter the delivery API reads, before any fragment.
+func withPreview(u, tok string) string {
+	u, frag, hasFrag := strings.Cut(u, "#")
+	sep := "?"
+	if strings.Contains(u, "?") {
+		sep = "&"
+	}
+	u += sep + "preview=" + url.QueryEscape(tok)
+	if hasFrag {
+		u += "#" + frag
+	}
+	return u
 }
 
 func parseTTL(raw json.RawMessage) (time.Duration, error) {

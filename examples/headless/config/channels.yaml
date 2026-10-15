@@ -1,0 +1,16 @@
+# A headless site: the frontend owns its URLs, so previews come from patterns instead of page routes.
+languages:
+  en: {}
+  de: {}
+
+channels:
+  web:
+    languages: [en, de]
+    frontend: http://localhost:3000
+    preview: { post: "/blog/{slug}", settings: "/", "*": "/preview/{collection}/{id}" }
+
+  app:
+    languages: [en]
+    collections: [post, author]
+    access: token
+    tokens: { v1: "${env:APP_TOKEN:-dev-app-token-0001}" }

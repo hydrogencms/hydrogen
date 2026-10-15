@@ -34,17 +34,21 @@ never commit it, quote it in commit messages or public docs, or move its content
   Contract: `planning/design/channels-h3.md`.
 - Delivery (H4): published snapshots (`content/snapshot.go`, `store.Reader`, `RebuildProjections`), `delivery/`
   (read API at `/api/deliver/v1`: channel/locale selection, `include`, LRU cache purged by tag, ETag, preview
-  tokens), `cachetag/` (tags and the `cache.purge` consumer), `webhook/` (signed `Hydrogen-Signature`), `jobs/`
-  (cron jobs under a lock), `kernel/endpoints.go` (`/api/x`), export/import (`exportfmt/`, `store/export.go`,
-  `hydrogen_export.go`), `client/` (Go client), `hydrogen_frontend.go` (`check-frontend`). Pages adds `/route`
-  and `/tree`. Contract: `planning/design/delivery-h4.md`.
+  tokens; `POST /preview-tokens` with an `item` also returns the frontend `url`: a module's `Registry.PreviewURL`
+  resolver (pages: the item's route), else the channel's `preview` pattern, plus `?preview=<token>`), `cachetag/`
+  (tags and the `cache.purge` consumer), `webhook/` (signed `Hydrogen-Signature`), `jobs/` (cron jobs under a lock),
+  `kernel/endpoints.go` (`/api/x`), export/import (`exportfmt/`, `store/export.go`, `hydrogen_export.go`), `client/`
+  (Go client), `hydrogen_frontend.go` (`check-frontend`). Pages adds `/route` and `/tree`. Contract:
+  `planning/design/delivery-h4.md`.
 - TypeScript SDK (H4b): `packages/` (npm workspaces: `client`, `router`, `next`; zero runtime dependencies,
   gzip budgets in `packages/scripts/size.mjs`). `examples/next-site`: Next.js sample against `examples/multisite`
   (one deployment, every web channel; the proxy answers CMS redirects and 404s; `"use cache"` entries tagged from
   `Surrogate-Key`, revalidated by the signed webhook). Contract: `planning/design/sdk-h4b.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
-  `examples/multisite`: two sites, five web channels, an app channel. `examples/content`: every field type, a module schema transform, a typed hook and a content migration, tested
-  through the management API on SQLite and Postgres.
+  `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
+  channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
+  type, a module schema transform, a typed hook and a content migration, tested through the management API on SQLite
+  and Postgres.
 
 ## Commands
 

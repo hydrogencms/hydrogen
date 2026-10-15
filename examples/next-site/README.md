@@ -20,6 +20,10 @@ not the public one (localhost), `HYDROGEN_ORIGIN=https://www.acme.com`.
 Environment: `HYDROGEN_URL` (the CMS, default `http://localhost:8080`), `HYDROGEN_CHANNELS`, `HYDROGEN_ORIGIN`,
 `HYDROGEN_REVALIDATE_SECRET`. The CMS webhook: `url: https://<site>/api/hydrogen/revalidate`, `events: ["*"]`.
 
+**Preview.** The CMS's preview URLs (`url` in the response of `POST /preview-tokens`) are the page's URL plus
+`?preview=<token>`: the proxy sends them to `app/api/hydrogen/preview`, which enables draft mode and redirects to the
+clean URL. A never-published page uses the channel's preview pattern (`/preview/<collection>/<id>`).
+
 **Deployment.** The default Next cache is per instance: a webhook revalidates only the instance that received it.
 For several instances or serverless use a shared cache handler or fan the webhook out; otherwise `ttl` bounds
 staleness. The front proxy must overwrite `X-Forwarded-Host`/`-Proto`, which the adapter trusts.

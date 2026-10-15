@@ -183,26 +183,53 @@ get www.acme.com /en/reach-us
 expect_status 200 "new url"
 expect_body '<title>Contact</title>' "renamed page title"
 
-echo "== draft preview of a never-published page"
+echo "== draft preview through the CMS's preview URLs (?preview=<token>)"
+# open_preview URL: follows the redirects by hand (draft mode's cookie is Secure, which curl will not send over http)
+# and leaves the final response in $status/$body/$headers and the cookies in $cookie.
+open_preview() {
+  local u=$1 host pathq loc
+  host=$(echo "$u" | sed -E 's#^https?://([^/:]+).*#\1#'); pathq=$(echo "$u" | sed -E 's#^https?://[^/]+##')
+  get "$host" "$pathq"
+  expect_status 307 "preview URL redirects to the preview route"
+  loc=$(grep -i '^location' "$headers" | sed 's/^[^:]*: //' | tr -d '\r' | sed -E 's#^https?://[^/]+##')
+  case $loc in /api/hydrogen/preview\?*) ok ;; *) fail "preview URL went to $loc" ;; esac
+  get "$host" "$loc"
+  expect_status 307 "preview route redirects"
+  grep -i '^set-cookie: hydrogen-preview=.*HttpOnly' "$headers" >/dev/null || fail "preview cookie is not httpOnly"; ok
+  cookie=$(grep -i '^set-cookie' "$headers" | sed 's/^[^:]*: //; s/;.*//' | tr -d '\r' | paste -sd';' -)
+  loc=$(grep -i '^location' "$headers" | sed 's/^[^:]*: //' | tr -d '\r' | sed -E 's#^https?://[^/]+##')
+  get "$host" "$loc" -H "Cookie: $cookie"
+}
+
 draft=$(cmsjs draft "$(id aboutNode)")
-did=$(echo "$draft" | jq -r .id); tok=$(echo "$draft" | jq -r .token)
+did=$(echo "$draft" | jq -r .id); tok=$(echo "$draft" | jq -r .token); purl=$(echo "$draft" | jq -r .url)
+case $purl in https://www.acme.com/preview/page/$did\?preview=*) ok ;; *) fail "unexpected preview URL $purl" ;; esac
 get www.acme.com "/preview/page/$did"
 expect_status 404 "draft without preview"
 get www.acme.com "/api/hydrogen/preview?token=$tok&path=//evil.example"
 expect_status 400 "open redirect refused"
-get www.acme.com "/api/hydrogen/preview?token=$tok&path=/preview/page/$did"
-expect_status 307 "preview route redirects"
-expect_header "location: /preview/page/$did" "preview redirect target"
-cookie=$(grep -i '^set-cookie' "$headers" | sed 's/^[^:]*: //; s/;.*//' | tr -d '\r' | paste -sd';' -)
-grep -i '^set-cookie: hydrogen-preview=.*HttpOnly' "$headers" >/dev/null || fail "preview cookie is not httpOnly"; ok
 get www.acme.com /en/nothing -H "Cookie: hydrogen-preview=forged.token"
 expect_status 404 "a forged preview cookie does not skip the 404"
-get www.acme.com "/preview/page/$did" -H "Cookie: $cookie"
-expect_status 200 "draft with preview"
+open_preview "$purl"
+expect_status 200 "never-published page through its preview URL"
 expect_body '<title>Secret launch</title>' "draft title"
 expect_body '<h1>Secret launch</h1>' "draft h1"
 expect_body 'noindex' "draft is noindex"
 expect_header 'cache-control: .*no-store' "draft is not cached"
+
+# A published page with an edit that is not published yet: its route URL plus ?preview=.
+team=$(id team)
+pend=$(cmsjs pending "$team" "Team Draft")
+turl=$(echo "$pend" | jq -r .url)
+case $turl in https://www.acme.com/en/about/team\?preview=*) ok ;; *) fail "unexpected route preview URL $turl" ;; esac
+get www.acme.com /en/about/team
+expect_body '<title>Team</title>' "published title without preview"
+open_preview "$turl"
+expect_status 200 "published page with a pending edit"
+expect_body '<title>Team Draft</title>' "draft edit title"
+expect_body '<h1>Team Draft</h1>' "draft edit h1"
+get www.acme.com /en/about/team
+expect_body '<title>Team</title>' "still published for everyone else"
 get www.acme.com /en/about/secret-launch
 expect_status 404 "draft is not public"
 short=$(cmsjs token corporate_en "$did" 1 | jq -r .token)

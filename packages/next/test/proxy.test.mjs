@@ -124,6 +124,29 @@ test('preview URLs of unrouted items go to the page', async () => {
   assert.equal(routeCalls().length, 0)
 })
 
+test('?preview=<token> goes to the preview route with the rest of the URL', async () => {
+  const res = await proxy()(req('/en/about?a=1&preview=abc.def&b=2'))
+  assert.equal(res.status, 307)
+  const to = new URL(res.headers.get('location'))
+  assert.equal(to.pathname, '/api/hydrogen/preview')
+  assert.equal(to.searchParams.get('token'), 'abc.def')
+  assert.equal(to.searchParams.get('path'), '/en/about?a=1&b=2')
+  assert.equal(calls.length, 0, 'no CMS call before the redirect')
+  const r2 = await proxy({ previewRoutePath: '/p' })(req('/preview/page/x?preview=abc.def'))
+  const t2 = new URL(r2.headers.get('location'))
+  assert.equal(t2.pathname, '/p')
+  assert.equal(t2.searchParams.get('path'), '/preview/page/x')
+})
+
+test('?preview= cannot smuggle a redirect target or a bad token', async () => {
+  // The path is only ever the request's own pathname; the preview route refuses "//host" paths and bad tokens.
+  const r = await proxy()(req('//evil.example/x?preview=abc.def'))
+  const to = new URL(r.headers.get('location'))
+  assert.equal(to.origin, 'http://localhost:3000')
+  const bad = await proxy()(req('/en/x?preview=has space'))
+  assert.equal(new URL(bad.headers.get('location')).searchParams.get('token'), '')
+})
+
 test('readCapped: Content-Length first, then a running count', async () => {
   const stream = (n) => new ReadableStream({ start(c) { c.enqueue(new Uint8Array(n)); c.enqueue(new Uint8Array(n)); c.close() } })
   assert.equal(await readCapped({ headers: new Headers({ 'content-length': '999' }), body: stream(1) }, 100), undefined)

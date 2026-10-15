@@ -32,6 +32,7 @@ func registerDelivery(r *kernel.Registry, svc func() *Service) {
 	r.DeliveryRoute(delivery.Route{Method: http.MethodGet, Path: "/tree", Handler: d.tree,
 		Summary: "Navigation of a site", OpenAPI: opTreeDelivery()})
 	r.Decorator(d)
+	r.PreviewURL(d.previewURL)
 	r.TagMapper(pageTags)
 	for _, n := range []string{optSite, optMatch, optReserved} {
 		r.PublicChannelOption(n)
@@ -78,6 +79,16 @@ func pageTags(topic string, payload json.RawMessage) []string {
 }
 
 type deliverer struct{ svc func() *Service }
+
+// previewURL is the item's route on the channel. Routes exist from publish on, so a never-published page has
+// none and falls through to the channel's preview patterns.
+func (d *deliverer) previewURL(ctx context.Context, ch *channel.Channel, item ids.UUID, _, locale string) (string, bool, error) {
+	s, err := d.impl()
+	if err != nil {
+		return "", false, err
+	}
+	return s.itemURL(ctx, ch, item, locale)
+}
 
 func (d *deliverer) impl() (*service, error) { return d.svc().get() }
 

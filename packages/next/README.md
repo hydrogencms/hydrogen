@@ -41,6 +41,10 @@ CMS does. `origin` overrides the public origin used to locate URLs.
 
 ## Preview
 
+A preview URL from the CMS (`POST /preview-tokens` returns `url`) is the normal URL plus `?preview=<token>`. The proxy
+redirects any request with that parameter to the preview route (`token`, and `path` = the URL without `preview`), so
+routes and pattern URLs (`/preview/<collection>/<id>`) both work. The token is a bearer secret and is never logged.
+
 `GET /api/hydrogen/preview?token=<preview token>&path=/…` enables draft mode, stores the token in an httpOnly cookie
 and redirects (`?exit=1` leaves). In draft mode the page and its templates' `client` are uncached and carry the token;
 `/preview/<collection>/<id>` (the channels' preview pattern) shows an item that has no route yet.

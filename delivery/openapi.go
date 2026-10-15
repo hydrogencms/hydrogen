@@ -69,9 +69,10 @@ func openAPI(s *schema.Schema, extra []Route) obj {
 		}
 		schemas["ListResponse_"+t.Name] = listResponse(schemaRef("Item_" + t.Name))
 		paths["/collections/"+t.Name+"/items"] = obj{"get": obj{"operationId": "list" + n, "summary": "List " + t.Label + " items",
-			"description": filterNote(t),
-			"parameters":  params("Channel", "Locale", "Include", "Preview", "Q", "Sort", "Limit", "Offset", "Total", "Where"),
-			"responses":   responses(okResp("A page of items.", schemaRef("ListResponse_"+t.Name)), "400", "401", "404")}}
+			"description": filterNote(t) + " A preview token for one item also lists that item when it was never published and its draft matches " +
+				"the filters (not with q): it comes first on the first page, regardless of sort.",
+			"parameters": params("Channel", "Locale", "Include", "Preview", "Q", "Sort", "Limit", "Offset", "Total", "Where"),
+			"responses":  responses(okResp("A page of items.", schemaRef("ListResponse_"+t.Name)), "400", "401", "404")}}
 	}
 	if len(itemRefs) > 0 {
 		schemas["Item"] = obj{"oneOf": itemRefs}

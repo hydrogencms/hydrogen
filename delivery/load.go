@@ -162,6 +162,10 @@ func (st *state) draft(ctx context.Context, id ids.UUID) (*resolved, error) {
 		}
 		return nil, err
 	}
+	return st.resolveDraft(v)
+}
+
+func (st *state) resolveDraft(v *content.View) (*resolved, error) {
 	payload, refs, err := st.a.o.Content.PreviewPayload(v)
 	if err != nil {
 		return nil, err
