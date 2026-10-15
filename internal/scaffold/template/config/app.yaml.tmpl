@@ -17,6 +17,11 @@ manage:
 #   insecure_cookies: false
 # http.trusted_proxies (CIDRs of your reverse proxies) makes login throttling see real client addresses.
 
+# The admin app is served under admin.prefix; the defaults are shown.
+# admin:
+#   enabled: true
+#   prefix: /admin
+
 delivery:
   # Signs preview tokens: at least 32 characters; required outside dev (dev derives it from manage.token).
   preview_secret: ${env:PREVIEW_SECRET:-}

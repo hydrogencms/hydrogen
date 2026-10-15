@@ -277,6 +277,16 @@ func accessScenario(t *testing.T, s *server) {
 		ann.ok(200, "POST", "/preview-tokens", map[string]any{"channel": "careers_en", "item": landing.ID}, nil)
 		ann.refuse("POST", "/preview-tokens", map[string]any{"channel": "corporate_en"}, 403, "forbidden", "content.preview")
 
+		// The editor template carries pages.read and pages.edit, so the careers site and its tree are reachable.
+		var sites struct {
+			Items []string `json:"items"`
+		}
+		ann.ok(200, "GET", "/pages/sites", nil, &sites)
+		if !contains(sites.Items, "careers") {
+			t.Errorf("editor sees sites %v, want careers", sites.Items)
+		}
+		ann.ok(200, "GET", "/pages/sites/careers/tree", nil, nil)
+
 		// Listings show only the collections of the channel.
 		var l listed
 		ann.ok(200, "GET", "/collections/article/items", nil, &l)

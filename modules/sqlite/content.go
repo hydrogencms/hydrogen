@@ -395,6 +395,33 @@ func (s contentStore) DraftPartsOf(ctx context.Context, list []ids.UUID) (map[id
 	return out, nil
 }
 
+func (s contentStore) PublishedLocalesOf(ctx context.Context, list []ids.UUID) (map[ids.UUID][]string, error) {
+	out := map[ids.UUID][]string{}
+	for chunk := range slices.Chunk(list, maxVars) {
+		rows, err := s.tx.QueryContext(ctx, `SELECT vl.item_id, vl.locale FROM item_version_locale vl
+			JOIN item ON item.id = vl.item_id AND item.published_version = vl.version
+			WHERE vl.item_id IN (`+placeholders(len(chunk))+`) ORDER BY vl.item_id, vl.locale`, idArgs(chunk)...)
+		if err != nil {
+			return nil, fmt.Errorf("sqlite: published locales of: %w", err)
+		}
+		for rows.Next() {
+			var raw []byte
+			var loc string
+			if err := rows.Scan(&raw, &loc); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("sqlite: published locales of: %w", err)
+			}
+			var id ids.UUID
+			copy(id[:], raw)
+			out[id] = append(out[id], loc)
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			return nil, fmt.Errorf("sqlite: published locales of: %w", err)
+		}
+	}
+	return out, nil
+}
+
 func (s contentStore) DeleteDraftParts(ctx context.Context, id ids.UUID, parts []string) error {
 	var err error
 	if parts == nil {

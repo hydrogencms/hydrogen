@@ -184,7 +184,8 @@ func (a *Admin) ListTokens(ctx context.Context, p store.Page) ([]Token, int, err
 const metaTemplatesSeeded = "templates_seeded"
 
 // SeedTemplates creates the role templates once (tracked in auth meta). Existing roles of the same name are left
-// alone and later edits or deletions of seeded roles are never undone. It is a system operation without
+// alone and later edits or deletions of seeded roles are never undone, so a database seeded before a module
+// added policies to a template keeps its roles: role.update through the API is the upgrade path. It is a system operation without
 // authorization checks, meant for startup.
 func (a *Admin) SeedTemplates(ctx context.Context) error {
 	seeded := func() (bool, error) {
@@ -206,7 +207,11 @@ func (a *Admin) SeedTemplates(ctx context.Context) error {
 		}
 		now := a.clock.Now()
 		var names []string
-		for _, tpl := range Templates() {
+		tpls := Templates()
+		if tp, ok := a.catalog.(interface{ Templates() []Template }); ok {
+			tpls = tp.Templates()
+		}
+		for _, tpl := range tpls {
 			if _, err := tx.Auth().RoleByName(ctx, tpl.Name); err == nil {
 				continue
 			} else if !errors.Is(err, store.ErrNotFound) {

@@ -30,10 +30,16 @@ func (a *api) buildCaches(extra []Route) error {
 	a.typeJSON = make(map[string][]byte, len(compiled.Types))
 	for i, t := range a.sc.Types() {
 		ct := compiled.Types[i]
-		summaries = append(summaries, map[string]any{
+		sum := map[string]any{
 			"name": t.Name, "label": t.Label, "description": t.Description,
 			"singleton": t.Singleton, "page": t.Page, "fields": ct["fields"],
-		})
+		}
+		for _, k := range []string{"admin", "namePattern", "options"} {
+			if v, ok := ct[k]; ok {
+				sum[k] = v
+			}
+		}
+		summaries = append(summaries, sum)
 		if a.typeJSON[t.Name], err = encode(map[string]any{"type": ct, "jsonSchema": a.sc.JSONSchema(t)}); err != nil {
 			return fmt.Errorf("manage: encode type %s: %w", t.Name, err)
 		}

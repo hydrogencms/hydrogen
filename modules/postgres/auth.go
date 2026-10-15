@@ -161,9 +161,14 @@ func (a authStore) UserByLogin(ctx context.Context, login string) (store.User, e
 	return u, wrapAuth("user by login", err)
 }
 
-func (a authStore) ListUsers(ctx context.Context, p store.Page) ([]store.User, int, error) {
-	return listPage(ctx, a, "list users", `SELECT count(*) FROM app_user`,
-		`SELECT `+userColumns+` FROM app_user ORDER BY login`, p, scanUser)
+func (a authStore) ListUsers(ctx context.Context, p store.Page, search string) ([]store.User, int, error) {
+	where, args := "", []any(nil)
+	if search != "" {
+		where = ` WHERE login ILIKE $1 OR name ILIKE $1 OR email ILIKE $1`
+		args = []any{storeutil.LikeContains(search)}
+	}
+	return listPage(ctx, a, "list users", `SELECT count(*) FROM app_user`+where,
+		`SELECT `+userColumns+` FROM app_user`+where+` ORDER BY login`, p, scanUser, args...)
 }
 
 // Groups
@@ -471,6 +476,11 @@ func (a authStore) DeleteSession(ctx context.Context, hash []byte) error {
 
 func (a authStore) DeleteUserSessions(ctx context.Context, user ids.UUID) error {
 	_, err := a.exec(ctx, "delete user sessions", `DELETE FROM session WHERE user_id = $1`, uid(user))
+	return err
+}
+
+func (a authStore) DeleteOtherSessions(ctx context.Context, user ids.UUID, keep []byte) error {
+	_, err := a.exec(ctx, "delete other sessions", `DELETE FROM session WHERE user_id = $1 AND id_hash <> $2`, uid(user), keep)
 	return err
 }
 

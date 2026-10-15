@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/hydrogencms/hydrogen/clock"
@@ -136,12 +137,21 @@ type AuditEvent struct {
 
 type AuditQuery struct {
 	Subject   string
-	Action    string
+	Action    string // a trailing "*" matches by prefix
 	ActorKind string
 	ActorID   string
 	Since     time.Time // zero: no lower bound
+	Before    int64     // when > 0, only events with a smaller id (a paging cursor)
 	Limit     int       // newest first; 0 means 100
 	Offset    int
+}
+
+// ActionMatch splits the action filter: a trailing "*" makes it a prefix match.
+func (q AuditQuery) ActionMatch() (exact, prefix string) {
+	if p, ok := strings.CutSuffix(q.Action, "*"); ok {
+		return "", p
+	}
+	return q.Action, ""
 }
 
 type AuditStore interface {

@@ -80,6 +80,8 @@ func treeNodeS() obj {
 	p["path"] = strS("Current path in the locale; absent when the node has none.")
 	p["status"] = obj{"type": "string", "enum": []any{"draft", "published", "changed"}}
 	p["children"] = obj{"type": "integer"}
+	p["locales"] = openapi.ArrayOf(strS("Published locales of a page's item."))
+	p["draftParts"] = openapi.ArrayOf(strS("Pending draft parts of a page's item (\"\" = shared); status changed or draft."))
 	p["target"] = strS("Links: resolved path or URL.")
 	p["broken"] = obj{"type": "boolean", "description": "Links: the item or node they pointed at was deleted; the link has no target."}
 	p["nodes"] = obj{"type": "array", "description": "Children (same shape), when depth allows.", "items": obj{"type": "object"}}
@@ -160,8 +162,8 @@ func opTree() obj {
 			queryParam("parent", "Node whose children to list; default the site root.", uuidS(""), false),
 			queryParam("depth", "Levels to return, 1 to 10.", obj{"type": "integer", "minimum": 1, "maximum": 10, "default": 1}, false),
 		},
-		"responses": respond(jsonResp("Children ordered by position.", obj{"type": "object", "required": []any{"items"},
-			"properties": obj{"items": openapi.ArrayOf(treeNodeS())}}), "200", "400", "404")}
+		"responses": respond(jsonResp("Children ordered by position; without parent also the site's root node (absent while the site has no root page).", obj{"type": "object", "required": []any{"items"},
+			"properties": obj{"items": openapi.ArrayOf(treeNodeS()), "root": treeNodeS()}}), "200", "400", "404")}
 }
 
 func opCreate() obj {

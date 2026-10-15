@@ -44,6 +44,9 @@ type ContentStore interface {
 	// without draft parts are absent from the map.
 	DraftPartsOf(ctx context.Context, items []ids.UUID) (map[ids.UUID][]string, error)
 	DeleteDraftParts(ctx context.Context, id ids.UUID, parts []string) error // nil parts: all
+	// PublishedLocalesOf lists the locales of the published version of many items in one query, sorted. Items
+	// that were never published are absent from the map.
+	PublishedLocalesOf(ctx context.Context, items []ids.UUID) (map[ids.UUID][]string, error)
 
 	// Projections of an item's current published version; Replace* deletes the item's old rows first.
 	ReplaceRefs(ctx context.Context, from ids.UUID, refs []Ref) error

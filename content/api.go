@@ -147,6 +147,25 @@ type Summary struct {
 	DraftParts []string  `json:"draftParts"`
 	CreatedAt  time.Time `json:"createdAt"`
 	UpdatedAt  time.Time `json:"updatedAt"`
+	// Fields holds the requested top-level fields (ListOptions.Fields) of the working document.
+	Fields map[string]any `json:"fields,omitempty"`
+}
+
+// VersionView is one stored version with its documents: Shared holds the non-translatable fields, Locales the
+// translatable ones per locale.
+type VersionView struct {
+	Version   int                   `json:"version"`
+	SchemaRev int                   `json:"schemaRev"`
+	CreatedAt time.Time             `json:"createdAt"`
+	CreatedBy string                `json:"createdBy"`
+	Shared    VersionDoc            `json:"shared"`
+	Locales   map[string]VersionDoc `json:"locales"`
+}
+
+// VersionDoc is one document of a version; Name is the locale's display name.
+type VersionDoc struct {
+	Name   string         `json:"name,omitempty"`
+	Fields map[string]any `json:"fields"`
 }
 
 type Referrer struct {
@@ -205,6 +224,8 @@ type ListOptions struct {
 	Sort   []SortSpec
 	Limit  int
 	Offset int
+	// Fields names top-level fields of Type (at most MaxListFields) to return in each summary.
+	Fields []string
 }
 
 type ListResult struct {

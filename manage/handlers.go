@@ -1,6 +1,7 @@
 package manage
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -105,7 +106,7 @@ func (a *api) createItem(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	w.Header().Set("Location", a.prefix+"/items/"+v.ID.String())
-	WriteJSON(w, http.StatusCreated, v)
+	writeView(w, http.StatusCreated, v)
 	return nil
 }
 
@@ -122,7 +123,7 @@ func (a *api) getItem(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	WriteJSON(w, http.StatusOK, v)
+	writeView(w, http.StatusOK, v)
 	return nil
 }
 
@@ -135,11 +136,11 @@ func (a *api) updateItem(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeBody(w, r, &b, false); err != nil {
 		return err
 	}
-	v, err := a.c.Update(r.Context(), id, b.input())
+	v, err := a.c.Update(preconditionCtx(r), id, b.input())
 	if err != nil {
 		return err
 	}
-	WriteJSON(w, http.StatusOK, v)
+	writeView(w, http.StatusOK, v)
 	return nil
 }
 
@@ -152,11 +153,11 @@ func (a *api) publishItem(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeBody(w, r, &b, true); err != nil {
 		return err
 	}
-	v, err := a.c.Publish(r.Context(), id, content.PublishOptions{Locales: b.Locales, Force: b.Force})
+	v, err := a.c.Publish(preconditionCtx(r), id, content.PublishOptions{Locales: b.Locales, Force: b.Force})
 	if err != nil {
 		return err
 	}
-	WriteJSON(w, http.StatusOK, v)
+	writeView(w, http.StatusOK, v)
 	return nil
 }
 
@@ -179,7 +180,7 @@ func (a *api) discardDraft(w http.ResponseWriter, r *http.Request) error {
 			parts = append(parts, p)
 		}
 	}
-	if err := a.c.Discard(r.Context(), id, parts); err != nil {
+	if err := a.c.Discard(preconditionCtx(r), id, parts); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -191,7 +192,7 @@ func (a *api) deleteItem(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := a.c.Delete(r.Context(), id); err != nil {
+	if err := a.c.Delete(preconditionCtx(r), id); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -227,6 +228,23 @@ func (a *api) versions(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (a *api) version(w http.ResponseWriter, r *http.Request) error {
+	id, err := pathID(r)
+	if err != nil {
+		return err
+	}
+	n, err := strconv.Atoi(r.PathValue("n"))
+	if err != nil || n < 1 {
+		return NotFound("version not found")
+	}
+	v, err := a.c.VersionContent(r.Context(), id, n)
+	if err != nil {
+		return err
+	}
+	WriteJSON(w, http.StatusOK, v)
+	return nil
+}
+
 func (a *api) references(w http.ResponseWriter, r *http.Request) error {
 	id, err := pathID(r)
 	if err != nil {
@@ -256,7 +274,7 @@ func (a *api) getSingleton(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	WriteJSON(w, http.StatusOK, v)
+	writeView(w, http.StatusOK, v)
 	return nil
 }
 
@@ -269,11 +287,11 @@ func (a *api) updateSingleton(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeBody(w, r, &b, false); err != nil {
 		return err
 	}
-	v, err := a.c.UpdateSingleton(r.Context(), t.Name, b.input())
+	v, err := a.c.UpdateSingleton(preconditionCtx(r), t.Name, b.input())
 	if err != nil {
 		return err
 	}
-	WriteJSON(w, http.StatusOK, v)
+	writeView(w, http.StatusOK, v)
 	return nil
 }
 
@@ -286,10 +304,26 @@ func (a *api) publishSingleton(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeBody(w, r, &b, true); err != nil {
 		return err
 	}
-	v, err := a.c.PublishSingleton(r.Context(), t.Name, content.PublishOptions{Locales: b.Locales, Force: b.Force})
+	v, err := a.c.PublishSingleton(preconditionCtx(r), t.Name, content.PublishOptions{Locales: b.Locales, Force: b.Force})
 	if err != nil {
 		return err
 	}
-	WriteJSON(w, http.StatusOK, v)
+	writeView(w, http.StatusOK, v)
 	return nil
+}
+
+// preconditionCtx applies If-Match: the write fails with 412 unless the item's ETag still matches. "*" and no
+// header mean no check.
+func preconditionCtx(r *http.Request) context.Context {
+	v := strings.TrimSpace(r.Header.Get("If-Match"))
+	if v == "" || v == "*" {
+		return r.Context()
+	}
+	v = strings.TrimPrefix(v, "W/")
+	return content.WithExpectedState(r.Context(), strings.Trim(v, `"`))
+}
+
+func writeView(w http.ResponseWriter, status int, v *content.View) {
+	w.Header().Set("ETag", `"`+content.StateOf(v.UpdatedAt)+`"`)
+	WriteJSON(w, status, v)
 }

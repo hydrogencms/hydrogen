@@ -88,8 +88,15 @@ func Fail(w http.ResponseWriter, r *http.Request, err error) {
 		re *content.ReferencedError
 		te *access.ThrottledError
 		ie *access.InvalidError
+		sm *content.StateMismatchError
 	)
 	switch {
+	case errors.As(err, &sm):
+		w.Header().Set("ETag", `"`+sm.State+`"`)
+		WriteJSON(w, http.StatusPreconditionFailed, map[string]any{
+			"error":   errorBody{Code: "precondition_failed", Message: "the item changed since you loaded it"},
+			"current": map[string]any{"updatedAt": sm.UpdatedAt, "updatedBy": sm.UpdatedBy},
+		})
 	case errors.Is(err, access.ErrUnauthenticated):
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		writeErrorBody(w, http.StatusUnauthorized, errorBody{Code: "unauthorized", Message: "missing or invalid credentials"})

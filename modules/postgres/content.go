@@ -356,6 +356,32 @@ func (s contentStore) DraftPartsOf(ctx context.Context, list []ids.UUID) (map[id
 	return out, nil
 }
 
+func (s contentStore) PublishedLocalesOf(ctx context.Context, list []ids.UUID) (map[ids.UUID][]string, error) {
+	out := map[ids.UUID][]string{}
+	if len(list) == 0 {
+		return out, nil
+	}
+	rows, err := s.tx.Query(ctx, `SELECT vl.item_id, vl.locale FROM item_version_locale vl
+		JOIN item ON item.id = vl.item_id AND item.published_version = vl.version
+		WHERE vl.item_id = ANY($1) ORDER BY vl.item_id, vl.locale COLLATE "C"`, idArgs(list))
+	if err != nil {
+		return nil, fmt.Errorf("postgres: published locales of: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id [16]byte
+		var loc string
+		if err := rows.Scan(&id, &loc); err != nil {
+			return nil, fmt.Errorf("postgres: published locales of: %w", err)
+		}
+		out[ids.UUID(id)] = append(out[ids.UUID(id)], loc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: published locales of: %w", err)
+	}
+	return out, nil
+}
+
 func (s contentStore) DeleteDraftParts(ctx context.Context, id ids.UUID, parts []string) error {
 	var err error
 	if parts == nil {

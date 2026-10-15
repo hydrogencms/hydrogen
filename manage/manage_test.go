@@ -117,6 +117,8 @@ func TestRoutes(t *testing.T) {
 	id := testID.String()
 	f := newFake(t)
 	f.versions = []store.VersionMeta{{Version: 2, SchemaRev: 1, Locales: []string{"en"}}, {Version: 1}}
+	f.ver = &content.VersionView{Version: 2, Shared: content.VersionDoc{Fields: map[string]any{}},
+		Locales: map[string]content.VersionDoc{"en": {Name: "Hello", Fields: map[string]any{"title": "Hello"}}}}
 	f.refs = []content.Referrer{{ItemID: testID, Type: "article", Name: "x", FieldPath: "author", Kind: "field", OnDelete: "block"}}
 	f.list = &content.ListResult{Items: []content.Summary{{ID: testID, Type: "article", Name: "Hello"}}, Total: 7}
 	h := newAPI(t, f)
@@ -139,6 +141,11 @@ func TestRoutes(t *testing.T) {
 			mustJSON(t, w, &m)
 			if m["type"]["name"] != "article" || m["jsonSchema"]["type"] != "object" {
 				t.Errorf("type %v", m)
+			}
+			for _, f := range m["type"]["fields"].([]any) {
+				if f := f.(map[string]any); f["name"] == "seo" && (f["group"] != "seo" || len(f["fields"].([]any)) != 1) {
+					t.Errorf("seo field %v", f)
+				}
 			}
 		}},
 		{"type unknown", "GET", "/types/nope", "", 404, "", nil},
@@ -221,6 +228,18 @@ func TestRoutes(t *testing.T) {
 				t.Errorf("versions %v", m)
 			}
 		}},
+		{"version", "GET", "/items/" + id + "/versions/2", "", 200, "VersionContent", func(t *testing.T, w *httptest.ResponseRecorder, c call) {
+			if c.arg != 2 || !strings.Contains(w.Body.String(), `"locales":{"en":{"name":"Hello","fields":{"title":"Hello"}}}`) {
+				t.Errorf("version %v %s", c.arg, w.Body)
+			}
+		}},
+		{"version bad number", "GET", "/items/" + id + "/versions/x", "", 404, "", nil},
+		{"list fields", "GET", "/collections/article/items?fields=title,%20rating", "", 200, "List", func(t *testing.T, _ *httptest.ResponseRecorder, c call) {
+			if o := c.arg.(content.ListOptions); len(o.Fields) != 2 || o.Fields[1] != "rating" {
+				t.Errorf("fields %v", o.Fields)
+			}
+		}},
+		{"list fields empty name", "GET", "/collections/article/items?fields=title,", "", 400, "", nil},
 		{"references", "GET", "/items/" + id + "/references", "", 200, "References", func(t *testing.T, w *httptest.ResponseRecorder, _ call) {
 			if !strings.Contains(w.Body.String(), `"field":"author"`) {
 				t.Errorf("refs %s", w.Body)
@@ -534,11 +553,41 @@ func TestTypesPayload(t *testing.T) {
 			t.Errorf("summary lacks %s", k)
 		}
 	}
+	var one map[string]any
+	if w = do(h, "GET", "/types/article", ""); w.Code == 200 {
+		var doc struct {
+			Type map[string]any `json:"type"`
+		}
+		mustJSON(t, w, &doc)
+		one = doc.Type
+	}
+	for _, k := range []string{"admin", "namePattern", "options"} {
+		for _, s := range ts {
+			if s["name"] == "article" && fmt.Sprint(s[k]) != fmt.Sprint(one[k]) {
+				t.Errorf("summary %s = %v, type document has %v", k, s[k], one[k])
+			}
+		}
+	}
 }
 
 func TestWrongMethodIsNot200(t *testing.T) {
 	h := newAPI(t, newFake(t))
 	if w := do(h, "PUT", "/items/"+testID.String(), `{}`); w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("PUT: %d", w.Code)
+	}
+}
+
+func TestPreconditionFailed(t *testing.T) {
+	f := newFake(t)
+	f.err = &content.StateMismatchError{State: "2026-10-14T12:00:00Z", UpdatedAt: testView().UpdatedAt, UpdatedBy: "user:x"}
+	h := newAPI(t, f)
+	w := do(h, "PATCH", "/items/"+testID.String(), `{"fields":{}}`)
+	if w.Code != 412 || w.Header().Get("ETag") != `"2026-10-14T12:00:00Z"` ||
+		!strings.Contains(w.Body.String(), `"precondition_failed"`) || !strings.Contains(w.Body.String(), `"updatedBy":"user:x"`) {
+		t.Errorf("412: %d %v %s", w.Code, w.Header(), w.Body)
+	}
+	f.err = nil
+	if w = do(h, "GET", "/items/"+testID.String(), ""); w.Header().Get("ETag") != `"2026-10-14T12:00:00Z"` {
+		t.Errorf("get etag: %v", w.Header())
 	}
 }

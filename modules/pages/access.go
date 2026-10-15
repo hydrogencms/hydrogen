@@ -51,7 +51,16 @@ const (
 )
 
 func (m *module) registerAccess(r *kernel.Registry) error {
-	return RegisterAccess(r, m.svc, m.cfg.Sites)
+	if err := RegisterAccess(r, m.svc, m.cfg.Sites); err != nil {
+		return err
+	}
+	for tpl, policies := range map[string][]string{"editor": {policyRead, policyEdit}, "contributor": {policyRead, policyEdit},
+		"ai-contributor": {policyRead}, "viewer": {policyRead}} {
+		if err := r.TemplatePolicies(tpl, policies...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // AccessRegistrar is what RegisterAccess declares on: the kernel registry, or an adapter over an

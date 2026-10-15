@@ -234,11 +234,11 @@ func TestAdminOwnPasswordChange(t *testing.T) {
 		e.user("alice")
 		ctx := e.as("alice")
 		_, c, _ := e.login("alice", authPassword)
-		if err := e.admin.ChangeOwnPassword(ctx, "wrong password!!", "another long password"); !errors.Is(err, access.ErrUnauthenticated) {
+		if err := e.admin.ChangeOwnPassword(ctx, "wrong password!!", "another long password", nil); !errors.Is(err, access.ErrUnauthenticated) {
 			t.Fatalf("wrong current: %v", err)
 		}
-		wantInvalid(t, "short new", "password", e.admin.ChangeOwnPassword(ctx, authPassword, "short"))
-		if err := e.admin.ChangeOwnPassword(ctx, authPassword, "another long password"); err != nil {
+		wantInvalid(t, "short new", "password", e.admin.ChangeOwnPassword(ctx, authPassword, "short", nil))
+		if err := e.admin.ChangeOwnPassword(ctx, authPassword, "another long password", nil); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := e.authenticate(c, ""); !errors.Is(err, access.ErrUnauthenticated) {
@@ -250,13 +250,13 @@ func TestAdminOwnPasswordChange(t *testing.T) {
 		// repeated wrong current passwords are throttled
 		var te *access.ThrottledError
 		for i := 0; i < 5; i++ {
-			_ = e.admin.ChangeOwnPassword(ctx, "wrong password!!", "yet another password")
+			_ = e.admin.ChangeOwnPassword(ctx, "wrong password!!", "yet another password", nil)
 		}
-		if err := e.admin.ChangeOwnPassword(ctx, "another long password", "yet another password"); !errors.As(err, &te) {
+		if err := e.admin.ChangeOwnPassword(ctx, "another long password", "yet another password", nil); !errors.As(err, &te) {
 			t.Fatalf("not throttled: %v", err)
 		}
 		// tokens have no password
-		if err := e.admin.ChangeOwnPassword(context.Background(), "a", "b"); !errors.Is(err, access.ErrUnauthenticated) {
+		if err := e.admin.ChangeOwnPassword(context.Background(), "a", "b", nil); !errors.Is(err, access.ErrUnauthenticated) {
 			t.Fatal(err)
 		}
 	})
@@ -484,5 +484,50 @@ func TestAdminKeepsAnAdministrator(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantLast("restricted * is not an administrator", e.admin.DeleteGroup(sys, g.ID))
+	})
+}
+
+func TestAdminOwnPasswordChangeKeepsCurrentSession(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, b backend) {
+		e := newAuthEnv(t, b, nil)
+		e.user("alice")
+		_, here, _ := e.login("alice", authPassword)
+		_, other, _ := e.login("alice", authPassword)
+		an, err := e.authenticate(here, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := access.WithPrincipal(context.Background(), an.Principal)
+		if err := e.admin.ChangeOwnPassword(ctx, authPassword, "another long password", an.Session.IDHash); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.authenticate(here, ""); err != nil {
+			t.Fatalf("current session ended: %v", err)
+		}
+		if _, err := e.authenticate(other, ""); !errors.Is(err, access.ErrUnauthenticated) {
+			t.Fatalf("other session survived: %v", err)
+		}
+	})
+}
+
+func TestAdminSearchUsersAndAuditPrefix(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, b backend) {
+		e := newAuthEnv(t, b, nil)
+		e.user("alice")
+		e.user("bob")
+		sys := context.Background()
+		us, total, err := e.admin.SearchUsers(sys, store.Page{}, "ALI")
+		if err != nil || total != 1 || len(us) != 1 || us[0].Login != "alice" {
+			t.Fatalf("search: %+v %d %v", us, total, err)
+		}
+		if _, total, _ = e.admin.SearchUsers(sys, store.Page{}, ""); total != 2 {
+			t.Fatalf("all users: %d", total)
+		}
+		if got := e.audits("user.*"); len(got) < 2 {
+			t.Fatalf("user.* = %d events", len(got))
+		}
+		if got := e.audits("nothing.*"); len(got) != 0 {
+			t.Fatalf("nothing.* = %d events", len(got))
+		}
 	})
 }

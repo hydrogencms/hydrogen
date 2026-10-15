@@ -100,12 +100,19 @@ func baseSchemas() obj {
 		"Summary": obj{"type": "object",
 			"required": []any{"id", "type", "name", "status", "version", "locales", "draftParts", "createdAt", "updatedAt"},
 			"properties": obj{"id": uuid, "type": openapi.Str(""), "key": openapi.Str(""), "name": openapi.Str(""), "status": statusSchema(),
-				"version": obj{"type": "integer"}, "locales": strs, "draftParts": strs, "createdAt": dt, "updatedAt": dt}},
+				"version": obj{"type": "integer"}, "locales": strs, "draftParts": strs, "createdAt": dt, "updatedAt": dt,
+				"fields": obj{"type": "object", "description": "The fields named by the fields parameter (working document, requested locale with main-locale fallback); absent fields are left out."}}},
 		"ListResult": obj{"type": "object", "required": []any{"items", "total"},
 			"properties": obj{"items": openapi.ArrayOf(openapi.SchemaRef("Summary")), "total": obj{"type": "integer"}}},
 		"VersionMeta": obj{"type": "object", "required": []any{"version", "schemaRev", "locales", "createdAt", "createdBy"},
 			"properties": obj{"version": obj{"type": "integer"}, "schemaRev": obj{"type": "integer"}, "locales": strs,
 				"createdAt": dt, "createdBy": openapi.Str("")}},
+		"VersionDoc": obj{"type": "object", "required": []any{"fields"},
+			"properties": obj{"name": openapi.Str(""), "fields": obj{"type": "object", "additionalProperties": true}}},
+		"VersionView": obj{"type": "object", "required": []any{"version", "schemaRev", "createdAt", "createdBy", "shared", "locales"},
+			"description": "The stored documents of a version: shared holds the non-translatable fields, locales the translatable ones per locale.",
+			"properties": obj{"version": obj{"type": "integer"}, "schemaRev": obj{"type": "integer"}, "createdAt": dt, "createdBy": openapi.Str(""),
+				"shared": openapi.SchemaRef("VersionDoc"), "locales": obj{"type": "object", "additionalProperties": openapi.SchemaRef("VersionDoc")}}},
 		"VersionList": obj{"type": "object", "required": []any{"items", "total"},
 			"properties": obj{"items": openapi.ArrayOf(openapi.SchemaRef("VersionMeta")), "total": obj{"type": "integer"}}},
 		"ReferrerList": obj{"type": "object", "required": []any{"items", "total"},
@@ -186,6 +193,11 @@ func parameters(collections, singletons []*schema.Type) obj {
 			"schema": obj{"type": "object", "additionalProperties": obj{"type": "object", "additionalProperties": openapi.Str("")}},
 			"description": "Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix; " +
 				"repeated filters are ANDed; in takes comma-separated values."},
+		"IfMatch": obj{"name": "If-Match", "in": "header", "schema": openapi.Str(""),
+			"description": "The ETag of the item as read (GET returns it, writes return the new one). A mismatch answers 412; without the header nothing is checked."},
+		"Fields": obj{"name": "fields", "in": "query", "schema": openapi.Str(""),
+			"description": "Comma-separated top-level fields (at most 10) to return in each item's fields."},
+		"VersionNumber": obj{"name": "n", "in": "path", "required": true, "schema": obj{"type": "integer", "minimum": 1}},
 		"Parts": obj{"name": "parts", "in": "query", "schema": openapi.Str(""),
 			"description": "Comma-separated draft parts (shared or locale codes); default all."},
 	}
@@ -219,10 +231,11 @@ func errorResponses() obj {
 		"Forbidden": mk("Authenticated, but no grant allows it (code forbidden, message the policy) or the CSRF token is missing (code csrf)."),
 		"Throttled": obj{"description": "Too many failed attempts.", "headers": obj{"Retry-After": obj{"schema": obj{"type": "integer"}}},
 			"content": obj{"application/json": obj{"schema": openapi.SchemaRef("Error")}}},
-		"Conflict":         mk("The published version changed (conflict), the item is referenced (referenced) or the key is taken (duplicate_key)."),
-		"Invalid":          mk("Validation failed; error.fields lists the problems."),
-		"TooLarge":         mk("Request body too large."),
-		"UnsupportedMedia": mk("Content-Type must be application/json."),
+		"PreconditionFailed": mk("If-Match did not match: the item changed since it was read. The ETag header and the body's current {updatedAt, updatedBy} describe its current state."),
+		"Conflict":           mk("The published version changed (conflict), the item is referenced (referenced) or the key is taken (duplicate_key)."),
+		"Invalid":            mk("Validation failed; error.fields lists the problems."),
+		"TooLarge":           mk("Request body too large."),
+		"UnsupportedMedia":   mk("Content-Type must be application/json."),
 	}
 }
 
@@ -230,7 +243,7 @@ func body(sch any) obj { return obj{"required": true, "content": openapi.JSONCon
 
 func errs(codes ...string) obj {
 	m := map[string]string{"400": "BadRequest", "401": "Unauthorized", "404": "NotFound", "409": "Conflict",
-		"403": "Forbidden", "413": "TooLarge", "415": "UnsupportedMedia", "422": "Invalid", "429": "Throttled"}
+		"403": "Forbidden", "412": "PreconditionFailed", "413": "TooLarge", "415": "UnsupportedMedia", "422": "Invalid", "429": "Throttled"}
 	out := obj{}
 	for _, c := range codes {
 		out[c] = openapi.Ref("responses", m[c])
@@ -257,12 +270,19 @@ func operation(id, summary string, ps []any, reqBody obj, resp obj) obj {
 	return o
 }
 
-var listParams = []string{"Locale", "Status", "Q", "Sort", "Limit", "Offset", "Where"}
+var listParams = []string{"Locale", "Status", "Q", "Sort", "Limit", "Offset", "Where", "Fields"}
 
 func genericPaths(paths obj, collections, singletons []*schema.Type) {
-	view := openapi.OKResp("The item.", openapi.SchemaRef("ItemView"))
+	view := withETag(openapi.OKResp("The item.", openapi.SchemaRef("ItemView")))
 	paths["/types"] = obj{"get": operation("listTypes", "List content types", nil, nil,
-		responses(obj{"200": openapi.OKResp("Compiled types.", openapi.ArrayOf(obj{"type": "object"}))}, "401", "403"))}
+		responses(obj{"200": openapi.OKResp("Compiled types: name, label, description, singleton, page, fields, and when set admin (group, icon, list), namePattern and options.", openapi.ArrayOf(obj{"type": "object",
+			"required": []any{"name", "label", "fields"},
+			"properties": obj{"name": openapi.Str(""), "label": openapi.Str(""), "description": openapi.Str(""),
+				"singleton": obj{"type": "boolean"}, "page": obj{"type": "boolean"}, "namePattern": openapi.Str(""),
+				"fields":  obj{"type": "array", "items": obj{"type": "object"}},
+				"options": obj{"type": "object"},
+				"admin": obj{"type": "object", "properties": obj{"group": openapi.Str(""), "icon": openapi.Str(""),
+					"list": obj{"type": "array", "items": openapi.Str("")}}}}}))}, "401", "403"))}
 	paths["/types/{type}"] = obj{"get": operation("getType", "A compiled type and its JSON Schema",
 		[]any{obj{"name": "type", "in": "path", "required": true, "schema": openapi.Str("")}}, nil,
 		responses(obj{"200": openapi.OKResp("The type.", obj{"type": "object", "required": []any{"type", "jsonSchema"},
@@ -279,29 +299,31 @@ func genericPaths(paths obj, collections, singletons []*schema.Type) {
 	paths["/items/{id}"] = obj{
 		"get": operation("getItem", "Read an item", openapi.Params("ItemId", "Locale", "Draft"), nil,
 			responses(obj{"200": view}, "400", "401", "403", "404")),
-		"patch": operation("updateItem", "Update the draft (merge patch)", openapi.Params("ItemId"), body(openapi.SchemaRef("UpdateRequest")),
-			responses(obj{"200": view}, "400", "401", "403", "404", "409", "413", "415", "422")),
-		"delete": operation("deleteItem", "Delete an item", openapi.Params("ItemId"), nil,
-			responses(obj{"204": obj{"description": "Deleted."}}, "401", "403", "404", "409")),
+		"patch": operation("updateItem", "Update the draft (merge patch)", openapi.Params("ItemId", "IfMatch"), body(openapi.SchemaRef("UpdateRequest")),
+			responses(obj{"200": view}, "400", "401", "403", "404", "409", "412", "413", "415", "422")),
+		"delete": operation("deleteItem", "Delete an item", openapi.Params("ItemId", "IfMatch"), nil,
+			responses(obj{"204": obj{"description": "Deleted."}}, "401", "403", "404", "409", "412")),
 	}
-	paths["/items/{id}/publish"] = obj{"post": operation("publishItem", "Publish draft parts", openapi.Params("ItemId"),
-		optionalBody(openapi.SchemaRef("PublishRequest")), responses(obj{"200": view}, "400", "401", "403", "404", "409", "413", "415", "422"))}
-	paths["/items/{id}/draft"] = obj{"delete": operation("discardDraft", "Discard draft parts", openapi.Params("ItemId", "Parts"), nil,
-		responses(obj{"204": obj{"description": "Discarded."}}, "400", "401", "403", "404"))}
+	paths["/items/{id}/publish"] = obj{"post": operation("publishItem", "Publish draft parts", openapi.Params("ItemId", "IfMatch"),
+		optionalBody(openapi.SchemaRef("PublishRequest")), responses(obj{"200": view}, "400", "401", "403", "404", "409", "412", "413", "415", "422"))}
+	paths["/items/{id}/draft"] = obj{"delete": operation("discardDraft", "Discard draft parts", openapi.Params("ItemId", "Parts", "IfMatch"), nil,
+		responses(obj{"204": obj{"description": "Discarded."}}, "400", "401", "403", "404", "412"))}
 	paths["/items/{id}/versions"] = obj{"get": operation("listVersions", "Version history", openapi.Params("ItemId"), nil,
 		responses(obj{"200": openapi.OKResp("Versions, newest first.", openapi.SchemaRef("VersionList"))}, "401", "403", "404"))}
+	paths["/items/{id}/versions/{n}"] = obj{"get": operation("getVersion", "The documents of one version (read-only)", openapi.Params("ItemId", "VersionNumber"), nil,
+		responses(obj{"200": openapi.OKResp("The version.", openapi.SchemaRef("VersionView"))}, "400", "401", "403", "404"))}
 	paths["/items/{id}/references"] = obj{"get": operation("listReferences", "Items pointing at this one", openapi.Params("ItemId"), nil,
 		responses(obj{"200": openapi.OKResp("Referrers.", openapi.SchemaRef("ReferrerList"))}, "401", "403", "404"))}
 	if len(singletons) > 0 {
 		paths["/singletons/{type}"] = obj{
 			"get": operation("getSingleton", "Read a singleton", openapi.Params("SingletonType", "Locale", "Draft"), nil,
 				responses(obj{"200": view}, "400", "401", "403", "404")),
-			"patch": operation("updateSingleton", "Update a singleton's draft (merge patch)", openapi.Params("SingletonType"),
-				body(openapi.SchemaRef("UpdateRequest")), responses(obj{"200": view}, "400", "401", "403", "404", "409", "413", "415", "422")),
+			"patch": operation("updateSingleton", "Update a singleton's draft (merge patch)", openapi.Params("SingletonType", "IfMatch"),
+				body(openapi.SchemaRef("UpdateRequest")), responses(obj{"200": view}, "400", "401", "403", "404", "409", "412", "413", "415", "422")),
 		}
 		paths["/singletons/{type}/publish"] = obj{"post": operation("publishSingleton", "Publish a singleton",
-			openapi.Params("SingletonType"), optionalBody(openapi.SchemaRef("PublishRequest")),
-			responses(obj{"200": view}, "400", "401", "403", "404", "409", "413", "415", "422"))}
+			openapi.Params("SingletonType", "IfMatch"), optionalBody(openapi.SchemaRef("PublishRequest")),
+			responses(obj{"200": view}, "400", "401", "403", "404", "409", "412", "413", "415", "422"))}
 	}
 	paths["/channels"] = obj{"get": operation("listChannels", "List delivery channels", nil, nil,
 		responses(obj{"200": openapi.OKResp("The configured channels, sorted by name.", openapi.SchemaRef("ChannelList"))}, "401", "403"))}
@@ -328,15 +350,15 @@ func collectionPaths(paths obj, t *schema.Type) {
 
 func singletonPaths(paths obj, t *schema.Type) {
 	n := openapi.Pascal(t.Name)
-	view := openapi.OKResp("The singleton.", openapi.SchemaRef("ItemView_"+t.Name))
+	view := withETag(openapi.OKResp("The singleton.", openapi.SchemaRef("ItemView_"+t.Name)))
 	paths["/singletons/"+t.Name] = obj{
 		"get": operation("get"+n, "Read "+t.Label, openapi.Params("Locale", "Draft"), nil,
 			responses(obj{"200": view}, "400", "401", "403", "404")),
-		"patch": operation("update"+n, "Update "+t.Label+" (merge patch)", nil, body(openapi.SchemaRef("Update_"+t.Name)),
-			responses(obj{"200": view}, "400", "401", "403", "404", "409", "413", "415", "422")),
+		"patch": operation("update"+n, "Update "+t.Label+" (merge patch)", openapi.Params("IfMatch"), body(openapi.SchemaRef("Update_"+t.Name)),
+			responses(obj{"200": view}, "400", "401", "403", "404", "409", "412", "413", "415", "422")),
 	}
-	paths["/singletons/"+t.Name+"/publish"] = obj{"post": operation("publish"+n, "Publish "+t.Label, nil,
-		optionalBody(openapi.SchemaRef("PublishRequest")), responses(obj{"200": view}, "400", "401", "403", "404", "409", "413", "415", "422"))}
+	paths["/singletons/"+t.Name+"/publish"] = obj{"post": operation("publish"+n, "Publish "+t.Label, openapi.Params("IfMatch"),
+		optionalBody(openapi.SchemaRef("PublishRequest")), responses(obj{"200": view}, "400", "401", "403", "404", "409", "412", "413", "415", "422"))}
 }
 
 func filterNote(t *schema.Type) string {
@@ -425,4 +447,9 @@ func pathWords(p string) string {
 		sb.WriteString(openapi.Pascal(w))
 	}
 	return sb.String()
+}
+
+func withETag(r obj) obj {
+	r["headers"] = obj{"ETag": obj{"schema": openapi.Str(""), "description": "Identifies the item's working state; send it as If-Match on writes."}}
+	return r
 }

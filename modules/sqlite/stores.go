@@ -131,10 +131,11 @@ func (a auditStore) List(ctx context.Context, q store.AuditQuery) ([]store.Audit
 	if !q.Since.IsZero() {
 		since = ms(q.Since)
 	}
+	exact, prefix := q.ActionMatch()
 	rows, err := a.tx.QueryContext(ctx, `SELECT id, at, actor_kind, actor_id, action, subject, data FROM audit_event
-		WHERE (? = '' OR subject = ?) AND (? = '' OR action = ?) AND (? = '' OR actor_kind = ?)
-		AND (? = '' OR actor_id = ?) AND at >= ? ORDER BY id DESC LIMIT ? OFFSET ?`,
-		q.Subject, q.Subject, q.Action, q.Action, q.ActorKind, q.ActorKind, q.ActorID, q.ActorID, since, q.Limit, max(q.Offset, 0))
+		WHERE (? = '' OR subject = ?) AND (? = '' OR action = ?) AND (? = '' OR substr(action, 1, length(?)) = ?)
+		AND (? = '' OR actor_kind = ?) AND (? = '' OR actor_id = ?) AND at >= ? AND (? = 0 OR id < ?) ORDER BY id DESC LIMIT ? OFFSET ?`,
+		q.Subject, q.Subject, exact, exact, prefix, prefix, prefix, q.ActorKind, q.ActorKind, q.ActorID, q.ActorID, since, q.Before, q.Before, q.Limit, max(q.Offset, 0))
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: audit list: %w", err)
 	}

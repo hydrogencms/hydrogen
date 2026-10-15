@@ -405,3 +405,30 @@ func writeFile(t *testing.T, path, data string) {
 		t.Fatal(err)
 	}
 }
+
+func TestMarshalEmitsGroupMembers(t *testing.T) {
+	s, _ := article(t)
+	raw, err := s.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Types []struct {
+			Name   string
+			Fields []struct {
+				Name, Group string
+				Fields      []struct{ Name string }
+			}
+		}
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, ty := range out.Types {
+		for _, f := range ty.Fields {
+			if ty.Name == "article" && f.Name == "seo" && (f.Group != "seo" || len(f.Fields) != 1) {
+				t.Fatalf("seo = %+v", f)
+			}
+		}
+	}
+}

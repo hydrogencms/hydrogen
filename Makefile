@@ -1,7 +1,7 @@
 # Go modules in this repository (core first). Every target runs over all of them.
 MODULES := . modules/sqlite modules/postgres tests examples/minimal examples/content examples/headless examples/multisite
 
-.PHONY: build test vet lint tidy tidy-check db-up db-down smoke check sdk next-e2e
+.PHONY: build test vet lint tidy tidy-check db-up db-down smoke check sdk next-e2e admin admin-types admin-dist-check admin-e2e
 
 build:
 	@for m in $(MODULES); do (cd $$m && go build ./...) || exit 1; done
@@ -41,4 +41,20 @@ sdk:
 next-e2e:
 	./scripts/next-e2e.sh
 
-check: tidy-check vet lint test smoke
+# Admin app (admin/ui): install, typecheck, unit tests, build into the committed admin/dist, size budgets.
+admin:
+	cd admin/ui && npm ci --no-audit --no-fund && npm run check && npm test && npm run build && npm run size
+
+# Regenerate admin/ui/src/lib/api/schema.d.ts from a running examples/multisite's OpenAPI document.
+admin-types:
+	./scripts/admin-types.sh
+
+# admin/dist is committed: fail when a rebuild changes it.
+admin-dist-check: admin
+	@test -z "$$(git status --porcelain -- admin/dist)" || (git status --short -- admin/dist; echo "admin/dist is stale: run make admin and commit it"; exit 1)
+
+# Playwright against examples/multisite (SQLite) with a seeded administrator; E2E_KEEP=1 leaves the server up.
+admin-e2e:
+	./scripts/admin-e2e.sh
+
+check: tidy-check vet lint test smoke admin admin-dist-check

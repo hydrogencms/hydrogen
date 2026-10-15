@@ -15,10 +15,11 @@ type Catalog struct {
 	policies    map[string]Policy
 	limitations map[string]Limitation
 	rules       map[string][]Rules
+	tplExtra    map[string][]RolePolicy
 }
 
 func NewCatalog() *Catalog {
-	return &Catalog{policies: map[string]Policy{}, limitations: map[string]Limitation{}, rules: map[string][]Rules{}}
+	return &Catalog{policies: map[string]Policy{}, limitations: map[string]Limitation{}, rules: map[string][]Rules{}, tplExtra: map[string][]RolePolicy{}}
 }
 
 // validName accepts lower-case words of letters, digits and underscores joined by dots; policies need a dot
@@ -57,6 +58,30 @@ func (c *Catalog) AddPolicy(p Policy) error {
 	p.Limitations = slices.Clone(p.Limitations)
 	c.policies[p.Name] = p
 	return nil
+}
+
+// AddTemplatePolicies adds policies (without limitations) to a role template, for modules whose policies
+// the core templates can't name. The template must exist and each policy must be registered.
+func (c *Catalog) AddTemplatePolicies(template string, policies ...string) error {
+	if !slices.ContainsFunc(baseTemplates(), func(t Template) bool { return t.Name == template }) {
+		return fmt.Errorf("access: unknown role template %q", template)
+	}
+	for _, name := range policies {
+		if _, ok := c.policies[name]; !ok {
+			return fmt.Errorf("access: unknown policy %q", name)
+		}
+		c.tplExtra[template] = append(c.tplExtra[template], RolePolicy{Policy: name})
+	}
+	return nil
+}
+
+// Templates are the core role templates plus the policies modules added to them.
+func (c *Catalog) Templates() []Template {
+	out := baseTemplates()
+	for i := range out {
+		out[i].Policies = append(out[i].Policies, c.tplExtra[out[i].Name]...)
+	}
+	return out
 }
 
 // AddPolicyLimitation makes a registered limitation apply to a registered policy (a module extends the core

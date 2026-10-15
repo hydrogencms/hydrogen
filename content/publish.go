@@ -85,6 +85,9 @@ func (s *Service) publish(ctx context.Context, tx store.Tx, it store.Item, o Pub
 	if err := s.check(ctx, access.PolicyContentPublish, st, nil); err != nil {
 		return nil, err
 	}
+	if err := s.checkState(ctx, it); err != nil {
+		return nil, err
+	}
 	sel, err := st.selectParts(o)
 	if err != nil {
 		return nil, fmt.Errorf("content: publish %s: %w", it.ID, err)

@@ -591,6 +591,14 @@ func TestPagesTree(t *testing.T) {
 			t.Errorf("types/specs: %+v", ts)
 		}
 
+		if len(ts[0].Locales) == 0 || !slices.Contains(ts[0].Locales, "en") || len(ts[0].DraftParts) == 0 {
+			t.Errorf("changed page locales/draftParts: %+v / %+v", ts[0].Locales, ts[0].DraftParts)
+		}
+		rootT, err2 := e.pages.TreeRoot(ctx, "main", "en")
+		if err2 != nil || rootT == nil || rootT.Parent != nil || rootT.Kind != pages.KindPage || rootT.Children != len(ts) {
+			t.Errorf("root = %+v, %v", rootT, err2)
+		}
+
 		// Depth 2 nests, locales fall back to the main locale, drafts show their draft name.
 		ts, err = e.pages.Tree(ctx, "main", "de", nil, 2)
 		if err != nil {
@@ -600,7 +608,7 @@ func TestPagesTree(t *testing.T) {
 			t.Fatalf("de tree = %+v", ts[0])
 		}
 		team, soon := ts[0].Nodes[0], ts[0].Nodes[1]
-		if team.Name != "Team" || team.Path != "" || soon.Name != "Coming soon" || soon.Status != content.StatusDraft || soon.ID != draftN.ID {
+		if team.Name != "Team" || team.Path != "" || soon.Name != "Coming soon" || soon.Status != content.StatusDraft || soon.ID != draftN.ID || len(soon.Locales) != 0 || len(soon.DraftParts) == 0 {
 			t.Errorf("children = %+v / %+v", team, soon)
 		}
 		if ts[1].Name != "Nachrichten" || ts[4].Name != "Doku" {
@@ -609,6 +617,9 @@ func TestPagesTree(t *testing.T) {
 		sub, err := e.pages.Tree(ctx, "main", "en", &aboutN, 1)
 		if err != nil || len(sub) != 2 || sub[0].Name != "Team" {
 			t.Errorf("subtree = %+v, %v", sub, err)
+		}
+		if _, err := e.pages.TreeRoot(ctx, "other", "en"); !errors.Is(err, content.ErrNotFound) {
+			t.Errorf("root of unknown site: %v", err)
 		}
 		if _, err := e.pages.Tree(ctx, "other", "en", nil, 1); !errors.Is(err, content.ErrNotFound) {
 			t.Errorf("unknown site: %v", err)

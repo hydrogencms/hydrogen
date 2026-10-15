@@ -208,6 +208,44 @@ func (s *Service) Versions(ctx context.Context, id ids.UUID) ([]store.VersionMet
 	return out, err
 }
 
+// VersionContent returns the documents of one stored version (read-only; ErrNotFound for an unknown number).
+func (s *Service) VersionContent(ctx context.Context, id ids.UUID, version int) (*VersionView, error) {
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
+	var out *VersionView
+	err := s.o.DB.View(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
+		it, err := getItem(ctx, tx, id, false)
+		if err != nil {
+			return err
+		}
+		if err := s.authorizeItem(ctx, tx.Content(), it, access.PolicyContentRead, nil); err != nil {
+			return err
+		}
+		v, err := tx.Content().GetVersion(ctx, id, version)
+		if err != nil {
+			return itemErr(fmt.Sprintf("%s version %d", id, version), err)
+		}
+		pv := newPubVersion(v)
+		shared, err := pv.sharedDoc()
+		if err != nil {
+			return err
+		}
+		out = &VersionView{Version: v.Version, SchemaRev: v.SchemaRev, CreatedAt: v.CreatedAt, CreatedBy: v.CreatedBy,
+			Shared: VersionDoc{Fields: shared}, Locales: make(map[string]VersionDoc, len(v.Locales))}
+		for _, l := range v.Locales {
+			doc, _, err := pv.localeDoc(l.Locale)
+			if err != nil {
+				return err
+			}
+			out.Locales[l.Locale] = VersionDoc{Name: l.Name, Fields: doc}
+		}
+		return nil
+	})
+	return out, err
+}
+
 // References lists items whose published versions point at id.
 func (s *Service) References(ctx context.Context, id ids.UUID) ([]Referrer, error) {
 	out, _, err := s.ReferencesVisible(ctx, id)

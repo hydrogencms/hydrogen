@@ -178,10 +178,10 @@ func (a *Admin) ResetPassword(ctx context.Context, id ids.UUID, password string)
 	if err != nil {
 		return err
 	}
-	return a.setPassword(ctx, id, hash, "", &h)
+	return a.setPassword(ctx, id, hash, "", &h, nil)
 }
 
-func (a *Admin) setPassword(ctx context.Context, id ids.UUID, hash, old string, h *holder) error {
+func (a *Admin) setPassword(ctx context.Context, id ids.UUID, hash, old string, h *holder, keep []byte) error {
 	return a.mutate(ctx, "user.update", id.String(), func(tx store.Tx) (any, error) {
 		if h != nil {
 			if err := h.requireOutranks(ctx, tx.Auth(), id); err != nil {
@@ -199,14 +199,21 @@ func (a *Admin) setPassword(ctx context.Context, id ids.UUID, hash, old string, 
 		if err := tx.Auth().UpdateUser(ctx, u); err != nil {
 			return nil, err
 		}
-		if err := tx.Auth().DeleteUserSessions(ctx, id); err != nil {
-			return nil, err
+		var err2 error
+		if keep != nil {
+			err2 = tx.Auth().DeleteOtherSessions(ctx, id, keep)
+		} else {
+			err2 = tx.Auth().DeleteUserSessions(ctx, id)
+		}
+		if err2 != nil {
+			return nil, err2
 		}
 		return map[string]any{"login": u.Login, "fields": []string{"password"}}, nil
 	})
 }
 
-func (a *Admin) ChangeOwnPassword(ctx context.Context, current, next string) error {
+// ChangeOwnPassword sets the caller's password and ends their sessions, except the one with hash keep (nil: all).
+func (a *Admin) ChangeOwnPassword(ctx context.Context, current, next string, keep []byte) error {
 	p := PrincipalFrom(ctx)
 	if p == nil || p.Kind != KindUser {
 		return ErrUnauthenticated
@@ -235,7 +242,7 @@ func (a *Admin) ChangeOwnPassword(ctx context.Context, current, next string) err
 	if err != nil {
 		return err
 	}
-	if err := a.setPassword(ctx, p.ID, hash, u.PasswordHash, nil); err != nil {
+	if err := a.setPassword(ctx, p.ID, hash, u.PasswordHash, nil, keep); err != nil {
 		return err
 	}
 	a.pwThr.clear(key)
@@ -289,12 +296,17 @@ func (a *Admin) GetUser(ctx context.Context, id ids.UUID) (User, error) {
 }
 
 func (a *Admin) ListUsers(ctx context.Context, p store.Page) ([]User, int, error) {
+	return a.SearchUsers(ctx, p, "")
+}
+
+// SearchUsers lists users whose login, name or email contains search (all users when empty).
+func (a *Admin) SearchUsers(ctx context.Context, p store.Page, search string) ([]User, int, error) {
 	if err := a.can(ctx, PolicyUserManage); err != nil {
 		return nil, 0, err
 	}
 	var us []store.User
 	var total int
-	err := a.view(ctx, func(as store.AuthStore) (err error) { us, total, err = as.ListUsers(ctx, page(p)); return })
+	err := a.view(ctx, func(as store.AuthStore) (err error) { us, total, err = as.ListUsers(ctx, page(p), search); return })
 	out := make([]User, len(us))
 	for i, u := range us {
 		out[i] = userView(u)

@@ -26,6 +26,10 @@ const usage = `Usage:
   hydrogen version                                            print the version
   hydrogen <command> [args]                                   build the project here and run one of its
                                                               commands: serve, migrate, config:check, …
+
+Environment for hydrogen dev:
+  ADMIN_DEV_URL   e.g. http://localhost:5173: proxy the admin prefix to a Vite dev server (hot reload for
+                  the admin app itself) instead of serving the embedded build
 `
 
 func main() {

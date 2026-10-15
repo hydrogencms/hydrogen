@@ -111,7 +111,8 @@ func (s *Schema) fieldJSON(f *Field) map[string]any {
 	}
 	if f.Group != "" {
 		m["group"] = f.Group
-	} else if f.Fields != nil {
+	}
+	if f.Fields != nil {
 		m["fields"] = s.fieldsJSON(f.Fields)
 	}
 	return m

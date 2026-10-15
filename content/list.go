@@ -22,6 +22,9 @@ func (s *Service) List(ctx context.Context, o ListOptions) (*ListResult, error) 
 	if err != nil {
 		return nil, err
 	}
+	if err := s.checkListFields(o); err != nil {
+		return nil, err
+	}
 	// Management lists what editors see: drafts included, unless only published items are asked for.
 	q.Working = o.Status != store.StatusPublished
 	if s.guarded(ctx) {
@@ -41,16 +44,96 @@ func (s *Service) List(ctx context.Context, o ListOptions) (*ListResult, error) 
 		q.Scoped, q.Scope = scoped, terms
 	}
 	var res store.QueryResult
+	var out *ListResult
 	err = s.o.DB.View(ctx, func(tx store.Tx) (err error) {
 		res, err = tx.Content().Query(ctx, q)
-		return err
+		if err != nil {
+			return err
+		}
+		out = &ListResult{Items: make([]Summary, len(res.Items)), Total: res.Total}
+		for i, it := range res.Items {
+			out.Items[i] = summaryOf(it)
+			if len(o.Fields) > 0 {
+				if out.Items[i].Fields, err = s.listFields(ctx, tx, it.Item, q, o.Fields); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("content: list: %w", err)
 	}
-	out := &ListResult{Items: make([]Summary, len(res.Items)), Total: res.Total}
-	for i, it := range res.Items {
-		out.Items[i] = summaryOf(it)
+	return out, nil
+}
+
+// MaxListFields is the most fields one list asks for.
+const MaxListFields = 10
+
+func (s *Service) checkListFields(o ListOptions) error {
+	if len(o.Fields) == 0 {
+		return nil
+	}
+	if len(o.Fields) > MaxListFields {
+		return badRequest("too many fields: %d (at most %d)", len(o.Fields), MaxListFields)
+	}
+	if o.Type == "" {
+		return badRequest("fields need a content type")
+	}
+	t, err := s.typeOf(o.Type)
+	if err != nil {
+		return err
+	}
+	for _, name := range o.Fields {
+		if _, ok := t.Field(name); !ok {
+			return badRequest("unknown field %q of type %q", name, o.Type)
+		}
+	}
+	return nil
+}
+
+// listFields reads the named fields of an item's working (or, for published-only lists, published) document in
+// the query's locale; fields the locale lacks fall back to the main locale.
+func (s *Service) listFields(ctx context.Context, tx store.Tx, it store.Item, q store.Query, names []string) (map[string]any, error) {
+	st, err := s.newState(it)
+	if err != nil {
+		return nil, err
+	}
+	if err := st.load(ctx, tx.Content()); err != nil {
+		return nil, err
+	}
+	parts := func(locale string) (shared, loc map[string]any, err error) {
+		if q.Working {
+			shared, loc, _, err = st.workingParts(locale)
+			return
+		}
+		shared, loc, _, err = st.publishedParts(locale)
+		return
+	}
+	shared, loc, err := parts(q.Locale)
+	if err != nil {
+		return nil, err
+	}
+	doc := mergeParts(shared, loc)
+	var main map[string]any
+	out := make(map[string]any, len(names))
+	for _, name := range names {
+		v, ok := doc[name]
+		if _, inLoc := loc[name]; !inLoc && q.Locale != it.MainLocale {
+			if main == nil {
+				_, ml, err := parts(it.MainLocale)
+				if err != nil {
+					return nil, err
+				}
+				main = ml
+			}
+			if mv, found := main[name]; found && !ok {
+				v, ok = mv, true
+			}
+		}
+		if ok {
+			out[name] = v
+		}
 	}
 	return out, nil
 }

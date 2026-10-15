@@ -11,12 +11,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/hydrogencms/hydrogen/access"
+	"github.com/hydrogencms/hydrogen/admin"
 	"github.com/hydrogencms/hydrogen/audit"
 	"github.com/hydrogencms/hydrogen/cachetag"
 	"github.com/hydrogencms/hydrogen/channel"
@@ -89,6 +91,25 @@ type DeliveryConfig struct {
 	PreviewSecret string `yaml:"preview_secret" config:"secret"`
 }
 
+type AdminConfig struct {
+	// Enabled serves the admin app (default true).
+	Enabled bool `yaml:"enabled"`
+	// Prefix is where the admin app is mounted: a leading slash, no trailing one. Default "/admin".
+	Prefix string `yaml:"prefix"`
+}
+
+func (c *AdminConfig) check() error {
+	if !adminPrefix.MatchString(c.Prefix) {
+		return fmt.Errorf("admin.prefix %q must start with / and not end with one, and use only letters, digits and . _ ~ - in its segments (default /admin)", c.Prefix)
+	}
+	if c.Prefix == "/api" || strings.HasPrefix(c.Prefix, "/api/") || c.Prefix == "/healthz" || c.Prefix == "/readyz" {
+		return fmt.Errorf("admin.prefix %q collides with a core route", c.Prefix)
+	}
+	return nil
+}
+
+var adminPrefix = regexp.MustCompile(`^/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$`)
+
 type CoreConfig struct {
 	HTTP     HTTPConfig
 	Database DatabaseConfig
@@ -99,6 +120,7 @@ type CoreConfig struct {
 	Manage   ManageConfig
 	Auth     AuthConfig
 	Delivery DeliveryConfig
+	Admin    AdminConfig
 	// Webhooks deliver outbox events to HTTP endpoints, by name.
 	Webhooks map[string]webhook.Config
 }
@@ -298,6 +320,7 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 		Content:  ContentConfig{SchemaDir: "schema", DefaultLocale: "en"},
 		Delivery: DeliveryConfig{CacheBytes: delivery.DefaultCacheBytes},
 		Jobs:     JobsConfig{Enabled: true},
+		Admin:    AdminConfig{Enabled: true, Prefix: "/admin"},
 	}
 	sections := []struct {
 		path   string
@@ -308,7 +331,7 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 			path   string
 			target any
 		}{{"http", &core.HTTP}, {"database", &core.Database}, {"log", &core.Log}, {"outbox", &core.Outbox}, {"jobs", &core.Jobs},
-			{"manage", &core.Manage}, {"auth", &core.Auth}, {"delivery", &core.Delivery}, {"webhooks", &core.Webhooks}}...)
+			{"manage", &core.Manage}, {"auth", &core.Auth}, {"delivery", &core.Delivery}, {"admin", &core.Admin}, {"webhooks", &core.Webhooks}}...)
 	}
 	for _, d := range sections {
 		if err := cfg.Decode(d.path, d.target); err != nil {
@@ -382,6 +405,9 @@ func (p *plan) checkRuntime(cfg *config.Config) error {
 		return err
 	}
 	if err := p.core.Auth.check(dev); err != nil {
+		return err
+	}
+	if err := p.core.Admin.check(); err != nil {
 		return err
 	}
 	if _, err := trustedProxies(p.core.HTTP.TrustedProxies); err != nil {
@@ -533,8 +559,8 @@ func (a *App) Handler() (http.Handler, error) {
 		_, _ = io.WriteString(w, "ok\n")
 	})
 	mux.HandleFunc("GET /readyz", a.ready)
-	if len(a.services.Schema.Types()) > 0 {
-		const prefix = "/api/manage/v1"
+	const prefix = "/api/manage/v1"
+	{
 		api, err := manage.New(manage.Options{Content: a.services.Content, Auth: a.services.Auth, Gate: a.services.Access,
 			Admin: a.services.Admin, Catalog: a.services.Catalog,
 			Channels: a.services.Channels, Log: a.services.Log, Prefix: prefix,
@@ -543,7 +569,12 @@ func (a *App) Handler() (http.Handler, error) {
 			return nil, err
 		}
 		mux.Handle(prefix+"/", http.StripPrefix(prefix, api))
+	}
+	if len(a.services.Schema.Types()) > 0 {
 		mux.Handle(delivery.Prefix+"/", http.StripPrefix(delivery.Prefix, a.services.Delivery.Handler()))
+	}
+	if err := a.mountAdmin(mux); err != nil {
+		return nil, err
 	}
 	if err := a.mountEndpoints(mux); err != nil {
 		return nil, err
@@ -554,6 +585,22 @@ func (a *App) Handler() (http.Handler, error) {
 		}
 	}
 	return recoverer(a.services.Log, mux), nil
+}
+
+// mountAdmin serves the admin app. In dev, ADMIN_DEV_URL (a Vite dev server) replaces the embedded build.
+func (a *App) mountAdmin(mux *http.ServeMux) error {
+	s := a.services
+	if !s.Core.Admin.Enabled {
+		return nil
+	}
+	o := admin.Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: delivery.Prefix, Pages: slices.Contains(a.Modules(), "pages")}
+	if s.Env == config.DevEnv {
+		o.DevURL = os.Getenv("ADMIN_DEV_URL")
+	}
+	if err := handle(mux, s.Core.Admin.Prefix+"/", admin.Handler(s.Core.Admin.Prefix, admin.Dist(), o)); err != nil {
+		return fmt.Errorf("admin.prefix %q: %w", s.Core.Admin.Prefix, err)
+	}
+	return nil
 }
 
 func handle(mux *http.ServeMux, pattern string, h http.Handler) (err error) {

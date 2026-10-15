@@ -27,6 +27,12 @@ func (r *Registry) PolicyLimitation(policy, limitation string) error {
 	return r.accessCatalog().AddPolicyLimitation(policy, limitation)
 }
 
+// TemplatePolicies adds registered policies to a seeded role template ("editor", "viewer", …), for a module
+// whose policies the core templates can't name. Roles already seeded keep their policies.
+func (r *Registry) TemplatePolicies(template string, policies ...string) error {
+	return r.accessCatalog().AddTemplatePolicies(template, policies...)
+}
+
 // AccessRules adds code access rules for a content type, ANDed with RBAC and with other rules for the type.
 func (r *Registry) AccessRules(typ string, rules access.Rules) {
 	r.accessCatalog().AddRules(typ, rules)

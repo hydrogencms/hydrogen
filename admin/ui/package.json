@@ -1,0 +1,28 @@
+{
+  "name": "hydrogen-admin",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "size": "node scripts/size.mjs",
+    "types": "openapi-typescript -o src/lib/api/schema.d.ts",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.64.1",
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@types/node": "^26.6.5",
+    "jsdom": "^28.1.0",
+    "openapi-typescript": "^7.13.0",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.6",
+    "typescript": "~5.9",
+    "vite": "^6.4.4",
+    "vitest": "^3.2.7"
+  }
+}

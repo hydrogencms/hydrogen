@@ -46,6 +46,7 @@ func authSchemas() obj {
 				"principal": obj{"type": "object", "required": []any{"kind", "name"},
 					"properties": obj{"kind": obj{"type": "string", "enum": []any{"user", "token", "agent"}}, "id": uuid, "name": openapi.Str("")}},
 				"grants":    openapi.ArrayOf(openapi.SchemaRef("Grant")),
+				"groups":    obj{"type": "array", "items": uuid, "description": "Users only: ids of the groups the user belongs to."},
 				"csrf":      obj{"type": "string", "description": "Session requests send this as X-CSRF-Token on unsafe methods."},
 				"expiresAt": dt}},
 		"LoginResult": obj{"type": "object", "required": []any{"user", "csrf", "expiresAt"},
@@ -63,7 +64,8 @@ func authSchemas() obj {
 			"properties": obj{"id": obj{"type": "integer"}, "at": dt, "actorKind": openapi.Str(""), "actorId": openapi.Str(""), "action": openapi.Str(""),
 				"subject": openapi.Str(""), "data": obj{"description": "Action data; an agent's model and task are under actor."}}},
 		"AuditList": obj{"type": "object", "required": []any{"items", "hasMore"},
-			"properties": obj{"items": openapi.ArrayOf(openapi.SchemaRef("AuditEntry")), "hasMore": obj{"type": "boolean"}}},
+			"properties": obj{"items": openapi.ArrayOf(openapi.SchemaRef("AuditEntry")), "hasMore": obj{"type": "boolean"},
+				"next": obj{"type": "integer", "description": "With hasMore: the last id of this page, for before."}}},
 	}
 }
 
@@ -123,12 +125,13 @@ func authPaths(paths obj) {
 	paths["/auth/logout"] = obj{"post": operation("logout", "End the session", nil, nil, resp(noContent, "401", "403"))}
 	paths["/auth/session"] = obj{"get": operation("getSession", "Who is calling, and what they may do", nil, nil,
 		resp(ok("Session"), "401"))}
-	paths["/auth/password"] = obj{"post": operation("changePassword", "Change your own password", nil,
+	paths["/auth/password"] = obj{"post": operation("changePassword", "Change your own password; ends your other sessions and keeps this one", nil,
 		jsonBody(obj{"current": openapi.Str("password"), "new": openapi.Str("password")}, "current", "new"),
 		resp(noContent, "400", "401", "403", "413", "415", "429"))}
 
 	paths["/users"] = obj{
-		"get": operation("listUsers", "List users", pageParams, nil, resp(ok("UserList"), "400", "401", "403")),
+		"get": operation("listUsers", "List users; q keeps those whose login, name or email contains it (case-insensitive)",
+			with(pageParams, []any{obj{"name": "q", "in": "query", "schema": openapi.Str("")}}), nil, resp(ok("UserList"), "400", "401", "403")),
 		"post": operation("createUser", "Create a user", nil,
 			jsonBody(obj{"login": openapi.Str(""), "name": openapi.Str(""), "email": openapi.Str(""), "password": openapi.Str("password")}, "login"),
 			resp(created("User"), "400", "401", "403", "413", "415")),
@@ -140,6 +143,8 @@ func authPaths(paths obj) {
 			resp(ok("User"), "400", "401", "403", "404", "413", "415")),
 		"delete": operation("deleteUser", "Delete a user", byID, nil, resp(noContent, "400", "401", "403", "404")),
 	}
+	paths["/users/{id}/groups"] = obj{"get": operation("listUserGroups", "List the groups a user belongs to", byID, nil,
+		resp(ok("GroupList"), "401", "403", "404"))}
 	paths["/groups"] = obj{
 		"get": operation("listGroups", "List groups", pageParams, nil, resp(ok("GroupList"), "400", "401", "403")),
 		"post": operation("createGroup", "Create a group", nil, jsonBody(obj{"name": openapi.Str(""), "description": openapi.Str("")}, "name"),
@@ -202,9 +207,10 @@ func authPaths(paths obj) {
 	}
 	paths["/audit"] = obj{"get": operation("listAudit", "Read the audit log, newest first", []any{
 		obj{"name": "actor", "in": "query", "schema": openapi.Str(""), "description": "A kind (agent) or kind:id."},
-		obj{"name": "action", "in": "query", "schema": openapi.Str("")},
+		obj{"name": "action", "in": "query", "schema": openapi.Str(""), "description": "An action, or a prefix ending in * (token.*)."},
 		obj{"name": "subject", "in": "query", "schema": openapi.Str("")},
 		obj{"name": "since", "in": "query", "schema": openapi.Str("date-time")},
+		obj{"name": "before", "in": "query", "schema": obj{"type": "integer", "minimum": 1}, "description": "Cursor: only entries with a smaller id; pass the previous page's next."},
 		openapi.Ref("parameters", "Limit"), openapi.Ref("parameters", "Offset")}, nil, resp(ok("AuditList"), "400", "401", "403"))}
 }
 

@@ -24,6 +24,7 @@ var contentTests = []struct {
 	{"ContentVersions", testVersions},
 	{"ContentDraftParts", testDraftParts},
 	{"ContentDraftPartsOf", testDraftPartsOf},
+	{"ContentPublishedLocalesOf", testPublishedLocalesOf},
 	{"ContentRefs", testRefs},
 	{"ContentIndex", testIndexReplace},
 	{"ContentSearch", testSearch},
@@ -425,6 +426,47 @@ func testDraftPartsOf(t *testing.T, db store.DB) {
 	viewContent(t, db, func(c store.ContentStore) error {
 		var err error
 		got, err = c.DraftPartsOf(ctx, nil)
+		return err
+	})
+	if len(got) != 0 {
+		t.Fatalf("no items: %v", got)
+	}
+}
+
+func testPublishedLocalesOf(t *testing.T, db store.DB) {
+	ctx := context.Background()
+	g := newIDs()
+	a, never, missing := g.New(), g.New(), g.New()
+	withContent(t, db, func(c store.ContentStore) error {
+		if _, err := c.AddSchemaRev(ctx, "h", []byte(`{}`), t0); err != nil {
+			return err
+		}
+		pub := newItem(a, "article", "")
+		pub.PublishedVersion = 1
+		if err := c.InsertItem(ctx, pub); err != nil {
+			return err
+		}
+		if err := c.InsertItem(ctx, newItem(never, "article", "")); err != nil {
+			return err
+		}
+		v := store.Version{ItemID: a, Version: 1, SchemaRev: 1, Shared: []byte(`{}`), CreatedAt: t0}
+		for _, loc := range []string{"fr", "de", "en"} {
+			v.Locales = append(v.Locales, store.VersionLocale{Locale: loc, Name: loc, Data: []byte(`{}`)})
+		}
+		return c.InsertVersion(ctx, v)
+	})
+	var got map[ids.UUID][]string
+	viewContent(t, db, func(c store.ContentStore) error {
+		var err error
+		got, err = c.PublishedLocalesOf(ctx, []ids.UUID{a, never, missing})
+		return err
+	})
+	if len(got) != 1 || !slices.Equal(got[a], []string{"de", "en", "fr"}) {
+		t.Fatalf("published locales of: %v", got)
+	}
+	viewContent(t, db, func(c store.ContentStore) error {
+		var err error
+		got, err = c.PublishedLocalesOf(ctx, nil)
 		return err
 	})
 	if len(got) != 0 {

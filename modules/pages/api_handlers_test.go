@@ -61,6 +61,13 @@ func (f *fakeAPI) DeleteNode(_ context.Context, id ids.UUID) error {
 	f.rec("delete " + id.String())
 	return f.err
 }
+func (f *fakeAPI) TreeRoot(context.Context, string, string) (*TreeNode, error) {
+	if len(f.tree) == 0 {
+		return nil, nil
+	}
+	return &f.tree[0], nil
+}
+
 func (f *fakeAPI) Tree(_ context.Context, site, locale string, parent *ids.UUID, depth int) ([]TreeNode, error) {
 	f.rec(fmt.Sprintf("tree %s %s %v", site, locale, parent != nil))
 	f.depth = depth
@@ -143,6 +150,19 @@ func TestAPITreeParams(t *testing.T) {
 	}
 	if len(f.calls) != 2 {
 		t.Errorf("service called on bad input: %v", f.calls)
+	}
+}
+
+func TestAPITreeRoot(t *testing.T) {
+	f := &fakeAPI{tree: []TreeNode{{Name: "Home", Locales: []string{"en"}}}}
+	h := newHandler(f)
+	w := send(h, "GET", "/pages/sites/main/tree", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"root":{`) || !strings.Contains(w.Body.String(), `"locales":["en"]`) {
+		t.Errorf("root: %d %s", w.Code, w.Body)
+	}
+	w = send(h, "GET", "/pages/sites/main/tree?parent="+idA.String(), "")
+	if w.Code != 200 || strings.Contains(w.Body.String(), `"root"`) {
+		t.Errorf("sub tree has a root: %d %s", w.Code, w.Body)
 	}
 }
 

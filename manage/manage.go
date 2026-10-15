@@ -32,6 +32,7 @@ type Content interface {
 	Delete(ctx context.Context, id ids.UUID) error
 	List(ctx context.Context, o content.ListOptions) (*content.ListResult, error)
 	Versions(ctx context.Context, id ids.UUID) ([]store.VersionMeta, error)
+	VersionContent(ctx context.Context, id ids.UUID, version int) (*content.VersionView, error)
 	ReferencesVisible(ctx context.Context, id ids.UUID) ([]content.Referrer, int, error)
 	Singleton(ctx context.Context, typ string, o content.GetOptions) (*content.View, error)
 	UpdateSingleton(ctx context.Context, typ string, in content.UpdateInput) (*content.View, error)
@@ -172,6 +173,7 @@ var coreRoutes = []route{
 	{"DELETE", "/items/{id}/draft", access.PolicyContentEdit, (*api).discardDraft},
 	{"DELETE", "/items/{id}", access.PolicyContentDelete, (*api).deleteItem},
 	{"GET", "/items/{id}/versions", access.PolicyContentRead, (*api).versions},
+	{"GET", "/items/{id}/versions/{n}", access.PolicyContentRead, (*api).version},
 	{"GET", "/items/{id}/references", access.PolicyContentRead, (*api).references},
 	{"GET", "/singletons/{type}", access.PolicyContentRead, (*api).getSingleton},
 	{"PATCH", "/singletons/{type}", access.PolicyContentEdit, (*api).updateSingleton},

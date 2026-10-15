@@ -49,7 +49,10 @@ func templatePolicies(names ...string) []RolePolicy {
 	return out
 }
 
-func Templates() []Template {
+// Templates are the core role templates; Catalog.Templates adds what modules contributed.
+func Templates() []Template { return baseTemplates() }
+
+func baseTemplates() []Template {
 	return []Template{
 		{Name: "administrator", Description: "Everything", Policies: templatePolicies(PolicyAll)},
 		{Name: "editor", Description: "Full control of content", Policies: templatePolicies(PolicyContentRead,

@@ -14,6 +14,10 @@ import (
 )
 
 const testSchema = `
+groups:
+  seo:
+    fields:
+      metaTitle: { type: string }
 types:
   person:
     fields:
@@ -28,6 +32,7 @@ types:
       author:  { type: ref, to: [person], index: true }
       tags:    { type: list, of: { type: string }, index: true }
       address: { type: group, fields: { city: { type: string } } }
+      seo:     { type: group, use: seo }
   settings:
     singleton: true
     fields:
@@ -65,6 +70,7 @@ type fake struct {
 	view     *content.View
 	list     *content.ListResult
 	versions []store.VersionMeta
+	ver      *content.VersionView
 	refs     []content.Referrer
 	err      error
 	panics   bool
@@ -121,6 +127,10 @@ func (f *fake) List(_ context.Context, o content.ListOptions) (*content.ListResu
 
 func (f *fake) Versions(_ context.Context, id ids.UUID) ([]store.VersionMeta, error) {
 	return f.versions, f.rec(call{name: "Versions", id: id})
+}
+
+func (f *fake) VersionContent(_ context.Context, id ids.UUID, n int) (*content.VersionView, error) {
+	return f.ver, f.rec(call{name: "VersionContent", id: id, arg: n})
 }
 
 func (f *fake) ReferencesVisible(_ context.Context, id ids.UUID) ([]content.Referrer, int, error) {

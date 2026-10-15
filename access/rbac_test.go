@@ -838,3 +838,26 @@ func BenchmarkCan(b *testing.B) {
 		}
 	}
 }
+
+func TestCatalogTemplatePolicies(t *testing.T) {
+	c := access.NewCatalog()
+	if err := c.AddPolicy(access.Policy{Name: "x.read"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.AddTemplatePolicies("viewer", "x.read"); err != nil {
+		t.Fatal(err)
+	}
+	if c.AddTemplatePolicies("nope", "x.read") == nil || c.AddTemplatePolicies("viewer", "y.read") == nil {
+		t.Error("unknown template or policy accepted")
+	}
+	for _, tpl := range c.Templates() {
+		if want := map[string]int{"viewer": 2}[tpl.Name]; want != 0 && len(tpl.Policies) != want {
+			t.Errorf("%s: %d policies, want %d", tpl.Name, len(tpl.Policies), want)
+		}
+	}
+	for _, tpl := range access.Templates() {
+		if tpl.Name == "viewer" && len(tpl.Policies) != 1 {
+			t.Error("package Templates() must not include module additions")
+		}
+	}
+}

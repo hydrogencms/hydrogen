@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -1018,3 +1019,120 @@ type registrar struct{ r *hooks.Registry }
 func (r registrar) AddHook(h hooks.Hook) error { return r.r.Add(h) }
 
 var _ = schema.ModeDraft
+
+func TestListFieldsAndVersionContent(t *testing.T) {
+	run(t, func(t *testing.T, e *env) {
+		v := e.create("article", "en", `{"title":"Alpha","rating":3}`)
+		e.publish(v.ID)
+		e.update(v.ID, "en", `{"title":"Alpha 2"}`)
+
+		list := func(locale string, fields ...string) (content.Summary, error) {
+			res, err := e.svc.List(ctx, content.ListOptions{Type: "article", Locale: locale, Fields: fields})
+			if err != nil || len(res.Items) != 1 {
+				return content.Summary{}, err
+			}
+			return res.Items[0], nil
+		}
+		got, err := list("en", "title", "rating", "author")
+		if err != nil {
+			t.Fatal(err)
+		}
+		eq(t, "title is the draft", got.Fields["title"], "Alpha 2")
+		eq(t, "rating", fmt.Sprint(got.Fields["rating"]), "3")
+		if _, ok := got.Fields["author"]; ok {
+			t.Errorf("unset field returned: %v", got.Fields)
+		}
+		if got, err = list("de", "title"); err != nil || got.Fields["title"] != "Alpha 2" {
+			t.Errorf("main-locale fallback: %v %v", got.Fields, err)
+		}
+		if got, err = list("en"); err != nil || got.Fields != nil {
+			t.Errorf("no fields asked: %v %v", got.Fields, err)
+		}
+		_, err = list("en", "nope")
+		wantErr(t, err, content.ErrBadRequest)
+		_, err = list("en", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k")
+		wantErr(t, err, content.ErrBadRequest)
+		_, err = e.svc.List(ctx, content.ListOptions{Fields: []string{"title"}})
+		wantErr(t, err, content.ErrBadRequest)
+
+		vc, err := e.svc.VersionContent(ctx, v.ID, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc := mergeVersionFields(vc)
+		eq(t, "version", vc.Version, 1)
+		eq(t, "version title", doc["title"], "Alpha")
+		eq(t, "version rating", fmt.Sprint(doc["rating"]), "3")
+		if _, ok := vc.Locales["en"]; !ok {
+			t.Errorf("locales = %v", vc.Locales)
+		}
+		_, err = e.svc.VersionContent(ctx, v.ID, 9)
+		wantErr(t, err, content.ErrNotFound)
+	})
+}
+
+func mergeVersionFields(vc *content.VersionView) map[string]any {
+	out := map[string]any{}
+	for k, f := range vc.Shared.Fields {
+		out[k] = f
+	}
+	for _, l := range vc.Locales {
+		for k, f := range l.Fields {
+			out[k] = f
+		}
+	}
+	return out
+}
+
+func TestExpectedState(t *testing.T) {
+	run(t, func(t *testing.T, e *env) {
+		v := e.create("article", "en", `{"title":"Alpha"}`)
+		state := content.StateOf(v.UpdatedAt)
+		withState := func(s string) context.Context { return content.WithExpectedState(ctx, s) }
+
+		e.tick()
+		v2, err := e.svc.Update(withState(state), v.ID, content.UpdateInput{Locale: "en", Fields: doc(t, `{"title":"Beta"}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if content.StateOf(v2.UpdatedAt) == state {
+			t.Fatal("update kept the state")
+		}
+		// A second client holding the old state is refused, by every mutation, and nothing changes.
+		var sm *content.StateMismatchError
+		e.tick()
+		_, err = e.svc.Update(withState(state), v.ID, content.UpdateInput{Locale: "en", Fields: doc(t, `{"title":"Gamma"}`)})
+		if !errors.As(err, &sm) || !errors.Is(err, content.ErrPreconditionFailed) || sm.State != content.StateOf(v2.UpdatedAt) {
+			t.Fatalf("stale update: %v", err)
+		}
+		_, err = e.svc.Publish(withState(state), v.ID, content.PublishOptions{})
+		wantErr(t, err, content.ErrPreconditionFailed)
+		wantErr(t, e.svc.Discard(withState(state), v.ID, nil), content.ErrPreconditionFailed)
+		wantErr(t, e.svc.Delete(withState(state), v.ID), content.ErrPreconditionFailed)
+		got, err := e.svc.Get(ctx, v.ID, content.GetOptions{Draft: true})
+		if err != nil || got.Fields["title"] != "Beta" {
+			t.Fatalf("refused writes changed the item: %v %v", got, err)
+		}
+
+		// The same client carries the new state through update, publish, discard and delete.
+		e.tick()
+		pub, err := e.svc.Publish(withState(content.StateOf(v2.UpdatedAt)), v.ID, content.PublishOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.tick()
+		up, err := e.svc.Update(withState(content.StateOf(pub.UpdatedAt)), v.ID, content.UpdateInput{Locale: "en", Fields: doc(t, `{"title":"Delta"}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.tick()
+		if err := e.svc.Discard(withState(content.StateOf(up.UpdatedAt)), v.ID, nil); err != nil {
+			t.Fatal(err)
+		}
+		// No expectation, no check.
+		e.tick()
+		if err := e.svc.Delete(ctx, v.ID); err != nil {
+			t.Fatal(err)
+		}
+	})
+}

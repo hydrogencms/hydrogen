@@ -109,10 +109,11 @@ func (a auditStore) List(ctx context.Context, q store.AuditQuery) ([]store.Audit
 	if since.IsZero() {
 		since = time.Unix(0, 0)
 	}
+	exact, prefix := q.ActionMatch()
 	rows, err := a.tx.Query(ctx, `SELECT id, at, actor_kind, actor_id, action, subject, data FROM audit_event
-		WHERE ($1 = '' OR subject = $1) AND ($2 = '' OR action = $2) AND ($3 = '' OR actor_kind = $3)
-		AND ($4 = '' OR actor_id = $4) AND at >= $5 ORDER BY id DESC LIMIT $6 OFFSET $7`,
-		q.Subject, q.Action, q.ActorKind, q.ActorID, since, q.Limit, max(q.Offset, 0))
+		WHERE ($1 = '' OR subject = $1) AND ($2 = '' OR action = $2) AND ($3 = '' OR starts_with(action, $3))
+		AND ($4 = '' OR actor_kind = $4) AND ($5 = '' OR actor_id = $5) AND at >= $6 AND ($7::bigint = 0 OR id < $7) ORDER BY id DESC LIMIT $8 OFFSET $9`,
+		q.Subject, exact, prefix, q.ActorKind, q.ActorID, since, q.Before, q.Limit, max(q.Offset, 0))
 	if err != nil {
 		return nil, fmt.Errorf("postgres: audit list: %w", err)
 	}

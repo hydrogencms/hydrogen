@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -263,6 +264,99 @@ func rulesScenario(t *testing.T, s *server) {
 		rita.ok(204, "DELETE", "/items/"+own.ID, nil, nil)
 	})
 
+	t.Run("accounts", func(t *testing.T) {
+		var us struct {
+			Items []struct{ Login string } `json:"items"`
+			Total int
+		}
+		root.ok(200, "GET", "/users?q=RIT", nil, &us)
+		if us.Total != 1 || us.Items[0].Login != "rita" {
+			t.Errorf("user search: %+v", us)
+		}
+		root.ok(200, "GET", "/users?q=nobody", nil, &us)
+		if us.Total != 0 {
+			t.Errorf("user search miss: %+v", us)
+		}
+		var gs struct {
+			Items []any `json:"items"`
+			Total int
+		}
+		root.ok(200, "GET", "/users/"+u.ID+"/groups", nil, &gs)
+		if gs.Total != 0 || gs.Items == nil {
+			t.Errorf("user groups: %+v", gs)
+		}
+		root.notFound("GET", "/users/"+newsDraft+"/groups", nil)
+		var sess struct {
+			Groups []string `json:"groups"`
+		}
+		rita.ok(200, "GET", "/auth/session", nil, &sess)
+		if sess.Groups == nil {
+			t.Errorf("session has no groups: %+v", sess)
+		}
+
+		var au struct {
+			Items   []struct{ ID int64 } `json:"items"`
+			HasMore bool                 `json:"hasMore"`
+			Next    int64                `json:"next"`
+		}
+		root.ok(200, "GET", "/audit?limit=1", nil, &au)
+		if !au.HasMore || len(au.Items) != 1 || au.Next != au.Items[0].ID {
+			t.Fatalf("audit page: %+v", au)
+		}
+		first := au.Next
+		root.ok(200, "GET", fmt.Sprintf("/audit?limit=1&before=%d", first), nil, &au)
+		if len(au.Items) != 1 || au.Items[0].ID >= first {
+			t.Errorf("audit before: %+v", au)
+		}
+
+		other := signIn(t, s.base, "rita", userPassword)
+		other.ok(200, "GET", "/auth/session", nil, nil)
+		rita.ok(204, "POST", "/auth/password", map[string]any{"current": userPassword, "new": "another long password"}, nil)
+		rita.ok(200, "GET", "/auth/session", nil, nil)
+		if got := other.do("GET", "/auth/session", nil, nil); got != 401 {
+			t.Errorf("other session after password change: %d", got)
+		}
+	})
+
+	t.Run("if-match", func(t *testing.T) {
+		call := func(method, path, etag string, body string) (*http.Response, []byte) {
+			req, _ := http.NewRequest(method, s.base+path, strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+root.bearer)
+			if etag != "" {
+				req.Header.Set("If-Match", etag)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			return resp, raw
+		}
+		resp, _ := call("GET", "/items/"+newsDraft+"?draft=true", "", "")
+		first := resp.Header.Get("ETag")
+		if resp.StatusCode != 200 || first == "" {
+			t.Fatalf("get: %d etag %q", resp.StatusCode, first)
+		}
+		resp, _ = call("PATCH", "/items/"+newsDraft, first, `{"fields":{"rating":2}}`)
+		second := resp.Header.Get("ETag")
+		if resp.StatusCode != 200 || second == "" || second == first {
+			t.Fatalf("patch with current etag: %d %q -> %q", resp.StatusCode, first, second)
+		}
+		resp, raw := call("PATCH", "/items/"+newsDraft, first, `{"fields":{"rating":3}}`)
+		if resp.StatusCode != 412 || resp.Header.Get("ETag") != second || !strings.Contains(string(raw), `"precondition_failed"`) ||
+			!strings.Contains(string(raw), `"current":{"updatedAt":`) {
+			t.Fatalf("stale patch: %d %q %s", resp.StatusCode, resp.Header.Get("ETag"), raw)
+		}
+		if resp, _ = call("DELETE", "/items/"+newsDraft+"/draft", first, ""); resp.StatusCode != 412 {
+			t.Errorf("stale discard: %d", resp.StatusCode)
+		}
+		if resp, _ = call("PATCH", "/items/"+newsDraft, "", `{"fields":{"rating":4}}`); resp.StatusCode != 200 {
+			t.Errorf("no header: %d", resp.StatusCode)
+		}
+	})
+
 	t.Run("the config token is unaffected", func(t *testing.T) {
 		var l page
 		root.ok(200, "GET", "/collections/article/items", nil, &l)
@@ -279,4 +373,29 @@ func TestRulesSQLite(t *testing.T) {
 
 func TestRulesPostgres(t *testing.T) {
 	rulesScenario(t, start(t, "prod", map[string]string{"DATABASE_URL": pgtest.Scratch(t)}, configureWithRules))
+}
+
+func signIn(t *testing.T, base, login, password string) *who {
+	t.Helper()
+	req, _ := http.NewRequest("POST", base+"/auth/login", strings.NewReader(`{"login":"`+login+`","password":"`+password+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	var res struct {
+		CSRF string `json:"csrf"`
+	}
+	if resp.StatusCode != 200 || json.Unmarshal(raw, &res) != nil {
+		t.Fatalf("login: %d %s", resp.StatusCode, raw)
+	}
+	w := &who{t: t, base: base, csrf: res.CSRF}
+	for _, c := range resp.Cookies() {
+		if c.Name == "hydrogen_session" {
+			w.cookie = c.Value
+		}
+	}
+	return w
 }

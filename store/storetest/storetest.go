@@ -186,6 +186,24 @@ func testAudit(t *testing.T, db store.DB) {
 	if got := list(store.AuditQuery{Action: "item.publish", Limit: 1}); len(got) != 1 || got[0].Subject != "b" {
 		t.Fatalf("by action with limit: %+v", got)
 	}
+	if got := list(store.AuditQuery{Action: "item.*"}); len(got) != 3 {
+		t.Fatalf("by action prefix: %+v", got)
+	}
+	if got := list(store.AuditQuery{Action: "item.p*"}); len(got) != 2 || got[0].Subject != "b" {
+		t.Fatalf("by narrower prefix: %+v", got)
+	}
+	if got := list(store.AuditQuery{Action: "item_*"}); len(got) != 0 {
+		t.Fatalf("prefix is literal: %+v", got)
+	}
+	if got := list(store.AuditQuery{Before: all[0].ID}); len(got) != 2 || got[0].ID != all[1].ID {
+		t.Fatalf("before: %+v", got)
+	}
+	if got := list(store.AuditQuery{Before: all[0].ID, Action: "item.*"}); len(got) != 2 {
+		t.Fatalf("before with action: %+v", got)
+	}
+	if got := list(store.AuditQuery{Before: all[2].ID}); len(got) != 0 {
+		t.Fatalf("before the oldest: %+v", got)
+	}
 	if got := list(store.AuditQuery{ActorKind: "agent"}); len(got) != 1 || got[0].ActorID != "bot" {
 		t.Fatalf("by actor kind: %+v", got)
 	}

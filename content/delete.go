@@ -29,6 +29,9 @@ func (s *Service) Delete(ctx context.Context, id ids.UUID) error {
 		if err := s.authorizeItem(ctx, tx.Content(), it, access.PolicyContentDelete, nil); err != nil {
 			return err
 		}
+		if err := s.checkState(ctx, it); err != nil {
+			return err
+		}
 		if err := s.deleteItem(ctx, tx, it); err != nil {
 			return fmt.Errorf("content: delete %s: %w", id, err)
 		}

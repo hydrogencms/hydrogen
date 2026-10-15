@@ -139,7 +139,7 @@ func parseList(typ string, q url.Values) (content.ListOptions, error) {
 	o := content.ListOptions{Type: typ}
 	for k := range q {
 		switch k {
-		case "locale", "status", "q", "sort", "limit", "offset":
+		case "locale", "status", "q", "sort", "limit", "offset", "fields":
 		default:
 			if !strings.HasPrefix(k, "where[") {
 				return o, BadRequest("unknown query parameter %q", k)
@@ -175,6 +175,18 @@ func parseList(typ string, q url.Values) (content.ListOptions, error) {
 	}
 	if o.Offset, err = parseInt(q, "offset", 0, 0, maxOffset); err != nil {
 		return o, err
+	}
+	fields, err := single(q, "fields")
+	if err != nil {
+		return o, err
+	}
+	if fields != "" {
+		o.Fields = strings.Split(fields, ",")
+		for i, f := range o.Fields {
+			if o.Fields[i] = strings.TrimSpace(f); o.Fields[i] == "" {
+				return o, BadRequest("fields must be a comma-separated list of field names")
+			}
+		}
 	}
 	o.Where, err = parseWhere(q)
 	return o, err

@@ -1,0 +1,66 @@
+/* Design tokens. Components use these custom properties only. Light and dark follow the system
+   (prefers-color-scheme); [data-theme] on <html> overrides it. */
+:root {
+  color-scheme: light dark;
+
+  --h-bg: light-dark(#f6f7f9, #101216);
+  --h-surface: light-dark(#ffffff, #181b21);
+  --h-surface-2: light-dark(#f0f2f5, #20242c);
+  --h-surface-hover: light-dark(#eceff3, #262b34);
+  --h-border: light-dark(#d9dde4, #2e343e);
+  --h-border-strong: light-dark(#b9c0cc, #434b59);
+  --h-text: light-dark(#161a22, #e8ebf0);
+  --h-text-muted: light-dark(#596273, #9aa4b5);
+  --h-accent: light-dark(#2f5bea, #7b9bff);
+  --h-accent-strong: light-dark(#2347c4, #a3b9ff);
+  --h-accent-contrast: light-dark(#ffffff, #0d1220);
+  --h-accent-soft: light-dark(#e6ecfd, #1e2845);
+  --h-success: light-dark(#14753d, #5fd48c);
+  --h-success-soft: light-dark(#e0f4e8, #15301f);
+  --h-warning: light-dark(#8a5300, #f0b64f);
+  --h-warning-soft: light-dark(#fdf1d8, #35280f);
+  --h-danger: light-dark(#b42318, #ff8a7d);
+  --h-danger-soft: light-dark(#fde7e4, #3a1815);
+  --h-info: light-dark(#0b64a8, #6cc0ff);
+  --h-info-soft: light-dark(#e0f0fb, #11293b);
+  --h-overlay: light-dark(rgb(16 18 22 / 0.45), rgb(0 0 0 / 0.6));
+
+  --h-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --h-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --h-text-xs: 0.75rem;
+  --h-text-sm: 0.8125rem;
+  --h-text-md: 0.9375rem;
+  --h-text-lg: 1.125rem;
+  --h-text-xl: 1.5rem;
+  --h-leading: 1.5;
+
+  --h-space-1: 0.25rem;
+  --h-space-2: 0.5rem;
+  --h-space-3: 0.75rem;
+  --h-space-4: 1rem;
+  --h-space-5: 1.5rem;
+  --h-space-6: 2rem;
+  --h-space-7: 3rem;
+
+  --h-radius-sm: 4px;
+  --h-radius: 6px;
+  --h-radius-lg: 10px;
+  --h-shadow-sm: 0 1px 2px light-dark(rgb(16 24 40 / 0.06), rgb(0 0 0 / 0.4));
+  --h-shadow: 0 6px 20px light-dark(rgb(16 24 40 / 0.14), rgb(0 0 0 / 0.55));
+  --h-focus: 0 0 0 2px var(--h-surface), 0 0 0 4px var(--h-accent);
+
+  --h-nav-width: 15rem;
+  --h-topbar-height: 3.25rem;
+  --h-control-height: 2.25rem;
+  --h-control-height-sm: 1.75rem;
+  --h-z-menu: 40;
+  --h-z-dialog: 50;
+  --h-z-toast: 60;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}

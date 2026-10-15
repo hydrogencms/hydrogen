@@ -116,6 +116,9 @@ func (s *Service) update(ctx context.Context, tx store.Tx, it store.Item, in Upd
 	if err := s.check(ctx, access.PolicyContentEdit, st, []string{locale}); err != nil {
 		return nil, err
 	}
+	if err := s.checkState(ctx, it); err != nil {
+		return nil, err
+	}
 	if err := st.applyMeta(in); err != nil {
 		return nil, err
 	}
@@ -402,6 +405,9 @@ func (s *Service) Discard(ctx context.Context, id ids.UUID, parts []string) erro
 			return err
 		}
 		if err := s.check(ctx, access.PolicyContentEdit, st, nil); err != nil {
+			return err
+		}
+		if err := s.checkState(ctx, it); err != nil {
 			return err
 		}
 		drop, err := st.discardTargets(parts)

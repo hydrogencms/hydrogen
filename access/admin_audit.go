@@ -15,6 +15,7 @@ type AuditFilter struct {
 	Action  string
 	Subject string
 	Since   time.Time
+	Before  int64 // only events with a smaller id
 	Limit   int
 	Offset  int
 }
@@ -36,7 +37,7 @@ func (a *Admin) AuditLog(ctx context.Context, f AuditFilter) (entries []AuditEnt
 		return nil, false, err
 	}
 	p := page(store.Page{Limit: f.Limit, Offset: f.Offset})
-	q := store.AuditQuery{Action: f.Action, Subject: f.Subject, Since: f.Since, Limit: p.Limit + 1, Offset: p.Offset}
+	q := store.AuditQuery{Action: f.Action, Subject: f.Subject, Since: f.Since, Before: f.Before, Limit: p.Limit + 1, Offset: p.Offset}
 	q.ActorKind, q.ActorID, _ = strings.Cut(f.Actor, ":")
 	var evs []store.AuditEvent
 	err = a.db.View(ctx, func(tx store.Tx) (err error) { evs, err = tx.Audit().List(ctx, q); return })

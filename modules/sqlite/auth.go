@@ -147,10 +147,16 @@ func (a authStore) UserByLogin(ctx context.Context, login string) (store.User, e
 	return u, nil
 }
 
-func (a authStore) ListUsers(ctx context.Context, p store.Page) ([]store.User, int, error) {
+func (a authStore) ListUsers(ctx context.Context, p store.Page, search string) ([]store.User, int, error) {
 	var out []store.User
-	total, err := a.list(ctx, "list users", `SELECT count(*) FROM app_user`,
-		`SELECT `+userColumns+` FROM app_user ORDER BY login`, p, nil, func(r scanner) error {
+	where, args := "", []any(nil)
+	if search != "" {
+		pat := storeutil.LikeContains(search)
+		where = ` WHERE login LIKE ? ESCAPE '\' OR name LIKE ? ESCAPE '\' OR email LIKE ? ESCAPE '\'`
+		args = []any{pat, pat, pat}
+	}
+	total, err := a.list(ctx, "list users", `SELECT count(*) FROM app_user`+where,
+		`SELECT `+userColumns+` FROM app_user`+where+` ORDER BY login`, p, args, func(r scanner) error {
 			u, err := scanUser(r)
 			out = append(out, u)
 			return err
@@ -576,6 +582,11 @@ func (a authStore) DeleteSession(ctx context.Context, hash []byte) error {
 
 func (a authStore) DeleteUserSessions(ctx context.Context, user ids.UUID) error {
 	_, err := a.exec(ctx, "delete user sessions", `DELETE FROM session WHERE user_id = ?`, uid(user))
+	return err
+}
+
+func (a authStore) DeleteOtherSessions(ctx context.Context, user ids.UUID, keep []byte) error {
+	_, err := a.exec(ctx, "delete other sessions", `DELETE FROM session WHERE user_id = ? AND id_hash <> ?`, uid(user), keep)
 	return err
 }
 

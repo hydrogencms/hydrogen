@@ -17,7 +17,9 @@ type AuthStore interface {
 	DeleteUser(ctx context.Context, id ids.UUID) error
 	GetUser(ctx context.Context, id ids.UUID) (User, error)
 	UserByLogin(ctx context.Context, login string) (User, error)
-	ListUsers(ctx context.Context, p Page) ([]User, int, error) // by login
+	// ListUsers lists by login; a non-empty search keeps users whose login, name or email contains it
+	// (case-insensitive).
+	ListUsers(ctx context.Context, p Page, search string) ([]User, int, error)
 
 	CreateGroup(ctx context.Context, g Group) error
 	UpdateGroup(ctx context.Context, g Group) error
@@ -63,6 +65,8 @@ type AuthStore interface {
 	TouchSession(ctx context.Context, hash []byte, seen, expires time.Time) error
 	DeleteSession(ctx context.Context, hash []byte) error
 	DeleteUserSessions(ctx context.Context, user ids.UUID) error
+	// DeleteOtherSessions ends every session of the user except the one with this hash.
+	DeleteOtherSessions(ctx context.Context, user ids.UUID, keep []byte) error
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int, error)
 
 	// Meta is a small key/value table for auth bookkeeping (e.g. "templates_seeded"); ErrNotFound when unset.

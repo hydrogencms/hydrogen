@@ -82,6 +82,9 @@ type TreeNode struct {
 	Path     string `json:"path,omitempty"`   // current path in the locale ("" when it has none)
 	Status   string `json:"status,omitempty"` // page item status: draft, published, changed
 	Children int    `json:"children"`
+	// Locales are the published locales of a page's item; DraftParts its pending draft parts ("" = shared).
+	Locales    []string `json:"locales,omitempty"`
+	DraftParts []string `json:"draftParts,omitempty"`
 	// Restricted marks an ancestor shown as context for a subtree the reader may see: only identity and the
 	// name are filled.
 	Restricted bool       `json:"restricted,omitempty"`
@@ -235,6 +238,15 @@ func (s *Service) Tree(ctx context.Context, site, locale string, parent *ids.UUI
 		return nil, err
 	}
 	return impl.tree(ctx, site, locale, parent, depth, impl.newVisibility)
+}
+
+// TreeRoot describes the site's root node; nil when the site has no root page.
+func (s *Service) TreeRoot(ctx context.Context, site, locale string) (*TreeNode, error) {
+	impl, err := s.get()
+	if err != nil {
+		return nil, err
+	}
+	return impl.treeRoot(ctx, site, locale, impl.newVisibility)
 }
 
 // Resolve finds what a path serves in a site and locale.

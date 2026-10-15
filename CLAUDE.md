@@ -45,6 +45,10 @@ never commit it, quote it in commit messages or public docs, or move its content
   0004), working projections (0005). `content.Service` checks the principal in the context (HTTP entry points
   always set one; no principal = the system, unchecked); the management API authenticates every request.
   Contract: `planning/design/auth-h5a.md`.
+- Admin (H5b): `admin/` serves the Svelte 5 app (`admin/ui`, built into `admin/dist`, committed and embedded;
+  strict CSP, `admin.prefix` default `/admin`, `admin.enabled`). The app is an API client only (`/api/manage/v1`);
+  it reads `<prefix>/config.json` at start. Foundation docs: `admin/ui/src/lib/README.md`. Contract:
+  `planning/design/admin-h5b.md`.
 - TypeScript SDK (H4b): `packages/` (npm workspaces: `client`, `router`, `next`; zero runtime dependencies,
   gzip budgets in `packages/scripts/size.mjs`). `examples/next-site`: Next.js sample against `examples/multisite`
   (one deployment, every web channel; the proxy answers CMS redirects and 404s; `"use cache"` entries tagged from
@@ -63,6 +67,10 @@ make db-up                      # Postgres 17 on localhost:5436 (hydrogen/hydrog
 make smoke                      # hydrogen new → config:check → migrate → serve + D0 budget checks
 make sdk                        # packages/: install, build, test, size budgets
 make next-e2e                   # examples/next-site against examples/multisite (SQLite), curl assertions
+make admin                      # admin/ui: npm ci, typecheck, vitest, build into admin/dist, gzip budgets
+make admin-e2e                  # Playwright exit scenario + axe against examples/multisite (SQLite)
+make admin-types                # regenerate admin/ui/src/lib/api/schema.d.ts from a running build's OpenAPI
+make check                      # tidy-check vet lint test smoke admin admin-dist-check (dist must be rebuilt)
 ```
 
 In a project: `hydrogen dev` (live reload; regenerates `gen/` on schema changes), `hydrogen generate`,
@@ -95,6 +103,11 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - Delivery listings return `{items, hasMore}`; `total` costs a count and is only computed with `?total=true`.
 - macOS scans a newly built binary on first launch (~300 ms); measure start-up from the second run.
 - Scratch projects inside the repo (`.work/`) need `GOWORK=off`, or the repo's `go.work` claims them.
+- After any change under `admin/ui`, run `make admin` and commit `admin/dist` with it (`admin-dist-check` fails
+  otherwise); rebuild the Go binary too, because dist is embedded. `hydrogen dev` with `ADMIN_DEV_URL` proxies the
+  admin to a Vite dev server. The CSP forbids inline `style="…"` attributes: use Svelte's `style:` directive.
+- Item and singleton writes take `If-Match` (the `ETag` from the read, `updatedAt` at millisecond resolution) and
+  answer 412 `precondition_failed` with `current.updatedAt/updatedBy`; the admin shows a conflict dialog.
 - Authorization lives in the service layer, never only in handlers: `content.Service` checks `Options.Access` for
   the principal in ctx; route policies (`manage.Route.Policy`, `kernel.Policy("x.y")` for endpoints) are only a
   coarse "holds this policy at all" gate. Every `manage.Route` and `kernel.Endpoint` declares a policy name,

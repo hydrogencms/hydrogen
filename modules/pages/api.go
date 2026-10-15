@@ -21,6 +21,7 @@ type pagesAPI interface {
 	Update(ctx context.Context, id ids.UUID, in NodeUpdate) (*Node, error)
 	DeleteNode(ctx context.Context, id ids.UUID) error
 	Tree(ctx context.Context, site, locale string, parent *ids.UUID, depth int) ([]TreeNode, error)
+	TreeRoot(ctx context.Context, site, locale string) (*TreeNode, error)
 	Resolve(ctx context.Context, site, locale, path string) (*Resolution, error)
 	Paths(ctx context.Context, item ids.UUID) ([]Route, error)
 	Locate(ctx context.Context, rawURL string, h http.Header) (*Located, error)
@@ -131,7 +132,18 @@ func (h *handlers) tree(w http.ResponseWriter, r *http.Request) {
 	if nodes == nil {
 		nodes = []TreeNode{}
 	}
-	manage.WriteJSON(w, http.StatusOK, map[string]any{"items": nodes})
+	out := map[string]any{"items": nodes}
+	if parent == nil {
+		root, err := a.TreeRoot(r.Context(), r.PathValue("site"), q.Get("locale"))
+		if err != nil {
+			manage.Fail(w, r, err)
+			return
+		}
+		if root != nil {
+			out["root"] = root
+		}
+	}
+	manage.WriteJSON(w, http.StatusOK, out)
 }
 
 type createBody struct {

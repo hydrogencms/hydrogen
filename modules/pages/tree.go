@@ -120,10 +120,7 @@ func (s *service) expandLevel(ctx context.Context, tx store.Tx, g *graph, locale
 		if !permitted && !v.context[r.ID] {
 			continue
 		}
-		t := &treeLevel{row: r}
-		t.Restricted = !permitted
-		t.ID, t.Site, t.Parent, t.Kind, t.Item, t.Hidden, t.Depth = r.ID, r.Site, r.Parent, r.Kind, r.Item, r.Hidden, r.Depth
-		t.CreatedAt, t.UpdatedAt = r.Created, r.Updated
+		t := newLevel(r, !permitted)
 		next = append(next, t)
 		p := byID[*r.Parent]
 		p.kids = append(p.kids, t)
@@ -132,6 +129,56 @@ func (s *service) expandLevel(ctx context.Context, tx store.Tx, g *graph, locale
 		return nil, err
 	}
 	return next, nil
+}
+
+func newLevel(r nodeRow, restricted bool) *treeLevel {
+	t := &treeLevel{row: r}
+	t.Restricted = restricted
+	t.ID, t.Site, t.Parent, t.Kind, t.Item, t.Hidden, t.Depth = r.ID, r.Site, r.Parent, r.Kind, r.Item, r.Hidden, r.Depth
+	t.CreatedAt, t.UpdatedAt = r.Created, r.Updated
+	return t
+}
+
+// treeRoot describes the site's root node; nil when the site has none or the reader may not see it.
+func (s *service) treeRoot(ctx context.Context, site, locale string, vis func(context.Context, store.SQL, string) (*visibility, error)) (*TreeNode, error) {
+	if err := s.checkSite(site); err != nil {
+		return nil, err
+	}
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
+	var out *TreeNode
+	err := s.db.View(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
+		q := tx.SQL()
+		top, ok, err := s.treeTop(ctx, q, site, nil)
+		if err != nil || !ok {
+			return err
+		}
+		permitted := true
+		if vis != nil {
+			v, err := vis(ctx, q, site)
+			if err != nil {
+				return err
+			}
+			if v != nil {
+				if permitted = v.permitted(ctx, top); !permitted && !v.visible(ctx, top) {
+					return nil
+				}
+			}
+		}
+		g := newGraph(q)
+		if err := g.loadNodesWithAncestors(ctx, []nodeRow{top}); err != nil {
+			return err
+		}
+		t := newLevel(top, !permitted)
+		if err := s.describe(ctx, tx, g, locale, []*treeLevel{t}); err != nil {
+			return err
+		}
+		out = &t.TreeNode
+		return nil
+	})
+	return out, err
 }
 
 func compareKeys(a, b nodeRow) int {
@@ -187,7 +234,7 @@ func (s *service) describe(ctx context.Context, tx store.Tx, g *graph, locale st
 	if err != nil {
 		return err
 	}
-	items, changed, err := s.levelItems(ctx, c, level)
+	items, drafts, locales, err := s.levelItems(ctx, c, level)
 	if err != nil {
 		return err
 	}
@@ -208,10 +255,11 @@ func (s *service) describe(ctx context.Context, tx store.Tx, g *graph, locale st
 			if t.Name == "" {
 				t.Name = names[slugKey{t.row.ID, t.row.MainLocale}]
 			}
+			t.Locales, t.DraftParts = locales[it.ID], drafts[it.ID]
 			t.Status = content.StatusDraft
 			if it.PublishedVersion > 0 {
 				t.Status = content.StatusPublished
-				if changed[it.ID] {
+				if len(drafts[it.ID]) > 0 {
 					t.Status = content.StatusChanged
 				}
 			}
@@ -289,8 +337,8 @@ WHERE s.node_id IN `+ph+` AND (s.locale = ? OR s.locale = n.main_locale)`, appen
 	return names, paths, err
 }
 
-// levelItems reads the items behind a level's page nodes, and which of the published ones have drafts.
-func (s *service) levelItems(ctx context.Context, c store.ContentStore, level []*treeLevel) (map[ids.UUID]store.Item, map[ids.UUID]bool, error) {
+// levelItems reads the items behind a level's page nodes with their draft parts and published locales.
+func (s *service) levelItems(ctx context.Context, c store.ContentStore, level []*treeLevel) (map[ids.UUID]store.Item, map[ids.UUID][]string, map[ids.UUID][]string, error) {
 	var items []ids.UUID
 	for _, t := range level {
 		if t.row.Item != nil {
@@ -299,25 +347,27 @@ func (s *service) levelItems(ctx context.Context, c store.ContentStore, level []
 	}
 	rows, err := c.GetItems(ctx, items)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	byID := make(map[ids.UUID]store.Item, len(rows))
-	var published []ids.UUID
+	all := make([]ids.UUID, 0, len(rows))
 	for _, it := range rows {
 		byID[it.ID] = it
-		if it.PublishedVersion > 0 {
-			published = append(published, it.ID)
-		}
+		all = append(all, it.ID)
 	}
-	changed := map[ids.UUID]bool{}
-	err = chunks(published, func(part []ids.UUID) error {
-		parts, err := c.DraftPartsOf(ctx, part)
-		for id, p := range parts {
-			changed[id] = len(p) > 0
+	drafts := map[ids.UUID][]string{}
+	locales := map[ids.UUID][]string{}
+	err = chunks(all, func(part []ids.UUID) error {
+		d, err := c.DraftPartsOf(ctx, part)
+		if err != nil {
+			return err
 		}
+		maps.Copy(drafts, d)
+		l, err := c.PublishedLocalesOf(ctx, part)
+		maps.Copy(locales, l)
 		return err
 	})
-	return byID, changed, err
+	return byID, drafts, locales, err
 }
 
 func draftName(parts []store.DraftPart, locale, main string) string {

@@ -498,6 +498,18 @@ func testAuthSessions(t *testing.T, db store.DB) {
 	})
 	f.fails(store.ErrNotFound, func(a store.AuthStore) error { _, err := a.SessionByHash(ctx, s2.IDHash); return err })
 
+	s4 := mk(4, u1.ID, t0.Add(4*time.Hour))
+	f.do(func(a store.AuthStore) error { return a.DeleteOtherSessions(ctx, u1.ID, s4.IDHash) })
+	f.fails(store.ErrNotFound, func(a store.AuthStore) error { _, err := a.SessionByHash(ctx, s1.IDHash); return err })
+	f.view(func(a store.AuthStore) error {
+		for _, s := range []store.Session{s4, s3} {
+			if _, err := a.SessionByHash(ctx, s.IDHash); err != nil {
+				t.Errorf("DeleteOtherSessions removed %x: %v", s.IDHash[:1], err)
+			}
+		}
+		return nil
+	})
+
 	f.do(func(a store.AuthStore) error {
 		if err := a.DeleteUserSessions(ctx, u1.ID); err != nil {
 			return err
@@ -510,7 +522,7 @@ func testAuthSessions(t *testing.T, db store.DB) {
 		}
 		return a.DeleteSession(ctx, s3.IDHash)
 	})
-	for _, s := range []store.Session{s1, s3} {
+	for _, s := range []store.Session{s1, s4, s3} {
 		f.fails(store.ErrNotFound, func(a store.AuthStore) error { _, err := a.SessionByHash(ctx, s.IDHash); return err })
 	}
 }
@@ -545,7 +557,7 @@ func testAuthPaging(t *testing.T, db store.DB) {
 	f.view(func(a store.AuthStore) error {
 		for _, p := range []store.Page{{}, {Limit: 3}, {Limit: 3, Offset: 6}, {Limit: 3, Offset: 9}, {Limit: 1000}, {Limit: -5, Offset: -2}} {
 			wantRows := min(max(n-max(p.Offset, 0), 0), map[bool]int{true: 3, false: 50}[p.Limit == 3])
-			users, total, err := a.ListUsers(ctx, p)
+			users, total, err := a.ListUsers(ctx, p, "")
 			if err != nil || total != n || len(users) != wantRows {
 				t.Errorf("ListUsers %+v: %d rows, total %d, %v; want %d rows", p, len(users), total, err, wantRows)
 			}
@@ -558,9 +570,21 @@ func testAuthPaging(t *testing.T, db store.DB) {
 				t.Errorf("ListTokens %+v: %d rows, total %d, %v", p, len(tokens), total, err)
 			}
 		}
-		users, _, _ := a.ListUsers(ctx, store.Page{Limit: 2, Offset: 2})
+		users, _, _ := a.ListUsers(ctx, store.Page{Limit: 2, Offset: 2}, "")
 		if len(users) != 2 || users[0].Login != "u2" || users[1].Login != "u3" {
 			t.Errorf("ListUsers order: %+v", users)
+		}
+		for _, c := range []struct {
+			q    string
+			want int
+		}{{"U3", 1}, {"u", n}, {"EXAMPLE.com", n}, {"_", 0}, {"%", 0}, {`\`, 0}, {"nobody", 0}} {
+			found, total, err := a.ListUsers(ctx, store.Page{}, c.q)
+			if err != nil || total != c.want || len(found) != c.want {
+				t.Errorf("ListUsers search %q: %d rows, total %d, %v; want %d", c.q, len(found), total, err, c.want)
+			}
+		}
+		if found, total, _ := a.ListUsers(ctx, store.Page{Limit: 2, Offset: 1}, "u"); total != n || len(found) != 2 || found[0].Login != "u1" {
+			t.Errorf("ListUsers search paging: %+v %d", found, total)
 		}
 		groups, _, _ := a.ListGroups(ctx, store.Page{Limit: 2, Offset: 5})
 		if len(groups) != 2 || groups[0].Name != "g5" || groups[1].Name != "g6" {

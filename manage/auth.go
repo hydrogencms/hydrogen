@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,9 +21,10 @@ var authRoutes = []route{
 	{"POST", "/auth/logout", Authenticated, (*api).logout},
 	{"GET", "/auth/session", Authenticated, (*api).session},
 	{"POST", "/auth/password", Authenticated, (*api).changePassword},
-	{"GET", "/users", access.PolicyUserManage, listing((*access.Admin).ListUsers, same)},
+	{"GET", "/users", access.PolicyUserManage, (*api).listUsers},
 	{"POST", "/users", access.PolicyUserManage, creating("/users", createUser)},
 	{"GET", "/users/{id}", access.PolicyUserManage, byID((*access.Admin).GetUser, same)},
+	{"GET", "/users/{id}/groups", access.PolicyUserManage, (*api).userGroups},
 	{"PATCH", "/users/{id}", access.PolicyUserManage, patching(updateUser, same)},
 	{"DELETE", "/users/{id}", access.PolicyUserManage, deleting((*access.Admin).DeleteUser)},
 	{"GET", "/groups", access.PolicyUserManage, listing((*access.Admin).ListGroups, groupView)},
@@ -140,11 +142,69 @@ func (a *api) session(w http.ResponseWriter, r *http.Request) error {
 		grants = append(grants, gs...)
 	}
 	out["grants"] = grants
+	if p.Kind == access.KindUser {
+		groups := make([]string, len(p.Groups))
+		for i, g := range p.Groups {
+			groups[i] = g.String()
+		}
+		out["groups"] = groups
+	}
 	if an := authnFrom(ctx); an != nil && an.Session != nil {
 		out["csrf"] = an.Session.CSRF
 		out["expiresAt"] = an.Session.ExpiresAt
 	}
 	WriteJSON(w, http.StatusOK, out)
+	return nil
+}
+
+func (a *api) listUsers(w http.ResponseWriter, r *http.Request) error {
+	adm, err := a.adminOrNotFound()
+	if err != nil {
+		return err
+	}
+	q := r.URL.Query()
+	search, err := single(q, "q")
+	if err != nil {
+		return err
+	}
+	p, err := pageOf(r)
+	if err != nil {
+		return err
+	}
+	us, total, err := adm.SearchUsers(r.Context(), p, search)
+	if err != nil {
+		return err
+	}
+	list(w, us, total)
+	return nil
+}
+
+func (a *api) userGroups(w http.ResponseWriter, r *http.Request) error {
+	adm, err := a.adminOrNotFound()
+	if err != nil {
+		return err
+	}
+	id, err := pathUUID(r, "id")
+	if err != nil {
+		return err
+	}
+	ctx := r.Context()
+	if _, err := adm.GetUser(ctx, id); err != nil {
+		return err
+	}
+	gids, err := adm.GroupsOf(ctx, id)
+	if err != nil {
+		return err
+	}
+	out := make([]groupJSON, 0, len(gids))
+	for _, gid := range gids {
+		g, err := adm.GetGroup(ctx, gid)
+		if err != nil {
+			return err
+		}
+		out = append(out, groupView(g))
+	}
+	list(w, out, len(out))
 	return nil
 }
 
@@ -168,7 +228,11 @@ func (a *api) changePassword(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeBody(w, r, &b, false); err != nil {
 		return err
 	}
-	if err := adm.ChangeOwnPassword(r.Context(), b.Current, b.New); err != nil {
+	var keep []byte
+	if an := authnFrom(r.Context()); an != nil && an.Session != nil {
+		keep = an.Session.IDHash
+	}
+	if err := adm.ChangeOwnPassword(r.Context(), b.Current, b.New, keep); err != nil {
 		err = busy(err)
 		if p := access.PrincipalFrom(r.Context()); p != nil && p.Kind == access.KindUser && isUnauthenticated(err) {
 			return &Error{Status: http.StatusForbidden, Code: "wrong_password", Message: "the current password is wrong"}
@@ -533,7 +597,7 @@ func (a *api) auditLog(w http.ResponseWriter, r *http.Request) error {
 	var f access.AuditFilter
 	for k := range q {
 		switch k {
-		case "actor", "action", "subject", "since", "limit", "offset":
+		case "actor", "action", "subject", "since", "before", "limit", "offset":
 		default:
 			return BadRequest("unknown query parameter %q", k)
 		}
@@ -558,6 +622,15 @@ func (a *api) auditLog(w http.ResponseWriter, r *http.Request) error {
 	if f.Offset, err = parseInt(q, "offset", 0, 0, maxOffset); err != nil {
 		return err
 	}
+	before, err := single(q, "before")
+	if err != nil {
+		return err
+	}
+	if before != "" {
+		if f.Before, err = strconv.ParseInt(before, 10, 64); err != nil || f.Before < 1 {
+			return BadRequest("before must be an audit entry id")
+		}
+	}
 	if strings.ContainsAny(f.Actor, " \t\n") {
 		return BadRequest("actor is a kind or kind:id")
 	}
@@ -568,7 +641,11 @@ func (a *api) auditLog(w http.ResponseWriter, r *http.Request) error {
 	if entries == nil {
 		entries = []access.AuditEntry{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"items": entries, "hasMore": more})
+	out := map[string]any{"items": entries, "hasMore": more}
+	if more {
+		out["next"] = entries[len(entries)-1].ID
+	}
+	WriteJSON(w, http.StatusOK, out)
 	return nil
 }
 
