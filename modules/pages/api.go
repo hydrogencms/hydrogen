@@ -23,6 +23,7 @@ type pagesAPI interface {
 	Tree(ctx context.Context, site, locale string, parent *ids.UUID, depth int) ([]TreeNode, error)
 	Resolve(ctx context.Context, site, locale, path string) (*Resolution, error)
 	Paths(ctx context.Context, item ids.UUID) ([]Route, error)
+	Locate(ctx context.Context, rawURL string, h http.Header) (*Located, error)
 }
 
 const (
@@ -53,6 +54,7 @@ func apiRoutes(get func() pagesAPI) []manage.Route {
 		{Method: "DELETE", Path: "/pages/nodes/{id}", Summary: "Delete a mount or link node", Handler: h.remove, OpenAPI: opDelete()},
 		{Method: "GET", Path: "/pages/sites/{site}/resolve", Summary: "Resolve a path", Handler: h.resolve, OpenAPI: opResolve()},
 		{Method: "GET", Path: "/pages/items/{id}/paths", Summary: "Paths of an item", Handler: h.paths, OpenAPI: opPaths()},
+		{Method: "GET", Path: "/pages/locate", Summary: "Locate a URL through the channels", Handler: h.locate, OpenAPI: opLocate()},
 	}
 }
 

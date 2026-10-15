@@ -1,0 +1,7 @@
+types:
+  article:
+    name: "{title}"
+    fields:
+      title: { type: string, translatable: true, required: true }
+      slug: { type: slug, from: title, translatable: true }
+      body: { type: richtext, translatable: true }

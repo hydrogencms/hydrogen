@@ -28,8 +28,12 @@ never commit it, quote it in commit messages or public docs, or move its content
   (`Registry.ManageRoute`, `manage.WriteJSON/DecodeJSON/Fail`).
 - `modules/pages`: page tree per site, mounts, links, routes with history, manual redirects, Resolve; its SQL lives
   in `modules/pages/migrations/{sqlite,postgres}` and its contract in `planning/design/pages-h2.md`.
+- Channels (H3): `channel/` (channels.yaml → compiled set: languages, collections, settings cascade, templates,
+  tokens, preview patterns, module options), `config.Node` (position-aware config for modules), web channels in
+  `modules/pages/web*.go` (match/site/reserved options, Match, Locate, canonical, hreflang, URL/LinkURL).
+  Contract: `planning/design/channels-h3.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
-  `examples/content`: every field type, a module schema transform, a typed hook and a content migration, tested
+  `examples/multisite`: two sites, five web channels, an app channel. `examples/content`: every field type, a module schema transform, a typed hook and a content migration, tested
   through the management API on SQLite and Postgres.
 
 ## Commands

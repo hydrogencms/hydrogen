@@ -24,6 +24,8 @@ type fakeAPI struct {
 	depth int
 	tree  []TreeNode
 	res   *Resolution
+	loc   *Located
+	hdr   http.Header
 }
 
 func (f *fakeAPI) rec(s string) { f.calls = append(f.calls, s) }
@@ -71,6 +73,12 @@ func (f *fakeAPI) Resolve(_ context.Context, site, locale, path string) (*Resolu
 func (f *fakeAPI) Paths(_ context.Context, item ids.UUID) ([]Route, error) {
 	f.rec("paths " + item.String())
 	return nil, f.err
+}
+
+func (f *fakeAPI) Locate(_ context.Context, rawURL string, h http.Header) (*Located, error) {
+	f.rec("locate " + rawURL)
+	f.hdr = h
+	return f.loc, f.err
 }
 
 var (
@@ -334,7 +342,22 @@ func TestAPIOpenAPI(t *testing.T) {
 			}
 		}
 	}
-	if len(seen) != 8 {
+	if len(seen) != 9 {
 		t.Errorf("%d operations", len(seen))
+	}
+}
+
+func TestAPILocate(t *testing.T) {
+	f := &fakeAPI{loc: &Located{Channel: "web", Kind: ResolvedPage}}
+	h := newHandler(f)
+	w := send(h, "GET", "/pages/locate?url=https%3A%2F%2Fa.test%2Fen%2Fx&header.x-market=sg&header.Accept-Language=de", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"channel":"web"`) || f.calls[len(f.calls)-1] != "locate https://a.test/en/x" {
+		t.Errorf("locate: %d %s %v", w.Code, w.Body, f.calls)
+	}
+	if f.hdr.Get("X-Market") != "sg" || f.hdr.Get("Accept-Language") != "de" {
+		t.Errorf("headers: %v", f.hdr)
+	}
+	if w := send(h, "GET", "/pages/locate", ""); w.Code != 400 {
+		t.Errorf("locate without url: %d", w.Code)
 	}
 }

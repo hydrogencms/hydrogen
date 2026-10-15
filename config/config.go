@@ -1,8 +1,10 @@
 // Package config loads a project's YAML configuration.
 //
-// Files: <dir>/app.yaml, then <dir>/env/<env>.yaml merged over it. Scalars may contain ${env:NAME} or
+// Files: <dir>/app.yaml, <dir>/channels.yaml (nested under the key "channels"), then <dir>/env/<env>.yaml merged
+// over them. Scalars may contain ${env:NAME} or
 // ${env:NAME:-default}. HYDROGEN__A__B=v overrides key a.b. Decoding is strict: unknown keys fail with
 // file:line, and fields tagged `config:"secret"` must come from the environment (defaults only in dev).
+// An override replaces a single scalar; list-valued keys (e.g. channels' languages) can't be set that way.
 package config
 
 import (
@@ -34,6 +36,9 @@ type Config struct {
 	refs     map[*yaml.Node][]envRef
 	override map[*yaml.Node]bool
 	used     map[*yaml.Node]bool
+	raw      map[*yaml.Node]string // original text of scalars that had ${env:…}, for template re-expansion
+	untyped  map[*yaml.Node]bool   // unquoted scalars whose type comes from the value after env expansion
+	lookup   func(string) (string, bool)
 }
 
 type envRef struct {
@@ -78,9 +83,15 @@ func Load(o Options) (*Config, error) {
 		refs:     map[*yaml.Node][]envRef{},
 		override: map[*yaml.Node]bool{},
 		used:     map[*yaml.Node]bool{},
+		raw:      map[*yaml.Node]string{},
+		untyped:  map[*yaml.Node]bool{},
+		lookup:   o.LookupEnv,
 	}
-	for _, name := range []string{"app.yaml", filepath.Join("env", o.Env+".yaml")} {
-		path := filepath.Join(o.Dir, name)
+	files := []struct{ name, under string }{
+		{"app.yaml", ""}, {"channels.yaml", "channels"}, {filepath.Join("env", o.Env+".yaml"), ""},
+	}
+	for _, f := range files {
+		path := filepath.Join(o.Dir, f.name)
 		n, err := c.parseFile(path)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
@@ -89,10 +100,10 @@ func Load(o Options) (*Config, error) {
 			return nil, err
 		}
 		if n != nil {
-			merge(c.root, n)
+			merge(c.root, c.nest(n, path, f.under))
 		}
 	}
-	c.substitute(c.root, o.LookupEnv)
+	c.substitute(c.root)
 	if err := c.applyOverrides(o.Environ); err != nil {
 		return nil, err
 	}
@@ -122,6 +133,17 @@ func (c *Config) parseFile(path string) (*yaml.Node, error) {
 	}
 	walk(n, func(x *yaml.Node) { c.file[x] = path })
 	return n, nil
+}
+
+// nest wraps a file's top-level mapping under a key (channels.yaml → channels); "" keeps it as is.
+func (c *Config) nest(n *yaml.Node, path, key string) *yaml.Node {
+	if key == "" {
+		return n
+	}
+	k := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key, Line: n.Line}
+	wrap := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Line: n.Line, Content: []*yaml.Node{k, n}}
+	c.file[k], c.file[wrap] = path, path
+	return wrap
 }
 
 func walk(n *yaml.Node, f func(*yaml.Node)) {
@@ -157,26 +179,36 @@ func keyIndex(m *yaml.Node, key string) int {
 	return -1
 }
 
-func (c *Config) substitute(n *yaml.Node, lookup func(string) (string, bool)) {
+func (c *Config) substitute(n *yaml.Node) {
 	walk(n, func(x *yaml.Node) {
 		if x.Kind != yaml.ScalarNode || !strings.Contains(x.Value, "${env:") {
 			return
 		}
-		var refs []envRef
-		x.Value = envPattern.ReplaceAllStringFunc(x.Value, func(m string) string {
-			sub := envPattern.FindStringSubmatch(m)
-			v, ok := lookup(sub[1])
-			def := strings.Contains(m, ":-")
-			refs = append(refs, envRef{name: sub[1], set: ok, hasDefault: def})
-			if ok {
-				return v
-			}
-			return sub[2]
-		})
-		x.Tag = "!!str"
-		x.Style = 0
-		c.refs[x] = refs
+		c.raw[x] = x.Value
+		quoted := x.Style&(yaml.DoubleQuotedStyle|yaml.SingleQuotedStyle|yaml.LiteralStyle|yaml.FoldedStyle) != 0
+		c.expandEnv(x, x.Value, !quoted)
 	})
+}
+
+// expandEnv sets x.Value to text with every ${env:…} expanded and records the references for checkEnv.
+func (c *Config) expandEnv(x *yaml.Node, text string, typed bool) {
+	var refs []envRef
+	x.Value = envPattern.ReplaceAllStringFunc(text, func(m string) string {
+		sub := envPattern.FindStringSubmatch(m)
+		v, ok := c.lookup(sub[1])
+		def := strings.Contains(m, ":-")
+		refs = append(refs, envRef{name: sub[1], set: ok, hasDefault: def})
+		if ok {
+			return v
+		}
+		return sub[2]
+	})
+	if typed {
+		c.untyped[x] = true
+	}
+	x.Tag = "!!str"
+	x.Style = 0
+	c.refs[x] = refs
 }
 
 func (c *Config) applyOverrides(environ []string) error {
@@ -228,7 +260,7 @@ func (c *Config) applyOverrides(environ []string) error {
 // Decode decodes the value at a dotted path (e.g. "http", "modules.pages") into target, which must be a
 // pointer. A missing path leaves target untouched, so callers set defaults first.
 func (c *Config) Decode(path string, target any) error {
-	n, err := c.lookup(path)
+	n, err := c.find(path)
 	if errors.Is(err, errNotFound) {
 		return nil
 	}
@@ -240,7 +272,7 @@ func (c *Config) Decode(path string, target any) error {
 
 // Keys lists the keys of the mapping at path, in file order.
 func (c *Config) Keys(path string) []string {
-	n, err := c.lookup(path)
+	n, err := c.find(path)
 	if err != nil || n.Kind != yaml.MappingNode {
 		return nil
 	}
@@ -251,7 +283,7 @@ func (c *Config) Keys(path string) []string {
 	return keys
 }
 
-func (c *Config) lookup(path string) (*yaml.Node, error) {
+func (c *Config) find(path string) (*yaml.Node, error) {
 	n := c.root
 	for _, p := range strings.Split(path, ".") {
 		if n.Kind != yaml.MappingNode {

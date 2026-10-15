@@ -41,6 +41,9 @@ func (a *api) buildCaches(extra []Route) error {
 	if a.typesJSON, err = encode(summaries); err != nil {
 		return err
 	}
+	if a.channelsJSON, err = encodeChannels(a.channels); err != nil {
+		return err
+	}
 	if a.openapi, err = encode(OpenAPI(a.sc, extra...)); err != nil {
 		return fmt.Errorf("manage: encode openapi: %w", err)
 	}

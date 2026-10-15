@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/hydrogencms/hydrogen/audit"
+	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/clock"
 	"github.com/hydrogencms/hydrogen/config"
 	"github.com/hydrogencms/hydrogen/content"
@@ -87,6 +88,9 @@ type Services struct {
 	Schema  *schema.Schema
 	Hooks   *hooks.Registry
 	Content *content.Service
+	// Channels are the compiled delivery channels (config/channels.yaml); one implicit "default" channel when
+	// none are configured.
+	Channels *channel.Set
 
 	reg *Registry
 }
@@ -164,7 +168,7 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 	}
 	a.services = &Services{
 		Env: cfg.Env(), Config: cfg, Core: core, Log: log, Clock: o.Clock, IDs: gen, DB: db, Outbox: ob,
-		Audit: al, Schema: p.schema, Hooks: hookReg, Content: svc, reg: reg,
+		Audit: al, Schema: p.schema, Hooks: hookReg, Content: svc, Channels: p.chans, reg: reg,
 	}
 	for _, m := range ordered {
 		if b, ok := m.(Booter); ok {
@@ -206,6 +210,7 @@ type plan struct {
 	core    CoreConfig
 	reg     *Registry
 	schema  *schema.Schema
+	chans   *channel.Set
 }
 
 // prepare orders modules, decodes core and module configuration, runs Register and compiles the schema. It
@@ -256,6 +261,9 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 	}
 	p := &plan{ordered: ordered, core: core, reg: reg, schema: s}
 	if runtime {
+		if p.chans, err = compileChannels(cfg, core.Content.DefaultLocale, s, reg); err != nil {
+			return nil, err
+		}
 		if err := p.checkRuntime(cfg); err != nil {
 			return nil, err
 		}
@@ -409,7 +417,7 @@ func (a *App) Handler() (http.Handler, error) {
 	if len(a.services.Schema.Types()) > 0 {
 		const prefix = "/api/manage/v1"
 		api, err := manage.New(manage.Options{Content: a.services.Content, Token: a.services.Core.Manage.Token,
-			Log: a.services.Log, Prefix: prefix, Routes: a.reg.manageRts})
+			Channels: a.services.Channels, Log: a.services.Log, Prefix: prefix, Routes: a.reg.manageRts})
 		if err != nil {
 			return nil, err
 		}

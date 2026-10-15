@@ -231,3 +231,28 @@ func opPaths() obj {
 		"responses": respond(jsonResp("Every route row of the item.", obj{"type": "object", "required": []any{"items"},
 			"properties": obj{"items": arrayS(routeS())}}), "200", "400")}
 }
+
+func locatedS() obj {
+	return obj{"type": "object", "required": []any{"kind"}, "properties": obj{
+		"channel": strS("The web channel that matched the URL."),
+		"kind": obj{"type": "string", "enum": []any{ResolvedPage, ResolvedItem, ResolvedRedirect, ResolvedNotFound,
+			LocatedReserved, LocatedNoChannel}},
+		"locale":     strS("The channel language whose route matched."),
+		"resolution": resolutionS(),
+		"canonical":  strS("Absolute canonical URL of a page or item."),
+		"alternates": arrayS(obj{"type": "object", "required": []any{"channel", "locale", "url"}, "properties": obj{
+			"channel": strS(""), "locale": strS(""), "url": strS("Absolute URL."),
+		}}),
+	}}
+}
+
+func opLocate() obj {
+	return obj{"operationId": "locatePageURL", "tags": []any{"pages"},
+		"description": "A lookup: always 200. Picks the most specific web channel for the URL, resolves the path in the channel's languages in order and adds the canonical URL and the hreflang alternates. Request headers are not used; header.<Name> query parameters simulate header matchers.",
+		"parameters": []any{
+			queryParam("url", "URL to locate: absolute, or a path to match channels without a host.", strS(""), true),
+			obj{"name": "header.{Name}", "in": "query", "required": false, "description": "Request header to simulate, e.g. header.X-Market=sg.",
+				"schema": strS(""), "style": "form"},
+		},
+		"responses": respond(jsonResp("Where the URL leads.", locatedS()), "200", "400")}
+}

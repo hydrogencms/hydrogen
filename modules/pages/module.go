@@ -41,6 +41,10 @@ func (m *module) Register(r *kernel.Registry) error {
 		return fs.Sub(migrationFS, "migrations/"+dialect)
 	}})
 	r.TypeOption(childrenOption, checkChildren)
+	for _, o := range channelOptions(m.cfg.Sites) {
+		r.ChannelOption(o)
+	}
+	r.ChannelCheck(checkMatchers)
 
 	m.svc = &Service{}
 	kernel.Provide(r, m.svc)

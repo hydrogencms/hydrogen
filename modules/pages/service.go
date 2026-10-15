@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hydrogencms/hydrogen/audit"
+	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/clock"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/kernel"
@@ -30,11 +31,16 @@ type service struct {
 	outbox *outbox.Outbox
 
 	mounts mountCache
+	web    *webIndex
 }
 
 func newService(sites []string, s *kernel.Services) *service {
+	var chans []*channel.Channel
+	if s.Channels != nil {
+		chans = s.Channels.All()
+	}
 	return &service{sites: slices.Clone(sites), db: s.DB, schema: s.Schema, clock: s.Clock, ids: s.IDs, log: s.Log,
-		audit: s.Audit, outbox: s.Outbox}
+		audit: s.Audit, outbox: s.Outbox, web: newWebIndex(chans, sites)}
 }
 
 func (s *Service) get() (*service, error) {

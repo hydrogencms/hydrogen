@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/modules/pages/internal/route"
@@ -22,8 +23,11 @@ type routeHit struct {
 }
 
 // resolvablePath picks the string to look up: a valid site path, or any legacy path a manual redirect may
-// match exactly.
+// match exactly. Invalid UTF-8, NUL bytes and encoded slashes (%2F) never resolve.
 func resolvablePath(path string) (string, bool) {
+	if !utf8.ValidString(path) || strings.Contains(path, "\x00") || hasEncodedSlash(path) {
+		return path, false
+	}
 	if _, err := route.Clean(path); err == nil {
 		return path, true
 	}

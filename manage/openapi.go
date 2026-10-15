@@ -90,7 +90,7 @@ func baseSchemas() obj {
 	uuid := str("uuid")
 	dt := str("date-time")
 	strs := arrayOf(str(""))
-	return obj{
+	return mergeObj(channelSchemas(), obj{
 		"FieldError": obj{"type": "object", "required": []any{"path", "code", "message"},
 			"properties": obj{"path": str(""), "code": str(""), "message": str("")}},
 		"Referrer": obj{"type": "object", "required": []any{"id", "type", "name", "field", "kind", "onDelete"},
@@ -127,7 +127,12 @@ func baseSchemas() obj {
 		"PublishRequest": obj{"type": "object", "additionalProperties": false, "properties": obj{
 			"locales": obj{"type": "array", "items": str(""), "description": "Locale parts to publish; default every draft locale part."},
 			"force":   obj{"type": "boolean", "description": "Publish over conflicts."}}},
-	}
+	})
+}
+
+func mergeObj(a, b obj) obj {
+	maps.Copy(a, b)
+	return a
 }
 
 func statusSchema() obj {
@@ -313,6 +318,8 @@ func genericPaths(paths obj, collections, singletons []*schema.Type) {
 			params("SingletonType"), optionalBody(schemaRef("PublishRequest")),
 			responses(obj{"200": view}, "400", "401", "404", "409", "413", "415", "422"))}
 	}
+	paths["/channels"] = obj{"get": operation("listChannels", "List delivery channels", nil, nil,
+		responses(obj{"200": okResp("The configured channels, sorted by name.", schemaRef("ChannelList"))}, "401"))}
 	paths["/openapi.json"] = obj{"get": obj{"operationId": "getOpenAPI", "summary": "This document",
 		"responses": obj{"200": okResp("The OpenAPI document.", obj{"type": "object"})}}}
 }

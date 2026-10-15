@@ -61,6 +61,8 @@ type pagesOpts struct {
 	schema string
 	sites  []string
 	extra  []kernel.Module
+	// channels is the content of config/channels.yaml; empty: none.
+	channels string
 }
 
 func newPagesEnv(t testing.TB, db store.DB, clk *clock.Manual, o pagesOpts) *pagesEnv {
@@ -93,6 +95,9 @@ func newPagesEnv(t testing.TB, db store.DB, clk *clock.Manual, o pagesOpts) *pag
 	}
 	write("config/app.yaml", "content: { schema_dir: "+filepath.Join(dir, "schema")+" }\n"+
 		"modules:\n  pages: { sites: "+siteList+" }\n")
+	if o.channels != "" {
+		write("config/channels.yaml", o.channels)
+	}
 	cfg, err := config.Load(config.Options{Dir: filepath.Join(dir, "config"), Env: "dev",
 		LookupEnv: func(string) (string, bool) { return "", false }})
 	if err != nil {

@@ -45,7 +45,7 @@ func (c *Config) value(n *yaml.Node, v reflect.Value, path string, secret bool) 
 		if err := c.checkEnv(n, path, secret); err != nil {
 			return err
 		}
-	} else if secret {
+	} else if secret && !isContainer(v) {
 		return c.errorf(n, "%s is a secret and must be a single value from ${env:NAME}", path)
 	}
 
@@ -63,14 +63,14 @@ func (c *Config) value(n *yaml.Node, v reflect.Value, path string, secret bool) 
 	case reflect.Struct:
 		return c.structValue(n, v, path)
 	case reflect.Map:
-		return c.mapValue(n, v, path)
+		return c.mapValue(n, v, path, secret)
 	case reflect.Slice:
 		if n.Kind != yaml.SequenceNode {
 			return c.errorf(n, "%s: expected a list", path)
 		}
 		s := reflect.MakeSlice(v.Type(), len(n.Content), len(n.Content))
 		for i, item := range n.Content {
-			if err := c.value(item, s.Index(i), fmt.Sprintf("%s[%d]", path, i), false); err != nil {
+			if err := c.value(item, s.Index(i), fmt.Sprintf("%s[%d]", path, i), secret); err != nil {
 				return err
 			}
 		}
@@ -82,6 +82,12 @@ func (c *Config) value(n *yaml.Node, v reflect.Value, path string, secret bool) 
 		return c.errorf(n, "%s: expected a single value", path)
 	}
 	return c.scalar(n, v, path)
+}
+
+// isContainer: a secret tag on a map or slice applies to each element.
+func isContainer(v reflect.Value) bool {
+	k := v.Kind()
+	return k == reflect.Map || k == reflect.Slice
 }
 
 func isNull(n *yaml.Node) bool {
@@ -146,7 +152,7 @@ func (c *Config) structValue(n *yaml.Node, v reflect.Value, path string) error {
 	return nil
 }
 
-func (c *Config) mapValue(n *yaml.Node, v reflect.Value, path string) error {
+func (c *Config) mapValue(n *yaml.Node, v reflect.Value, path string, secret bool) error {
 	if n.Kind != yaml.MappingNode {
 		return c.errorf(n, "%s: expected a mapping", path)
 	}
@@ -160,7 +166,7 @@ func (c *Config) mapValue(n *yaml.Node, v reflect.Value, path string) error {
 		k, val := n.Content[i], n.Content[i+1]
 		c.used[k] = true
 		elem := reflect.New(v.Type().Elem()).Elem()
-		if err := c.value(val, elem, path+"."+k.Value, false); err != nil {
+		if err := c.value(val, elem, path+"."+k.Value, secret); err != nil {
 			return err
 		}
 		v.SetMapIndex(reflect.ValueOf(k.Value).Convert(v.Type().Key()), elem)

@@ -1,0 +1,44 @@
+# Two sites, five web channels and one app channel. Matching is by host, then path prefix (most specific first).
+languages:
+  en: {}
+  en-SG: { inherits: en }
+  de: {}
+  de-CH: { inherits: de }
+
+defaults:
+  settings: { cache_ttl: 300 }
+
+groups:
+  corporate_web:
+    site: corporate
+    frontend: https://www.acme.com
+    collections: [page, landing, article, product]
+    reserved: [/cart, /account/*]
+    preview: { article: "/news/{slug}", "*": "/preview/{collection}/{id}" }
+
+channels:
+  corporate_en:   { group: corporate_web, languages: [en],            match: { host: www.acme.com, prefix: /en } }
+  corporate_de:   { group: corporate_web, languages: [de],            match: { host: www.acme.com, prefix: /de } }
+  corporate_dech: { group: corporate_web, languages: [de-CH, de, en], match: { host: www.acme.com, prefix: /de-ch } }
+
+  careers_en:
+    site: careers
+    languages: [en]
+    frontend: https://jobs.acme.com
+    collections: [page, landing]
+    match: { host: jobs.acme.com }
+
+  ios_app:
+    languages: [en, de]
+    collections: [product]
+    access: token
+    tokens: { v1: "${env:IOS_TOKEN:-dev-ios-token-0001}" }
+    settings: { image_preset: mobile }
+
+templates:
+  - for: { market: [sg] }
+    name: "corporate_{market}_en"
+    group: corporate_web
+    frontend: "https://www.acme.{market}"
+    languages: ["en-{MARKET}", en]
+    match: { host: "www.acme.{market}" }

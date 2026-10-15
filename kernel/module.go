@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 
+	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/hooks"
 	"github.com/hydrogencms/hydrogen/manage"
@@ -79,6 +80,8 @@ type Registry struct {
 	manageRts  []manage.Route
 	hooks      hooks.Registry
 	contentMig []registered[content.Migration]
+	chanOpts   []registered[channel.Option]
+	chanChecks []registered[channel.Check]
 }
 
 type registered[T any] struct {
@@ -155,6 +158,18 @@ func (r *Registry) AddHook(h hooks.Hook) error {
 // ContentMigration registers a content migration (applied by content:migrate).
 func (r *Registry) ContentMigration(m content.Migration) {
 	r.contentMig = append(r.contentMig, registered[content.Migration]{r.current, m})
+}
+
+// ChannelOption adds a key to channel definitions (config/channels.yaml); o.Decode validates and converts its
+// value, and Channel.Options holds the result. Option names are unique across modules.
+func (r *Registry) ChannelOption(o channel.Option) {
+	r.chanOpts = append(r.chanOpts, registered[channel.Option]{r.current, o})
+}
+
+// ChannelCheck adds a validation over the whole compiled channel set (e.g. overlapping matchers). It runs
+// during start-up and config:check, after every channel compiled without error.
+func (r *Registry) ChannelCheck(c channel.Check) {
+	r.chanChecks = append(r.chanChecks, registered[channel.Check]{r.current, c})
 }
 
 // Handle adds an HTTP route (net/http ServeMux pattern syntax).

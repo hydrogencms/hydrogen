@@ -1,5 +1,5 @@
 # Go modules in this repository (core first). Every target runs over all of them.
-MODULES := . modules/sqlite modules/postgres tests examples/minimal examples/content
+MODULES := . modules/sqlite modules/postgres tests examples/minimal examples/content examples/multisite
 
 .PHONY: build test vet lint tidy tidy-check db-up db-down smoke check
 

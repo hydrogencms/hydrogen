@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/hydrogencms/hydrogen/audit"
+	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/schema"
@@ -45,9 +46,11 @@ const defaultMaxBody = 4 << 20
 // Options configures New.
 type Options struct {
 	Content Content
-	Token   string // required bearer token
-	Log     *slog.Logger
-	MaxBody int64 // default 4 MiB
+	// Channels are listed by GET /channels; nil lists none.
+	Channels *channel.Set
+	Token    string // required bearer token
+	Log      *slog.Logger
+	MaxBody  int64 // default 4 MiB
 	// Prefix is where the handler is mounted (e.g. "/api/manage/v1"); Location headers are Prefix plus the
 	// route path. Empty keeps them relative to the mount point.
 	Prefix string
@@ -100,10 +103,12 @@ type api struct {
 	prefix   string
 	tokenSum [sha256.Size]byte
 
-	typesJSON []byte
-	typeJSON  map[string][]byte
-	openapi   []byte
-	etag      string
+	channels     *channel.Set
+	channelsJSON []byte
+	typesJSON    []byte
+	typeJSON     map[string][]byte
+	openapi      []byte
+	etag         string
 }
 
 type route struct {
@@ -127,6 +132,7 @@ var routes = []route{
 	{"GET", "/singletons/{type}", (*api).getSingleton},
 	{"PATCH", "/singletons/{type}", (*api).updateSingleton},
 	{"POST", "/singletons/{type}/publish", (*api).publishSingleton},
+	{"GET", "/channels", (*api).listChannels},
 	{"GET", "/openapi.json", (*api).serveOpenAPI},
 }
 
@@ -142,7 +148,7 @@ func New(o Options) (http.Handler, error) {
 	if sc == nil {
 		return nil, errors.New("manage: content service has no schema")
 	}
-	a := &api{c: o.Content, sc: sc, log: o.Log, maxBody: o.MaxBody, prefix: strings.TrimRight(o.Prefix, "/"), tokenSum: sha256.Sum256([]byte(o.Token))}
+	a := &api{c: o.Content, sc: sc, log: o.Log, maxBody: o.MaxBody, prefix: strings.TrimRight(o.Prefix, "/"), tokenSum: sha256.Sum256([]byte(o.Token)), channels: o.Channels}
 	if a.log == nil {
 		a.log = slog.New(slog.DiscardHandler)
 	}
