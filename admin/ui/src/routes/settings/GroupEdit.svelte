@@ -5,14 +5,16 @@
   import { Form } from '../../lib/form.svelte';
   import { t } from '../../lib/i18n';
   import { href, link, router } from '../../lib/router.svelte';
-  import Breadcrumbs from '../../lib/ui/Breadcrumbs.svelte';
+  import Avatar from '../../lib/ui/Avatar.svelte';
+  import Card from '../../lib/ui/Card.svelte';
+  import IconButton from '../../lib/ui/IconButton.svelte';
+  import PageHeader from '../../lib/ui/PageHeader.svelte';
+  import DetailLayout from './DetailLayout.svelte';
   import Button from '../../lib/ui/Button.svelte';
   import Combobox, { type ComboOption } from '../../lib/ui/Combobox.svelte';
   import Field from '../../lib/ui/Field.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
-  import Table from '../../lib/ui/Table.svelte';
-  import Tabs from '../../lib/ui/Tabs.svelte';
   import { toast } from '../../lib/ui/toast.svelte';
   import Assignments from './Assignments.svelte';
   import Confirm from './Confirm.svelte';
@@ -24,7 +26,6 @@
 
   let group = $state<Schemas['Group'] | null>(null);
   let failed = $state(false);
-  let tab = $state(router.query.get('tab') ?? 'details');
   const form = new Form({ name: '', description: '' });
   form.guard();
   let members = $state<Schemas['User'][] | null>(null);
@@ -70,7 +71,7 @@
     }
   }
   $effect(() => {
-    if (tab === 'members' && members === null) void loadMembers();
+    if (id) untrack(() => void loadMembers());
   });
 
   async function searchUsers(q: string, signal: AbortSignal): Promise<ComboOption[]> {
@@ -97,82 +98,83 @@
       reportError(e);
     }
   }
+  const overflow = $derived(group ? [{ label: t('common.delete'), icon: 'trash', danger: true, onselect: () => (confirmDelete = true) }] : []);
 </script>
 
 <div class="h-page">
-  <Breadcrumbs items={[{ label: t('nav.groups'), href: '/settings/groups' }, { label: group?.name ?? '…' }]} />
+  <PageHeader
+    title={group?.name ?? t('nav.groups')}
+    breadcrumbs={[{ label: t('nav.settings') }, { label: t('nav.groups'), href: '/settings/groups' }, { label: group?.name ?? '…' }]}
+    meta={group?.description || undefined}
+    {overflow}>
+    {#snippet primary()}
+      {#if group}<Button type="submit" form="group-form" variant="primary" loading={form.pending} disabled={!form.dirty}>{t('common.save')}</Button>{/if}
+    {/snippet}
+  </PageHeader>
   {#if failed}
     <p class="h-alert" role="alert">{t('app.error')} <Button size="sm" onclick={load}>{t('app.retry')}</Button></p>
   {:else if !group}
-    <Skeleton lines={4} height="1.4rem" />
+    <DetailLayout>
+      {#snippet main()}<Card><Skeleton lines={4} height="1.4rem" /></Card>{/snippet}
+      {#snippet side()}<Card><Skeleton lines={3} height="1.4rem" /></Card><Card><Skeleton lines={3} height="1.4rem" /></Card>{/snippet}
+    </DetailLayout>
   {:else}
-    <div class="h-page__head"><h1>{group.name}</h1></div>
-    <Tabs
-      label={group.name}
-      bind:value={tab}
-      tabs={[
-        { id: 'details', label: t('settings.tab.details') },
-        { id: 'members', label: t('settings.groups.members'), count: members?.length },
-        { id: 'roles', label: t('nav.roles') },
-      ]}>
-      {#snippet children(active)}
-        {#if active === 'details'}
-          <div class="h-stack h-narrow">
-            <form
-              class="h-stack"
-              onsubmit={(e) => {
-                e.preventDefault();
-                void save();
-              }}>
-              <Field label={t('settings.groups.name')} error={form.error('name')} required>
-                {#snippet children(c)}<Input {...c} bind:value={form.values.name} oninput={() => form.clearError('name')} />{/snippet}
-              </Field>
-              <Field label={t('settings.description')} error={form.error('description')}>
-                {#snippet children(c)}<Input {...c} bind:value={form.values.description} />{/snippet}
-              </Field>
-              {#if form.formError}<p class="h-alert" role="alert">{form.formError}</p>{/if}
-              <div class="h-row">
-                <Button type="submit" variant="primary" loading={form.pending} disabled={!form.dirty}>{t('common.save')}</Button>
-                <span class="h-spacer"></span>
-                <Button variant="danger" icon="trash" onclick={() => (confirmDelete = true)}>{t('common.delete')}</Button>
-              </div>
-            </form>
-          </div>
-        {:else if active === 'members'}
-          <div class="h-stack h-narrow">
-            <div class="h-row">
-              <div class="h-grow">
-                <Field label={t('settings.groups.addMember')}>
-                  {#snippet children(c)}
-                    <Combobox {...c} bind:value={picked} search={searchUsers} placeholder={t('settings.groups.searchUsers')} />
-                  {/snippet}
-                </Field>
-              </div>
-              <Button variant="primary" disabled={!picked} onclick={addMember}>{t('settings.groups.add')}</Button>
-            </div>
-            <Table
-              caption={t('settings.groups.members')}
-              loading={members === null}
-              rows={members ?? []}
-              rowKey={(r) => r.id}
-              columns={[
-                { key: 'login', label: t('settings.users.login'), cell: memberCell },
-                { key: 'name', label: t('settings.users.name') },
-                { key: 'actions', label: t('common.actions'), align: 'end', cell: removeCell },
-              ]}>
-              {#snippet empty()}<p class="h-muted">{t('settings.groups.noMembers')}</p>{/snippet}
-            </Table>
-          </div>
-        {:else}
-          <Assignments kind="group" {id} />
-        {/if}
+    <DetailLayout>
+      {#snippet main()}
+        <Card title={t('settings.tab.details')}>
+          <form
+            id="group-form"
+            class="h-stack h-form-narrow"
+            onsubmit={(e) => {
+              e.preventDefault();
+              void save();
+            }}>
+            <Field label={t('settings.groups.name')} error={form.error('name')} required>
+              {#snippet children(c)}<Input {...c} bind:value={form.values.name} oninput={() => form.clearError('name')} />{/snippet}
+            </Field>
+            <Field label={t('settings.description')} error={form.error('description')}>
+              {#snippet children(c)}<Input {...c} bind:value={form.values.description} />{/snippet}
+            </Field>
+            {#if form.formError}<p class="h-alert" role="alert">{form.formError}</p>{/if}
+          </form>
+        </Card>
       {/snippet}
-    </Tabs>
+      {#snippet side()}
+        <Card title={t('settings.groups.members')} padding="sm">
+          <div class="h-row h-addrow">
+            <div class="h-grow">
+              <Field label={t('settings.groups.addMember')}>
+                {#snippet children(c)}
+                  <Combobox {...c} bind:value={picked} search={searchUsers} placeholder={t('settings.groups.searchUsers')} />
+                {/snippet}
+              </Field>
+            </div>
+            <Button disabled={!picked} onclick={addMember}>{t('settings.groups.add')}</Button>
+          </div>
+          {#if members === null}
+            <Skeleton lines={3} height="1.4rem" />
+          {:else if members.length === 0}
+            <p class="h-muted">{t('settings.groups.noMembers')}</p>
+          {:else}
+            <ul class="h-list h-plain">
+              {#each members as u (u.id)}
+                <li class="h-list__item">
+                  <span class="h-row">
+                    <Avatar name={u.name || u.login} size={28} />
+                    <a use:link href={href(`/settings/users/${u.id}`)}>{u.name || u.login}</a>
+                    {#if u.name}<span class="h-muted">{u.login}</span>{/if}
+                  </span>
+                  <IconButton icon="x" size="sm" label={t('settings.groups.removeMember', { name: u.name || u.login })} onclick={() => removeMember(u)} />
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </Card>
+        <Assignments kind="group" {id} />
+      {/snippet}
+    </DetailLayout>
   {/if}
 </div>
-
-{#snippet memberCell(u: Schemas['User'])}<a use:link href={href(`/settings/users/${u.id}`)}>{u.login}</a>{/snippet}
-{#snippet removeCell(u: Schemas['User'])}<Button size="sm" onclick={() => removeMember(u)}>{t('settings.groups.remove')}</Button>{/snippet}
 
 <Confirm
   bind:open={confirmDelete}
@@ -182,10 +184,15 @@
   onconfirm={remove} />
 
 <style>
-  .h-narrow {
+  .h-form-narrow {
     max-width: 40rem;
   }
   .h-grow {
     flex: 1;
+    min-width: 0;
+  }
+  .h-addrow {
+    align-items: end;
+    margin-bottom: var(--h-space-3);
   }
 </style>

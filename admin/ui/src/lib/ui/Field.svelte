@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { t } from '../i18n';
+  import Icon from './Icon.svelte';
 
   export interface FieldControl {
     id: string;
@@ -17,6 +18,7 @@
     children,
   }: {
     label: string;
+    /** Muted help text, shown under the label (above the control). */
     description?: string;
     error?: string;
     required?: boolean;
@@ -34,7 +36,7 @@
   <label class="h-field__label" for={id}>
     {label}{#if required}<span class="h-field__req" title={t('common.required')} aria-hidden="true">*</span>{/if}
   </label>
-  {@render children({ id, 'aria-describedby': describedby, 'aria-invalid': error ? true : undefined, invalid: !!error })}
   {#if description}<p class="h-field__desc" id="{id}-d">{description}</p>{/if}
-  {#if error}<p class="h-field__error" id="{id}-e" role="alert">{error}</p>{/if}
+  {@render children({ id, 'aria-describedby': describedby, 'aria-invalid': error ? true : undefined, invalid: !!error })}
+  {#if error}<p class="h-field__error" id="{id}-e" role="alert"><Icon name="alert-circle" size={14} />{error}</p>{/if}
 </div>

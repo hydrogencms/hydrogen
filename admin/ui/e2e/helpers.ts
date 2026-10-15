@@ -77,3 +77,9 @@ export function watchErrors(page: Page) {
   page.on('pageerror', (e) => errors.push(String(e)));
   return errors;
 }
+
+/** The sidebar's Settings group starts collapsed; opens it when it is. */
+export async function openSettings(page: Page) {
+  const toggle = page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Settings', exact: true });
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+}

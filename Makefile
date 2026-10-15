@@ -43,7 +43,7 @@ next-e2e:
 
 # Admin app (admin/ui): install, typecheck, unit tests, build into the committed admin/dist, size budgets.
 admin:
-	cd admin/ui && npm ci --no-audit --no-fund && npm run check && npm test && npm run build && npm run size
+	scripts/npm-ci.sh admin/ui && cd admin/ui && npm run check && npm test && npm run build && npm run size
 
 # Regenerate admin/ui/src/lib/api/schema.d.ts from a running examples/multisite's OpenAPI document.
 admin-types:
@@ -60,7 +60,7 @@ admin-e2e:
 # examples/content/admin: custom elements on the admin SDK, built into the committed dist/elements.js.
 example-admin:
 	cd packages && npm install --no-audit --no-fund && npm run build -w admin-sdk
-	cd examples/content/admin && npm ci --no-audit --no-fund && npm run build
+	scripts/npm-ci.sh examples/content/admin && cd examples/content/admin && npm run build
 
 example-admin-check: example-admin
 	@test -z "$$(git status --porcelain -- examples/content/admin/dist)" || (git status --short -- examples/content/admin/dist; echo "examples/content/admin/dist is stale: run make example-admin and commit it"; exit 1)

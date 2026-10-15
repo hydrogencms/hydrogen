@@ -6,19 +6,23 @@
   import { t } from '../../lib/i18n';
   import { href, link, router } from '../../lib/router.svelte';
   import Badge from '../../lib/ui/Badge.svelte';
-  import Breadcrumbs from '../../lib/ui/Breadcrumbs.svelte';
+  import Card from '../../lib/ui/Card.svelte';
+  import Chip from '../../lib/ui/Chip.svelte';
+  import PageHeader from '../../lib/ui/PageHeader.svelte';
+  import Popover from '../../lib/ui/Popover.svelte';
+  import DetailLayout from './DetailLayout.svelte';
   import Button from '../../lib/ui/Button.svelte';
   import Field from '../../lib/ui/Field.svelte';
+  import EmptyState from '../../lib/ui/EmptyState.svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import IconButton from '../../lib/ui/IconButton.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
-  import Table from '../../lib/ui/Table.svelte';
-  import Tabs from '../../lib/ui/Tabs.svelte';
   import { toast } from '../../lib/ui/toast.svelte';
   import Confirm from './Confirm.svelte';
   import LimitationEditor from './LimitationEditor.svelte';
   import {
-    ALL, addPolicy, addable, applicableTo, cleanPolicies, groupPolicies, removePolicy,
+    ALL, addPolicy, addable, applicableTo, cleanPolicies, formatValues, groupPolicies, policyModule, removePolicy, setLimit,
     type LimitDef, type PolicyDef, type RolePolicy,
   } from './limits';
   import { reportError } from '../../lib/errors';
@@ -31,10 +35,9 @@
   let role = $state<Schemas['Role'] | null>(null);
   let failed = $state(false);
   let catalog = $state<{ policies: PolicyDef[]; limitations: LimitDef[] } | null>(null);
-  let tab = $state(router.query.get('tab') ?? 'policies');
+  let editing = $state<Record<string, boolean>>({});
   const form = new Form<{ name: string; description: string; policies: RolePolicy[] }>({ name: '', description: '', policies: [] });
   form.guard();
-  let toAdd = $state('');
   let confirmDelete = $state(false);
   let holders = $state<{ a: Schemas['Assignment']; who: string; to: string }[] | null>(null);
 
@@ -57,14 +60,25 @@
   });
 
   const groups = $derived(groupPolicies(addable(catalog?.policies ?? [], form.values.policies)));
+  // The role's policies by module prefix, keeping each policy's index in the form.
+  const sections = $derived.by(() => {
+    const by = new Map<string, number[]>();
+    form.values.policies.forEach((p, i) => by.set(policyModule(p.policy), [...(by.get(policyModule(p.policy)) ?? []), i]));
+    return [...by.keys()].sort((a, b) => (a === ALL ? -1 : b === ALL ? 1 : a.localeCompare(b))).map((module) => ({ module, indices: by.get(module)! }));
+  });
+  const sentence = (m: string) => m.charAt(0).toUpperCase() + m.slice(1);
   const everything = $derived(form.values.policies.some((p) => p.policy === ALL));
   const describe = (name: string) => (name === ALL ? t('settings.roles.everything') : catalog?.policies.find((p) => p.name === name)?.description ?? '');
 
-  function add() {
-    if (!toAdd) return;
-    form.values.policies = addPolicy(form.values.policies, toAdd);
-    toAdd = '';
+  function add(policy: string, close: () => void) {
+    form.values.policies = addPolicy(form.values.policies, policy);
+    close();
   }
+  const limitLabels = (l: Record<string, string[]>) =>
+    Object.keys(l)
+      .filter((k) => l[k].length > 0)
+      .sort()
+      .map((k) => ({ name: k, text: `${k}: ${formatValues(l[k])}` }));
   function limitErrors(i: number): Record<string, string | undefined> {
     const out: Record<string, string | undefined> = {};
     const prefix = `policies[${i}].limitations.`;
@@ -120,117 +134,164 @@
     }
   }
   $effect(() => {
-    if (!isNew && tab === 'assignments' && holders === null) void loadHolders();
+    if (!isNew && id) untrack(() => void loadHolders());
   });
-  const limitText = (l: Record<string, string[]>) =>
-    Object.keys(l).sort().map((k) => `${k}: ${l[k].join(', ')}`).join('; ');
+  const overflow = $derived(!isNew && role ? [{ label: t('common.delete'), icon: 'trash', danger: true, onselect: () => (confirmDelete = true) }] : []);
 </script>
 
 <div class="h-page">
-  <Breadcrumbs items={[{ label: t('nav.roles'), href: '/settings/roles' }, { label: isNew ? t('settings.roles.new') : (role?.name ?? '…') }]} />
+  <PageHeader
+    title={isNew ? t('settings.roles.new') : (role?.name ?? t('nav.roles'))}
+    breadcrumbs={[{ label: t('nav.settings') }, { label: t('nav.roles'), href: '/settings/roles' }, { label: isNew ? t('settings.roles.new') : (role?.name ?? '…') }]}
+    meta={role?.description || undefined}
+    {overflow}>
+    {#snippet badge()}{#if role?.template}<Badge tone="info">{t('settings.roles.fromTemplate', { name: role.template })}</Badge>{/if}{/snippet}
+    {#snippet primary()}
+      {#if catalog}<Button type="submit" form="role-form" variant="primary" loading={form.pending} disabled={!form.dirty}>{t('common.save')}</Button>{/if}
+    {/snippet}
+  </PageHeader>
   {#if failed}
     <p class="h-alert" role="alert">{t('app.error')} <Button size="sm" onclick={load}>{t('app.retry')}</Button></p>
   {:else if !catalog || (!isNew && !role)}
-    <Skeleton lines={6} height="1.4rem" />
+    <DetailLayout>
+      {#snippet main()}<Card><Skeleton lines={3} height="1.4rem" /></Card><Card><Skeleton lines={4} height="1.4rem" /></Card>{/snippet}
+      {#snippet side()}<Card><Skeleton lines={3} height="1.4rem" /></Card>{/snippet}
+    </DetailLayout>
   {:else}
-    <div class="h-page__head">
-      <h1>{isNew ? t('settings.roles.new') : role!.name}</h1>
-      {#if role?.template}<Badge tone="info">{t('settings.roles.fromTemplate', { name: role.template })}</Badge>{/if}
-    </div>
-    <Tabs
-      label={t('nav.roles')}
-      bind:value={tab}
-      tabs={[
-        { id: 'policies', label: t('settings.roles.policies') },
-        { id: 'assignments', label: t('settings.roles.holders'), disabled: isNew },
-      ]}>
-      {#snippet children(active)}
-        {#if active === 'policies'}
-          <form
-            class="h-stack h-wide"
-            onsubmit={(e) => {
-              e.preventDefault();
-              void save();
-            }}>
-            <Field label={t('settings.roles.name')} error={form.error('name')} required>
-              {#snippet children(c)}<Input {...c} bind:value={form.values.name} oninput={() => form.clearError('name')} />{/snippet}
-            </Field>
-            <Field label={t('settings.description')} error={form.error('description')}>
-              {#snippet children(c)}<Input {...c} bind:value={form.values.description} />{/snippet}
-            </Field>
+    <DetailLayout>
+      {#snippet main()}
+        <form
+          id="role-form"
+          class="h-roles__form"
+          onsubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}>
+          <Card title={t('settings.tab.details')}>
+            <div class="h-stack h-roles__narrow">
+              <Field label={t('settings.roles.name')} error={form.error('name')} required>
+                {#snippet children(c)}<Input {...c} bind:value={form.values.name} oninput={() => form.clearError('name')} />{/snippet}
+              </Field>
+              <Field label={t('settings.description')} error={form.error('description')}>
+                {#snippet children(c)}<Input {...c} bind:value={form.values.description} />{/snippet}
+              </Field>
+            </div>
+          </Card>
 
-            <h2>{t('settings.roles.policies')}</h2>
-            {#if everything}<p class="h-muted">{t('settings.roles.everythingHint')}</p>{/if}
-            {#if form.values.policies.length === 0}<p class="h-muted">{t('settings.roles.noPolicies')}</p>{/if}
-            <ul class="h-stack h-roles__list">
-              {#each form.values.policies as rp, i (i)}
-                <li class="h-card h-stack" data-policy={rp.policy}>
-                  <div class="h-row">
-                    <strong>{rp.policy === ALL ? t('settings.roles.everythingName') : rp.policy}</strong>
-                    <span class="h-muted">{describe(rp.policy)}</span>
-                    <span class="h-spacer"></span>
-                    <IconButton
-                      icon="trash"
-                      label={t('settings.roles.removePolicy', { policy: rp.policy })}
-                      variant="danger"
-                      onclick={() => (form.values.policies = removePolicy(form.values.policies, i))} />
+          <Card title={t('settings.roles.policies')} padding="none" class="h-roles__policies">
+            {#snippet action()}
+              <Popover label={t('settings.roles.addPolicy')} triggerClass="h-pill">
+                {#snippet trigger()}<Icon name="plus" size={16} />{t('settings.roles.addPolicy')}{/snippet}
+                {#snippet children(close)}
+                  <div class="h-roles__catalog">
+                    {#if !everything}
+                      <button type="button" class="h-roles__opt" onclick={() => add(ALL, close)}>
+                        <strong>{t('settings.roles.everythingName')}</strong>
+                        <span class="h-muted">{t('settings.roles.everything')}</span>
+                      </button>
+                    {/if}
+                    {#each groups as g (g.module)}
+                      <p class="h-roles__mod">{sentence(g.module)}</p>
+                      {#each g.policies as p (p.name)}
+                        <button type="button" class="h-roles__opt" onclick={() => add(p.name, close)}>
+                          <strong>{p.name}</strong>
+                          {#if p.description}<span class="h-muted">{p.description}</span>{/if}
+                        </button>
+                      {/each}
+                    {/each}
+                    {#if groups.length === 0 && everything}<p class="h-muted">{t('settings.roles.nothingToAdd')}</p>{/if}
                   </div>
-                  {#if form.error(`policies[${i}].policy`)}<p class="h-field__error" role="alert">{form.error(`policies[${i}].policy`)}</p>{/if}
-                  <LimitationEditor
-                    names={applicableTo(rp.policy, catalog!.policies, catalog!.limitations)}
-                    defs={catalog!.limitations}
-                    bind:value={form.values.policies[i].limitations}
-                    errors={limitErrors(i)}
-                    prefix={`p${i}`} />
-                </li>
-              {/each}
-            </ul>
-
-            <div class="h-row">
-              <label class="h-sr" for="role-add-policy">{t('settings.roles.addPolicy')}</label>
-              <select id="role-add-policy" class="h-input h-select h-roles__pick" bind:value={toAdd}>
-                <option value="">{t('settings.roles.addPolicy')}</option>
-                {#if !everything}<option value={ALL}>{t('settings.roles.everythingName')}</option>{/if}
-                {#each groups as g (g.module)}
-                  <optgroup label={g.module}>
-                    {#each g.policies as p (p.name)}<option value={p.name}>{p.name}</option>{/each}
-                  </optgroup>
+                {/snippet}
+              </Popover>
+            {/snippet}
+            {#if everything}<p class="h-muted h-roles__note">{t('settings.roles.everythingHint')}</p>{/if}
+            {#if form.values.policies.length === 0}
+              <EmptyState icon="shield" title={t('settings.roles.noPolicies')} description={t('settings.roles.noPoliciesHint')} />
+            {/if}
+            {#each sections as sec (sec.module)}
+              <section class="h-roles__group" aria-label={sec.module === ALL ? t('settings.roles.everythingName') : sentence(sec.module)}>
+                <h3 class="h-roles__mod">{sec.module === ALL ? t('settings.roles.everythingName') : sentence(sec.module)}</h3>
+                {#each sec.indices as i (form.values.policies[i].policy)}
+                  {@const rp = form.values.policies[i]}
+                  {@const labels = limitLabels(rp.limitations)}
+                  {@const names = applicableTo(rp.policy, catalog!.policies, catalog!.limitations)}
+                  {@const errs = limitErrors(i)}
+                  {@const open = editing[rp.policy] || Object.values(errs).some(Boolean)}
+                  <div class="h-roles__row" data-policy={rp.policy}>
+                    <div class="h-roles__main">
+                      <div class="h-roles__name">
+                        <code>{rp.policy === ALL ? t('settings.roles.everythingName') : rp.policy}</code>
+                        {#if describe(rp.policy)}<span class="h-muted">{describe(rp.policy)}</span>{/if}
+                      </div>
+                      {#if labels.length > 0}
+                        <div class="h-roles__chips">
+                          {#each labels as l (l.name)}
+                            <Chip
+                              variant="applied"
+                              label={l.text}
+                              removeLabel={t('settings.roles.clearLimit', { name: l.name })}
+                              onclick={() => (editing[rp.policy] = !open)}
+                              onremove={() => (form.values.policies[i].limitations = setLimit(rp.limitations, l.name, []))} />
+                          {/each}
+                        </div>
+                      {/if}
+                      <span class="h-row h-roles__ops">
+                        {#if names.length > 0}
+                          <Button size="sm" variant="ghost" icon="sliders" aria-expanded={open} onclick={() => (editing[rp.policy] = !open)}>{t('settings.roles.limitations')}</Button>
+                        {/if}
+                        <IconButton
+                          icon="trash"
+                          size="sm"
+                          label={t('settings.roles.removePolicy', { policy: rp.policy })}
+                          onclick={() => (form.values.policies = removePolicy(form.values.policies, i))} />
+                      </span>
+                    </div>
+                    {#if form.error(`policies[${i}].policy`)}<p class="h-field__error" role="alert">{form.error(`policies[${i}].policy`)}</p>{/if}
+                    {#if open}
+                      <div class="h-roles__edit">
+                        <LimitationEditor {names} defs={catalog!.limitations} bind:value={form.values.policies[i].limitations} errors={errs} prefix={`p${i}`} />
+                      </div>
+                    {/if}
+                  </div>
                 {/each}
-              </select>
-              <Button disabled={!toAdd} onclick={add} icon="plus">{t('settings.roles.addPolicyButton')}</Button>
-            </div>
-
-            {#if form.formError}<p class="h-alert" role="alert">{form.formError}</p>{/if}
-            <div class="h-row">
-              <Button type="submit" variant="primary" loading={form.pending} disabled={!form.dirty}>{t('common.save')}</Button>
-              <span class="h-spacer"></span>
-              {#if !isNew}<Button variant="danger" icon="trash" onclick={() => (confirmDelete = true)}>{t('common.delete')}</Button>{/if}
-            </div>
-          </form>
+              </section>
+            {/each}
+          </Card>
+          {#if form.formError}<p class="h-alert" role="alert">{form.formError}</p>{/if}
+        </form>
+      {/snippet}
+      {#snippet side()}
+        {#if !isNew}
+          <Card title={t('settings.roles.holders')} padding="sm">
+            {#if holders === null}
+              <Skeleton lines={3} height="1.4rem" />
+            {:else if holders.length === 0}
+              <p class="h-muted">{t('settings.roles.noHolders')}</p>
+            {:else}
+              <ul class="h-list h-plain">
+                {#each holders as h (h.a.id)}
+                  <li class="h-list__item h-list__item--stack">
+                    <span class="h-row">
+                      <a use:link href={href(h.to)}>{h.who}</a>
+                      <Badge>{h.a.principalKind}</Badge>
+                    </span>
+                    {#if Object.keys(h.a.limitations).length > 0}
+                      <span class="h-roles__chips">
+                        {#each limitLabels(h.a.limitations) as l (l.name)}<Badge>{l.text}</Badge>{/each}
+                      </span>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </Card>
         {:else}
-          <div class="h-stack">
-            <Table
-              caption={t('settings.roles.holders')}
-              loading={holders === null}
-              rows={holders ?? []}
-              rowKey={(r) => r.a.id}
-              columns={[
-                { key: 'who', label: t('settings.roles.holder'), cell: whoCell },
-                { key: 'kind', label: t('settings.roles.kind'), cell: kindCell },
-                { key: 'limits', label: t('settings.assign.limits'), cell: limCell },
-              ]}>
-              {#snippet empty()}<p class="h-muted">{t('settings.roles.noHolders')}</p>{/snippet}
-            </Table>
-          </div>
+          <Card><p class="h-muted">{t('settings.roles.newHint')}</p></Card>
         {/if}
       {/snippet}
-    </Tabs>
+    </DetailLayout>
   {/if}
 </div>
-
-{#snippet whoCell(r: { a: Schemas['Assignment']; who: string; to: string })}<a use:link href={href(r.to)}>{r.who}</a>{/snippet}
-{#snippet kindCell(r: { a: Schemas['Assignment']; who: string; to: string })}<Badge>{r.a.principalKind}</Badge>{/snippet}
-{#snippet limCell(r: { a: Schemas['Assignment']; who: string; to: string })}{limitText(r.a.limitations) || t('settings.assign.unlimited')}{/snippet}
 
 <Confirm
   bind:open={confirmDelete}
@@ -240,14 +301,99 @@
   onconfirm={remove} />
 
 <style>
-  .h-wide {
-    max-width: 52rem;
+  .h-roles__form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--h-space-5);
   }
-  .h-roles__list {
-    list-style: none;
-    padding: 0;
+  .h-roles__narrow {
+    max-width: 40rem;
   }
-  .h-roles__pick {
-    max-width: 22rem;
+  .h-roles__note {
+    padding: 0 var(--h-space-5) var(--h-space-3);
+  }
+  .h-roles__group {
+    display: flex;
+    flex-direction: column;
+  }
+  .h-roles__mod {
+    margin: 0;
+    padding: var(--h-space-3) var(--h-space-5) var(--h-space-2);
+    border-top: 1px solid var(--h-border);
+    color: var(--h-text-muted);
+    font-size: var(--h-text-sm);
+    font-weight: 500;
+  }
+  .h-roles__row {
+    border-top: 1px solid var(--h-border);
+  }
+  .h-roles__main {
+    display: flex;
+    align-items: center;
+    gap: var(--h-space-4);
+    min-height: 3.25rem;
+    padding: 0 var(--h-space-4) 0 var(--h-space-5);
+  }
+  .h-roles__name {
+    display: flex;
+    flex: 1 1 18rem;
+    flex-direction: column;
+    min-width: 0;
+    padding: var(--h-space-2) 0;
+  }
+  .h-roles__name code {
+    font-size: var(--h-text-sm);
+  }
+  .h-roles__name .h-muted {
+    font-size: var(--h-text-xs);
+  }
+  .h-roles__ops {
+    flex: none;
+    gap: var(--h-space-1);
+  }
+  .h-roles__edit {
+    padding: 0 var(--h-space-5) var(--h-space-4);
+  }
+  .h-roles__row > .h-field__error {
+    padding: 0 var(--h-space-5) var(--h-space-2);
+  }
+  .h-roles__chips {
+    display: flex;
+    flex: 1 1 12rem;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--h-space-2);
+  }
+  .h-roles__catalog {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: min(26rem, 80vw);
+    max-height: min(60vh, 28rem);
+    overflow: auto;
+  }
+  .h-roles__catalog .h-roles__mod {
+    padding: var(--h-space-2) var(--h-space-2) 0;
+    border-top: 0;
+  }
+  .h-roles__opt {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--h-space-2) var(--h-space-3);
+    border: 0;
+    border-radius: var(--h-radius);
+    background: transparent;
+    color: var(--h-text);
+    font: inherit;
+    font-size: var(--h-text-md);
+    text-align: left;
+    cursor: pointer;
+  }
+  .h-roles__opt:hover {
+    background: var(--h-surface-2);
+  }
+  .h-roles__opt .h-muted {
+    font-size: var(--h-text-sm);
   }
 </style>

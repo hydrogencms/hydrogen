@@ -2,11 +2,15 @@
   import '../../lib/messages/settings';
   import { api, type Schemas } from '../../lib/api/client';
   import { Form } from '../../lib/form.svelte';
-  import { formatDateTime } from '../../lib/format';
   import { t } from '../../lib/i18n';
-  import { href, link, router } from '../../lib/router.svelte';
+  import { router } from '../../lib/router.svelte';
   import { session } from '../../lib/auth/session.svelte';
   import Badge from '../../lib/ui/Badge.svelte';
+  import EmptyState from '../../lib/ui/EmptyState.svelte';
+  import NameCell from '../../lib/ui/NameCell.svelte';
+  import Time from '../../lib/ui/Time.svelte';
+  import ListBar from './ListBar.svelte';
+  import SettingsHead from './SettingsHead.svelte';
   import Button from '../../lib/ui/Button.svelte';
   import Dialog from '../../lib/ui/Dialog.svelte';
   import Field from '../../lib/ui/Field.svelte';
@@ -22,21 +26,31 @@
   let total = $state(0);
   let failed = $state(false);
   let creating = $state(false);
+  let q = $state(router.query.get('q') ?? '');
+  const applied = $derived(router.query.get('q') ?? '');
+  let seq = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const form = new Form({ login: '', name: '', email: '', password: '' });
 
-  async function load(p: number) {
+  async function load(p: number, search: string) {
+    const mine = ++seq;
     failed = false;
     try {
-      const r = await api.get('/users', { query: { limit: PAGE, offset: (p - 1) * PAGE } });
+      const r = await api.get('/users', { query: { q: search.trim() || undefined, limit: PAGE, offset: (p - 1) * PAGE } });
+      if (mine !== seq) return;
       rows = r.items;
       total = r.total;
     } catch {
-      failed = true;
+      if (mine === seq) failed = true;
     }
   }
   $effect(() => {
-    void load(page);
+    void load(page, applied);
   });
+  function typing() {
+    clearTimeout(timer);
+    timer = setTimeout(() => router.setQuery({ q: q.trim() || undefined, page: undefined }), 250);
+  }
 
   function openCreate() {
     form.reset({ login: '', name: '', email: '', password: '' });
@@ -49,17 +63,19 @@
     if (!made) return;
     creating = false;
     toast.success(t('settings.users.created'));
-    await load(page);
+    await load(page, applied);
   }
 </script>
 
 <div class="h-page">
-  <div class="h-page__head">
-    <h1>{t('nav.users')}</h1>
-    {#if session.can('user.manage')}<Button variant="primary" icon="plus" onclick={openCreate}>{t('settings.users.new')}</Button>{/if}
-  </div>
+  <SettingsHead section="users">
+    {#snippet primary()}
+      {#if session.can('user.manage')}<Button variant="primary" icon="plus" onclick={openCreate}>{t('settings.users.new')}</Button>{/if}
+    {/snippet}
+  </SettingsHead>
+  <ListBar bind:value={q} label={t('settings.users.search')} placeholder={t('settings.users.search')} oninput={typing} />
   {#if failed}
-    <p class="h-alert" role="alert">{t('app.error')} <Button size="sm" onclick={() => load(page)}>{t('app.retry')}</Button></p>
+    <p class="h-alert" role="alert">{t('app.error')} <Button size="sm" onclick={() => load(page, applied)}>{t('app.retry')}</Button></p>
   {:else}
     <Table
       caption={t('nav.users')}
@@ -67,23 +83,30 @@
       rows={rows ?? []}
       rowKey={(r) => r.id}
       columns={[
-        { key: 'login', label: t('settings.users.login'), cell: loginCell },
-        { key: 'name', label: t('settings.users.name') },
-        { key: 'email', label: t('settings.users.email') },
+        { key: 'name', label: t('settings.users.name'), cell: nameCell },
+        { key: 'email', label: t('settings.users.email'), mobile: 'hide' },
         { key: 'disabled', label: t('settings.users.status'), cell: statusCell },
         { key: 'lastLoginAt', label: t('settings.users.lastLogin'), cell: lastCell },
       ]}>
-      {#snippet empty()}<p class="h-muted">{t('settings.users.empty')}</p>{/snippet}
+      {#snippet empty()}
+        {#if applied}
+          <EmptyState icon="search" title={t('settings.users.noMatch')} description={t('settings.users.noMatchHint')} />
+        {:else}
+          <EmptyState icon="users" title={t('settings.users.empty')} description={t('settings.users.emptyHint')} />
+        {/if}
+      {/snippet}
+      {#snippet footer()}
+        <Pagination {page} pageSize={PAGE} {total} onpage={(p) => router.setQuery({ page: p === 1 ? undefined : p }, { push: true })} />
+      {/snippet}
     </Table>
-    <Pagination {page} pageSize={PAGE} {total} onpage={(p) => router.setQuery({ page: p === 1 ? undefined : p }, { push: true })} />
   {/if}
 </div>
 
-{#snippet loginCell(r: User)}<a use:link href={href(`/settings/users/${r.id}`)}>{r.login}</a>{/snippet}
+{#snippet nameCell(r: User)}<NameCell name={r.name || r.login} sub={r.name && r.name !== r.login ? r.login : undefined} avatar={r.name || r.login} href={`/settings/users/${r.id}`} />{/snippet}
 {#snippet statusCell(r: User)}
-  {#if r.disabled}<Badge tone="warning">{t('settings.users.disabled')}</Badge>{:else}<Badge tone="success">{t('settings.users.active')}</Badge>{/if}
+  {#if r.disabled}<Badge tone="warning" dot>{t('settings.users.disabled')}</Badge>{:else}<Badge tone="success" dot>{t('settings.users.active')}</Badge>{/if}
 {/snippet}
-{#snippet lastCell(r: User)}{r.lastLoginAt ? formatDateTime(r.lastLoginAt) : t('settings.users.never')}{/snippet}
+{#snippet lastCell(r: User)}{#if r.lastLoginAt}<Time at={r.lastLoginAt} />{:else}<span class="h-muted">{t('settings.users.never')}</span>{/if}{/snippet}
 
 <Dialog bind:open={creating} title={t('settings.users.new')}>
   <form

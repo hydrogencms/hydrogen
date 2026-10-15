@@ -2,6 +2,7 @@ import { mount } from 'svelte';
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/components.css';
+import './styles/layout.css';
 import App from './App.svelte';
 import { loadConfig } from './lib/config';
 import { ApiError, setHandlers } from './lib/api/client';

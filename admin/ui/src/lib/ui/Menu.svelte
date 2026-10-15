@@ -15,17 +15,27 @@
     /** A divider is drawn above this item. */
     separator?: boolean;
     checked?: boolean;
+    /** Muted text at the right (a shortcut, a count). */
+    hint?: string;
+    /** A non-interactive group label instead of an item. */
+    heading?: boolean;
   }
   let {
     items,
     label,
     align = 'end',
+    side = 'bottom',
     trigger,
+    triggerClass = '',
   }: {
     items: MenuItem[];
     /** Accessible name of the trigger button. */
     label: string;
     align?: 'start' | 'end';
+    /** Open below (default) or above the trigger (bottom of the sidebar). */
+    side?: 'bottom' | 'top';
+    /** Extra class for the trigger button. */
+    triggerClass?: string;
     /** Content of the trigger button (default: a "more" icon). */
     trigger?: Snippet;
   } = $props();
@@ -40,7 +50,7 @@
 
   function show(focusLast = false) {
     const r = btn!.getBoundingClientRect();
-    pos = { top: r.bottom + 4, left: align === 'end' ? r.right : r.left };
+    pos = { top: side === 'top' ? r.top - 4 : r.bottom + 4, left: align === 'end' ? r.right : r.left };
     open = true;
     queueMicrotask(() => {
       const e = enabled();
@@ -87,7 +97,7 @@
 <button
   bind:this={btn}
   type="button"
-  class="h-menu__btn"
+  class="h-menu__btn {trigger ? '' : 'h-menu__btn--icon'} {triggerClass}"
   aria-haspopup="menu"
   aria-expanded={open}
   aria-controls="{uid}-m"
@@ -104,7 +114,7 @@
     }
   }}
 >
-  {#if trigger}{@render trigger()}{:else}<Icon name="more" />{/if}
+  {#if trigger}{@render trigger()}{:else}<Icon name="more-horizontal" />{/if}
 </button>
 
 {#if open}
@@ -114,6 +124,7 @@
     id="{uid}-m"
     class="h-menu"
     class:h-menu--end={align === 'end'}
+    class:h-menu--top={side === 'top'}
     role="menu"
     aria-label={label}
     tabindex="-1"
@@ -123,6 +134,9 @@
   >
     {#each items as it, i (i)}
       {#if it.separator}<div class="h-menu__sep" role="separator"></div>{/if}
+      {#if it.heading}
+        <div class="h-menu__head" role="presentation">{it.label}</div>
+      {:else}
       <button
         type="button"
         role={it.checked !== undefined ? 'menuitemradio' : 'menuitem'}
@@ -134,8 +148,9 @@
         onclick={() => pick(it)}
       >
         {#if it.icon}<Icon name={it.icon} size={16} />{:else if it.checked}<Icon name="check" size={16} />{/if}
-        {it.label}
+        {it.label}{#if it.hint}<span class="h-menu__hint">{it.hint}</span>{/if}
       </button>
+      {/if}
     {/each}
   </div>
 {/if}

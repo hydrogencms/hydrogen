@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CompiledField } from '../../lib/types.svelte';
-import { filterableFields, nextSort, opsFor, parseQuery, parseViews, sortState, toApiQuery, toUrlPatch, upsertView } from './query';
+import { canonicalQuery, renameView, filterableFields, nextSort, opsFor, parseQuery, parseViews, sortState, toApiQuery, toUrlPatch, upsertView } from './query';
 
 const url = '?q=hello+world&status=draft&locale=de&sort=-title&page=3&where[sku][prefix]=AB&where[price][gte]=10&where[active]=true';
 
@@ -85,5 +85,17 @@ describe('saved views', () => {
     expect(parseViews('[{"name":"a","query":"q=1"},5]')).toEqual([{ name: 'a', query: 'q=1' }]);
     expect(upsertView([{ name: 'b', query: '1' }], { name: 'a', query: '2' }).map((v) => v.name)).toEqual(['a', 'b']);
     expect(upsertView([{ name: 'a', query: '1' }], { name: 'a', query: '2' })).toEqual([{ name: 'a', query: '2' }]);
+  });
+});
+
+describe('view helpers', () => {
+  it('canonicalQuery ignores the page and filter order', () => {
+    const a = canonicalQuery('q=x&page=3&where[a][eq]=1&where[b][prefix]=2');
+    expect(canonicalQuery('where[b][prefix]=2&where[a][eq]=1&q=x')).toBe(a);
+    expect(canonicalQuery('q=y')).not.toBe(a);
+  });
+  it('renameView replaces and keeps the query', () => {
+    const v = [{ name: 'a', query: 'q=1' }, { name: 'b', query: 'q=2' }];
+    expect(renameView(v, 'a', 'c')).toEqual([{ name: 'b', query: 'q=2' }, { name: 'c', query: 'q=1' }]);
   });
 });

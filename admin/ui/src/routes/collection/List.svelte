@@ -7,16 +7,23 @@
   import { errorMessage } from '../../lib/errors';
   import { cellText, runPool } from '../../lib/fields/logic';
   import { knownLocales } from '../../lib/fields/locales';
-  import { formatDateTime } from '../../lib/format';
-  import { t } from '../../lib/i18n';
+    import { t } from '../../lib/i18n';
   import { link, href, router } from '../../lib/router.svelte';
   import { types, type CompiledField } from '../../lib/types.svelte';
   import Badge from '../../lib/ui/Badge.svelte';
+  import BulkBar from '../../lib/ui/BulkBar.svelte';
   import Button from '../../lib/ui/Button.svelte';
+  import Checkbox from '../../lib/ui/Checkbox.svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import Dialog from '../../lib/ui/Dialog.svelte';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
-  import Input from '../../lib/ui/Input.svelte';
+  import Menu from '../../lib/ui/Menu.svelte';
+  import NameCell from '../../lib/ui/NameCell.svelte';
+  import PageHeader from '../../lib/ui/PageHeader.svelte';
   import Pagination from '../../lib/ui/Pagination.svelte';
+  import Popover from '../../lib/ui/Popover.svelte';
+  import Tabs from '../../lib/ui/Tabs.svelte';
+  import Time from '../../lib/ui/Time.svelte';
   import Select from '../../lib/ui/Select.svelte';
   import Table from '../../lib/ui/Table.svelte';
   import { toast } from '../../lib/ui/toast.svelte';
@@ -27,8 +34,8 @@
   import LocaleDots from './LocaleDots.svelte';
   import StatusBadge from './StatusBadge.svelte';
   import FilterBar from './FilterBar.svelte';
-  import ViewsDialog from './ViewsDialog.svelte';
-  import { nextSort, parseQuery, sortState, toApiQuery, toUrlPatch, type ListQuery } from './query';
+  import ViewNameDialog from './ViewNameDialog.svelte';
+  import { canonicalQuery, emptyQuery, nextSort, parseQuery, parseViews, renameView, sortState, toApiQuery, toUrlPatch, upsertView, type ListQuery, type SavedView } from './query';
 
   type Summary = Schemas['Summary'];
   type Row = Summary & Record<string, unknown>;
@@ -85,9 +92,39 @@
 
   // Columns for fields come from the list response (`fields=a,b`, at most 10 names).
   // `admin.list` entries are `field` or `field:cell` (a cell element of the extension manifest).
+  const MAX_COLS = 10;
   const listed = $derived((type?.admin?.list ?? []).map((n) => n.split(':') as [string, string?]).filter(([n]) => n !== 'name'));
-  const fieldCols = $derived(listed.map(([n]) => type!.fields.find((f) => f.name === n)).filter((f): f is CompiledField => !!f));
+  const defaultCols = $derived(listed.map(([n]) => n).filter((n) => type?.fields.some((f) => f.name === n)));
+  const colsKey = $derived(`h.cols.${session.principalKey}.${typeName}`);
+  let chosen = $state<string[] | null>(null);
+  $effect(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(colsKey) ?? 'null');
+      chosen = Array.isArray(v) && v.every((x) => typeof x === 'string') ? v : null;
+    } catch {
+      chosen = null;
+    }
+  });
+  const colNames = $derived(chosen ?? defaultCols);
+  const fieldCols = $derived(colNames.slice(0, MAX_COLS).map((n) => type?.fields.find((f) => f.name === n)).filter((f): f is CompiledField => !!f));
   const cellTags = $derived(new Map(listed.filter(([, c]) => c).map(([n, c]) => [n, ext.cell(c!)])));
+  // Offered in the Columns menu: the admin.list fields first, then the other top-level fields that fit a cell.
+  const candidates = $derived.by(() => {
+    const flat = ['string', 'number', 'boolean', 'ref', 'list'];
+    const all = type?.fields ?? [];
+    const first = defaultCols.map((n) => all.find((f) => f.name === n)!);
+    return [...first, ...all.filter((f) => !defaultCols.includes(f.name) && f.name !== 'name' && flat.includes(f.shape.base))];
+  });
+  function setCols(next: string[] | null) {
+    chosen = next;
+    if (next) localStorage.setItem(colsKey, JSON.stringify(next));
+    else localStorage.removeItem(colsKey);
+  }
+  function toggleCol(name: string, on: boolean) {
+    const cur = colNames.filter((n) => candidates.some((f) => f.name === n));
+    if (on && cur.length >= MAX_COLS) return;
+    setCols(on ? [...cur, name] : cur.filter((n) => n !== name));
+  }
 
   // ---- URL state
   function update(patch: Partial<ListQuery>, opts: { push?: boolean } = {}) {
@@ -98,7 +135,7 @@
   // ---- table
   const rowsView = $derived(
     rows.map((r) => {
-      const row: Row = { ...r, updated: formatDateTime(r.updatedAt) };
+      const row: Row = { ...r };
       const d = (r as { fields?: Record<string, unknown> }).fields ?? {};
       for (const f of fieldCols) {
         row[`f:${f.name}`] = f.shape.base === 'boolean' ? (d[f.name] === true ? t('common.yes') : '') : cellText(f, d[f.name]);
@@ -108,10 +145,10 @@
   );
   const columns = $derived<Column<Row>[]>([
     { key: 'name', label: t('collections.col.name'), sortable: true, cell: nameCell },
-    ...fieldCols.map((f) => ({ key: `f:${f.name}`, label: f.label, sortable: !!f.index, cell: cellTags.get(f.name) ? extCell : undefined }) as Column<Row>),
+    ...fieldCols.map((f) => ({ key: `f:${f.name}`, label: f.label, sortable: !!f.index, mobile: 'hide', cell: cellTags.get(f.name) ? extCell : undefined }) as Column<Row>),
     { key: 'status', label: t('collections.col.status'), cell: statusCell },
-    { key: 'locales', label: t('collections.col.languages'), cell: localesCell },
-    { key: 'updated', label: t('collections.col.updated'), sortable: true },
+    { key: 'locales', label: t('collections.col.languages'), mobile: 'hide', cell: localesCell },
+    { key: 'updated', label: t('collections.col.updated'), sortable: true, cell: updatedCell },
   ]);
   const tableSort = $derived({
     key: sort.key === 'updatedAt' ? 'updated' : fieldCols.some((f) => f.name === sort.key) ? `f:${sort.key}` : sort.key,
@@ -191,8 +228,61 @@
     reload++;
   }
 
-  // ---- views
-  let viewsOpen = $state(false);
+  // ---- views (saved queries, per user and type, in localStorage; the sidebar lists them too)
+  const viewsKey = $derived(`h.views.${session.principalKey}.${typeName}`);
+  let views = $state<SavedView[]>([]);
+  $effect(() => {
+    const key = viewsKey;
+    const read = () => (views = parseViews(localStorage.getItem(key)));
+    read();
+    addEventListener('h:views', read);
+    return () => removeEventListener('h:views', read);
+  });
+  function persistViews(next: SavedView[]) {
+    views = next;
+    localStorage.setItem(viewsKey, JSON.stringify(next));
+    dispatchEvent(new Event('h:views'));
+  }
+  const activeView = $derived(views.find((v) => canonicalQuery(v.query) === canonicalQuery(router.query))?.name);
+  const tabValue = $derived(activeView === undefined ? 'all' : `v:${activeView}`);
+  const viewTabs = $derived([
+    { id: 'all', label: t('collections.viewAll') },
+    ...views.map((v) => ({ id: `v:${v.name}`, label: v.name, icon: 'star' })),
+  ]);
+  function applyQuery(qs: string) {
+    router.setQuery(toUrlPatch(parseQuery(new URLSearchParams(qs)), router.query));
+  }
+  function pickView(id: string) {
+    if (id === 'all') router.setQuery(toUrlPatch({ ...emptyQuery(), locale: q.locale }, router.query));
+    else {
+      const v = views.find((x) => `v:${x.name}` === id);
+      if (v) applyQuery(v.query);
+    }
+  }
+  let saveOpen = $state(false);
+  let renameOpen = $state(false);
+  function saveView(name: string) {
+    const qs = new URLSearchParams(router.query);
+    qs.delete('page');
+    persistViews(upsertView(views, { name, query: qs.toString() }));
+  }
+  const viewMenu = $derived([
+    { label: t('collections.renameView'), icon: 'edit', onselect: () => (renameOpen = true) },
+    { label: t('collections.deleteView'), icon: 'trash', danger: true, onselect: () => persistViews(views.filter((v) => v.name !== activeView)) },
+  ]);
+
+  // ---- page size, layout
+  const SIZES = [25, 50, 100];
+  const sizeOptions = $derived((SIZES.includes(q.pageSize) ? SIZES : [...SIZES, q.pageSize].sort((a, b) => a - b)).map((n) => ({ value: String(n), label: String(n) })));
+  let narrow = $state(false);
+  $effect(() => {
+    const m = matchMedia('(max-width: 767px)');
+    const set = () => (narrow = m.matches);
+    set();
+    m.addEventListener('change', set);
+    return () => m.removeEventListener('change', set);
+  });
+  const filtered = $derived(!!(q.q || q.filters.length || q.status));
   const clearChannel = () => channels.select('');
 </script>
 
@@ -205,27 +295,37 @@
     </EmptyState>
   {:else}
     <Slot at="list.before" props={{ type: typeName }} />
-    <div class="h-page__head">
-      <div>
-        <h1>{type.label}</h1>
-        {#if type.description}<p class="h-muted">{type.description}</p>{/if}
-      </div>
-      <div class="h-row">
-        <Button icon="star" onclick={() => (viewsOpen = true)}>{t('collections.views')}</Button>
-        {#if canCreate}<Button variant="primary" icon="plus" onclick={create}>{t('collections.new')}</Button>{/if}
-      </div>
+    <PageHeader title={type.label} breadcrumbs={[{ label: t('nav.content') }, { label: type.label }]} meta={type.description}>
+      {#snippet badge()}{#if !error && (!loading || total > 0)}<Badge>{total}</Badge>{/if}{/snippet}
+      {#snippet actions()}
+        {#if candidates.length}
+          <Popover label={t('collections.columns')} triggerClass="h-pill" align="end">
+            {#snippet trigger()}<Icon name="sliders" size={16} />{t('collections.columns')}{/snippet}
+            {#snippet children()}
+              <div class="h-cols">
+                <p class="h-muted h-cols__help">{t('collections.columnsHelp', { max: MAX_COLS })}</p>
+                {#each candidates as f (f.name)}
+                  {@const on = colNames.includes(f.name)}
+                  <Checkbox checked={on} label={f.label} disabled={!on && colNames.length >= MAX_COLS} onchange={(e) => toggleCol(f.name, e.currentTarget.checked)} />
+                {/each}
+                {#if chosen}<Button variant="ghost" size="sm" onclick={() => setCols(null)}>{t('collections.columnsReset')}</Button>{/if}
+              </div>
+            {/snippet}
+          </Popover>
+        {/if}
+      {/snippet}
+      {#snippet primary()}{#if canCreate}<Button variant="primary" icon="plus" onclick={create}>{t('collections.newType', { type: type.label })}</Button>{/if}{/snippet}
+    </PageHeader>
+
+    <div class="h-list-bar">
+      <Tabs variant="underline" tabs={viewTabs} value={tabValue} label={t('collections.views')} onchange={pickView}>
+        {#snippet trailing()}
+          {#if activeView !== undefined}<Menu items={viewMenu} label={t('collections.viewMenu', { name: activeView })} />{/if}
+          <Button variant="ghost" size="sm" icon="plus" onclick={() => (saveOpen = true)}>{t('collections.saveView')}</Button>
+        {/snippet}
+      </Tabs>
+      <FilterBar {type} {q} {offered} {search} {onsearch} onchange={(patch) => update(patch)} />
     </div>
-
-    <FilterBar {type} {q} {offered} {search} {onsearch} onchange={(patch) => update(patch)} />
-
-    {#if selected.size > 0 && (canPublish || canDelete)}
-      <div class="h-list-bulk h-row" role="region" aria-label={t('collections.bulk.label')}>
-        <strong>{t('collections.bulk.selected', { n: selected.size })}</strong>
-        {#if canPublish}<Button size="sm" onclick={() => startBulk('publish')}>{t('collections.bulk.publish')}</Button>{/if}
-        {#if canDelete}<Button size="sm" variant="danger" onclick={() => startBulk('delete')}>{t('common.delete')}</Button>{/if}
-        <Button size="sm" variant="ghost" onclick={() => (selected = new Set())}>{t('common.clear')}</Button>
-      </div>
-    {/if}
 
     {#if error}
       <div class="h-alert" role="alert">
@@ -243,23 +343,38 @@
         selectable={canPublish || canDelete}
         bind:selected
         {loading}
+        maxHeight={narrow ? undefined : 'max(22rem, calc(100dvh - 22rem))'}
         onrowclick={(r) => void router.navigate(`/items/${r.id}${q.locale ? `?locale=${q.locale}` : ''}`)}
       >
         {#snippet empty()}
-          <EmptyState icon="file" title={t('collections.empty')} description={q.q || q.filters.length || q.status ? t('collections.emptyFiltered') : t('collections.emptyText')}>
-            {#snippet actions()}{#if canCreate}<Button variant="primary" onclick={create}>{t('collections.new')}</Button>{/if}{/snippet}
-          </EmptyState>
+          {#if filtered}
+            <EmptyState icon="filter" title={t('collections.noMatch')} description={t('collections.emptyFiltered')}>
+              {#snippet actions()}<Button onclick={() => update({ q: '', status: '', filters: [] })}>{t('collections.clearFilters')}</Button>{/snippet}
+            </EmptyState>
+          {:else}
+            <EmptyState icon="file" title={t('collections.emptyTitle', { type: type.label.toLowerCase() })} description={t('collections.emptyText')}>
+              {#snippet actions()}{#if canCreate}<Button variant="primary" icon="plus" onclick={create}>{t('collections.newType', { type: type.label })}</Button>{/if}{/snippet}
+            </EmptyState>
+          {/if}
+        {/snippet}
+        {#snippet footer()}
+          {#if total > 0}
+            <span class="h-rows"><span class="h-muted" aria-hidden="true">{t('collections.rows')}</span><Select compact aria-label={t('collections.pageSize')} value={String(q.pageSize)} options={sizeOptions} onchange={(e) => update({ pageSize: Number((e.currentTarget as HTMLSelectElement).value) })} /></span>
+            <Pagination page={q.page} pageSize={q.pageSize} {total} onpage={(p) => update({ page: p }, { push: true })} />
+          {/if}
         {/snippet}
       </Table>
-      <Pagination page={q.page} pageSize={q.pageSize} {total} onpage={(p) => update({ page: p }, { push: true })} />
     {/if}
+    <BulkBar count={canPublish || canDelete ? selected.size : 0} onclear={() => (selected = new Set())}>
+      {#if canPublish}<Button size="sm" variant="ghost" onclick={() => startBulk('publish')}>{t('collections.bulk.publish')}</Button>{/if}
+      {#if canDelete}<Button size="sm" variant="ghost" onclick={() => startBulk('delete')}>{t('common.delete')}</Button>{/if}
+    </BulkBar>
     <Slot at="list.after" props={{ type: typeName }} />
   {/if}
 </div>
 
 {#snippet nameCell(row: Row)}
-  <a class="h-list-name" use:link href={href(`/items/${row.id}`, q.locale ? { locale: q.locale } : undefined)}>{row.name || t('collections.untitled')}</a>
-  {#if row.key}<span class="h-muted h-list-key">{row.key}</span>{/if}
+  <NameCell name={row.name || t('collections.untitled')} sub={row.key} icon={type?.admin?.icon || 'file-text'} href={`/items/${row.id}${q.locale ? `?locale=${q.locale}` : ''}`} />
 {/snippet}
 {#snippet extCell(row: Row, col: Column<Row>)}
   {@const f = fieldCols.find((x) => `f:${x.name}` === col.key)}
@@ -269,6 +384,7 @@
   {/if}
 {/snippet}
 {#snippet statusCell(row: Row)}<StatusBadge status={row.status} />{/snippet}
+{#snippet updatedCell(row: Row)}<Time at={row.updatedAt} />{/snippet}
 {#snippet localesCell(row: Row)}
   <LocaleDots locales={offered.length ? offered : row.locales} item={row} />
 {/snippet}
@@ -315,20 +431,22 @@
   </Dialog>
 {/if}
 
-<ViewsDialog bind:open={viewsOpen} type={typeName} onapply={(qs) => router.setQuery(toUrlPatch(parseQuery(new URLSearchParams(qs)), router.query))} current={router.query.toString()} />
+<ViewNameDialog bind:open={saveOpen} title={t('collections.saveViewTitle')} onsubmit={saveView} />
+<ViewNameDialog
+  bind:open={renameOpen}
+  title={t('collections.renameViewTitle')}
+  initial={activeView ?? ''}
+  onsubmit={(n) => {
+    const from = activeView;
+    if (from !== undefined) persistViews(renameView(views, from, n));
+  }}
+/>
 
 <style>
-  .h-list-bulk {
-    padding: var(--h-space-2) var(--h-space-3);
-    border-radius: var(--h-radius);
-    background: var(--h-accent-soft);
-  }
-  .h-list-name {
-    font-weight: 500;
-  }
-  .h-list-key {
-    margin-left: var(--h-space-2);
-    font-size: var(--h-text-xs);
+  .h-list-bar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--h-space-3);
   }
   .h-list-names {
     display: flex;
@@ -337,6 +455,23 @@
     margin: var(--h-space-2) 0 0;
     padding: 0;
     list-style: none;
+    font-size: var(--h-text-sm);
+  }
+  .h-cols {
+    display: flex;
+    flex-direction: column;
+    gap: var(--h-space-2);
+    max-height: 20rem;
+    overflow-y: auto;
+  }
+  .h-cols__help {
+    margin: 0;
+    font-size: var(--h-text-xs);
+  }
+  .h-rows {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--h-space-2);
     font-size: var(--h-text-sm);
   }
 </style>

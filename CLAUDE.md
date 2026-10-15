@@ -117,6 +117,11 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
   data in through properties, out through composed `CustomEvent`s. With `ADMIN_ELEMENTS_DEV_URL` (dev only)
   `<prefix>/x/dev/*` is proxied to Vite for HMR. Schema `admin.widget`/`admin.list` `field:cell` names must be
   declared in the manifest, or startup fails.
+- The admin's page background is a single-colour gradient on `html` on purpose (styles/base.css): Chrome on
+  macOS colour-manages flat solid-colour tiles differently from rasterised ones, so empty stretches showed as a
+  darker band. Don't replace it with a plain `background-color`. Admin design rules: `admin/ui/src/lib/README.md`.
+- `scripts/npm-ci.sh DIR` (used by the Make targets and e2e) only reinstalls when the lockfile changed, so
+  running checks doesn't break a developer's running `npm run dev`.
 - Item and singleton writes take `If-Match` (the `ETag` from the read, `updatedAt` at millisecond resolution) and
   answer 412 `precondition_failed` with `current.updatedAt/updatedBy`; the admin shows a conflict dialog.
 - Authorization lives in the service layer, never only in handlers: `content.Service` checks `Options.Access` for

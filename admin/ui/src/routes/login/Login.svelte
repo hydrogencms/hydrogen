@@ -8,6 +8,8 @@
   import { safeNext } from '../../lib/format';
   import { t } from '../../lib/i18n';
   import Slot from '../../lib/ext/Slot.svelte';
+  import Logo from '../../lib/ui/Logo.svelte';
+  import { ext } from '../../lib/extensions.svelte';
 
   let login = $state('');
   let password = $state('');
@@ -51,18 +53,30 @@
 </script>
 
 <main class="h-login">
-  <Slot at="login.before" />
-  <form class="h-login__card" onsubmit={submit}>
-    <h1>{t('app.name')}</h1>
-    <h2>{t('login.title')}</h2>
-    {#if error}<p class="h-alert" role="alert">{error}</p>{/if}
-    <Field label={t('login.login')} required>
-      {#snippet children(c)}<Input {...c} bind:value={login} autocomplete="username" required autofocus />{/snippet}
-    </Field>
-    <Field label={t('login.password')} required>
-      {#snippet children(c)}<Input {...c} bind:value={password} type="password" autocomplete="current-password" required />{/snippet}
-    </Field>
-    <Button type="submit" variant="primary" loading={pending} disabled={wait > 0}>{t('login.submit')}</Button>
-  </form>
-  <Slot at="login.after" />
+  <div class="h-login__form">
+    <Slot at="login.before" />
+    <form onsubmit={submit}>
+      {#if ext.logo}<img class="h-login__logo" src={ext.logo} alt="" />{:else}<Logo size={36} />{/if}
+      <div>
+        <h1>{t('login.heading', { name: t('app.name') })}</h1>
+        <p class="h-login__sub">{t('login.sub', { name: t('app.name') })}</p>
+      </div>
+      {#if error}<p class="h-alert" role="alert">{error}</p>{/if}
+      <Field label={t('login.login')} required>
+        {#snippet children(c)}<Input {...c} bind:value={login} large autocomplete="username" required autofocus />{/snippet}
+      </Field>
+      <Field label={t('login.password')} required>
+        {#snippet children(c)}<Input {...c} bind:value={password} large type="password" autocomplete="current-password" required />{/snippet}
+      </Field>
+      <Button type="submit" variant="primary" size="lg" block loading={pending} disabled={wait > 0}>{t('login.submit')}</Button>
+    </form>
+    <Slot at="login.after" />
+  </div>
+  <aside class="h-login__panel" aria-hidden="true">
+    <div class="h-login__card">
+      <Logo size={72} />
+      <span class="h-login__brand">{t('app.name')}</span>
+      <span class="h-login__tagline">{t('login.tagline')}</span>
+    </div>
+  </aside>
 </main>

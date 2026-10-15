@@ -6,4 +6,4 @@
   const tone = $derived(status === 'published' ? 'success' : status === 'changed' ? 'warning' : 'neutral');
 </script>
 
-<Badge {tone}>{t(`collections.status.${status}`)}</Badge>
+<Badge {tone} dot>{t(`collections.status.${status}`)}</Badge>

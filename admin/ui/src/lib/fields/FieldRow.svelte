@@ -20,13 +20,17 @@
   const ctx = useFields();
   const shown = $derived(!field.admin?.hidden && evalWhen(field.when, doc));
   const base = $derived(field.shape.base);
-  const nested = $derived(base === 'list' || (base === 'group' && !!field.fields));
-  const readonly = $derived(ctx.readonly || !!field.admin?.readonly);
   const widget = $derived(ext.widget(field.admin?.widget));
+  const nested = $derived(base === 'list' || (base === 'group' && !!field.fields));
+  // Short fields flow two or three to a row in the editor's field grid; everything else spans the card.
+  const short = $derived(
+    !widget && (base === 'number' || base === 'boolean' || base === 'ref' || (base === 'string' && ['enum', 'date', 'datetime'].includes(field.shape.format ?? ''))),
+  );
+  const readonly = $derived(ctx.readonly || !!field.admin?.readonly);
 </script>
 
 {#if shown}
-  <div class="h-fieldrow" data-field={path}>
+  <div class="h-fieldrow" class:h-fieldrow--wide={!short} data-field={path}>
     {#if widget}
       <Field label={field.label} description={field.description} required={field.required}>
         {#snippet children()}

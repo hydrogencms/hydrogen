@@ -13,7 +13,13 @@
   import Field from '../../lib/ui/Field.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import Pagination from '../../lib/ui/Pagination.svelte';
-  import Select from '../../lib/ui/Select.svelte';
+    import EmptyState from '../../lib/ui/EmptyState.svelte';
+  import Menu from '../../lib/ui/Menu.svelte';
+  import NameCell from '../../lib/ui/NameCell.svelte';
+  import Segmented from '../../lib/ui/Segmented.svelte';
+  import Time from '../../lib/ui/Time.svelte';
+  import ListBar from './ListBar.svelte';
+  import SettingsHead from './SettingsHead.svelte';
   import Table from '../../lib/ui/Table.svelte';
   import { toast } from '../../lib/ui/toast.svelte';
   import Assignments from './Assignments.svelte';
@@ -21,27 +27,31 @@
   import { parseValues, toggleValue } from './limits';
   import SecretBox from './SecretBox.svelte';
   import { reportError } from '../../lib/errors';
-  import { PAGE } from './util';
+  import { matchesText, PAGE, pageOf } from './util';
 
   type Token = Schemas['Token'];
   const page = $derived(Math.max(1, Number(router.query.get('page')) || 1));
   let rows = $state<Token[] | null>(null);
-  let total = $state(0);
+  let q = $state(router.query.get('q') ?? '');
+  const kindFilter = $derived(router.query.get('kind') ?? 'all');
   let failed = $state(false);
 
-  async function load(p: number) {
+  // Tokens are few: load them all, filter and page here.
+  async function load() {
     failed = false;
     try {
-      const r = await api.get('/tokens', { query: { limit: PAGE, offset: (p - 1) * PAGE } });
-      rows = r.items;
-      total = r.total;
+      rows = (await api.get('/tokens', { query: { limit: 500 } })).items;
     } catch {
       failed = true;
     }
   }
   $effect(() => {
-    void load(page);
+    void load();
   });
+  const filtered = $derived((rows ?? []).filter((r) => (kindFilter === 'all' || r.kind === kindFilter) && matchesText(q, r.name, r.prefix)));
+  function typing() {
+    router.setQuery({ q: q.trim() || undefined, page: undefined });
+  }
 
   // Create dialog.
   let creating = $state(false);
@@ -89,7 +99,7 @@
         },
       });
       secret = r.secret;
-      await load(page);
+      await load();
     } catch (e) {
       if (!(e instanceof ApiError) || e.status >= 500) throw e;
       for (const f of e.fields ?? []) errors[f.path] ??= f.message;
@@ -107,7 +117,7 @@
     try {
       await api.del('/tokens/{id}', { params: { id: revoking.id } });
       toast.success(t('settings.tokens.wasRevoked'));
-      await load(page);
+      await load();
     } catch (e) {
       reportError(e);
       throw e;
@@ -121,61 +131,90 @@
 </script>
 
 <div class="h-page">
-  <div class="h-page__head">
-    <h1>{t('nav.tokens')}</h1>
-    {#if session.can('token.manage')}<Button variant="primary" icon="plus" onclick={openCreate}>{t('settings.tokens.new')}</Button>{/if}
-  </div>
+  <SettingsHead section="tokens">
+    {#snippet primary()}
+      {#if session.can('token.manage')}<Button variant="primary" icon="plus" onclick={openCreate}>{t('settings.tokens.new')}</Button>{/if}
+    {/snippet}
+  </SettingsHead>
+  <ListBar bind:value={q} label={t('settings.tokens.search')} placeholder={t('settings.tokens.search')} oninput={typing}>
+    <Segmented
+      label={t('settings.tokens.kind')}
+      size="sm"
+      value={kindFilter}
+      options={[
+        { value: 'all', label: t('common.all') },
+        { value: 'token', label: t('settings.tokens.kindToken') },
+        { value: 'agent', label: t('settings.tokens.kindAgent') },
+      ]}
+      onchange={(v) => router.setQuery({ kind: v === 'all' ? undefined : v, page: undefined })} />
+  </ListBar>
   {#if failed}
-    <p class="h-alert" role="alert">{t('app.error')} <Button size="sm" onclick={() => load(page)}>{t('app.retry')}</Button></p>
+    <p class="h-alert" role="alert">{t('app.error')} <Button size="sm" onclick={load}>{t('app.retry')}</Button></p>
   {:else}
     <Table
       caption={t('nav.tokens')}
       loading={!rows}
-      rows={rows ?? []}
+      rows={pageOf(filtered, page)}
       rowKey={(r) => r.id}
       columns={[
-        { key: 'name', label: t('settings.tokens.name') },
-        { key: 'kind', label: t('settings.tokens.kind'), cell: kindCell },
-        { key: 'prefix', label: t('settings.tokens.prefix'), cell: prefixCell },
-        { key: 'createdAt', label: t('settings.created'), cell: createdCell },
-        { key: 'expiresAt', label: t('settings.tokens.expires'), cell: expiresCell },
-        { key: 'lastUsedAt', label: t('settings.tokens.lastUsed'), cell: usedCell },
+        { key: 'name', label: t('settings.tokens.name'), cell: nameCell },
+        { key: 'kind', label: t('settings.tokens.kind'), cell: kindCell, mobile: 'hide' },
+        { key: 'prefix', label: t('settings.tokens.prefix'), cell: prefixCell, mobile: 'hide' },
         { key: 'status', label: t('settings.users.status'), cell: statusCell },
+        { key: 'lastUsedAt', label: t('settings.tokens.lastUsed'), cell: usedCell },
+        { key: 'createdAt', label: t('settings.created'), cell: createdCell, mobile: 'hide' },
         { key: 'actions', label: t('common.actions'), align: 'end', cell: actionCell },
       ]}>
-      {#snippet empty()}<p class="h-muted">{t('settings.tokens.empty')}</p>{/snippet}
+      {#snippet empty()}
+        {#if q.trim() || kindFilter !== 'all'}
+          <EmptyState icon="search" title={t('settings.tokens.noMatch')} />
+        {:else}
+          <EmptyState icon="key" title={t('settings.tokens.empty')} description={t('settings.tokens.emptyHint')} />
+        {/if}
+      {/snippet}
+      {#snippet footer()}
+        <Pagination {page} pageSize={PAGE} total={filtered.length} onpage={(p) => router.setQuery({ page: p === 1 ? undefined : p }, { push: true })} />
+      {/snippet}
     </Table>
-    <Pagination {page} pageSize={PAGE} {total} onpage={(p) => router.setQuery({ page: p === 1 ? undefined : p }, { push: true })} />
   {/if}
 </div>
 
-{#snippet kindCell(r: Token)}<Badge tone={r.kind === 'agent' ? 'info' : 'neutral'}>{r.kind}</Badge>{/snippet}
-{#snippet prefixCell(r: Token)}<code>{r.prefix}…</code>{/snippet}
-{#snippet createdCell(r: Token)}{formatDateTime(r.createdAt)}{/snippet}
-{#snippet expiresCell(r: Token)}{r.expiresAt ? formatDateTime(r.expiresAt) : t('settings.tokens.never')}{/snippet}
-{#snippet usedCell(r: Token)}{r.lastUsedAt ? formatDateTime(r.lastUsedAt) : t('settings.users.never')}{/snippet}
+{#snippet nameCell(r: Token)}<NameCell name={r.name} icon={r.kind === 'agent' ? 'cpu' : 'key'} sub={r.expiresAt ? `${t('settings.tokens.expires')} ${formatDateTime(r.expiresAt)}` : undefined} />{/snippet}
+{#snippet kindCell(r: Token)}<Badge tone={r.kind === 'agent' ? 'info' : 'neutral'}>{r.kind === 'agent' ? t('settings.tokens.kindAgent') : t('settings.tokens.kindToken')}</Badge>{/snippet}
+{#snippet prefixCell(r: Token)}<code class="h-mono">{r.prefix}…</code>{/snippet}
+{#snippet createdCell(r: Token)}<Time at={r.createdAt} />{/snippet}
+{#snippet usedCell(r: Token)}{#if r.lastUsedAt}<Time at={r.lastUsedAt} />{:else}<span class="h-muted">{t('settings.users.never')}</span>{/if}{/snippet}
 {#snippet statusCell(r: Token)}
   {@const s = tokenState(r)}
-  <Badge tone={s === 'active' ? 'success' : s === 'revoked' ? 'danger' : 'warning'}>{t('settings.tokens.' + s)}</Badge>
+  <Badge tone={s === 'active' ? 'success' : s === 'revoked' ? 'danger' : 'warning'} dot>{t('settings.tokens.' + s)}</Badge>
 {/snippet}
 {#snippet actionCell(r: Token)}
-  <span class="h-row">
-    <Button
-      size="sm"
-      onclick={() => {
-        rolesOf = r;
-        rolesOpen = true;
-      }}>{t('nav.roles')}</Button>
-    {#if !r.revokedAt}
-      <Button
-        size="sm"
-        variant="danger"
-        onclick={() => {
-          revoking = r;
-          confirmOpen = true;
-        }}>{t('settings.tokens.revoke')}</Button>
-    {/if}
-  </span>
+  <Menu
+    label={t('settings.tokens.actionsOf', { name: r.name })}
+    items={[
+      {
+        label: t('nav.roles'),
+        icon: 'shield',
+        onselect: () => {
+          rolesOf = r;
+          rolesOpen = true;
+        },
+      },
+      ...(r.revokedAt
+        ? []
+        : [
+            {
+              label: t('settings.tokens.revoke'),
+              icon: 'trash',
+              danger: true,
+              separator: true,
+              onselect: () => {
+                revoking = r;
+                confirmOpen = true;
+              },
+            },
+          ]),
+    ]} />
 {/snippet}
 
 <Dialog bind:open={creating} title={secret ? t('settings.tokens.createdTitle') : t('settings.tokens.new')} dismissible={!saving && !secret}>
@@ -192,11 +231,15 @@
       <Field label={t('settings.tokens.name')} error={errors.name} required>
         {#snippet children(c)}<Input {...c} bind:value={name} />{/snippet}
       </Field>
-      <Field label={t('settings.tokens.kind')} description={t('settings.tokens.kindHint')} error={errors.kind}>
-        {#snippet children(c)}
-          <Select {...c} bind:value={kind} options={[{ value: 'token', label: t('settings.tokens.kindToken') }, { value: 'agent', label: t('settings.tokens.kindAgent') }]} />
-        {/snippet}
-      </Field>
+      <div class="h-field">
+        <span class="h-field__label" id="tok-kind">{t('settings.tokens.kind')}</span>
+        <p class="h-field__desc">{t('settings.tokens.kindHint')}</p>
+        <Segmented
+          label={t('settings.tokens.kind')}
+          bind:value={kind}
+          options={[{ value: 'token', label: t('settings.tokens.kindToken'), icon: 'key' }, { value: 'agent', label: t('settings.tokens.kindAgent'), icon: 'cpu' }]} />
+        {#if errors.kind}<p class="h-field__error" role="alert">{errors.kind}</p>{/if}
+      </div>
       {#if rolesDenied}
         <Field label={t('settings.tokens.roles')} description={t('settings.tokens.rolesText')} error={errors.roles}>
           {#snippet children(c)}<Input {...c} bind:value={roleText} />{/snippet}
@@ -237,7 +280,7 @@
 </Dialog>
 
 <Dialog bind:open={rolesOpen} title={t('settings.tokens.rolesOf', { name: rolesOf?.name ?? '' })} size="lg">
-  {#if rolesOf}{#key rolesOf.id}<Assignments kind="token" id={rolesOf.id} />{/key}{/if}
+  {#if rolesOf}{#key rolesOf.id}<Assignments kind="token" id={rolesOf.id} bare />{/key}{/if}
 </Dialog>
 
 <Confirm
@@ -255,6 +298,10 @@
     border: 1px solid var(--h-border);
     border-radius: var(--h-radius);
     padding: var(--h-space-3);
+    max-height: 14rem;
+    overflow: auto;
+    margin: 0;
+    min-width: 0;
   }
   .h-tokroles legend {
     padding: 0 var(--h-space-2);

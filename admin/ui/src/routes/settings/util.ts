@@ -29,3 +29,12 @@ export async function submitForm<V extends object>(form: Form<V>, fn: (v: V) => 
   if (denied) form.formError = errorMessage(denied);
   return ok;
 }
+
+/** One page (1-based) of an already loaded list. */
+export const pageOf = <T>(rows: T[], page: number): T[] => rows.slice((page - 1) * PAGE, page * PAGE);
+
+/** Case-insensitive "contains" over several fields, for filtering a loaded list. */
+export const matchesText = (q: string, ...fields: (string | undefined)[]): boolean => {
+  const needle = q.trim().toLowerCase();
+  return !needle || fields.some((f) => f?.toLowerCase().includes(needle));
+};

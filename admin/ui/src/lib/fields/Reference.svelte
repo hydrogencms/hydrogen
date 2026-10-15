@@ -1,10 +1,12 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { api } from '../api/client';
+  import Badge from '../ui/Badge.svelte';
   import Combobox, { type ComboOption } from '../ui/Combobox.svelte';
   import { types } from '../types.svelte';
   import type { CompiledField } from '../types.svelte';
   import { t } from '../i18n';
+  import { href, link } from '../router.svelte';
   import { useFields } from './context';
 
   let {
@@ -27,6 +29,7 @@
   const ctx = useFields();
   const targets = $derived((field.shape.to as string[] | undefined) ?? []);
   let selected = $state<ComboOption | null>(null);
+  let info = $state<{ id: string; name: string; type: string; status: string } | null>(null);
 
   const hint = (type: string, status?: string) =>
     [types.get(type)?.label ?? type, status ? t(`collections.status.${status}`) : ''].filter(Boolean).join(' · ');
@@ -37,6 +40,7 @@
     untrack(() => {
       if (!id) {
         selected = null;
+        info = null;
         return;
       }
       if (selected?.value === id) return;
@@ -46,7 +50,10 @@
     const ctl = new AbortController();
     api
       .get('/items/{id}', { params: { id }, query: { draft: true, locale: ctx.locale || undefined } as never, signal: ctl.signal })
-      .then((v) => (selected = { value: id, label: v.name || id, hint: hint(v.type, v.status) }))
+      .then((v) => {
+        selected = { value: id, label: v.name || id, hint: hint(v.type, v.status) };
+        info = { id, name: v.name || id, type: v.type, status: v.status };
+      })
       .catch(() => {});
     return () => ctl.abort();
   });
@@ -68,6 +75,7 @@
   }
 </script>
 
+<div class="h-ref">
 <Combobox
   {...attrs}
   value={selected}
@@ -77,3 +85,11 @@
   placeholder={field.admin?.placeholder ?? t('collections.refSearch', { types: targets.map((x) => types.get(x)?.label ?? x).join(', ') })}
   onselect={pick}
 />
+{#if info && info.id === (typeof value === 'string' ? value : '')}
+  <a class="h-ref__chip" use:link href={href(`/items/${info.id}`)}>
+    <span class="h-ref__name">{info.name}</span>
+    <span class="h-ref__type">{types.get(info.type)?.label ?? info.type}</span>
+    <Badge tone={info.status === 'published' ? 'success' : info.status === 'changed' ? 'warning' : 'neutral'}>{t(`collections.status.${info.status}`)}</Badge>
+  </a>
+{/if}
+</div>

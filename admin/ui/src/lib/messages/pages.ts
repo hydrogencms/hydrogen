@@ -10,6 +10,9 @@ export const pages: Record<string, string> = {
   'pages.detail': 'Selected page',
   'pages.selectNode': 'Select a page to edit it',
   'pages.empty': 'This site has no pages yet',
+  'pages.emptyText': 'Pages you add appear here as a tree.',
+  'pages.addFirst': 'Add the first page',
+  'pages.addPage': 'Add page',
   'pages.resize': 'Resize the tree',
   'pages.restricted': 'You can see this page only as the parent of pages you may access.',
   'pages.restrictedShort': 'Restricted',
@@ -34,6 +37,8 @@ export const pages: Record<string, string> = {
 
   'pages.filterTitle': 'Filter by title',
   'pages.type': 'Type',
+  'pages.filters': 'Filters',
+  'pages.back': 'Back to tree',
   'pages.anyType': 'Any type',
   'pages.anyStatus': 'Any status',
   'pages.languageGaps': 'Missing a language',

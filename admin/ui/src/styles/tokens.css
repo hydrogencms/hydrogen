@@ -1,58 +1,107 @@
 /* Design tokens. Components use these custom properties only. Light and dark follow the system
-   (prefers-color-scheme); [data-theme] on <html> overrides it. */
+   (prefers-color-scheme); [data-theme] on <html> overrides it. `--h-accent` is the one colour a project
+   themes: focus ring, selected rows and the primary button follow it. */
 :root {
   color-scheme: light dark;
 
-  --h-bg: light-dark(#f6f7f9, #101216);
-  --h-surface: light-dark(#ffffff, #181b21);
-  --h-surface-2: light-dark(#f0f2f5, #20242c);
-  --h-surface-hover: light-dark(#eceff3, #262b34);
-  --h-border: light-dark(#d9dde4, #2e343e);
-  --h-border-strong: light-dark(#b9c0cc, #434b59);
-  --h-text: light-dark(#161a22, #e8ebf0);
-  --h-text-muted: light-dark(#596273, #9aa4b5);
-  --h-accent: light-dark(#2f5bea, #7b9bff);
-  --h-accent-strong: light-dark(#2347c4, #a3b9ff);
-  --h-accent-contrast: light-dark(#ffffff, #0d1220);
-  --h-accent-soft: light-dark(#e6ecfd, #1e2845);
-  --h-success: light-dark(#14753d, #5fd48c);
-  --h-success-soft: light-dark(#e0f4e8, #15301f);
-  --h-warning: light-dark(#8a5300, #f0b64f);
-  --h-warning-soft: light-dark(#fdf1d8, #35280f);
-  --h-danger: light-dark(#b42318, #ff8a7d);
-  --h-danger-soft: light-dark(#fde7e4, #3a1815);
-  --h-info: light-dark(#0b64a8, #6cc0ff);
-  --h-info-soft: light-dark(#e0f0fb, #11293b);
-  --h-overlay: light-dark(rgb(16 18 22 / 0.45), rgb(0 0 0 / 0.6));
+  /* Neutral scale */
+  --h-bg: light-dark(#f4f4f5, #09090b);
+  --h-surface: light-dark(#ffffff, #131316);
+  --h-surface-2: light-dark(#f4f4f5, #1c1c20);
+  --h-surface-3: light-dark(#e9e9ec, #26262b);
+  --h-surface-hover: var(--h-surface-2);
+  --h-hover: light-dark(rgb(0 0 0 / 0.05), rgb(255 255 255 / 0.07));
+  --h-border: light-dark(#e7e7ea, #26262b);
+  --h-border-strong: light-dark(#d4d4d8, #3a3a41);
+  --h-text: light-dark(#0a0a0b, #fafafa);
+  --h-text-muted: light-dark(#6b6b73, #a1a1aa);
+  --h-text-faint: light-dark(#9a9aa3, #71717a);
 
-  --h-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  /* Accent: black pill in light, white in dark. Derived tokens follow an override of --h-accent. */
+  --h-accent: light-dark(#111113, #fafafa);
+  --h-accent-contrast: light-dark(#ffffff, #0a0a0b);
+  --h-accent-strong: color-mix(in srgb, var(--h-accent) 82%, var(--h-accent-contrast));
+  --h-accent-soft: color-mix(in srgb, var(--h-accent) 5%, var(--h-surface));
+  --h-selected: color-mix(in srgb, var(--h-accent) 5%, var(--h-surface));
+
+  /* Status: strong text on a soft background */
+  --h-success: light-dark(#15803d, #4ade80);
+  --h-success-soft: light-dark(#ecfdf3, rgb(34 197 94 / 0.18));
+  --h-warning: light-dark(#a16207, #fbbf24);
+  --h-warning-soft: light-dark(#fefce8, rgb(234 179 8 / 0.18));
+  --h-danger: light-dark(#b91c1c, #f87171);
+  --h-danger-soft: light-dark(#fef2f2, rgb(239 68 68 / 0.2));
+  --h-danger-solid: light-dark(#b91c1c, #dc2626);
+  --h-info: light-dark(#1d4ed8, #93c5fd);
+  --h-info-soft: light-dark(#eff6ff, rgb(59 130 246 / 0.2));
+  --h-overlay: rgb(9 9 11 / 0.4);
+
+  /* Avatar tints (low saturation) */
+  --h-tint-1: light-dark(#e4e4e7, #2e2e34);
+  --h-tint-2: light-dark(#e7e5e4, #302d2a);
+  --h-tint-3: light-dark(#e0e7ee, #262d36);
+  --h-tint-4: light-dark(#e2eadf, #262f26);
+  --h-tint-5: light-dark(#ebe3ec, #322833);
+  --h-tint-6: light-dark(#eee6dc, #342d24);
+
+  /* Type */
+  --h-font: 'Inter var', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --h-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --h-text-xs: 0.75rem;
   --h-text-sm: 0.8125rem;
-  --h-text-md: 0.9375rem;
-  --h-text-lg: 1.125rem;
-  --h-text-xl: 1.5rem;
+  --h-text-md: 0.875rem;
+  --h-text-lg: 1rem;
+  --h-text-dialog: 1.125rem;
+  --h-text-xl: 1.25rem;
+  --h-text-2xl: 1.5rem;
+  --h-text-3xl: 1.875rem;
+  --h-text-4xl: 2.5rem;
   --h-leading: 1.5;
 
+  /* Spacing (4-pt); -20 and -40 are pixel-named additions */
   --h-space-1: 0.25rem;
   --h-space-2: 0.5rem;
   --h-space-3: 0.75rem;
   --h-space-4: 1rem;
+  --h-space-20: 1.25rem;
   --h-space-5: 1.5rem;
   --h-space-6: 2rem;
+  --h-space-40: 2.5rem;
   --h-space-7: 3rem;
+  --h-space-8: 4rem;
+  --h-page-pad: 2rem;
 
-  --h-radius-sm: 4px;
-  --h-radius: 6px;
-  --h-radius-lg: 10px;
-  --h-shadow-sm: 0 1px 2px light-dark(rgb(16 24 40 / 0.06), rgb(0 0 0 / 0.4));
-  --h-shadow: 0 6px 20px light-dark(rgb(16 24 40 / 0.14), rgb(0 0 0 / 0.55));
-  --h-focus: 0 0 0 2px var(--h-surface), 0 0 0 4px var(--h-accent);
+  /* Shape */
+  --h-radius-sm: 6px;
+  --h-radius: 10px;
+  --h-radius-md: 12px;
+  --h-radius-lg: 16px;
+  --h-radius-xl: 20px;
+  --h-radius-pill: 999px;
 
-  --h-nav-width: 15rem;
-  --h-topbar-height: 3.25rem;
+  /* Elevation: cards use a border, not a shadow */
+  --h-shadow-sm: 0 1px 2px light-dark(rgb(0 0 0 / 0.04), rgb(0 0 0 / 0.4)), 0 1px 3px light-dark(rgb(0 0 0 / 0.06), rgb(0 0 0 / 0.5));
+  --h-shadow: var(--h-shadow-sm);
+  --h-shadow-dialog: 0 24px 64px light-dark(rgb(0 0 0 / 0.18), rgb(0 0 0 / 0.6));
+  --h-focus: 0 0 0 2px var(--h-surface), 0 0 0 4px color-mix(in srgb, var(--h-accent) 35%, transparent);
+
+  /* Controls */
   --h-control-height: 2.25rem;
-  --h-control-height-sm: 1.75rem;
+  --h-control-height-sm: 2rem;
+  --h-control-height-lg: 2.75rem;
+
+  /* Layout */
+  --h-nav-width: 16rem;
+  --h-rail-width: 4rem;
+  --h-topbar-height: 4rem;
+
+  /* Motion */
+  --h-dur-fast: 120ms;
+  --h-dur: 180ms;
+  --h-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  --h-z-sticky: 10;
+  --h-z-nav: 30;
   --h-z-menu: 40;
   --h-z-dialog: 50;
   --h-z-toast: 60;
@@ -63,4 +112,21 @@
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
+}
+
+@media (max-width: 1279px) {
+  :root {
+    --h-page-pad: 1.5rem;
+  }
+}
+@media (max-width: 767px) {
+  :root {
+    --h-page-pad: 1rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --h-dur-fast: 0ms;
+    --h-dur: 0ms;
+  }
 }

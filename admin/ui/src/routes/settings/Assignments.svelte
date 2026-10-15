@@ -1,8 +1,10 @@
 <script lang="ts">
   import { api, ApiError, type Schemas } from '../../lib/api/client';
-  import { formatDateTime } from '../../lib/format';
   import { t } from '../../lib/i18n';
   import { href, link } from '../../lib/router.svelte';
+  import Badge from '../../lib/ui/Badge.svelte';
+  import Card from '../../lib/ui/Card.svelte';
+  import IconButton from '../../lib/ui/IconButton.svelte';
   import Button from '../../lib/ui/Button.svelte';
   import Dialog from '../../lib/ui/Dialog.svelte';
   import Field from '../../lib/ui/Field.svelte';
@@ -17,7 +19,7 @@
   import { loadCatalog } from './util';
 
   type Assignment = Schemas['Assignment'];
-  let { kind, id }: { kind: 'user' | 'group' | 'token'; id: string } = $props();
+  let { kind, id, bare = false }: { kind: 'user' | 'group' | 'token'; id: string; /** Without the card (inside a dialog). */ bare?: boolean } = $props();
 
   let rows = $state<Assignment[] | null>(null);
   let failed = $state(false);
@@ -99,50 +101,63 @@
     }
   }
 
-  const limitText = (l: Limits) =>
+  const limitList = (l: Limits) =>
     Object.keys(l)
       .sort()
-      .map((k) => `${k}: ${formatValues(l[k])}`)
-      .join('; ');
+      .map((k) => `${k}: ${formatValues(l[k])}`);
 </script>
 
-<section class="h-stack" aria-labelledby="as-h">
-  <div class="h-row">
-    <h2 id="as-h">{t('settings.assign.title')}</h2>
-    <span class="h-spacer"></span>
-    <Button variant="primary" icon="plus" onclick={openAdd}>{t('settings.assign.add')}</Button>
-  </div>
+{#snippet content()}
   {#if failed}
     <p class="h-alert" role="alert">{t('app.error')} <Button size="sm" onclick={load}>{t('app.retry')}</Button></p>
-  {:else if !rows}
-    <Skeleton lines={3} height="1.4rem" />
   {:else}
-    <Table
-      caption={t('settings.assign.title')}
-      rows={rows}
-      rowKey={(r) => r.id}
-      columns={[
-        { key: 'role', label: t('settings.assign.role'), cell: roleCell },
-        { key: 'limitations', label: t('settings.assign.limits'), cell: limitCell },
-        { key: 'createdAt', label: t('settings.created'), cell: createdCell },
-        { key: 'actions', label: t('common.actions'), align: 'end', cell: actionCell },
-      ]}>
-      {#snippet empty()}<p class="h-muted">{t('settings.assign.empty')}</p>{/snippet}
-    </Table>
+    <div class="h-assign" class:h-assign--card={!bare}>
+      <Table
+        caption={t('settings.assign.title')}
+        loading={!rows}
+        rows={rows ?? []}
+        rowKey={(r) => r.id}
+        columns={[
+          { key: 'role', label: t('settings.assign.role'), cell: roleCell },
+          { key: 'limitations', label: t('settings.assign.limits'), cell: limitCell },
+          { key: 'actions', label: t('common.actions'), align: 'end', cell: actionCell },
+        ]}>
+        {#snippet empty()}<p class="h-muted">{t('settings.assign.empty')}</p>{/snippet}
+      </Table>
+    </div>
   {/if}
-</section>
+{/snippet}
+
+{#if bare}
+  <div class="h-stack">
+    <div class="h-row">
+      <h2 id="as-h" class="h-assign__title">{t('settings.assign.title')}</h2>
+      <span class="h-spacer"></span>
+      <Button icon="plus" onclick={openAdd}>{t('settings.assign.add')}</Button>
+    </div>
+    {@render content()}
+  </div>
+{:else}
+  <Card title={t('settings.assign.title')} padding="none">
+    {#snippet action()}<Button size="sm" icon="plus" onclick={openAdd}>{t('settings.assign.add')}</Button>{/snippet}
+    {@render content()}
+  </Card>
+{/if}
 
 {#snippet roleCell(r: Assignment)}<a use:link href={href(`/settings/roles/${r.roleId}`)}>{r.role ?? r.roleId}</a>{/snippet}
-{#snippet limitCell(r: Assignment)}{limitText(r.limitations) || t('settings.assign.unlimited')}{/snippet}
-{#snippet createdCell(r: Assignment)}{formatDateTime(r.createdAt)}{/snippet}
+{#snippet limitCell(r: Assignment)}
+  {@const l = limitList(r.limitations)}
+  {#if l.length === 0}<span class="h-muted">{t('settings.assign.unlimited')}</span>{:else}<span class="h-limits">{#each l as x (x)}<Badge>{x}</Badge>{/each}</span>{/if}
+{/snippet}
 {#snippet actionCell(r: Assignment)}
-  <Button
+  <IconButton
+    icon="trash"
     size="sm"
-    variant="danger"
+    label={t('settings.assign.removeRole', { role: r.role ?? r.roleId })}
     onclick={() => {
       removing = r;
       confirmOpen = true;
-    }}>{t('settings.assign.remove')}</Button>
+    }} />
 {/snippet}
 
 <Dialog bind:open={adding} title={t('settings.assign.add')} size="md">
@@ -181,3 +196,19 @@
   message={t('settings.assign.removeConfirm', { role: removing?.role ?? '' })}
   confirm={t('settings.assign.remove')}
   onconfirm={remove} />
+
+<style>
+  .h-assign--card :global(.h-table) {
+    border: 0;
+    border-top: 1px solid var(--h-border);
+    border-radius: 0;
+  }
+  .h-assign__title {
+    font-size: var(--h-text-lg);
+  }
+  .h-limits {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--h-space-1);
+  }
+</style>

@@ -10,6 +10,7 @@
   width={size}
   height={size}
   viewBox="0 0 24 24"
+  stroke-width={size < 18 ? 1.75 : 1.5}
   role={label ? 'img' : undefined}
   aria-label={label}
   aria-hidden={label ? undefined : 'true'}

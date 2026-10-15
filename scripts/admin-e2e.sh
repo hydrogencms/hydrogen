@@ -39,7 +39,7 @@ trap cleanup EXIT
 
 rm -rf "$work" && mkdir -p "$work"
 echo "== build"
-(cd "$root/admin/ui" && npm ci --no-audit --no-fund >/dev/null && npm run build >/dev/null)
+"$root/scripts/npm-ci.sh" "$root/admin/ui" >/dev/null && (cd "$root/admin/ui" && npm run build >/dev/null)
 (cd "$root/examples/multisite" && go build -o "$work/multisite" .)
 
 # The multisite schema plus the field kinds the editor scenario needs (enum, reference that blocks deletes,
@@ -90,7 +90,7 @@ kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; pid=
 [ "$status" -eq 0 ] || exit "$status"
 
 echo "== build examples/content"
-(cd "$root/examples/content/admin" && test -d node_modules || { (cd "$root/packages" && npm install --no-audit --no-fund >/dev/null && npm run build -w admin-sdk >/dev/null) && npm ci --no-audit --no-fund >/dev/null; })
+(cd "$root/examples/content/admin" && test -d node_modules || { (cd "$root/packages" && npm install --no-audit --no-fund >/dev/null && npm run build -w admin-sdk >/dev/null) && "$root/scripts/npm-ci.sh" . >/dev/null; })
 (cd "$root/examples/content" && go build -o "$work/content" .)
 cport=${ADMIN_E2E_CONTENT_PORT:-18435}
 cwork="$work/content-run"

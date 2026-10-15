@@ -7,7 +7,7 @@ OpenAPI document (`src/lib/api/schema.d.ts`, generated). Nothing in the admin us
 
 Commands (in `admin/ui`, or `make admin` from the repo root): `npm run dev` (Vite, proxies `/api` to
 `ADMIN_API_URL`, default `http://127.0.0.1:8080`), `npm run check` (svelte-check), `npm test` (vitest + jsdom),
-`npm run build` (into `../dist`), `npm run size` (budgets: initial JS 120 KB gzip, CSS 30 KB gzip),
+`npm run build` (into `../dist`), `npm run size` (budgets: initial JS 120 KB gzip, CSS 30 KB gzip; the design aims at 45 KB and 16 KB),
 `npm run types -- <openapi.json>` (regenerate `schema.d.ts`), `npm run e2e` (Playwright, `BASE_URL`,
 `ADMIN_LOGIN`, `ADMIN_PASSWORD`). The Go server embeds `admin/dist`: rebuild the Go binary after `npm run build`.
 
@@ -23,7 +23,7 @@ Commands (in `admin/ui`, or `make admin` from the repo root): `npm run dev` (Vit
   directive (applied through the CSSOM, allowed). Static styling goes in CSS classes.
 - Every file that is a route is lazy-loaded; only what the shell, login and base components need is initial.
 - Strings go through `t('key')` (below). Never hard-code UI text in markup.
-- Dates: `formatDateTime(iso)` from `lib/format.ts`.
+- Dates: `formatDateTime(iso)` and `relativeTime(iso)` from `lib/format.ts` (relative in tables and feeds, exact in `title`; `<Time at>` does both).
 
 ## Router (`lib/router.svelte.ts`)
 
@@ -175,21 +175,81 @@ renders as the key. Add keys to your own file so parallel work does not collide:
 account); area catalogs register themselves when their route chunk loads (`import '../../lib/messages/settings'` at the top of an area's route components); shared strings stay in `core.ts` (`common.*`, `nav.*`, `table.*`). Keys are stable API for
 project overrides (`register({...})`).
 
-## Styling
+## Styling and the design system
 
-- `src/styles/tokens.css` (colours with `light-dark()`, spacing `--h-space-1..7`, type `--h-text-xs..xl`, radius,
-  shadow, `--h-focus`), `base.css`, `components.css` (all component rules, class names
-  `h-<component>__<part>--<modifier>`). Use tokens only; never hard-code colours or pixel spacing in a screen.
-- Dark mode follows `prefers-color-scheme`; `data-theme="light|dark"` on `<html>` overrides (principal menu).
-- Utility classes: `h-stack` (column gap), `h-row` (flex, centre, gap), `h-spacer`, `h-muted`, `h-sr` (visually
-  hidden), `h-page` (screen container: `h-page__head` for title + actions), `h-card` (`h-card__title`),
-  `h-grid`, `h-list`/`h-list__item`, `h-alert` (inline error).
-- Screen-specific CSS goes in a `<style>` block of the screen component using `h-<area>__<part>` classes and
-  tokens (Svelte scopes it). Keep the total CSS under 30 KB gzip (`npm run size`).
-- Icons: `<Icon name="trash" />` (24x24 stroke sprite; names in `lib/ui/icons.ts`: home file folder folder-open
-  layers page settings user users key shield search plus x check chevron-right/down/left/up more edit trash copy
-  external eye globe clock alert info menu logout sun moon grip arrow-up arrow-down filter link image list
-  calendar tag history star). An unknown name renders `file`. Add an icon by adding its path data to `icons.ts`.
+Look: calm, neutral and monochrome-first. Soft canvas, white cards with a hairline border (no shadow), a black
+(white in dark mode) pill for the one primary action, flat line icons. Colour means something (status, errors,
+focus) or is the project's accent. Light and dark must both look right: always use tokens, never literal colours.
+
+Files: `src/styles/tokens.css` (all variables), `base.css` (reset, type, `h-sr`, `h-muted`, `h-stack`, `h-row`,
+`h-spacer`, `h-num`), `components.css` (every base component, classes `h-<component>__<part>--<modifier>`),
+`layout.css` (page primitives, shell, command palette, login, dashboard). Total CSS stays under 16 KB gzip.
+
+### Tokens
+
+| Group | Tokens |
+| --- | --- |
+| Neutrals (`light-dark()`) | `--h-bg` (canvas), `--h-surface` (cards), `--h-surface-2` (subtle fill, hover rows), `--h-surface-3` (pressed, selected, segmented track), `--h-hover` (translucent hover for any background), `--h-border`, `--h-border-strong`, `--h-text`, `--h-text-muted` (4.5:1), `--h-text-faint` (hints only) |
+| Accent | `--h-accent` (the single theme override point: black light, white dark), `--h-accent-contrast`, derived `--h-accent-strong`, `--h-accent-soft`, `--h-selected` (follow an override) |
+| Status | `--h-success/-warning/-danger/-info` (text) and `-soft` (background); `--h-danger-solid` (danger button) |
+| Type | `--h-font` (Inter if installed, else the system UI font; nothing is shipped), `--h-mono`, `--h-text-xs..4xl` = 12 13 14(body) 16 20 24 30 40 px (`--h-text-dialog` 18), `--h-leading`. Tables, counts and times use tabular figures (`h-num`) |
+| Spacing | `--h-space-1..8` = 4 8 12 16 24 32 48 64 px, plus `--h-space-20`, `--h-space-40`; `--h-page-pad` 32 / 24 (< 1280) / 16 (< 768) |
+| Shape | `--h-radius-sm` 6, `--h-radius` 10 (controls, nav items), `--h-radius-md` 12 (menus), `--h-radius-lg` 16 (cards), `--h-radius-xl` 20 (dialogs), `--h-radius-pill` |
+| Elevation | `--h-shadow-sm`/`--h-shadow` (raised: active nav item, menus, scrolled header), `--h-shadow-dialog`, `--h-focus` (ring, plus accent border), `--h-overlay` |
+| Controls | `--h-control-height-sm/-/-lg` = 32 / 36 / 44 px |
+| Layout | `--h-nav-width` 256, `--h-rail-width` 64, `--h-topbar-height` 64 |
+| Motion | `--h-dur-fast` 120 ms, `--h-dur` 180 ms, `--h-ease`; both are 0 under `prefers-reduced-motion` |
+| Avatars | `--h-tint-1..6` |
+
+Dark mode follows `prefers-color-scheme`; `data-theme="light|dark"` on `<html>` overrides it (sidebar theme toggle).
+Project themes (H5c) set `--h-accent` (and may override any token); everything derived follows. Old names that
+extensions use are kept: `--h-bg`, `--h-surface-hover`, `--h-radius`, `--h-accent-soft`, `--h-accent-strong`.
+
+### Page anatomy
+
+Every screen is `<div class="h-page">` with, in order: a page header, an optional toolbar row, then content.
+The top bar (shell) shows the breadcrumbs; the page header shows title, badge, meta and actions.
+
+```svelte
+<div class="h-page">
+  <PageHeader title={type.label} breadcrumbs={[{ label: 'Content' }, { label: type.label }]}
+    meta="Description" overflow={[{ label: 'Delete', icon: 'trash', danger: true, onselect }]}>
+    {#snippet badge()}<Badge>{total}</Badge>{/snippet}
+    {#snippet actions()}<Button>Columns</Button>{/snippet}
+    {#snippet primary()}<Button variant="primary" icon="plus">New article</Button>{/snippet}
+  </PageHeader>
+  <Tabs variant="underline" tabs={views} value={view} label="Views" />   <!-- toolbar: tabs, search, chips -->
+  <Table ... />                                                         <!-- a card spanning the full width -->
+</div>
+```
+
+- `.h-page`: flex column, gap 24, padding from `--h-page-pad`, **no max-width**. `.h-page__head` is the old header
+  row (title + actions); new screens use `PageHeader`.
+- `.h-page-grid`: 12 columns, gap 20; children take `h-span-3|4|6|8` (and `h-md-span-N` from 768 px,
+  `h-lg-span-N` from 1280 px); children are full width below their first breakpoint. Cards in the grid:
+  `<Card class="h-lg-span-8">`.
+- `.h-split` + `--h-split-left` (px) + `.h-split__sep`: resizable two-pane layout (tree and editor); stacks below 1024.
+- `.h-form`: a column of Fields with 20 px between them. `.h-pill` / `.h-pill--primary`: pill look for menu triggers.
+- Breadcrumbs: `<PageHeader breadcrumbs>` or `<Breadcrumbs items>` set the trail (`lib/crumbs.svelte.ts`) that the
+  top bar renders; without either, the top bar shows the route's title. `<Breadcrumbs inline>` renders in place.
+
+### Do / don't
+
+- One primary action per view: the black pill, top right. Secondary actions are light pills. Destructive and
+  rare actions go in the overflow menu (⋯) and confirm in a dialog (the red button only appears there).
+- No underlined links (links are text colour, medium weight, underline on hover only). No blue links.
+- No `max-width` on working screens (lists, trees, editors). Cap only reading text and form inputs.
+- Cards: border, no shadow, radius 16. Shadows only for raised things (menus, active nav, dialogs, bulk bar).
+- Show times relative with the exact time in `title`: `<Time at={iso} />` or `relativeTime(iso)` + `formatDateTime`.
+  Never show raw ids or audit codes where a person reads.
+- Icons: only the flat line set in `lib/ui/icons.ts` (24 grid, 1.5 stroke, round caps), drawn at 14/16 (dense),
+  18 (nav), 28-32 (empty states). No filled, duotone or emoji icons; add a new icon to `icons.ts` in the same style.
+- Loading is a `Skeleton` in the shape of the content, never a blank area or a lone spinner; empty is an
+  `EmptyState` that says what to do next with a button; completed actions toast.
+- Status is never colour only: `Badge` carries text; language dots carry the code next to them.
+- Keep focus rings visible; every control has a name (`Field` label, `aria-label`, or `IconButton label`).
+- Utility classes: `h-stack`, `h-row`, `h-spacer`, `h-muted`, `h-sr`, `h-num`, `h-alert`, `h-list`, `h-grid`.
+  Screen-specific CSS goes in the screen's `<style>` block with tokens (Svelte scopes it).
 
 ## Accessibility rules
 
@@ -210,27 +270,37 @@ Import by path: `import Button from '../../lib/ui/Button.svelte'`. All pass extr
 
 | Component | Props |
 | --- | --- |
-| `Button` | `variant: 'primary'\|'secondary'(default)\|'ghost'\|'danger'`, `size: 'sm'\|'md'`, `icon?`, `loading?` (spinner, disabled), `href?` (renders `<a>`; add `use:link` yourself for in-app navigation), `type` (default `button`), `disabled`, children |
-| `IconButton` | `icon`, `label` (required: aria-label and tooltip), `variant: 'ghost'\|'secondary'\|'danger'`, `size` |
-| `Input` | `value` (bindable), `type`, `invalid?`, `el?` (bindable element), HTML input attributes |
+| `Button` | `variant: 'primary'\|'secondary'(default)\|'ghost'\|'danger'`, `size: 'sm'(32)\|'md'(36)\|'lg'(44)`, `icon?`, `loading?` (spinner replaces the icon, disabled), `block?` (full width), `href?` (renders `<a>`; add `use:link` yourself for in-app navigation), `type` (default `button`), `disabled` (45% opacity), children |
+| `IconButton` | `icon`, `label` (required: aria-label and tooltip via `title`), `variant: 'ghost'\|'secondary'\|'danger'`, `size: 'sm'\|'md'\|'lg'`; a 36 px circle |
+| `Input` | `value` (bindable), `type`, `invalid?`, `icon?` (leading icon, `search` for search boxes), `large?` (44 px), `el?` (bindable element), HTML input attributes |
 | `Textarea` | `value` (bindable), `rows` (4), `invalid?` |
-| `Select` | `value` (bindable), `options: {value, label, disabled?}[]`, `placeholder?` (adds an empty first option), `invalid?` |
+| `Select` | `value` (bindable), `options: {value, label, disabled?}[]`, `placeholder?` (adds an empty first option), `invalid?`; `class` goes on the wrapper (width), other attributes on the `<select>` |
 | `Checkbox` | `checked` (bindable), `indeterminate?`, `label?` or children |
 | `Switch` | `checked` (bindable), `label?` or children (role=switch) |
-| `Field` | `label`, `description?`, `error?`, `required?`, `id?`, children snippet receiving `{id, 'aria-describedby', 'aria-invalid', invalid}`: spread it on the control: `{#snippet children(c)}<Input {...c} bind:value />{/snippet}` |
+| `Field` | `label`, `description?` (shown under the label), `error?` (icon + message, role=alert), `required?` (muted `*`), `id?`, children snippet receiving `{id, 'aria-describedby', 'aria-invalid', invalid}`: spread it on the control: `{#snippet children(c)}<Input {...c} bind:value />{/snippet}` |
 | `DatePicker` | `value` (bindable ISO text), `type: 'date'\|'datetime-local'\|'time'`, `min`, `max`, `invalid?` (native input) |
-| `Dialog` | `open` (bindable), `title`, `onclose?`, `size: 'sm'\|'md'\|'lg'`, `dismissible` (true), children, `footer?` snippet. Moves focus in, traps Tab, Esc closes, restores focus; rendered in `<body>` |
-| `Menu` | `items: {label, icon?, href?, onselect?, danger?, disabled?, separator?, checked?}[]`, `label` (a11y name), `align: 'end'\|'start'`, `trigger?` snippet (default "more" icon). Arrow keys, Home/End, Esc; `href` is an in-app path |
-| `Tabs` | `tabs: {id, label, count?, disabled?}[]`, `value` (bindable id), `label`, children snippet `(activeId)` rendering the panel. Arrow keys, Home/End |
-| `Table` | `columns: {key, label, sortable?, align?, width?, cell?: Snippet<[row]>}[]`, `rows`, `rowKey(row)`, `caption` (a11y), `sort?: {key, dir}`, `onsort(key)`, `selectable`, `selected` (bindable `Set<string>`), `sticky` (true), `loading` (skeleton rows), `empty?` snippet, `onrowclick?(row)` (mouse only: also put a link in a cell). Types `Column`, `Sort` from `lib/ui/table.ts` |
-| `Pagination` | `page` (1-based), `pageSize`, `total?`, `hasMore?` (when total unknown), `onpage(page)` |
-| `Badge` | `tone: 'neutral'\|'success'\|'warning'\|'danger'\|'info'`, children |
-| `Skeleton` | `lines`, `height`, `width` |
-| `EmptyState` | `title`, `description?`, `icon?`, `actions?` snippet |
-| `Breadcrumbs` | `items: {label, href?}[]` (`href` is an in-app path), `label?` |
-| `Tree` | see below |
 | `Combobox` | see below |
-| `Icon` | `name`, `size` (18), `label?` (makes it an image with a name) |
+| `Badge` | `tone: 'neutral'\|'success'\|'warning'\|'danger'\|'info'`, `dot?` (6 px leading dot), children |
+| `Chip` | `label`, `variant: 'neutral'(default)\|'applied'(accent-filled)\|'ghost'(dashed "+ Add filter")`, `icon?`, `menu?` (chevron), `onremove?` (adds the × button), `removeLabel?`; other attributes (onclick) go on the main button |
+| `Avatar` | `name` (initials; the tint is hashed from it), `size: 24\|28\|32\|40` |
+| `Segmented` | `options: {value, label, icon?, dot?: 'filled'\|'half'\|'hollow', disabled?, iconOnly?}[]`, `value` (bindable), `label` (group name), `size: 'sm'\|'md'`, `onchange?`. Buttons with `aria-pressed`; labels never wrap |
+| `Tabs` | `tabs: {id, label, count?, icon?, disabled?}[]`, `value` (bindable id), `label`, `variant: 'underline'(page-level view tabs)\|'segmented'(inside panels)`, `children?` snippet `(activeId)` rendering the panel (omit for tabs that only drive the page), `trailing?` snippet (a "+ Save view" ghost tab), `onchange?`. Arrow keys, Home/End; the row scrolls instead of wrapping |
+| `Table` | `columns: {key, label, sortable?, align?, num?, width?, mobile?: 'hide', cell?: Snippet<[row]>}[]`, `rows`, `rowKey(row)`, `caption` (a11y), `sort?: {key, dir}`, `onsort(key)`, `selectable`, `selected` (bindable `Set<string>`), `sticky` (true), `maxHeight?` (scroll card; makes the sticky header work), `loading` (skeleton rows), `empty?` snippet, `footer?` snippet (inside the card: range, page size, `Pagination`), `onrowclick?(row)` (mouse only: also put a link in a cell). A card with 40 px header and 52 px rows; below 768 px rows become stacked cards (first column = title, others show their label). Types `Column`, `Sort` from `lib/ui/table.ts` |
+| `NameCell` | the primary cell: `name`, `sub?` (muted second line), `icon?` (32 px tile) or `avatar?` (a name), `href?` (a real link) |
+| `Time` | `at` (ISO or Date): `<time>` with the relative text and the exact time in `title` |
+| `Pagination` | `page` (1-based), `pageSize`, `total?`, `hasMore?` (when total unknown), `onpage(page)` |
+| `BulkBar` | `count`, `onclear`, children (the actions, usually ghost `Button size="sm"`): the floating black pill "3 selected · Publish · Delete · ×"; renders nothing at 0 |
+| `Card` | `title?`, `padding: 'md'(24)\|'sm'(20)\|'none'`, `action?` snippet (header right), `level?` (heading 2), children; other attributes (`data-*`, `class`, grid spans) go on the `<section>` |
+| `PageHeader` | `title`, `breadcrumbs?`, `badge?` snippet, `meta?` (string or snippet), `actions?` snippet (secondary pills), `overflow?: MenuItem[]` (the ⋯ menu), `primary?` snippet (the one black pill) |
+| `Menu` | `items: {label, icon?, href?, onselect?, danger?, disabled?, separator?, checked?, hint?, heading?}[]`, `label` (a11y name), `align: 'end'\|'start'`, `side: 'bottom'\|'top'`, `trigger?` snippet (default a ⋯ icon button), `triggerClass?`. Arrow keys, Home/End, Esc; `href` is an in-app path; `heading: true` entries are group labels |
+| `Popover` | `label`, `trigger` snippet, children snippet `(close)`, `align`, `triggerClass?`, `open` (bindable). A free-form panel (filter editors); Esc and click-away close, focus returns |
+| `Dialog` | `open` (bindable), `title`, `onclose?`, `size: 'sm'(400)\|'md'(480)\|'lg'(640)`, `dismissible` (true), `bare?` (no header/padding; title stays the a11y name), children, `footer?` snippet (right-aligned: secondary then primary/danger). Moves focus in, traps Tab, Esc closes, restores focus; rendered in `<body>` |
+| `EmptyState` | `title`, `description?`, `icon?` (32 px line icon in a 56 px circle), `actions?` snippet |
+| `Skeleton` | `lines`, `height`, `width`, `shape: 'line'\|'circle'\|'block'` (shimmer; off under reduced motion) |
+| `Breadcrumbs` | `items: {label, href?}[]` (`href` is an in-app path), `label?`, `inline?` (render here instead of declaring the top bar trail) |
+| `Logo` | `size` (28): the H mark; it follows `--h-accent`. A theme `logo` replaces it |
+| `Tree` | see below |
+| `Icon` | `name`, `size` (18; use 14/16 dense, 28 empty states), `label?` (makes it an image with a name) |
 | `ToastHost` | mounted once by `App`; use the `toast` store |
 
 Toasts: `import { toast } from '../lib/ui/toast.svelte'`: `toast.success(text)`, `toast.error(text)`,
@@ -275,13 +345,39 @@ responses are ignored. Keys: Down/Up, Enter selects, Esc closes. `role=combobox`
 
 ## Shell contract
 
-`Shell.svelte` renders navigation from `types` (Content grouped by `admin.group`; label and `admin.icon` from the
-type; singletons under "Settings content"), `/pages/sites` (Pages; one entry per site when `config().pages` and
-`pages.read` is held; narrowed to the active channel's site), and the Settings entries gated by `can()`
-(`user.manage` -> Users, Groups; `role.manage` -> Roles; `token.manage` -> API tokens; `audit.read` -> Audit).
-The channel switcher is a `<select>` over the channels the principal may read; routes react to `channels.current`.
-The global search box navigates to `/search?q=`; the results route is a placeholder to be filled in.
-Routes render inside `<main class="h-main">`; give them a root `<div class="h-page">`.
+`Shell.svelte` (glue), `Sidebar.svelte`, `Topbar.svelte`, `CommandPalette.svelte` (lazy chunk, first ⌘K).
+
+- **Sidebar**: 256 px on the canvas, no border. Logo + theme name (`app.name`) + collapse button. The collapse
+  state (64 px rail with tooltips) is remembered per user in `localStorage` (`h.nav.<principal>`); without a choice
+  it starts as a rail below 1024 px. Below 768 px it is a drawer (menu button, scrim, Esc). Rail items keep their
+  accessible names. Navigation comes from `types` (Content grouped by `admin.group`; label and `admin.icon` from
+  the type; singletons in a collapsible "Settings content" group), `/pages/sites` (Pages; one entry per site,
+  displayed capitalised, when `config().pages` and `pages.read` is held; narrowed to the active channel's site),
+  extension views under their menu heading, and Settings (Users, Groups, Roles, API tokens, Audit gated by
+  `can()`), collapsible and closed until the current page is inside it (the rail shows everything). Active item =
+  raised white pill. **Saved views** nest under their collection, read from `localStorage` (`h.views.<principal>.<type>`,
+  written by the list's views dialog, which dispatches `window` event `h:views` after saving). Bottom: the theme
+  toggle (system/light/dark; one cycle button in the rail) and the account button (avatar + name, accessible name
+  "Account menu: <name>") with Account and Sign out.
+- **Top bar** (64 px, sticky, transparent until scrolled, then surface + hairline): breadcrumbs (from the
+  `crumbs` store), search pill (opens the palette; ⌘K / Ctrl+K anywhere), channel pill (globe, `channels.select`),
+  black "Create" pill (menu of creatable types: `content.create`, channel-visible), and on narrow screens the
+  menu button and a profile avatar. The palette searches items by name with one list request per readable
+  collection (`q`, 4 each), and offers types, pages sites and actions ("New <type>", "Go to Settings"); Enter on
+  the first row runs `/search?q=`. Recent items are the ones opened from the palette.
+- **Main**: `<main class="h-main">` has no padding and no width cap; the screen's root `.h-page` brings the padding.
+- Channel filtering: lists and navigation apply `channels.collections` / `channels.languages` as before.
+
+### Dashboard and login
+
+Login: split layout from 1024 px (form column max 400 px; right: a CSS-only pattern panel with the product
+name); below that the form only. Labels "Login" and "Password", button "Sign in", slots `login.before/after` stay
+in the form column. Dashboard: greeting by time of day, stats (drafts awaiting publish = one `status=draft`
+count request per readable collection; published this week from `/audit?action=item.publish&since=` (hidden
+without `audit.read`); collections; locales), recent edits as sentences (`/audit?action=item.*`; users from
+`/users`, items from `GET /items/{id}?draft=true`, each degrading to "Someone" / "an item"; without `audit.read`
+the principal's newest drafts), quick create, then extension dashboard widgets as cards
+(`section[data-dashboard-widget]`).
 
 ## Runtime config
 

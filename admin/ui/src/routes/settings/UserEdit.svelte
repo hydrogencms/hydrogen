@@ -3,18 +3,20 @@
   import { untrack } from 'svelte';
   import { api, ApiError, type Schemas } from '../../lib/api/client';
   import { Form } from '../../lib/form.svelte';
-  import { formatDateTime } from '../../lib/format';
   import { t } from '../../lib/i18n';
-  import { router } from '../../lib/router.svelte';
   import Badge from '../../lib/ui/Badge.svelte';
-  import Breadcrumbs from '../../lib/ui/Breadcrumbs.svelte';
+  import Card from '../../lib/ui/Card.svelte';
+  import IconButton from '../../lib/ui/IconButton.svelte';
+  import PageHeader from '../../lib/ui/PageHeader.svelte';
+  import Time from '../../lib/ui/Time.svelte';
+  import DetailLayout from './DetailLayout.svelte';
+  import { href, link, router } from '../../lib/router.svelte';
   import Button from '../../lib/ui/Button.svelte';
   import Dialog from '../../lib/ui/Dialog.svelte';
   import Field from '../../lib/ui/Field.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import Select from '../../lib/ui/Select.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
-  import Tabs from '../../lib/ui/Tabs.svelte';
   import { toast } from '../../lib/ui/toast.svelte';
   import Assignments from './Assignments.svelte';
   import Confirm from './Confirm.svelte';
@@ -27,7 +29,6 @@
 
   let user = $state<Schemas['User'] | null>(null);
   let failed = $state(false);
-  let tab = $state(router.query.get('tab') ?? 'details');
   const form = new Form({ name: '', email: '' });
   form.guard();
 
@@ -121,7 +122,7 @@
     }
   }
   $effect(() => {
-    if (tab === 'groups' && groups === null) void loadGroups();
+    if (id) untrack(() => void loadGroups());
   });
   const joinable = $derived(allGroups.filter((g) => !groups?.some((x) => x.id === g.id)));
 
@@ -144,98 +145,107 @@
       reportError(e);
     }
   }
+
+  const overflow = $derived(
+    user
+      ? [
+          { label: t('settings.users.resetPassword'), icon: 'key', onselect: openReset },
+          user.disabled
+            ? { label: t('settings.users.enable'), icon: 'check-circle', onselect: () => void setDisabled(false).catch(() => {}) }
+            : { label: t('settings.users.disable'), icon: 'lock', onselect: () => (confirmDisable = true) },
+          { label: t('common.delete'), icon: 'trash', danger: true, separator: true, onselect: () => (confirmDelete = true) },
+        ]
+      : [],
+  );
 </script>
 
 <div class="h-page">
-  <Breadcrumbs items={[{ label: t('nav.users'), href: '/settings/users' }, { label: user?.login ?? '…' }]} />
+  <PageHeader
+    title={user ? user.name || user.login : t('nav.users')}
+    breadcrumbs={[{ label: t('nav.settings') }, { label: t('nav.users'), href: '/settings/users' }, { label: user?.login ?? '…' }]}
+    {overflow}>
+    {#snippet badge()}{#if user?.disabled}<Badge tone="warning" dot>{t('settings.users.disabled')}</Badge>{/if}{/snippet}
+    {#snippet meta()}
+      {#if user}
+        {user.login} · {t('settings.users.lastLogin')}:
+        {#if user.lastLoginAt}<Time at={user.lastLoginAt} />{:else}{t('settings.users.never')}{/if}
+      {/if}
+    {/snippet}
+    {#snippet primary()}
+      {#if user}<Button type="submit" form="user-form" variant="primary" loading={form.pending} disabled={!form.dirty}>{t('common.save')}</Button>{/if}
+    {/snippet}
+  </PageHeader>
   {#if failed}
     <p class="h-alert" role="alert">{t('app.error')} <Button size="sm" onclick={load}>{t('app.retry')}</Button></p>
   {:else if !user}
-    <Skeleton lines={5} height="1.4rem" />
+    <DetailLayout>
+      {#snippet main()}<Card><Skeleton lines={5} height="1.4rem" /></Card>{/snippet}
+      {#snippet side()}<Card><Skeleton lines={3} height="1.4rem" /></Card><Card><Skeleton lines={3} height="1.4rem" /></Card>{/snippet}
+    </DetailLayout>
   {:else}
-    <div class="h-page__head">
-      <h1>{user.login}</h1>
-      {#if user.disabled}<Badge tone="warning">{t('settings.users.disabled')}</Badge>{/if}
-    </div>
-    <Tabs
-      label={user.login}
-      bind:value={tab}
-      tabs={[
-        { id: 'details', label: t('settings.tab.details') },
-        { id: 'groups', label: t('nav.groups') },
-        { id: 'roles', label: t('nav.roles') },
-      ]}>
-      {#snippet children(active)}
-        {#if active === 'details'}
-          <div class="h-stack h-narrow">
-            <form
-              class="h-stack"
-              onsubmit={(e) => {
-                e.preventDefault();
-                void save();
-              }}>
-              <Field label={t('settings.users.login')}>
-                {#snippet children(c)}<Input {...c} value={user!.login} readonly />{/snippet}
-              </Field>
-              <Field label={t('settings.users.name')} error={form.error('name')}>
-                {#snippet children(c)}<Input {...c} bind:value={form.values.name} oninput={() => form.clearError('name')} />{/snippet}
-              </Field>
-              <Field label={t('settings.users.email')} error={form.error('email')}>
-                {#snippet children(c)}<Input {...c} type="email" bind:value={form.values.email} oninput={() => form.clearError('email')} />{/snippet}
-              </Field>
-              {#if form.formError}<p class="h-alert" role="alert">{form.formError}</p>{/if}
-              <div class="h-row">
-                <Button type="submit" variant="primary" loading={form.pending} disabled={!form.dirty}>{t('common.save')}</Button>
-              </div>
-            </form>
-            <p class="h-muted">
-              {t('settings.users.lastLogin')}: {user!.lastLoginAt ? formatDateTime(user!.lastLoginAt) : t('settings.users.never')} ·
-              {t('settings.created')}: {formatDateTime(user!.createdAt)}
-              {#if !user!.hasPassword} · {t('settings.users.noPassword')}{/if}
-            </p>
-            <section class="h-card h-stack" aria-labelledby="u-acc">
-              <h2 class="h-card__title" id="u-acc">{t('settings.users.access')}</h2>
-              <div class="h-row">
-                <Button onclick={openReset}>{t('settings.users.resetPassword')}</Button>
-                {#if user!.disabled}
-                  <Button onclick={() => setDisabled(false)}>{t('settings.users.enable')}</Button>
-                {:else}
-                  <Button onclick={() => (confirmDisable = true)}>{t('settings.users.disable')}</Button>
-                {/if}
-                <span class="h-spacer"></span>
-                <Button variant="danger" icon="trash" onclick={() => (confirmDelete = true)}>{t('common.delete')}</Button>
-              </div>
-            </section>
-          </div>
-        {:else if active === 'groups'}
-          <div class="h-stack h-narrow">
-            {#if groups === null}
-              <Skeleton lines={3} height="1.4rem" />
-            {:else}
-              {#if groups.length === 0}<p class="h-muted">{t('settings.users.noGroups')}</p>{/if}
-              <ul class="h-list h-plain">
-                {#each groups as g (g.id)}
-                  <li class="h-list__item">
-                    <span>{g.name}</span>
-                    <Button size="sm" onclick={() => leave(g)}>{t('settings.groups.remove')}</Button>
-                  </li>
-                {/each}
-              </ul>
-              <div class="h-row">
-                <Field label={t('settings.users.addToGroup')}>
-                  {#snippet children(c)}
-                    <Select {...c} bind:value={addGroup} placeholder={t('settings.users.pickGroup')} options={joinable.map((g) => ({ value: g.id, label: g.name }))} />
-                  {/snippet}
-                </Field>
-                <Button variant="primary" disabled={!addGroup} onclick={join}>{t('settings.groups.add')}</Button>
-              </div>
-            {/if}
-          </div>
-        {:else}
-          <Assignments kind="user" {id} />
-        {/if}
+    {@const u = user}
+    <DetailLayout>
+      {#snippet main()}
+        <Card title={t('settings.users.profile')}>
+          <form
+            id="user-form"
+            class="h-stack h-form-narrow"
+            onsubmit={(e) => {
+              e.preventDefault();
+              void save();
+            }}>
+            <Field label={t('settings.users.login')}>
+              {#snippet children(c)}<Input {...c} value={u.login} readonly />{/snippet}
+            </Field>
+            <Field label={t('settings.users.name')} error={form.error('name')}>
+              {#snippet children(c)}<Input {...c} bind:value={form.values.name} oninput={() => form.clearError('name')} />{/snippet}
+            </Field>
+            <Field label={t('settings.users.email')} error={form.error('email')}>
+              {#snippet children(c)}<Input {...c} type="email" bind:value={form.values.email} oninput={() => form.clearError('email')} />{/snippet}
+            </Field>
+            {#if form.formError}<p class="h-alert" role="alert">{form.formError}</p>{/if}
+          </form>
+        </Card>
+        <Card title={t('settings.users.access')}>
+          <dl class="h-facts">
+            <dt>{t('settings.users.status')}</dt>
+            <dd>{#if u.disabled}<Badge tone="warning" dot>{t('settings.users.disabled')}</Badge>{:else}<Badge tone="success" dot>{t('settings.users.active')}</Badge>{/if}</dd>
+            <dt>{t('settings.users.lastLogin')}</dt>
+            <dd>{#if u.lastLoginAt}<Time at={u.lastLoginAt} />{:else}{t('settings.users.never')}{/if}</dd>
+            <dt>{t('settings.created')}</dt>
+            <dd><Time at={u.createdAt} /></dd>
+            <dt>{t('settings.users.password')}</dt>
+            <dd>{u.hasPassword ? t('settings.users.passwordSet') : t('settings.users.noPassword')}</dd>
+          </dl>
+        </Card>
       {/snippet}
-    </Tabs>
+      {#snippet side()}
+        <Card title={t('nav.groups')} padding="sm">
+          {#if groups === null}
+            <Skeleton lines={3} height="1.4rem" />
+          {:else}
+            {#if groups.length === 0}<p class="h-muted">{t('settings.users.noGroups')}</p>{/if}
+            <ul class="h-list h-plain">
+              {#each groups as g (g.id)}
+                <li class="h-list__item">
+                  <a use:link href={href(`/settings/groups/${g.id}`)}>{g.name}</a>
+                  <IconButton icon="x" size="sm" label={t('settings.users.leaveGroup', { name: g.name })} onclick={() => leave(g)} />
+                </li>
+              {/each}
+            </ul>
+            <div class="h-row h-addrow">
+              <Field label={t('settings.users.addToGroup')}>
+                {#snippet children(c)}
+                  <Select {...c} bind:value={addGroup} placeholder={t('settings.users.pickGroup')} options={joinable.map((g) => ({ value: g.id, label: g.name }))} />
+                {/snippet}
+              </Field>
+              <Button disabled={!addGroup} onclick={join}>{t('settings.groups.add')}</Button>
+            </div>
+          {/if}
+        </Card>
+        <Assignments kind="user" {id} />
+      {/snippet}
+    </DetailLayout>
   {/if}
 </div>
 
@@ -280,7 +290,27 @@
 </Dialog>
 
 <style>
-  .h-narrow {
+  .h-form-narrow {
     max-width: 40rem;
+  }
+  .h-facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--h-space-3) var(--h-space-5);
+    margin: 0;
+    font-size: var(--h-text-md);
+  }
+  .h-facts dt {
+    color: var(--h-text-muted);
+  }
+  .h-facts dd {
+    margin: 0;
+  }
+  .h-addrow {
+    align-items: end;
+    margin-top: var(--h-space-3);
+  }
+  .h-addrow :global(.h-field) {
+    flex: 1;
   }
 </style>

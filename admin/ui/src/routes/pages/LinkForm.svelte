@@ -2,6 +2,7 @@
   import { api } from '../../lib/api/client';
   import { Form } from '../../lib/form.svelte';
   import { t } from '../../lib/i18n';
+  import Badge from '../../lib/ui/Badge.svelte';
   import Button from '../../lib/ui/Button.svelte';
   import Field from '../../lib/ui/Field.svelte';
   import Input from '../../lib/ui/Input.svelte';
@@ -51,8 +52,11 @@
   }
 </script>
 
-<div class="h-stack">
-  <h2 class="h-card__title">{node.name}</h2>
+<div class="h-stack h-pages__node">
+  <div class="h-row">
+    <h2 class="h-pages__nodetitle">{node.name}</h2>
+    <Badge>{t('pages.kind.link')}</Badge>
+  </div>
   {#if error}
     <p class="h-alert" role="alert">{error}</p>
   {:else if !spec}
@@ -76,3 +80,14 @@
     </form>
   {/if}
 </div>
+
+<style>
+  .h-pages__node {
+    padding: var(--h-space-4);
+  }
+  .h-pages__nodetitle {
+    font-size: var(--h-text-2xl);
+    font-weight: 650;
+    letter-spacing: -0.02em;
+  }
+</style>

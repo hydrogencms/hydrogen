@@ -20,6 +20,8 @@
     loading = false,
     empty,
     onrowclick,
+    footer,
+    maxHeight,
   }: {
     columns: Column<Row>[];
     rows: Row[];
@@ -35,6 +37,10 @@
     /** Shown instead of the body when there are no rows. */
     empty?: Snippet;
     onrowclick?: (row: Row) => void;
+    /** Inside the card, under the rows: "1–25 of 132", page size, pagination. */
+    footer?: Snippet;
+    /** Makes the card scroll (and the header stick) beyond this height, e.g. `70vh`. */
+    maxHeight?: string;
   } = $props();
 
   const all = $derived(rows.length > 0 && rows.every((r) => selected.has(rowKey(r))));
@@ -53,7 +59,8 @@
   const cell = (r: Row, c: Column<Row>) => String((r as Record<string, unknown>)[c.key] ?? '');
 </script>
 
-<div class="h-table" class:h-table--sticky={sticky}>
+<div class="h-table" class:h-table--sticky={sticky} class:h-table--scroll={!!maxHeight}>
+  <div class="h-table__scroll" style:max-height={maxHeight}>
   <table class="h-table__table">
     <caption class="h-sr">{caption}</caption>
     <thead>
@@ -66,14 +73,15 @@
         {#each columns as c (c.key)}
           <th
             scope="col"
-            class:h-table__end={c.align === 'end'}
+            class:h-table__end={c.align === 'end' || c.num}
+            class:h-table--hide-m={c.mobile === 'hide'}
             style:width={c.width}
             aria-sort={sort?.key === c.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : c.sortable ? 'none' : undefined}
           >
             {#if c.sortable}
               <button type="button" class="h-table__sort" aria-label={t('table.sortBy', { column: c.label })} onclick={() => onsort?.(c.key)}>
                 {c.label}
-                {#if sort?.key === c.key}<Icon name={sort.dir === 'asc' ? 'arrow-up' : 'arrow-down'} size={14} />{/if}
+                <Icon name={sort?.key === c.key && sort.dir === 'desc' ? 'arrow-down' : 'arrow-up'} size={14} />
               </button>
             {:else}{c.label}{/if}
           </th>
@@ -97,8 +105,8 @@
                 <Checkbox checked={selected.has(k)} aria-label={t('table.selectRow')} onchange={(e) => toggle(k, e.currentTarget.checked)} />
               </td>
             {/if}
-            {#each columns as c (c.key)}
-              <td class:h-table__end={c.align === 'end'}>{#if c.cell}{@render c.cell(r, c)}{:else}{cell(r, c)}{/if}</td>
+            {#each columns as c, ci (c.key)}
+              <td data-primary={ci === 0 || undefined} class:h-table__end={c.align === 'end' || c.num} class:h-num={c.num} class:h-table--hide-m={c.mobile === 'hide'} data-label={c.label}>{#if c.cell}{@render c.cell(r, c)}{:else}{cell(r, c)}{/if}</td>
             {/each}
           </tr>
         {/each}
@@ -108,4 +116,6 @@
   {#if !loading && rows.length === 0}
     <div class="h-table__empty">{#if empty}{@render empty()}{:else}{t('table.empty')}{/if}</div>
   {/if}
+  </div>
+  {#if footer}<div class="h-table__foot">{@render footer()}</div>{/if}
 </div>

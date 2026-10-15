@@ -1,13 +1,14 @@
 <script lang="ts">
-  import { fromLocalInput } from '../../lib/fields/logic';
   import { t } from '../../lib/i18n';
-  import type { CompiledType, CompiledField } from '../../lib/types.svelte';
+  import type { CompiledType } from '../../lib/types.svelte';
   import Button from '../../lib/ui/Button.svelte';
-  import DatePicker from '../../lib/ui/DatePicker.svelte';
-  import IconButton from '../../lib/ui/IconButton.svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
   import Input from '../../lib/ui/Input.svelte';
+  import Popover from '../../lib/ui/Popover.svelte';
+  import Segmented from '../../lib/ui/Segmented.svelte';
   import Select from '../../lib/ui/Select.svelte';
-  import { filterableFields, opsFor, type Filter, type ListQuery, type Op } from './query';
+  import FilterEditor from './FilterEditor.svelte';
+  import { filterableFields, type Filter, type ListQuery } from './query';
 
   let {
     type,
@@ -26,137 +27,120 @@
   } = $props();
 
   const fields = $derived(filterableFields(type.fields));
-  const byName = (n: string) => fields.find((f) => f.name === n);
-  let open = $state(false);
-  let draft = $state<Filter[]>([]);
-  const key = $derived(JSON.stringify(q.filters));
-  $effect(() => {
-    void key;
-    draft = q.filters.map((f) => ({ ...f }));
-    if (q.filters.length) open = true;
-  });
 
-  const elem = (f: CompiledField) => (f.shape.base === 'list' && f.of ? f.of : f);
-
-  function addFilter() {
-    const f = fields[0];
-    if (!f) return;
-    draft = [...draft, { field: f.name, op: 'eq', value: '' }];
-    open = true;
+  function chipText(f: Filter): string {
+    const def = fields.find((x) => x.name === f.field);
+    const name = def?.label ?? f.field;
+    const elem = def && def.shape.base === 'list' && def.of ? def.of : def;
+    if (f.op === 'exists') return `${name}: ${f.value === 'false' ? t('collections.op.notExists') : t('collections.op.exists')}`;
+    const v = elem?.shape.base === 'boolean' && f.op !== 'in' ? (f.value === 'true' ? t('common.yes') : t('common.no')) : f.value;
+    return `${name}: ${f.op === 'eq' ? '' : t(`collections.op.${f.op}`) + ' '}${v}`;
   }
-  function setField(i: number, name: string) {
-    const f = byName(name);
-    draft[i] = { field: name, op: f ? opsFor(f)[0]! : 'eq', value: '' };
-  }
-  function setOp(i: number, op: string) {
-    draft[i] = { ...draft[i]!, op: op as Op, value: op === 'exists' ? 'true' : draft[i]!.value };
-  }
-  const apply = () => onchange({ filters: draft.filter((f) => f.field && (f.value !== '' || f.op === 'exists')) });
-  const removeAt = (i: number) => {
-    draft = draft.filter((_, n) => n !== i);
-    apply();
-  };
-  const boolOptions = () => [
-    { value: 'true', label: t('common.yes') },
-    { value: 'false', label: t('common.no') },
-  ];
-  const dirty = $derived(JSON.stringify(draft.filter((f) => f.value !== '' || f.op === 'exists')) !== key);
+  const setAt = (i: number, f: Filter) => onchange({ filters: q.filters.map((x, n) => (n === i ? f : x)) });
+  const removeAt = (i: number) => onchange({ filters: q.filters.filter((_, n) => n !== i) });
 </script>
 
-<div class="h-filters" role="search" aria-label={t('collections.filters')}>
-  <div class="h-filters__row">
-    <Input
-      type="search"
-      class="h-filters__q"
-      aria-label={t('collections.search')}
-      placeholder={t('collections.searchPlaceholder')}
-      value={search}
-      oninput={(e) => onsearch((e.currentTarget as HTMLInputElement).value)}
-    />
-    <Select
-      aria-label={t('collections.status.label')}
-      value={q.status}
-      onchange={(e) => onchange({ status: (e.currentTarget as HTMLSelectElement).value as ListQuery['status'] })}
-      options={[
-        { value: '', label: t('collections.status.any') },
-        { value: 'published', label: t('collections.status.published') },
-        { value: 'draft', label: t('collections.status.draft') },
-      ]}
-    />
+<div class="h-tb" role="search" aria-label={t('collections.filters')}>
+  <Input
+    type="search"
+    icon="search"
+    class="h-tb__q"
+    aria-label={t('collections.search')}
+    placeholder={t('collections.searchPlaceholder')}
+    value={search}
+    oninput={(e) => onsearch((e.currentTarget as HTMLInputElement).value)}
+  />
+  <div class="h-tb__chips">
+    {#each q.filters as f, i (i + JSON.stringify(f))}
+      <span class="h-chip h-chip--applied">
+        <Popover label={t('collections.editFilter', { name: chipText(f) })} triggerClass="h-chip__main">
+          {#snippet trigger()}{chipText(f)}<Icon name="chevron-down" size={14} />{/snippet}
+          {#snippet children(close)}
+            <FilterEditor {fields} filter={f} onapply={(nf) => (close(), setAt(i, nf))} />
+          {/snippet}
+        </Popover>
+        <button class="h-chip__x" type="button" aria-label={t('collections.removeFilter', { n: i + 1 })} onclick={() => removeAt(i)}><Icon name="x" size={14} /></button>
+      </span>
+    {/each}
+    {#if fields.length}
+      <span class="h-chip h-chip--ghost">
+        <Popover label={t('collections.addFilter')} triggerClass="h-chip__main">
+          {#snippet trigger()}<Icon name="plus" size={14} />{t('collections.addFilter')}{/snippet}
+          {#snippet children(close)}
+            <FilterEditor {fields} onapply={(nf) => (close(), onchange({ filters: [...q.filters, nf] }))} />
+          {/snippet}
+        </Popover>
+      </span>
+    {/if}
+    {#if q.filters.length}
+      <Button variant="ghost" size="sm" onclick={() => onchange({ filters: [] })}>{t('collections.clearAll')}</Button>
+    {/if}
+  </div>
+  <div class="h-tb__right">
     {#if offered.length > 1}
       <Select
+        class="h-tb__locale"
         aria-label={t('collections.locale')}
         value={q.locale || offered[0]}
         onchange={(e) => onchange({ locale: (e.currentTarget as HTMLSelectElement).value })}
         options={offered.map((l) => ({ value: l, label: l }))}
       />
     {/if}
-    {#if fields.length}
-      <Button icon="filter" aria-expanded={open} onclick={() => (open = !open)}>
-        {t('collections.filters')}{q.filters.length ? ` (${q.filters.length})` : ''}
-      </Button>
-    {/if}
+    <Segmented
+      label={t('collections.status.label')}
+      value={q.status}
+      onchange={(v) => onchange({ status: v as ListQuery['status'] })}
+      options={[
+        { value: '', label: t('collections.status.any') },
+        { value: 'draft', label: t('collections.status.draft') },
+        { value: 'published', label: t('collections.status.published') },
+      ]}
+    />
   </div>
-
-  {#if open && fields.length}
-    <div class="h-filters__panel">
-      {#each draft as f, i (i)}
-        {@const def = byName(f.field)}
-        <div class="h-filters__row" role="group" aria-label={t('collections.filterN', { n: i + 1 })}>
-          <Select aria-label={t('collections.filterField')} value={f.field} onchange={(e) => setField(i, (e.currentTarget as HTMLSelectElement).value)} options={fields.map((x) => ({ value: x.name, label: x.label }))} />
-          <Select aria-label={t('collections.filterOp')} value={f.op} onchange={(e) => setOp(i, (e.currentTarget as HTMLSelectElement).value)} options={(def ? opsFor(def) : []).map((o) => ({ value: o, label: t(`collections.op.${o}`) }))} />
-          {#if f.op === 'exists' || (def && elem(def).shape.base === 'boolean' && f.op !== 'in')}
-            <Select aria-label={t('collections.filterValue')} value={f.value} placeholder="" onchange={(e) => (draft[i]!.value = (e.currentTarget as HTMLSelectElement).value)} options={boolOptions()} />
-          {:else if def && elem(def).shape.format === 'enum' && f.op !== 'in'}
-            <Select aria-label={t('collections.filterValue')} value={f.value} placeholder="" onchange={(e) => (draft[i]!.value = (e.currentTarget as HTMLSelectElement).value)} options={(elem(def).shape.enum ?? []).map((v) => ({ value: v, label: v }))} />
-          {:else if def && elem(def).shape.base === 'number' && f.op !== 'in'}
-            <Input type="number" aria-label={t('collections.filterValue')} value={f.value} oninput={(e) => (draft[i]!.value = (e.currentTarget as HTMLInputElement).value)} onkeydown={(e) => e.key === 'Enter' && apply()} />
-          {:else if def && elem(def).shape.format === 'date' && f.op !== 'in'}
-            <DatePicker type="date" aria-label={t('collections.filterValue')} value={f.value} oninput={(e) => (draft[i]!.value = (e.currentTarget as HTMLInputElement).value)} />
-          {:else if def && elem(def).shape.format === 'datetime' && f.op !== 'in'}
-            <DatePicker type="datetime-local" aria-label={t('collections.filterValue')} value={f.value ? f.value.slice(0, 16) : ''} oninput={(e) => (draft[i]!.value = fromLocalInput((e.currentTarget as HTMLInputElement).value))} />
-          {:else}
-            <Input aria-label={t('collections.filterValue')} placeholder={f.op === 'in' ? t('collections.commaSeparated') : ''} value={f.value} oninput={(e) => (draft[i]!.value = (e.currentTarget as HTMLInputElement).value)} onkeydown={(e) => e.key === 'Enter' && apply()} />
-          {/if}
-          <IconButton icon="x" label={t('collections.removeFilter', { n: i + 1 })} onclick={() => removeAt(i)} />
-        </div>
-      {/each}
-      <div class="h-filters__row">
-        <Button size="sm" icon="plus" onclick={addFilter}>{t('collections.addFilter')}</Button>
-        <Button size="sm" variant="primary" disabled={!dirty} onclick={apply}>{t('collections.apply')}</Button>
-        {#if q.filters.length}<Button size="sm" variant="ghost" onclick={() => ((draft = []), apply())}>{t('collections.clearFilters')}</Button>{/if}
-      </div>
-    </div>
-  {/if}
 </div>
 
 <style>
-  .h-filters {
-    display: flex;
-    flex-direction: column;
-    gap: var(--h-space-3);
-  }
-  .h-filters__row {
+  .h-tb {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--h-space-2);
+    gap: var(--h-space-2) var(--h-space-3);
   }
-  .h-filters__row > :global(.h-select),
-  .h-filters__row > :global(.h-input) {
-    width: auto;
-    min-width: 8rem;
+  .h-tb > :global(.h-tb__q) {
+    flex: 0 1 320px;
+    width: 320px;
+    max-width: 100%;
   }
-  .h-filters__row > :global(.h-filters__q) {
-    flex: 1 1 14rem;
-  }
-  .h-filters__panel {
+  .h-tb__chips {
     display: flex;
-    flex-direction: column;
+    flex: 1 1 0;
+    align-items: center;
     gap: var(--h-space-2);
-    padding: var(--h-space-3);
-    border: 1px solid var(--h-border);
-    border-radius: var(--h-radius);
-    background: var(--h-surface);
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .h-tb__chips > :global(*) {
+    flex: none;
+  }
+  .h-tb__right {
+    display: flex;
+    align-items: center;
+    gap: var(--h-space-2);
+    margin-inline-start: auto;
+  }
+  .h-tb__right :global(.h-tb__locale) {
+    width: 6.5rem;
+  }
+  @media (max-width: 767px) {
+    .h-tb > :global(.h-tb__q),
+    .h-tb__chips {
+      flex: 1 1 100%;
+      width: 100%;
+    }
+    .h-tb__right {
+      margin-inline-start: 0;
+      flex-wrap: wrap;
+    }
   }
 </style>

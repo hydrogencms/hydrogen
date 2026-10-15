@@ -26,9 +26,9 @@
 </script>
 
 <nav class="h-pagination" aria-label={t('pagination.label')}>
-  <span class="h-pagination__range" aria-live="polite">
+  <span class="h-pagination__range h-num" aria-live="polite">
     {#if total !== undefined}{total === 0 ? '0' : t('pagination.range', { from, to, total })}{:else}{t('pagination.page', { page })}{/if}
   </span>
-  <IconButton icon="chevron-left" label={t('common.previous')} disabled={page <= 1} onclick={() => onpage(page - 1)} />
-  <IconButton icon="chevron-right" label={t('common.next')} disabled={!more} onclick={() => onpage(page + 1)} />
+  <IconButton icon="chevron-left" label={t('common.previous')} size="sm" variant="secondary" disabled={page <= 1} onclick={() => onpage(page - 1)} />
+  <IconButton icon="chevron-right" label={t('common.next')} size="sm" variant="secondary" disabled={!more} onclick={() => onpage(page + 1)} />
 </nav>

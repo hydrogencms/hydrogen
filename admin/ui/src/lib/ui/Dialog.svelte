@@ -10,15 +10,19 @@
     onclose,
     size = 'md',
     dismissible = true,
+    bare = false,
     children,
     footer,
   }: {
     open?: boolean;
     title: string;
     onclose?: () => void;
+    /** 400 / 480 / 640 px wide. */
     size?: 'sm' | 'md' | 'lg';
     /** false: Esc and backdrop clicks do not close (use for destructive confirmations in flight). */
     dismissible?: boolean;
+    /** No header or padding: the content brings its own (command palette). `title` stays the accessible name. */
+    bare?: boolean;
     children: Snippet;
     footer?: Snippet;
   } = $props();
@@ -54,22 +58,23 @@
 </script>
 
 {#if open}
-  <div class="h-dialog" use:portal>
+  <div class="h-dialog" class:h-dialog--top={bare} use:portal>
     <div class="h-dialog__backdrop" role="presentation" onclick={() => dismissible && close()}></div>
     <div
       bind:this={box}
       class="h-dialog__box h-dialog__box--{size}"
+      class:h-dialog__box--bare={bare}
       role="dialog"
       aria-modal="true"
       aria-labelledby="{uid}-t"
       tabindex="-1"
       onkeydown={keydown}
     >
-      <header class="h-dialog__head">
+      <header class="h-dialog__head" class:h-sr={bare}>
         <h2 class="h-dialog__title" id="{uid}-t">{title}</h2>
-        {#if dismissible}<IconButton class="h-dialog__x" icon="x" label={t('common.close')} size="sm" onclick={close} />{/if}
+        {#if dismissible && !bare}<IconButton class="h-dialog__x" icon="x" label={t('common.close')} size="sm" onclick={close} />{/if}
       </header>
-      <div class="h-dialog__body">{@render children()}</div>
+      <div class="h-dialog__body" class:h-dialog__body--bare={bare}>{@render children()}</div>
       {#if footer}<footer class="h-dialog__foot">{@render footer()}</footer>{/if}
     </div>
   </div>

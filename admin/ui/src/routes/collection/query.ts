@@ -147,3 +147,17 @@ export function parseViews(raw: string | null): SavedView[] {
 export function upsertView(views: SavedView[], view: SavedView): SavedView[] {
   return [...views.filter((v) => v.name !== view.name), view].sort((a, b) => a.name.localeCompare(b.name));
 }
+
+/** A stable text for "is this the same view?": ignores the page and the order of the filters. */
+export function canonicalQuery(qs: string | URLSearchParams): string {
+  const q = parseQuery(typeof qs === 'string' ? new URLSearchParams(qs) : qs);
+  const filters = q.filters.map((f) => `${f.field}\u0000${f.op}\u0000${f.value}`).sort();
+  return JSON.stringify([q.q, q.status, q.locale, q.sort || DEFAULT_SORT, q.pageSize, filters]);
+}
+
+/** Renames the view `from`; a clash with another view's name replaces that one. */
+export function renameView(views: SavedView[], from: string, to: string): SavedView[] {
+  const v = views.find((x) => x.name === from);
+  if (!v) return views;
+  return upsertView(views.filter((x) => x.name !== from), { ...v, name: to });
+}

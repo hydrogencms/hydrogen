@@ -87,7 +87,7 @@
   };
 
   async function submit(v: typeof form.values): Promise<string | undefined> {
-    const after = (await lastChild(parent.id)) ?? undefined;
+    const after = parent.id ? ((await lastChild(parent.id)) ?? undefined) : undefined;
     if (mode === 'child') {
       let id = createdId;
       if (!id) {
@@ -102,7 +102,7 @@
       try {
         const placed = await api.post('/pages/sites/{site}/nodes', {
           params: { site: parent.site },
-          body: { kind: 'page', item: id, parent: parent.id, after } as never,
+          body: { kind: 'page', item: id, parent: parent.id || undefined, after } as never,
         });
         createdId = '';
         placeError = '';

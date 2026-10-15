@@ -1,5 +1,6 @@
 <script lang="ts">
   import '../../lib/messages/collections';
+  import '../../lib/messages/editor';
   import { api, ApiError } from '../../lib/api/client';
   import { session } from '../../lib/auth/session.svelte';
   import { channels } from '../../lib/channels.svelte';
@@ -12,11 +13,17 @@
   import { t } from '../../lib/i18n';
   import { href, link, router } from '../../lib/router.svelte';
   import { types } from '../../lib/types.svelte';
-  import Breadcrumbs from '../../lib/ui/Breadcrumbs.svelte';
   import Button from '../../lib/ui/Button.svelte';
+  import Card from '../../lib/ui/Card.svelte';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
+  import Icon from '../../lib/ui/Icon.svelte';
+  import IconButton from '../../lib/ui/IconButton.svelte';
   import Menu, { type MenuItem } from '../../lib/ui/Menu.svelte';
+  import PageHeader from '../../lib/ui/PageHeader.svelte';
+  import Segmented from '../../lib/ui/Segmented.svelte';
+  import Select from '../../lib/ui/Select.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
+  import Time from '../../lib/ui/Time.svelte';
   import { toast } from '../../lib/ui/toast.svelte';
   import { ext, navigateTo } from '../../lib/extensions.svelte';
   import Extension from '../../lib/ext/Extension.svelte';
@@ -24,8 +31,9 @@
   import StatusBadge from '../collection/StatusBadge.svelte';
   import ActionDialogs from './ActionDialogs.svelte';
   import SidePanels from './SidePanels.svelte';
-  import { errorMessage } from '../../lib/errors';
+  import { copyText, errorMessage } from '../../lib/errors';
   import { formatDateTime } from '../../lib/format';
+  import type { CompiledField } from '../../lib/types.svelte';
   import Dialog from '../../lib/ui/Dialog.svelte';
   import { confirmDiscard, isConflict, isNotFound, itemApi, type Concurrency, type ItemData, type Target } from './model';
 
@@ -226,10 +234,11 @@
   });
 
   // ---- locales
-  function switchLocale(l: string) {
-    if (l === locale) return;
-    if (form.dirty && !confirm(t('form.unsaved'))) return;
+  function switchLocale(l: string): boolean {
+    if (l === locale) return true;
+    if (form.dirty && !confirm(t('form.unsaved'))) return false;
     router.setQuery({ locale: l });
+    return true;
   }
   let copying = $state(false);
   async function copyFromMain() {
@@ -286,7 +295,7 @@
   }
 
   const unrouted = $derived(type ? unroutedErrors(type.fields, form.errors, form.values.fields) : {});
-  const title = $derived(isNew ? t('collections.newTitle', { type: type?.label ?? '' }) : data?.name || t('collections.untitled'));
+  const title = $derived(isNew ? t('collections.newTitle', { type: type?.label ?? '' }) : data?.name || t('editor.untitled'));
   const crumbs = $derived(
     mode === 'singleton'
       ? [{ label: t('nav.settingsContent') }, { label: type?.label ?? typeName }]
@@ -305,6 +314,69 @@
   };
   const slotProps = $derived({ item: data ?? undefined, type: type?.name });
   const canDelete = $derived(!isNew && mode !== 'singleton' && (data?.actions?.delete ?? true));
+
+  // ---- layout
+  const groups = $derived.by(() => {
+    const m = new Map<string, CompiledField[]>();
+    for (const f of type?.fields ?? []) {
+      if (f.admin?.hidden) continue;
+      const g = f.group ?? '';
+      m.set(g, [...(m.get(g) ?? []), f]);
+    }
+    return [...m].map(([g, fields]) => ({ title: g || t('editor.content'), fields }));
+  });
+
+  const localeOptions = $derived(
+    locales.map((l) => {
+      const s = item ? localeState(l, item) : l === locale ? 'draft' : 'missing';
+      return { value: l, label: l, dot: s === 'published' ? ('filled' as const) : s === 'draft' ? ('half' as const) : ('hollow' as const), disabled: isNew && l !== locale };
+    }),
+  );
+
+  // The inspector sits beside the form when there is room (the window for a full page, the pane when embedded) and
+  // is a slide-over otherwise.
+  let root = $state<HTMLElement>();
+  let inline = $state(true);
+  let panelOpen = $state(false);
+  $effect(() => {
+    if (!embedded) {
+      const mq = matchMedia('(min-width: 1280px)');
+      const set = () => (inline = mq.matches);
+      set();
+      mq.addEventListener('change', set);
+      return () => mq.removeEventListener('change', set);
+    }
+    if (!root || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([e]) => (inline = (e?.contentRect.width ?? 0) >= 1040));
+    ro.observe(root);
+    return () => ro.disconnect();
+  });
+  $effect(() => {
+    if (inline) panelOpen = false;
+  });
+
+  // The unsaved-changes bar shows while the form is dirty and the page header has scrolled out of sight.
+  let headEl = $state<HTMLElement>();
+  let headGone = $state(false);
+  $effect(() => {
+    if (!headEl || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(([e]) => (headGone = !!e && !e.isIntersecting));
+    io.observe(headEl);
+    return () => io.disconnect();
+  });
+  function discardEdits() {
+    if (!confirm(t('editor.discardEdits'))) return;
+    form.reset(structuredClone(saved));
+  }
+  async function copyId() {
+    if (data && (await copyText(data.id))) toast.success(t('editor.idCopied'));
+  }
+  const overflow = $derived<MenuItem[]>([
+    ...(canDiscard ? [{ label: t('collections.discard'), icon: 'refresh', onselect: () => dialogs?.discard() }] : []),
+    ...(data ? [{ label: t('editor.copyId'), icon: 'copy', onselect: () => void copyId() }] : []),
+    ...(canDelete ? [{ label: t('common.delete'), icon: 'trash', danger: true, separator: true, onselect: () => dialogs?.remove() }] : []),
+  ]);
+  const saveLabel = $derived(!isNew && !form.dirty && !form.pending ? t('editor.saved') : t('common.save'));
 </script>
 
 {#if loadError}
@@ -323,56 +395,32 @@
 {:else if loading || !type}
   <div class="h-page" aria-busy="true">
     <Skeleton height="2rem" width="40%" />
-    <Skeleton lines={6} />
+    <div class="h-item__grid h-item__grid--skeleton">
+      <Skeleton shape="block" height="22rem" />
+      <Skeleton shape="block" height="16rem" />
+    </div>
   </div>
 {:else}
-  <div class="h-page h-item">
+  <div class="h-page h-item" class:h-item--embedded={embedded} class:h-item--inline={inline} bind:this={root}>
     <Slot at="editor.before" props={slotProps} />
-    {#if !embedded}<Breadcrumbs items={crumbs} />{/if}
-    <div class="h-page__head">
-      <div class="h-item__title">
-        {#if embedded}<h2>{title}</h2>{:else}<h1>{title}</h1>{/if}
-        <div class="h-row">
-          <span class="h-muted">{type.label}</span>
-          {#if data}<StatusBadge status={data.status} />{:else}<StatusBadge status="draft" />{/if}
-          {#if form.dirty}<span class="h-muted" role="status">{t('collections.unsavedBadge')}</span>{/if}
-        </div>
-      </div>
-      <div class="h-row h-item__actions">
-        {#if previewReason}
-          <span title={previewReason}>
-            <Button icon="eye" disabled>{t('collections.preview.button')}</Button>
-            <span class="h-sr">{previewReason}</span>
-          </span>
-        {:else if previewMenu.length === 1}
-          <Button icon="eye" onclick={() => void preview(previewChannels[0]!.name)}>{t('collections.preview.button')}</Button>
-        {:else}
-          <Menu items={previewMenu} label={t('collections.preview.choose')}>
-            {#snippet trigger()}{t('collections.preview.button')}{/snippet}
-          </Menu>
-        {/if}
-        {#if canDiscard}<Button onclick={() => dialogs?.discard()}>{t('collections.discard')}</Button>{/if}
-        {#if canDelete}<Button variant="danger" icon="trash" onclick={() => dialogs?.remove()}>{t('common.delete')}</Button>{/if}
-        <Button variant="primary" loading={form.pending} disabled={!canEdit || (!form.dirty && !isNew)} onclick={() => void save()}>{t('common.save')}</Button>
-        <Button variant="primary" disabled={isNew || (!canPublish && !form.dirty)} onclick={() => void openPublish()}>{t('collections.publish')}</Button>
-        {#each extActions as a, i (a.tag + i)}
-          <span class="h-item__ext" data-action={a.tag} title={a.title}>
-            <Extension tag={a.tag} props={{ item: data, type: type.name, locale }} onEvents={extEvents} />
-          </span>
-        {/each}
-      </div>
-    </div>
-
-    <div class="h-item__locales h-row" role="group" aria-label={t('collections.languages')}>
-      {#each locales as l (l)}
-        {@const s = item ? localeState(l, item) : l === locale ? 'draft' : 'missing'}
-        <button type="button" class="h-item__locale" aria-pressed={l === locale} disabled={isNew && l !== locale} onclick={() => switchLocale(l)}>
-          <span class="h-item__locale-code">{l}</span>
-          <span class="h-item__locale-state">{t(`collections.locale.${s}`)}</span>
-        </button>
-      {/each}
-      {#if data && locale !== data.mainLocale && hasTranslatable && canEdit}
-        <Button size="sm" loading={copying} onclick={() => void copyFromMain()}>{t('collections.copyFrom', { locale: data.mainLocale })}</Button>
+    <div bind:this={headEl}>
+      {#if embedded}
+        <header class="h-item__bar">
+          <div class="h-item__bar-main">
+            <div class="h-item__bar-title">
+              <h2>{title}</h2>
+              {@render badge()}
+            </div>
+            <p class="h-pagehead__meta">{@render meta()}</p>
+          </div>
+          <div class="h-pagehead__actions">
+            {@render actions()}
+            {#if overflow.length}<Menu label={t('common.more')} items={overflow} />{/if}
+            {@render primary()}
+          </div>
+        </header>
+      {:else}
+        <PageHeader {title} breadcrumbs={crumbs} {badge} {meta} {actions} {overflow} {primary} />
       {/if}
     </div>
 
@@ -387,23 +435,53 @@
     {#if !canEdit}<p class="h-muted" role="status">{t('collections.readOnly')}</p>{/if}
 
     <div class="h-item__grid">
-      <form
-        class="h-card h-item__form"
-        novalidate
-        aria-label={t('collections.formLabel', { type: type.label })}
-        onsubmit={(e) => {
-          e.preventDefault();
-          void save();
-        }}
-      >
-        <Fields fields={type.fields} bind:doc={form.values.fields} />
-        {#if type.fields.length === 0}<p class="h-muted">{t('collections.noFields')}</p>{/if}
-      </form>
-      <aside class="h-item__side" aria-label={t('collections.details')}>
+      <div class="h-item__main">
+        {#if data && locale !== data.mainLocale && hasTranslatable && canEdit}
+          <div class="h-item__translate">
+            <span class="h-muted">{t('editor.translating', { locale })}</span>
+            <Button size="sm" icon="copy" loading={copying} onclick={() => void copyFromMain()}>{t('collections.copyFrom', { locale: data.mainLocale })}</Button>
+          </div>
+        {/if}
+        <form
+          class="h-item__form"
+          novalidate
+          aria-label={t('collections.formLabel', { type: type.label })}
+          onsubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+        >
+          {#each groups as g (g.title)}
+            <Card title={g.title} class="h-item__card">
+              <div class="h-fieldcard">
+                <div class="h-fieldgrid">
+                  <Fields fields={g.fields} bind:doc={form.values.fields} />
+                </div>
+              </div>
+            </Card>
+          {/each}
+          {#if type.fields.length === 0}<p class="h-muted">{t('collections.noFields')}</p>{/if}
+        </form>
+      </div>
+      {#if panelOpen && !inline}<button type="button" class="h-item__scrim" tabindex="-1" aria-label={t('editor.inspectorClose')} onclick={() => (panelOpen = false)}></button>{/if}
+      <aside class="h-item__side" class:h-item__side--open={panelOpen} aria-label={t('collections.details')}>
+        {#if !inline}
+          <div class="h-item__side-head">
+            <IconButton icon="x" size="sm" label={t('editor.inspectorClose')} onclick={() => (panelOpen = false)} />
+          </div>
+        {/if}
         <SidePanels {data} {item} {type} {locale} {locales} {form} {mode} onrefresh={extRefresh} />
       </aside>
     </div>
     <Slot at="editor.after" props={slotProps} />
+
+    {#if form.dirty && headGone}
+      <div class="h-item__dirty" role="status">
+        <span>{t('editor.unsavedBar')}</span>
+        <Button variant="ghost" size="sm" onclick={discardEdits}>{t('editor.discardChanges')}</Button>
+        <Button variant="secondary" size="sm" aria-label={t('editor.saveChanges')} loading={form.pending} onclick={() => void save()}>{t('common.save')}</Button>
+      </div>
+    {/if}
   </div>
 
   <ActionDialogs
@@ -422,6 +500,60 @@
     }}
   />
 {/if}
+
+{#snippet badge()}
+  <StatusBadge status={data ? data.status : 'draft'} />
+{/snippet}
+
+{#snippet meta()}
+  {type?.label}{#if data}{' · '}{t('editor.meta.updated')}{' '}<Time at={data.updatedAt} />{' · '}<span class="h-num">{t('editor.meta.version', { n: data.version || 0 })}</span>{/if}{#if form.dirty}{' · '}<span role="status">{t('collections.unsavedBadge')}</span>{/if}
+{/snippet}
+
+{#snippet actions()}
+  {#if locales.length > 5}
+    <Select
+      aria-label={t('collections.languages')}
+      value={locale}
+      options={localeOptions.map((o) => ({ value: o.value, label: o.label, disabled: o.disabled }))}
+      onchange={(e) => {
+        const el = e.currentTarget as HTMLSelectElement;
+        if (!switchLocale(el.value)) el.value = locale;
+      }}
+    />
+  {:else if locales.length > 1}
+    <Segmented label={t('collections.languages')} options={localeOptions} bind:value={() => locale, (l) => void switchLocale(l)} />
+  {/if}
+  {#if previewReason}
+    <span title={previewReason}>
+      <Button icon="eye" disabled>{t('collections.preview.button')}</Button>
+      <span class="h-sr">{previewReason}</span>
+    </span>
+  {:else if previewMenu.length === 1}
+    <Button icon="eye" onclick={() => void preview(previewChannels[0]!.name)}>{t('collections.preview.button')}</Button>
+  {:else}
+    <Menu items={previewMenu} label={t('collections.preview.choose')} triggerClass="h-pill">
+      {#snippet trigger()}<Icon name="eye" size={16} />{t('collections.preview.button')}{/snippet}
+    </Menu>
+  {/if}
+  <Button
+    variant={isNew ? 'primary' : 'secondary'}
+    icon={saveLabel === t('editor.saved') ? 'check' : undefined}
+    loading={form.pending}
+    disabled={!canEdit || (!form.dirty && !isNew)}
+    onclick={() => void save()}>{saveLabel}</Button>
+  {#each extActions as a, i (a.tag + i)}
+    <span class="h-item__ext" data-action={a.tag} title={a.title}>
+      <Extension tag={a.tag} props={{ item: data, type: type?.name, locale }} onEvents={extEvents} />
+    </span>
+  {/each}
+  <span class="h-item__toggle"><IconButton icon="panel-left" variant="secondary" label={t('editor.inspector')} aria-expanded={panelOpen} onclick={() => (panelOpen = !panelOpen)} /></span>
+{/snippet}
+
+{#snippet primary()}
+  {#if !isNew}
+    <Button variant="primary" disabled={!canPublish && !form.dirty} onclick={() => void openPublish()}>{t('collections.publish')}</Button>
+  {/if}
+{/snippet}
 
 <Dialog open={!!conflict} title={t('collections.conflict.title')} size="sm" dismissible={false}>
   {#if conflict}
@@ -445,78 +577,152 @@
 </Dialog>
 
 <style>
-  .h-item__title {
+  .h-item__bar {
     display: flex;
-    flex-direction: column;
-    gap: var(--h-space-1);
+    align-items: flex-end;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--h-space-3) var(--h-space-4);
+  }
+  .h-item__bar-main {
     min-width: 0;
   }
-  .h-item__title h1 {
+  .h-item__bar-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--h-space-3);
+  }
+  .h-item__bar-title h2 {
+    font-size: var(--h-text-2xl);
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
     overflow-wrap: anywhere;
   }
-  .h-item__actions {
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-  .h-page__head {
-    align-items: flex-start;
-    flex-wrap: wrap;
+  .h-item__ext {
+    display: inline-flex;
   }
   .h-item__grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 22rem;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--h-space-4);
     align-items: start;
   }
-  @media (max-width: 70rem) {
-    .h-item__grid {
-      grid-template-columns: minmax(0, 1fr);
-    }
+  .h-item__grid--skeleton {
+    grid-template-columns: minmax(0, 1fr) 22.5rem;
+  }
+  .h-item__main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--h-space-3);
+    min-width: 0;
   }
   .h-item__form {
     display: flex;
     flex-direction: column;
     gap: var(--h-space-4);
   }
-  .h-item__ext {
-    display: inline-flex;
-  }
-  .h-item__side {
-    min-width: 0;
-  }
-  .h-item__locales {
-    flex-wrap: wrap;
-  }
-  .h-item__locale {
-    display: inline-flex;
-    flex-direction: column;
-    align-items: flex-start;
-    padding: var(--h-space-1) var(--h-space-3);
-    border: 1px solid var(--h-border-strong);
-    border-radius: var(--h-radius);
-    background: var(--h-surface);
-    color: var(--h-text);
-    font: inherit;
-    line-height: 1.2;
-    cursor: pointer;
-  }
-  .h-item__locale[aria-pressed='true'] {
-    border-color: var(--h-accent);
-    background: var(--h-accent-soft);
-  }
-  .h-item__locale:disabled {
-    cursor: not-allowed;
-    opacity: 0.55;
-  }
-  .h-item__locale-code {
-    font-weight: 600;
-  }
-  .h-item__locale-state {
-    color: var(--h-text-muted);
-    font-size: var(--h-text-xs);
+  .h-item__translate {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--h-space-3);
+    padding: var(--h-space-2) var(--h-space-3);
+    border-radius: var(--h-radius-md);
+    background: var(--h-surface-2);
+    font-size: var(--h-text-sm);
   }
   .h-item__unrouted ul {
     margin: 0;
     padding-left: var(--h-space-4);
+  }
+
+  /* Inspector: a column beside the form when there is room, a slide-over otherwise. */
+  .h-item--inline .h-item__grid {
+    grid-template-columns: minmax(0, 1fr) 22.5rem;
+    gap: var(--h-space-5);
+  }
+  @media (min-width: 1680px) {
+    .h-item:not(.h-item--embedded) .h-item__grid {
+      grid-template-columns: minmax(0, 1fr) 25rem;
+    }
+  }
+  .h-item__side {
+    min-width: 0;
+    padding: var(--h-space-4);
+    border: 1px solid var(--h-border);
+    border-radius: var(--h-radius-lg);
+    background: var(--h-surface);
+  }
+  .h-item--inline .h-item__side {
+    position: sticky;
+    top: calc(var(--h-topbar-height) + var(--h-space-3));
+    max-height: calc(100vh - var(--h-topbar-height) - var(--h-space-5));
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .h-item--embedded.h-item--inline .h-item__side {
+    top: 0;
+    max-height: calc(100vh - var(--h-topbar-height) - var(--h-space-7));
+  }
+  .h-item:not(.h-item--inline) .h-item__side {
+    position: fixed;
+    inset: var(--h-topbar-height) 0 0 auto;
+    z-index: calc(var(--h-z-nav) + 1);
+    width: min(25rem, 100vw);
+    overflow-y: auto;
+    border-width: 0 0 0 1px;
+    border-radius: 0;
+    box-shadow: var(--h-shadow-dialog);
+    visibility: hidden;
+    transform: translateX(100%);
+    transition:
+      transform var(--h-dur),
+      visibility var(--h-dur);
+  }
+  .h-item:not(.h-item--inline) .h-item__side--open {
+    visibility: visible;
+    transform: none;
+  }
+  .h-item__side-head {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--h-space-2);
+  }
+  .h-item__scrim {
+    position: fixed;
+    inset: var(--h-topbar-height) 0 0 0;
+    z-index: var(--h-z-nav);
+    border: 0;
+    background: var(--h-overlay);
+  }
+  .h-item--inline .h-item__toggle {
+    display: none;
+  }
+  .h-item__toggle {
+    display: inline-flex;
+  }
+
+  .h-item__dirty {
+    position: sticky;
+    bottom: var(--h-space-4);
+    z-index: var(--h-z-sticky);
+    display: flex;
+    align-items: center;
+    align-self: center;
+    gap: var(--h-space-2);
+    padding: var(--h-space-2) var(--h-space-2) var(--h-space-2) var(--h-space-4);
+    border: 1px solid var(--h-border);
+    border-radius: var(--h-radius-pill);
+    background: var(--h-surface);
+    box-shadow: var(--h-shadow-dialog);
+    font-size: var(--h-text-sm);
+    font-weight: 500;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .h-item:not(.h-item--inline) .h-item__side {
+      transition: none;
+    }
   }
 </style>

@@ -38,7 +38,7 @@ test.describe('accessibility', () => {
       () => `/admin/items/${item}`,
       async (p) => {
         await expect(p.getByRole('form', { name: /fields/ })).toBeVisible();
-        await expect(p.getByRole('tabpanel', { name: 'Appears in' })).toBeVisible();
+        await expect(p.getByRole('tabpanel', { name: 'Details' })).toBeVisible();
       },
     ],
     [

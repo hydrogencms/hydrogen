@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openSettings } from './helpers';
 
 const login = process.env.ADMIN_LOGIN ?? 'admin';
 const password = process.env.ADMIN_PASSWORD ?? 'e2e-admin-password-1';
@@ -22,10 +23,12 @@ test('login, shell and dashboard', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Article', level: 1 })).toBeVisible();
 
   await page.getByRole('link', { name: 'Dashboard' }).click();
-  await expect(page.getByRole('heading', { name: /Welcome/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening)/ })).toBeVisible();
   await expect(page.getByText('Recent activity')).toBeVisible();
+  await openSettings(page);
   await expect(page.getByRole('link', { name: 'Users' })).toBeVisible();
 
+  await page.getByRole('button', { name: 'Open search' }).click();
   await page.getByLabel('Search content').fill('hello');
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/admin\/search\?q=hello/);

@@ -3,14 +3,21 @@
 *::after {
   box-sizing: border-box;
 }
+/* The canvas is a single-colour gradient on purpose: Chrome on macOS draws tiles of one flat colour as solid
+   fills and colour-manages them differently from rasterised tiles, so empty stretches of the page showed as a
+   slightly different band. A gradient is never a solid fill, so every tile renders the same way. */
 html {
+  min-height: 100%;
+  background: var(--h-bg) linear-gradient(var(--h-bg), var(--h-bg));
+  color: var(--h-text);
   -webkit-text-size-adjust: 100%;
 }
 body {
+  min-height: 100%;
   margin: 0;
-  background: var(--h-bg);
   color: var(--h-text);
   font: var(--h-text-md) / var(--h-leading) var(--h-font);
+  font-feature-settings: 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
 }
 h1,
@@ -18,11 +25,13 @@ h2,
 h3,
 h4 {
   margin: 0;
-  line-height: 1.25;
+  line-height: 1.2;
   font-weight: 600;
 }
 h1 {
-  font-size: var(--h-text-xl);
+  font-size: var(--h-text-3xl);
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 h2 {
   font-size: var(--h-text-lg);
@@ -34,11 +43,13 @@ p {
   margin: 0;
 }
 a {
-  color: var(--h-accent);
+  color: inherit;
+  font-weight: 500;
+  text-decoration: none;
   text-underline-offset: 2px;
 }
 a:hover {
-  color: var(--h-accent-strong);
+  text-decoration: underline;
 }
 code,
 kbd,
@@ -65,6 +76,9 @@ button:disabled {
 :focus-visible {
   outline: none;
   box-shadow: var(--h-focus);
+}
+::placeholder {
+  color: var(--h-text-faint);
 }
 [hidden] {
   display: none !important;
@@ -110,6 +124,9 @@ ul.h-plain {
 }
 .h-spacer {
   flex: 1;
+}
+.h-num {
+  font-variant-numeric: tabular-nums;
 }
 @media (prefers-reduced-motion: reduce) {
   *,

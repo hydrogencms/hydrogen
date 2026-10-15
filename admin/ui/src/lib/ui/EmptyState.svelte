@@ -5,7 +5,7 @@
 </script>
 
 <div class="h-empty">
-  <Icon name={icon} size={32} />
+  <span class="h-empty__icon"><Icon name={icon} size={28} /></span>
   <h2 class="h-empty__title">{title}</h2>
   {#if description}<p class="h-empty__text">{description}</p>{/if}
   {#if actions}<div class="h-empty__actions">{@render actions()}</div>{/if}

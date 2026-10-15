@@ -183,7 +183,7 @@
 <Dialog bind:open title={t('pages.moveTitle', { name: node.name })} size="lg">
   <div class="h-stack">
     <div>
-      <p class="h-muted" id="pages-move-parent">{t('pages.newParent')}</p>
+      <p class="h-field__label" id="pages-move-parent">{t('pages.newParent')}</p>
       <div class="h-pages__chooser">
         <Tree nodes={roots} label={t('pages.newParent')} bind:expanded selected={parentId} onselect={choose}
           loadChildren={async (tn) => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from '../ui/Icon.svelte';
   import type { CompiledField } from '../types.svelte';
   import Fields from './Fields.svelte';
   import { useFields } from './context';
@@ -23,14 +24,14 @@
   const error = $derived(ctx.error(path));
 </script>
 
-<fieldset class="h-fieldset" disabled={readonly}>
+<fieldset class="h-fieldset" class:h-fieldset--bare={bare} disabled={readonly}>
   {#if !bare}
     <legend class="h-fieldset__legend">
       {field.label}{#if field.required}<span class="h-field__req" aria-hidden="true">*</span>{/if}
     </legend>
   {/if}
   {#if field.description && !bare}<p class="h-field__desc">{field.description}</p>{/if}
-  {#if error}<p class="h-field__error" role="alert">{error}</p>{/if}
+  {#if error}<p class="h-field__error" role="alert"><Icon name="alert-circle" size={14} />{error}</p>{/if}
   {#if value && typeof value === 'object'}
     <div class="h-fieldset__body">
       <Fields fields={field.fields ?? []} bind:doc={value} {path} />

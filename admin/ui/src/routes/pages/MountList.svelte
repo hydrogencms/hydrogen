@@ -63,9 +63,12 @@
   const tone = (s: string) => (s === 'published' ? 'success' : s === 'changed' ? 'warning' : 'neutral');
 </script>
 
-<div class="h-stack">
+<div class="h-stack h-pages__node">
   <div class="h-page__head">
-    <h2 class="h-card__title">{node.name}</h2>
+    <div class="h-row">
+      <h2 class="h-pages__nodetitle">{node.name}</h2>
+      <Badge>{t('pages.kind.mount')}</Badge>
+    </div>
     <span class="h-spacer"></span>
     {#if canEdit}<Button size="sm" icon="edit" onclick={onedit}>{t('pages.editMount')}</Button>{/if}
   </div>
@@ -101,6 +104,14 @@
 {#snippet updCell(r: Schemas['Summary'])}{formatDateTime(r.updatedAt)}{/snippet}
 
 <style>
+  .h-pages__node {
+    padding: var(--h-space-4);
+  }
+  .h-pages__nodetitle {
+    font-size: var(--h-text-2xl);
+    font-weight: 650;
+    letter-spacing: -0.02em;
+  }
   .h-pages__facts {
     display: grid;
     grid-template-columns: max-content 1fr;

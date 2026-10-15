@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { adminLogin, adminPassword, careersURL, draftOf, manage, route, seedPage, seedRoots, signIn, signOut, tag, watchErrors } from './helpers';
+import { adminLogin, adminPassword, careersURL, draftOf, manage, openSettings, route, seedPage, seedRoots, signIn, signOut, tag, watchErrors } from './helpers';
 
 // The H5b exit scenario as one ordered story: each test builds on the previous one, so the describe is serial.
 test.describe.serial('exit scenario: an editor confined to the careers site', () => {
@@ -22,16 +22,16 @@ test.describe.serial('exit scenario: an editor confined to the careers site', ()
     const errors = watchErrors(page);
     await signIn(page, adminLogin, adminPassword);
 
+    await openSettings(page);
     await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Users' }).click();
     await page.getByRole('button', { name: 'New' }).click();
     const dlg = page.getByRole('dialog', { name: 'New user' });
     await dlg.getByLabel('Login').fill(editor.login);
-    await dlg.getByLabel('Name').fill('E2E Editor');
+    await dlg.getByLabel('Name').fill(`E2E Editor ${t}`);
     await dlg.getByLabel('Password').fill(editor.password);
     await dlg.getByRole('button', { name: 'Create' }).click();
-    await page.getByRole('link', { name: editor.login }).click();
+    await page.getByRole('link', { name: `E2E Editor ${t}` }).click();
 
-    await page.getByRole('tab', { name: 'Roles' }).click();
     await page.getByRole('button', { name: 'Add role' }).click();
     const assign = page.getByRole('dialog', { name: 'Add role' });
     await assign.getByLabel('Role').selectOption({ label: 'editor' });
@@ -113,7 +113,7 @@ test.describe.serial('exit scenario: an editor confined to the careers site', ()
     await form.getByLabel('Kind').selectOption('team');
     await form.getByRole('combobox', { name: /Related/ }).fill('Teams');
     await page.getByRole('option', { name: new RegExp(target.title) }).click();
-    await form.getByRole('button', { name: /Add Sections/ }).click();
+    await form.getByRole('button', { name: /Add item/ }).click();
     await form.getByLabel('Heading').fill('Why join');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText('Saved').first()).toBeVisible();
@@ -130,8 +130,8 @@ test.describe.serial('exit scenario: an editor confined to the careers site', ()
     await page.goto(`/admin/items/${jobs.id}`);
     await expect(page.getByRole('heading', { name: jobs.title, level: 1 })).toBeVisible();
 
-    await page.getByRole('button', { name: /^de\s/ }).click();
-    await expect(page.getByRole('button', { name: /^de\s/ })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'de', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'de', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Copy from en' }).click();
     const form = page.getByRole('form', { name: /fields/ });
     await expect(form.getByLabel('Title')).toHaveValue(jobs.title);
@@ -150,7 +150,8 @@ test.describe.serial('exit scenario: an editor confined to the careers site', ()
     expect(live.locales).toEqual(expect.arrayContaining(['en', 'de']));
 
     // "Where this appears": the careers channel with its live address.
-    const appears = page.getByRole('tabpanel', { name: 'Appears in' });
+    await page.getByRole('tab', { name: 'Appears' }).click();
+    const appears = page.getByRole('tabpanel', { name: 'Appears' });
     await expect(appears.getByText('careers_en')).toBeVisible();
     for (const locale of ['en', 'de']) {
       const entry = appears.getByRole('listitem').filter({ hasText: `https://jobs.acme.com/${jobs.slug}` }).filter({ hasText: `${locale} \u00b7 careers` });
@@ -175,7 +176,7 @@ test.describe.serial('exit scenario: an editor confined to the careers site', ()
 
     // The corporate collections themselves are not offered or are empty.
     await page.goto('/admin/collections/article');
-    await expect(page.getByText(/Nothing here yet|not delivered by this channel|No item matches/).first()).toBeVisible();
+    await expect(page.getByText(/Nothing here yet|No .* items yet|not delivered by this channel|No item matches/).first()).toBeVisible();
     await page.goto('/admin/pages/corporate');
     await expect(page.getByText('Corporate Home')).toHaveCount(0);
   });
@@ -216,7 +217,8 @@ test.describe.serial('exit scenario: an editor confined to the careers site', ()
     const referrer = await seedPage('careers', `Referrer ${t}`, roots.careers.node, { related: jobs.id });
     await signIn(page, editor.login, editor.password);
     await page.goto(`/admin/items/${jobs.id}`);
-    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
     const dlg = page.getByRole('dialog', { name: 'Delete item' });
     await dlg.getByRole('button', { name: 'Delete', exact: true }).click();
     await expect(dlg.getByRole('alert')).toContainText('still referenced by 1 items');
