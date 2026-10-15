@@ -21,10 +21,15 @@ export function setConfig(c: Partial<AdminConfig>) {
 }
 
 // The bundle is served from <prefix>/assets/, so config.json is one level up from the entry script; this works
-// at any admin.prefix and for any deep link. (A variable keeps Vite from treating the URL as an asset.)
+// at any admin.prefix and for any deep link. (A variable keeps Vite from treating the URL as an asset.) The Vite
+// dev server serves modules unbundled from <prefix>/src/…, where that relative path misses, so dev uses its base.
 const CONFIG = '../config.json';
+export function configURL(dev = import.meta.env.DEV, base = import.meta.env.BASE_URL, from = import.meta.url): URL {
+  return dev ? new URL(base + 'config.json', from) : new URL(CONFIG, from);
+}
+
 export async function loadConfig(fetcher: typeof fetch = fetch): Promise<AdminConfig> {
-  const res = await fetcher(new URL(CONFIG, import.meta.url), { credentials: 'same-origin' });
+  const res = await fetcher(configURL(), { credentials: 'same-origin' });
   if (!res.ok) throw new Error(`config.json: ${res.status}`);
   setConfig(await res.json());
   return current;
