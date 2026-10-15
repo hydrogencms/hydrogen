@@ -83,7 +83,10 @@ func TestAuth(t *testing.T) {
 	f := newFake(t)
 	h := newAPI(t, f)
 	for _, rt := range routes {
-		path := strings.NewReplacer("{type}", "article", "{id}", testID.String()).Replace(rt.path)
+		if rt.policy == Public {
+			continue
+		}
+		path := strings.NewReplacer("{type}", "article", "{id}", testID.String(), "{user}", testID.String()).Replace(rt.path)
 		for _, auth := range []string{"", "Bearer nope", "Basic " + token, "Bearer", token} {
 			w := do(h, rt.method, path, "", "Authorization", auth)
 			if w.Code != 401 || w.Header().Get("WWW-Authenticate") != "Bearer" {
@@ -105,7 +108,7 @@ func TestActorInContext(t *testing.T) {
 	cf := &ctxFake{fake: f, on: func(a audit.Actor) { got = a }}
 	h := newAPI(t, f, func(o *Options) { o.Content = cf })
 	do(h, "GET", "/items/"+testID.String(), "")
-	if got != (audit.Actor{Kind: "token", ID: "manage"}) {
+	if got.Kind != "token" || got.ID != "config" {
 		t.Errorf("actor %+v", got)
 	}
 }

@@ -58,12 +58,13 @@ func TestEndpointRegistration(t *testing.T) {
 		h            http.HandlerFunc
 		want         string
 	}{
-		{"GET", "/ping", ManageToken, noop, "registered by both a and b"},
+		{"GET", "/ping", Authenticated, noop, "registered by both a and b"},
 		{"FETCH", "/x", Public, noop, "method must be"},
 		{"GET", "x", Public, noop, "path must start"},
 		{"GET", "/a b", Public, noop, "path must start"},
 		{"GET", "/a//b", Public, noop, "path must start"},
-		{"GET", "/x", 0, noop, "unknown auth"},
+		{"GET", "/x", "", noop, "unknown auth"},
+		{"GET", "/x", Auth("policy:"), noop, "unknown auth"},
 		{"GET", "/x", Public, nil, "no handler"},
 	} {
 		if err := reg.Endpoint(tc.method, tc.path, tc.auth, tc.h); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -114,9 +115,20 @@ func TestCheckWebhooksAndTokens(t *testing.T) {
 		{"no events", "dev", "webhooks:\n  w:\n    url: https://x.test\n    secret: ${env:S:-x}\n", nil, "at least one topic"},
 		{"literal secret", "dev", "webhooks:\n  w:\n    url: https://x.test\n    events: [\"*\"]\n    secret: abc\n", nil, "must come from ${env:NAME}"},
 		{"unknown key", "dev", "webhooks:\n  w:\n    urls: https://x.test\n", nil, `unknown key "urls"`},
-		{"manage endpoint needs token", "prod", "database:\n  url: ${env:DB}\n", []Module{evMod{"ep", func(r *Registry) error {
-			return r.Endpoint("GET", "/x", ManageToken, noop)
-		}}}, "manage.token is required"},
+		{"authenticated endpoint needs no config token", "prod", "database:\n  url: ${env:DB}\n", []Module{evMod{"ep", func(r *Registry) error {
+			return r.Endpoint("GET", "/x", Authenticated, noop)
+		}}}, ""},
+		{"unknown endpoint policy", "prod", "database:\n  url: ${env:DB}\n", []Module{evMod{"ep", func(r *Registry) error {
+			return r.Endpoint("GET", "/x", Policy("nope.read"), noop)
+		}}}, `unknown policy "nope.read"`},
+		{"known endpoint policy", "prod", "database:\n  url: ${env:DB}\n", []Module{evMod{"ep", func(r *Registry) error {
+			return r.Endpoint("GET", "/x", Policy("audit.read"), noop)
+		}}}, ""},
+		{"insecure cookies in prod", "prod", "database:\n  url: ${env:DB}\nauth:\n  insecure_cookies: true\n", nil, "only allowed in the dev"},
+		{"insecure cookies in dev", "dev", "auth:\n  insecure_cookies: true\n  session_idle: 1h\n", nil, ""},
+		{"bad trusted proxy", "dev", "http:\n  trusted_proxies: [\"10.0.0.0/33\"]\n", nil, "trusted_proxies"},
+		{"trusted proxies", "dev", "http:\n  trusted_proxies: [\"10.0.0.0/8\", \"::1\"]\n", nil, ""},
+		{"negative session", "dev", "auth:\n  session_max: -1h\n", nil, "session_max"},
 		{"public endpoint ok", "prod", "database:\n  url: ${env:DB}\n", []Module{evMod{"ep", func(r *Registry) error {
 			return r.Endpoint("GET", "/x", Public, noop)
 		}}}, ""},
@@ -124,7 +136,7 @@ func TestCheckWebhooksAndTokens(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := appConfig(t, tc.env, tc.yaml, prod)
 			mods := tc.mods
-			if tc.name == "manage endpoint needs token" || tc.name == "public endpoint ok" {
+			if strings.HasSuffix(tc.name, "endpoint policy") || tc.name == "authenticated endpoint needs no config token" || tc.name == "public endpoint ok" {
 				// no content types: the token is needed only by the endpoint
 				dir := t.TempDir()
 				if err := os.WriteFile(filepath.Join(dir, "app.yaml"), []byte(tc.yaml+"content: { schema_dir: "+filepath.Join(dir, "none")+" }\n"), 0o644); err != nil {

@@ -7,6 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/hydrogencms/hydrogen/ids"
@@ -162,5 +165,9 @@ const NotifyChannel = "hydrogen_auth"
 type InvalidError struct{ Fields map[string]string }
 
 func (e *InvalidError) Error() string {
-	return fmt.Sprintf("access: invalid input (%d fields)", len(e.Fields))
+	parts := make([]string, 0, len(e.Fields))
+	for _, k := range slices.Sorted(maps.Keys(e.Fields)) {
+		parts = append(parts, k+": "+e.Fields[k])
+	}
+	return "access: invalid input: " + strings.Join(parts, "; ")
 }

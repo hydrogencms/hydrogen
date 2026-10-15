@@ -13,7 +13,7 @@ import (
 const BenchItems = 10_000
 
 // SeedBench fills an empty, migrated database with BenchItems articles. Each has three indexed fields:
-// category (text, 20 values), rating (num, 0..99) and published (time).
+// category (text, 20 values), rating (num, 0..99) and published (time), in both projections.
 func SeedBench(tb testing.TB, db store.DB) {
 	tb.Helper()
 	ctx := context.Background()
@@ -37,12 +37,15 @@ func SeedBench(tb testing.TB, db store.DB) {
 				return err
 			}
 			published := t0.Add(time.Duration(i*37%BenchItems) * time.Hour)
-			if err := c.ReplaceIndex(ctx, id, store.ProjectionPublished, []store.IndexRow{
+			rows := []store.IndexRow{
 				txt("", "category", fmt.Sprintf("c%02d", i%20)),
 				num("", "rating", float64(i*7%100)),
 				tim("", "published", published),
-			}); err != nil {
-				return err
+			}
+			for _, p := range []store.Projection{store.ProjectionPublished, store.ProjectionWorking} {
+				if err := c.ReplaceIndex(ctx, id, p, rows); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -88,6 +91,11 @@ func BenchQueries() map[string]store.Query {
 			Where: []store.Cond{{Field: "rating", Column: store.ColNum, Op: store.OpLt, Value: 50.0}},
 		},
 	}
+	for _, name := range []string{"FilterSortLimit", "Default", "SortByIndexField", "Deep"} {
+		q := base[name]
+		q.Working = true
+		base["Working"+name] = q
+	}
 	base["FilterSortLimitAvailable"] = withAvailable(base["FilterSortLimit"])
 	base["SortByIndexFieldAvailable"] = withAvailable(base["SortByIndexField"])
 	return base
@@ -97,7 +105,8 @@ func BenchQueries() map[string]store.Query {
 func BenchmarkQuery(b *testing.B, db store.DB) {
 	SeedBench(b, db)
 	ctx := context.Background()
-	for _, name := range []string{"FilterSortLimit", "Default", "SortByIndexField", "Deep", "FilterSortLimitAvailable", "SortByIndexFieldAvailable"} {
+	for _, name := range []string{"FilterSortLimit", "Default", "SortByIndexField", "Deep", "FilterSortLimitAvailable", "SortByIndexFieldAvailable",
+		"WorkingFilterSortLimit", "WorkingDefault", "WorkingSortByIndexField", "WorkingDeep"} {
 		q := BenchQueries()[name]
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()

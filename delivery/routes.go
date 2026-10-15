@@ -14,6 +14,7 @@ import (
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/manage"
 	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/store/storeutil"
 )
 
 func (a *API) coreRoutes() []route {
@@ -320,7 +321,7 @@ func (st *state) previewed(ctx context.Context, typ string, sq store.Query) (*re
 		return nil, nil
 	}
 	t, ok := st.a.o.Schema.Type(typ)
-	if !ok || !matchesWhere(sq.Where, st.a.o.Schema.IndexValues(t, v.Fields)) {
+	if !ok || !storeutil.MatchWhere(sq.Where, st.a.o.Schema.IndexValues(t, v.Fields)) {
 		return nil, nil
 	}
 	st.look(id, typ)

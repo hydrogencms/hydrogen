@@ -40,6 +40,11 @@ never commit it, quote it in commit messages or public docs, or move its content
   `kernel/endpoints.go` (`/api/x`), export/import (`exportfmt/`, `store/export.go`, `hydrogen_export.go`), `client/`
   (Go client), `hydrogen_frontend.go` (`check-frontend`). Pages adds `/route` and `/tree`. Contract:
   `planning/design/delivery-h4.md`.
+- Access (H5a): `access/` (principals, RBAC policies and limitations, code access rules, passwords, sessions, API
+  tokens, `Authenticator`, `Checker`, `Admin` for users/groups/roles/tokens/audit), `store.AuthStore` (migration
+  0004), working projections (0005). `content.Service` checks the principal in the context (HTTP entry points
+  always set one; no principal = the system, unchecked); the management API authenticates every request.
+  Contract: `planning/design/auth-h5a.md`.
 - TypeScript SDK (H4b): `packages/` (npm workspaces: `client`, `router`, `next`; zero runtime dependencies,
   gzip budgets in `packages/scripts/size.mjs`). `examples/next-site`: Next.js sample against `examples/multisite`
   (one deployment, every web channel; the proxy answers CMS redirects and 404s; `"use cache"` entries tagged from
@@ -61,9 +66,14 @@ make next-e2e                   # examples/next-site against examples/multisite 
 ```
 
 In a project: `hydrogen dev` (live reload; regenerates `gen/` on schema changes), `hydrogen generate`,
-`hydrogen migrate`, `hydrogen content:migrate`, `hydrogen config:check [-db]`, `hydrogen export|import <dir>`,
-`hydrogen check-frontend -templates <file> [-channel name] [-db]`. The management API token is `manage.token`
-(`dev-token` in dev when unset; required elsewhere once the schema has types). `delivery.preview_secret` (≥ 32
+`hydrogen migrate`, `hydrogen content:migrate`, `hydrogen content:reindex` (rebuild every projection),
+`hydrogen config:check [-db]`, `hydrogen export|import <dir>`, `hydrogen check-frontend -templates <file>
+[-channel name] [-db]`, `hydrogen users:create-admin <login>` (password from `HYDROGEN_ADMIN_PASSWORD` or one stdin
+line), `hydrogen tokens:create -name n -role r [-agent] [-expires 720h]` (secret printed once, to stdout).
+`manage.token` is an optional bearer token with every right (audited as `token:config`; in dev it defaults to
+`dev-token`, accepted only from loopback peers without forwarding headers); users sign in with a session (`POST
+/auth/login`, CSRF header on writes) and automation uses API tokens. `auth.session_idle`, `auth.session_max`,
+`auth.insecure_cookies` (dev only) and `http.trusted_proxies` configure sessions. `delivery.preview_secret` (≥ 32
 characters) is required outside dev; dev derives it from `manage.token`.
 
 Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) and skip without it unless
@@ -76,8 +86,8 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
   `go test ./codegen -update`.
 - Core packages never write SQL. Modules may, through `Tx.SQL()`/`DB.Read()`, branching on `Dialect()` where
   syntax differs; byte slices handed out by drivers must be copied before the next row (pgx reuses buffers).
-- Structural writes in the pages module take a per-site lock (Postgres advisory xact lock); keep it that way. Storage features are an interface in `store`, an implementation in every
-  adapter, and a check in `storetest`.
+- Structural writes in the pages module take a per-site lock (Postgres advisory xact lock); keep it that way.
+  Storage features are an interface in `store`, an implementation in every adapter, and a check in `storetest`.
 - Delivery reads published snapshots only. A change that alters a published document's shape (schema change
   without a content migration) needs `RebuildProjections`, or the API serves stale snapshots.
 - Frontend webhooks should subscribe to `*`: `item.*` alone misses `page.changed`, which carries the route and
@@ -85,6 +95,15 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - Delivery listings return `{items, hasMore}`; `total` costs a count and is only computed with `?total=true`.
 - macOS scans a newly built binary on first launch (~300 ms); measure start-up from the second run.
 - Scratch projects inside the repo (`.work/`) need `GOWORK=off`, or the repo's `go.work` claims them.
+- Authorization lives in the service layer, never only in handlers: `content.Service` checks `Options.Access` for
+  the principal in ctx; route policies (`manage.Route.Policy`, `kernel.Policy("x.y")` for endpoints) are only a
+  coarse "holds this policy at all" gate. Every `manage.Route` and `kernel.Endpoint` declares a policy name,
+  `manage.Authenticated`/`kernel.Authenticated` or `Public`; a module route without one fails the build.
+  New policies and limitations register through `Registry.Policy/Limitation/PolicyLimitation`; code rules through
+  `h.AccessRules(typ, rules)` or the typed `content.ArticleType.Access(h, rules)`.
+- Take the principal's grants before opening a transaction (`Checker.Prepare`, done by the services), and put the
+  open transaction on the context (`store.WithTx`) before calling the checker; limitations query through
+  `store.TxFrom(ctx)`. A pooled connection that waits for another while holding one can deadlock.
 
 ## Rules
 

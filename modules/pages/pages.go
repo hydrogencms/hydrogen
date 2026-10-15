@@ -8,9 +8,11 @@ package pages
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"time"
 
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/ids"
 )
 
@@ -75,14 +77,17 @@ type Node struct {
 // TreeNode is a node as navigation and the admin tree show it, in one locale.
 type TreeNode struct {
 	Node
-	Type     string     `json:"type,omitempty"`   // content type of a page node
-	Name     string     `json:"name"`             // page name in the locale (main locale fallback); mount/link label
-	Path     string     `json:"path,omitempty"`   // current path in the locale ("" when it has none)
-	Status   string     `json:"status,omitempty"` // page item status: draft, published, changed
-	Children int        `json:"children"`
-	Target   string     `json:"target,omitempty"` // links: resolved path or URL
-	Broken   bool       `json:"broken,omitempty"` // links: the item or node they pointed at is gone
-	Nodes    []TreeNode `json:"nodes,omitempty"`  // children, when depth allows
+	Type     string `json:"type,omitempty"`   // content type of a page node
+	Name     string `json:"name"`             // page name in the locale (main locale fallback); mount/link label
+	Path     string `json:"path,omitempty"`   // current path in the locale ("" when it has none)
+	Status   string `json:"status,omitempty"` // page item status: draft, published, changed
+	Children int    `json:"children"`
+	// Restricted marks an ancestor shown as context for a subtree the reader may see: only identity and the
+	// name are filled.
+	Restricted bool       `json:"restricted,omitempty"`
+	Target     string     `json:"target,omitempty"` // links: resolved path or URL
+	Broken     bool       `json:"broken,omitempty"` // links: the item or node they pointed at is gone
+	Nodes      []TreeNode `json:"nodes,omitempty"`  // children, when depth allows
 }
 
 type Crumb struct {
@@ -160,6 +165,15 @@ func (s *Service) Sites() []string {
 	return slices.Clone(s.impl.sites)
 }
 
+// SitesFor lists the sites the principal in ctx may see.
+func (s *Service) SitesFor(ctx context.Context) ([]string, error) {
+	impl, err := s.get()
+	if err != nil {
+		return nil, err
+	}
+	return impl.sitesFor(ctx)
+}
+
 // Place puts a page item into the tree of a site.
 func (s *Service) Place(ctx context.Context, site string, in Place) (*Node, error) {
 	impl, err := s.get()
@@ -220,7 +234,7 @@ func (s *Service) Tree(ctx context.Context, site, locale string, parent *ids.UUI
 	if err != nil {
 		return nil, err
 	}
-	return impl.tree(ctx, site, locale, parent, depth)
+	return impl.tree(ctx, site, locale, parent, depth, impl.newVisibility)
 }
 
 // Resolve finds what a path serves in a site and locale.
@@ -229,7 +243,21 @@ func (s *Service) Resolve(ctx context.Context, site, locale, path string) (*Reso
 	if err != nil {
 		return nil, err
 	}
-	return impl.resolve(ctx, site, locale, path)
+	if err := impl.canSee(ctx, site); errors.Is(err, access.ErrForbidden) {
+		return nil, notFound("site %q", site)
+	} else if err != nil {
+		return nil, err
+	}
+	res, err := impl.resolve(ctx, site, locale, path)
+	if err != nil {
+		return nil, err
+	}
+	if hidden, err := impl.limitResolution(ctx, res); err != nil {
+		return nil, err
+	} else if hidden {
+		return notFoundResolution(), nil
+	}
+	return res, nil
 }
 
 // Paths lists every route of an item ("where this appears").
@@ -238,5 +266,5 @@ func (s *Service) Paths(ctx context.Context, item ids.UUID) ([]Route, error) {
 	if err != nil {
 		return nil, err
 	}
-	return impl.paths(ctx, item)
+	return impl.pathsFor(ctx, item)
 }

@@ -104,7 +104,7 @@ func newPagesEnv(t testing.TB, db store.DB, clk *clock.Manual, o pagesOpts) *pag
 		t.Fatal(err)
 	}
 	mods := append([]kernel.Module{sqlite.Module(), postgres.Module(), pages.Module()}, o.extra...)
-	app, err := kernel.New(context.Background(), kernel.Options{Config: cfg, Clock: clk, DB: db, Stderr: io.Discard}, mods...)
+	app, err := kernel.New(context.Background(), kernel.Options{Config: cfg, Clock: clk, DB: db, Stderr: io.Discard, PasswordIterations: 1000}, mods...)
 	if err != nil {
 		t.Fatal(err)
 	}

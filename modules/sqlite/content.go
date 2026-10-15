@@ -452,13 +452,65 @@ func (s contentStore) IncomingRefs(ctx context.Context, to ids.UUID) ([]store.Re
 }
 
 func (s contentStore) ReplaceIndex(ctx context.Context, item ids.UUID, proj store.Projection, rows []store.IndexRow) error {
-	if proj != store.ProjectionPublished {
-		return errNotImplemented // H5a T2
+	scope, err := scopeOf(proj)
+	if err != nil {
+		return err
 	}
-	if _, err := s.tx.ExecContext(ctx, `DELETE FROM field_index WHERE item_id = ?`, uid(item)); err != nil {
+	if _, err := s.tx.ExecContext(ctx, `DELETE FROM field_index WHERE item_id = ? AND scope = ? AND module = ''`,
+		uid(item), scope); err != nil {
 		return fmt.Errorf("sqlite: replace index %s: %w", item, err)
 	}
-	args := make([]any, 0, len(rows)*8)
+	args, err := indexArgs(item, "", rows, scope)
+	if err != nil {
+		return fmt.Errorf("sqlite: replace index %s: %w", item, err)
+	}
+	if err := s.insertIndex(ctx, args); err != nil {
+		return fmt.Errorf("sqlite: replace index %s: %w", item, err)
+	}
+	return nil
+}
+
+// ReplaceModuleIndex stores a module's rows once per scope, so every query sees them whatever its projection.
+func (s contentStore) ReplaceModuleIndex(ctx context.Context, item ids.UUID, module string, rows []store.IndexRow) error {
+	if module == "" {
+		return errors.New("sqlite: replace module index: empty module name")
+	}
+	for _, r := range rows {
+		if !strings.HasPrefix(r.Field, module+".") {
+			return fmt.Errorf("sqlite: replace module index %s/%s: field %q is not prefixed with the module name", item, module, r.Field)
+		}
+	}
+	if _, err := s.tx.ExecContext(ctx, `DELETE FROM field_index WHERE item_id = ? AND module = ?`, uid(item), module); err != nil {
+		return fmt.Errorf("sqlite: replace module index %s/%s: %w", item, module, err)
+	}
+	args, err := indexArgs(item, module, rows, "p", "w")
+	if err != nil {
+		return fmt.Errorf("sqlite: replace module index %s/%s: %w", item, module, err)
+	}
+	if err := s.insertIndex(ctx, args); err != nil {
+		return fmt.Errorf("sqlite: replace module index %s/%s: %w", item, module, err)
+	}
+	return nil
+}
+
+func scopeOf(p store.Projection) (string, error) {
+	switch p {
+	case store.ProjectionPublished, store.ProjectionWorking:
+		return string(p), nil
+	}
+	return "", fmt.Errorf("sqlite: unknown projection %q", p)
+}
+
+const indexCols = 10
+
+func (s contentStore) insertIndex(ctx context.Context, args []any) error {
+	return s.insertRows(ctx, `INSERT INTO field_index (item_id, scope, module, locale, field, v_text, v_num, v_time, v_bool, v_ref) VALUES`,
+		indexCols, args)
+}
+
+// indexArgs flattens rows into insert arguments, one copy per scope.
+func indexArgs(item ids.UUID, module string, rows []store.IndexRow, scopes ...string) ([]any, error) {
+	args := make([]any, 0, len(rows)*len(scopes)*indexCols)
 	for _, r := range rows {
 		set := 0
 		row := [5]any{}
@@ -483,37 +535,35 @@ func (s contentStore) ReplaceIndex(ctx context.Context, item ids.UUID, proj stor
 			set++
 		}
 		if set != 1 {
-			return fmt.Errorf("sqlite: replace index %s: field %q has %d value columns set, want 1", item, r.Field, set)
+			return nil, fmt.Errorf("field %q has %d value columns set, want 1", r.Field, set)
 		}
-		args = append(args, uid(item), r.Locale, r.Field)
-		args = append(args, row[:]...)
+		for _, scope := range scopes {
+			args = append(args, uid(item), scope, module, r.Locale, r.Field)
+			args = append(args, row[:]...)
+		}
 	}
-	err := s.insertRows(ctx, `INSERT INTO field_index (item_id, locale, field, v_text, v_num, v_time, v_bool, v_ref) VALUES`, 8, args)
-	if err != nil {
-		return fmt.Errorf("sqlite: replace index %s: %w", item, err)
-	}
-	return nil
+	return args, nil
 }
 
 func (s contentStore) ReplaceSearch(ctx context.Context, item ids.UUID, proj store.Projection, docs []store.SearchDoc) error {
-	if proj != store.ProjectionPublished {
-		return errNotImplemented // H5a T2
+	scope, err := scopeOf(proj)
+	if err != nil {
+		return err
 	}
-	if _, err := s.tx.ExecContext(ctx, `DELETE FROM content_search_doc WHERE item_id = ?`, uid(item)); err != nil {
+	if _, err := s.tx.ExecContext(ctx, `DELETE FROM content_search_doc WHERE item_id = ? AND scope = ?`, uid(item), scope); err != nil {
 		return fmt.Errorf("sqlite: replace search %s: %w", item, err)
 	}
 	if len(docs) == 0 {
 		return nil
 	}
 	locales, bounded := storeutil.SearchTexts(docs)
-	args := make([]any, 0, len(locales)*2)
+	args := make([]any, 0, len(locales)*3)
 	for _, l := range locales {
-		args = append(args, uid(item), l)
+		args = append(args, uid(item), scope, l)
 	}
-	if err := s.insertRows(ctx, `INSERT INTO content_search_doc (item_id, locale) VALUES`, 2, args); err != nil {
-		return fmt.Errorf("sqlite: replace search %s: %w", item, err)
-	}
-	rows, err := s.tx.QueryContext(ctx, `SELECT id, locale FROM content_search_doc WHERE item_id = ?`, uid(item))
+	// A page of locales is far below the variable limit, so one statement inserts them all.
+	rows, err := s.tx.QueryContext(ctx, `INSERT INTO content_search_doc (item_id, scope, locale) VALUES `+
+		strings.TrimSuffix(strings.Repeat("(?,?,?),", len(locales)), ",")+` RETURNING id, locale`, args...)
 	if err != nil {
 		return fmt.Errorf("sqlite: replace search %s: %w", item, err)
 	}
@@ -583,11 +633,4 @@ func (s contentStore) ItemIDsOfType(ctx context.Context, typ string, after ids.U
 		out = append(out, u)
 	}
 	return out, rows.Err()
-}
-
-// errNotImplemented marks H5a placeholders (T2 working projections, T1 auth store).
-var errNotImplemented = errors.New("not implemented yet (H5a)")
-
-func (s contentStore) ReplaceModuleIndex(context.Context, ids.UUID, string, []store.IndexRow) error {
-	return errNotImplemented // H5a T2
 }

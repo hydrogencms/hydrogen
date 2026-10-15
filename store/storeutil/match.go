@@ -1,4 +1,4 @@
-package delivery
+package storeutil
 
 import (
 	"cmp"
@@ -11,11 +11,12 @@ import (
 	"github.com/hydrogencms/hydrogen/store"
 )
 
-// matchesWhere evaluates a listing's field conditions over the index values of a draft (schema.IndexValues,
-// the projection published items are indexed by), so a draft matches as its published self would: a list
-// matches when any element does, ne when none equals the value. The values come from the picked locale's
-// fields; published rows take shared fields from the main locale.
-func matchesWhere(conds []store.Cond, vals []schema.IndexValue) bool {
+// MatchWhere evaluates field conditions in memory over the index values of a document (schema.IndexValues, the
+// projection items are indexed by), so a draft matches as its published self would: a list matches when any
+// element does, ne when none equals the value. The values come from the picked locale's fields; published rows
+// take shared fields from the main locale. A condition without a Column takes the column of the index value,
+// and its value is normalised like Scalar does.
+func MatchWhere(conds []store.Cond, vals []schema.IndexValue) bool {
 	for _, c := range conds {
 		var of []schema.IndexValue
 		for _, v := range vals {
@@ -79,6 +80,12 @@ func matchCond(c store.Cond, vals []schema.IndexValue) bool {
 // compareValue orders an index value against a condition value of the column's type; false when the index
 // value has nothing in that column.
 func compareValue(col store.Column, v schema.IndexValue, want any) (int, bool) {
+	if col == "" {
+		col = columnOf(v)
+	}
+	if w, err := Scalar(col, want); err == nil {
+		want = w
+	}
 	switch col {
 	case store.ColText:
 		w, ok := want.(string)
@@ -114,4 +121,18 @@ func cmpPtr[T cmp.Ordered](have *T, want T, ok bool) (int, bool) {
 		return 0, false
 	}
 	return cmp.Compare(*have, want), true
+}
+
+func columnOf(v schema.IndexValue) store.Column {
+	switch {
+	case v.Text != nil:
+		return store.ColText
+	case v.Num != nil:
+		return store.ColNum
+	case v.Time != nil:
+		return store.ColTime
+	case v.Bool != nil:
+		return store.ColBool
+	}
+	return store.ColRef
 }

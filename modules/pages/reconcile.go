@@ -35,6 +35,9 @@ func (s *service) reconcile(ctx context.Context, e outbox.Event) error {
 	}
 	return s.db.Tx(ctx, func(tx store.Tx) error {
 		q := tx.SQL()
+		if err := s.lockItems(ctx, tx, []ids.UUID{p.ID}); err != nil {
+			return err
+		}
 		it, err := tx.Content().GetItem(ctx, p.ID, false)
 		if e.Topic == "item.deleted" || errors.Is(err, store.ErrNotFound) {
 			changes, err := s.removeItem(ctx, tx, p.ID)

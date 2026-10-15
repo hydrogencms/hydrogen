@@ -35,10 +35,17 @@ func (n nodeRow) public() (*Node, error) {
 }
 
 func (s *service) node(ctx context.Context, id ids.UUID) (*Node, error) {
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
 	var out *Node
 	err := s.db.View(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
 		n, err := loadNode(ctx, tx.SQL(), id)
 		if err != nil {
+			return err
+		}
+		if err := s.authorize(ctx, policyRead, n); err != nil {
 			return err
 		}
 		out, err = n.public()
@@ -216,12 +223,25 @@ func (s *service) place(ctx context.Context, site string, in Place) (*Node, erro
 	if err := s.checkSite(site); err != nil {
 		return nil, err
 	}
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
 	var out *Node
 	err := s.structural(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
+		if err := s.lockItems(ctx, tx, []ids.UUID{in.Item}); err != nil {
+			return err
+		}
 		if err := s.lockSite(ctx, tx, site); err != nil {
 			return err
 		}
 		q := tx.SQL()
+		if err := s.authorizeParent(ctx, q, site, in.Parent, policyEdit); err != nil {
+			return err
+		}
+		if err := s.authorizePlace(ctx, tx, in.Item, site, s.pathOfParent(ctx, q, in.Parent)); err != nil {
+			return err
+		}
 		it, err := s.placeable(ctx, tx, in.Item)
 		if err != nil {
 			return err
@@ -242,6 +262,9 @@ func (s *service) place(ctx context.Context, site string, in Place) (*Node, erro
 		n.Item, n.MainLocale = &it.ID, it.MainLocale
 		if err := s.insertNode(ctx, q, n); err != nil {
 			return placeErr(err, site)
+		}
+		if err := s.reindexItems(ctx, tx, []ids.UUID{it.ID}); err != nil {
+			return err
 		}
 		docs, err := publishedDocs(ctx, tx.Content(), it)
 		if err != nil {
@@ -279,16 +302,38 @@ func (s *service) addMount(ctx context.Context, site string, in Mount) (*Node, e
 	if err := s.checkSite(site); err != nil {
 		return nil, err
 	}
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
+	if s.restricted(ctx) {
+		if err := s.svcs.Access.Holds(ctx, policyMount); err != nil {
+			return nil, err
+		}
+	}
 	spec := in.Spec
 	if _, err := s.checkMountSpec(&spec); err != nil {
 		return nil, err
 	}
 	var out *Node
 	err := s.structural(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
+		members, err := s.membershipItems(ctx, tx, &spec)
+		if err != nil {
+			return err
+		}
+		if err := s.lockItems(ctx, tx, members); err != nil {
+			return err
+		}
 		if err := s.lockSite(ctx, tx, site); err != nil {
 			return err
 		}
 		q := tx.SQL()
+		if err := s.authorizeParent(ctx, q, site, &in.Parent, policyEdit, policyMount); err != nil {
+			return err
+		}
+		if err := s.readsAll(ctx, spec.Collection); err != nil {
+			return err
+		}
 		parent, err := parentFor(ctx, q, site, in.Parent)
 		if err != nil {
 			return err
@@ -306,6 +351,9 @@ func (s *service) addMount(ctx context.Context, site string, in Mount) (*Node, e
 			return fmt.Errorf("pages: insert node: %w", err)
 		}
 		if err := s.rebuildMembership(ctx, tx, n, &spec); err != nil {
+			return err
+		}
+		if err := s.reindexMount(ctx, tx, n.ID, nil); err != nil {
 			return err
 		}
 		if err := s.recomputeCollection(ctx, q, site, spec.Collection, nil, nil); err != nil {
@@ -422,12 +470,19 @@ func (s *service) addLink(ctx context.Context, site string, in Link) (*Node, err
 	if err := s.checkSite(site); err != nil {
 		return nil, err
 	}
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
 	var out *Node
 	err := s.structural(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
 		if err := s.lockSite(ctx, tx, site); err != nil {
 			return err
 		}
 		q := tx.SQL()
+		if err := s.authorizeParent(ctx, q, site, &in.Parent, policyEdit); err != nil {
+			return err
+		}
 		parent, err := parentFor(ctx, q, site, in.Parent)
 		if err != nil {
 			return err
@@ -472,11 +527,21 @@ func (s *service) update(ctx context.Context, id ids.UUID, in NodeUpdate) (*Node
 	if in.Move == nil && in.Hidden == nil && in.Mount == nil && in.Link == nil {
 		return nil, badRequest("nothing to update")
 	}
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
 	var out *Node
 	err := s.structural(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
 		q := tx.SQL()
+		if err := s.lockForUpdate(ctx, tx, id, in); err != nil {
+			return err
+		}
 		n, err := s.lockedNode(ctx, tx, id)
 		if err != nil {
+			return err
+		}
+		if err := s.authorize(ctx, policyEdit, n); err != nil {
 			return err
 		}
 		var did []string
@@ -583,6 +648,9 @@ func (s *service) move(ctx context.Context, tx store.Tx, n nodeRow, mv Move) (no
 	if err != nil {
 		return n, err
 	}
+	if err := s.authorize(ctx, policyEdit, np); err != nil {
+		return n, err
+	}
 	if err := s.checkMoveTarget(ctx, tx, n, np); err != nil {
 		return n, err
 	}
@@ -604,6 +672,11 @@ func (s *service) move(ctx context.Context, tx store.Tx, n nodeRow, mv Move) (no
 	}
 	if n, err = loadNode(ctx, q, n.ID); err != nil {
 		return n, err
+	}
+	if reparent {
+		if err := s.reindexSubtree(ctx, tx, n); err != nil {
+			return n, err
+		}
 	}
 	switch {
 	case n.Kind == KindMount:
@@ -665,6 +738,20 @@ func (s *service) updateMount(ctx context.Context, tx store.Tx, n nodeRow, spec 
 		}
 	}
 	rebuild := old.Collection != spec.Collection || old.Route != spec.Route || !equalFilters(old.Filter, spec.Filter)
+	if old.Collection != spec.Collection || !equalFilters(old.Filter, spec.Filter) {
+		if err := s.authorize(ctx, policyMount, n); err != nil {
+			return err
+		}
+		if err := s.readsAll(ctx, spec.Collection); err != nil {
+			return err
+		}
+	}
+	var before []ids.UUID
+	if rebuild {
+		if before, err = mountItemsOf(ctx, q, n.ID); err != nil {
+			return err
+		}
+	}
 	if old.Collection != spec.Collection {
 		if _, err := q.Exec(ctx, "DELETE FROM page_mount_item WHERE node_id = ?", n.ID); err != nil {
 			return err
@@ -682,6 +769,9 @@ func (s *service) updateMount(ctx context.Context, tx store.Tx, n nodeRow, spec 
 		if err := s.rebuildMembership(ctx, tx, n, &spec); err != nil {
 			return err
 		}
+		if err := s.reindexMount(ctx, tx, n.ID, before); err != nil {
+			return err
+		}
 	}
 	return s.recomputeCollection(ctx, q, n.Site, spec.Collection, nil, nil)
 }
@@ -691,17 +781,33 @@ func equalFilters(a, b map[string]any) bool {
 }
 
 func (s *service) deleteNode(ctx context.Context, id ids.UUID) error {
+	if err := s.prepare(ctx); err != nil {
+		return err
+	}
 	return s.structural(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
 		q := tx.SQL()
+		if pre, err := mountItemsOf(ctx, q, id); err != nil {
+			return err
+		} else if err := s.lockItems(ctx, tx, pre); err != nil {
+			return err
+		}
 		n, err := s.lockedNode(ctx, tx, id)
 		if err != nil {
+			return err
+		}
+		if err := s.authorize(ctx, policyEdit, n); err != nil {
 			return err
 		}
 		if n.Kind == KindPage {
 			return badRequest("page nodes go away when their item is deleted")
 		}
 		data := map[string]any{"kind": n.Kind}
+		var mounted []ids.UUID
 		if n.Kind == KindMount {
+			if mounted, err = mountItemsOf(ctx, q, n.ID); err != nil {
+				return err
+			}
 			for _, stmt := range []string{"DELETE FROM route WHERE node_id = ?", "DELETE FROM page_mount_item WHERE node_id = ?"} {
 				if _, err := q.Exec(ctx, stmt, n.ID); err != nil {
 					return err
@@ -710,6 +816,9 @@ func (s *service) deleteNode(ctx context.Context, id ids.UUID) error {
 			data["collection"] = n.Collection
 		}
 		if _, err := q.Exec(ctx, "DELETE FROM page_node WHERE id = ?", n.ID); err != nil {
+			return err
+		}
+		if err := s.reindexItems(ctx, tx, mounted); err != nil {
 			return err
 		}
 		changes, err := s.clearLinks(ctx, q, "link_node", n.ID)
@@ -726,4 +835,16 @@ func (s *service) deleteNode(ctx context.Context, id ids.UUID) error {
 		}
 		return s.record(ctx, tx, "page.delete", n, data)
 	})
+}
+
+// pathOfParent is the ancestry path of a parent node, "" for a site's root or a missing node.
+func (s *service) pathOfParent(ctx context.Context, q store.SQL, id *ids.UUID) string {
+	if id == nil {
+		return ""
+	}
+	n, err := loadNode(ctx, q, *id)
+	if err != nil {
+		return ""
+	}
+	return n.Path
 }

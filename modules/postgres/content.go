@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,9 +18,6 @@ import (
 type contentStore struct{ tx pgx.Tx }
 
 func (t *tx) Content() store.ContentStore { return contentStore{t.tx} }
-
-// Auth is a placeholder until H5a T1.
-func (t *tx) Auth() store.AuthStore { return nil }
 
 // uid converts an id to a bind value; the unnamed array type is what pgx maps to uuid.
 func uid(u ids.UUID) [16]byte { return u }
@@ -412,16 +410,71 @@ func (s contentStore) IncomingRefs(ctx context.Context, to ids.UUID) ([]store.Re
 	return out, nil
 }
 
-func (s contentStore) ReplaceIndex(ctx context.Context, item ids.UUID, proj store.Projection, rows []store.IndexRow) error {
-	if proj != store.ProjectionPublished {
-		return errNotImplemented // H5a T2
+func scopeOf(p store.Projection) (string, error) {
+	switch p {
+	case store.ProjectionPublished, store.ProjectionWorking:
+		return string(p), nil
 	}
+	return "", fmt.Errorf("postgres: unknown projection %q", p)
+}
+
+func (s contentStore) ReplaceIndex(ctx context.Context, item ids.UUID, proj store.Projection, rows []store.IndexRow) error {
+	scope, err := scopeOf(proj)
+	if err != nil {
+		return err
+	}
+	cols, err := indexColumns(rows)
+	if err != nil {
+		return fmt.Errorf("postgres: replace index %s: %w", item, err)
+	}
+	b := &pgx.Batch{}
+	b.Queue(`DELETE FROM field_index WHERE item_id = $1 AND scope = $2 AND module = ''`, uid(item), scope)
+	queueIndex(b, item, "", []string{scope}, cols)
+	if err := s.sendBatch(ctx, b); err != nil {
+		return fmt.Errorf("postgres: replace index %s: %w", item, err)
+	}
+	return nil
+}
+
+// ReplaceModuleIndex stores a module's rows once per scope, so every query sees them whatever its projection.
+func (s contentStore) ReplaceModuleIndex(ctx context.Context, item ids.UUID, module string, rows []store.IndexRow) error {
+	if module == "" {
+		return errors.New("postgres: replace module index: empty module name")
+	}
+	for _, r := range rows {
+		if !strings.HasPrefix(r.Field, module+".") {
+			return fmt.Errorf("postgres: replace module index %s/%s: field %q is not prefixed with the module name", item, module, r.Field)
+		}
+	}
+	cols, err := indexColumns(rows)
+	if err != nil {
+		return fmt.Errorf("postgres: replace module index %s/%s: %w", item, module, err)
+	}
+	b := &pgx.Batch{}
+	b.Queue(`DELETE FROM field_index WHERE item_id = $1 AND module = $2`, uid(item), module)
+	queueIndex(b, item, module, []string{"p", "w"}, cols)
+	if err := s.sendBatch(ctx, b); err != nil {
+		return fmt.Errorf("postgres: replace module index %s/%s: %w", item, module, err)
+	}
+	return nil
+}
+
+// indexCols are the rows of an index write as parallel arrays for unnest.
+type indexCols struct {
+	locales, fields []string
+	texts           []*string
+	nums            []*float64
+	times           []*time.Time
+	bools           []*bool
+	refs            []*[16]byte
+}
+
+func indexColumns(rows []store.IndexRow) (indexCols, error) {
 	n := len(rows)
-	locales, fields := make([]string, n), make([]string, n)
-	texts, nums := make([]*string, n), make([]*float64, n)
-	times, bools, refs := make([]*time.Time, n), make([]*bool, n), make([]*[16]byte, n)
+	c := indexCols{locales: make([]string, n), fields: make([]string, n), texts: make([]*string, n), nums: make([]*float64, n),
+		times: make([]*time.Time, n), bools: make([]*bool, n), refs: make([]*[16]byte, n)}
 	for i, r := range rows {
-		locales[i], fields[i], texts[i], nums[i], bools[i] = r.Locale, r.Field, r.Text, r.Num, r.Bool
+		c.locales[i], c.fields[i], c.texts[i], c.nums[i], c.bools[i] = r.Locale, r.Field, r.Text, r.Num, r.Bool
 		set := 0
 		for _, ok := range []bool{r.Text != nil, r.Num != nil, r.Time != nil, r.Bool != nil, r.Ref != nil} {
 			if ok {
@@ -429,48 +482,59 @@ func (s contentStore) ReplaceIndex(ctx context.Context, item ids.UUID, proj stor
 			}
 		}
 		if set != 1 {
-			return fmt.Errorf("postgres: replace index %s: field %q has %d value columns set, want 1", item, r.Field, set)
+			return c, fmt.Errorf("field %q has %d value columns set, want 1", r.Field, set)
 		}
 		if r.Time != nil {
 			t := tz(*r.Time)
-			times[i] = &t
+			c.times[i] = &t
 		}
 		if r.Ref != nil {
 			u := uid(*r.Ref)
-			refs[i] = &u
+			c.refs[i] = &u
 		}
 	}
-	if _, err := s.tx.Exec(ctx, `DELETE FROM field_index WHERE item_id = $1`, uid(item)); err != nil {
-		return fmt.Errorf("postgres: replace index %s: %w", item, err)
+	return c, nil
+}
+
+// sendBatch runs the statements in one round trip.
+func (s contentStore) sendBatch(ctx context.Context, b *pgx.Batch) error {
+	br := s.tx.SendBatch(ctx, b)
+	for range b.Len() {
+		if _, err := br.Exec(); err != nil {
+			_ = br.Close()
+			return err
+		}
 	}
-	if n == 0 {
-		return nil
+	return br.Close()
+}
+
+func queueIndex(b *pgx.Batch, item ids.UUID, module string, scopes []string, c indexCols) {
+	if len(c.fields) == 0 {
+		return
 	}
-	if _, err := s.tx.Exec(ctx, `INSERT INTO field_index (item_id, locale, field, v_text, v_num, v_time, v_bool, v_ref)
-		SELECT $1, l, f, t, n, ts, b, r
-		FROM unnest($2::text[], $3::text[], $4::text[], $5::float8[], $6::timestamptz[], $7::bool[], $8::uuid[])
-			AS u(l, f, t, n, ts, b, r)`, uid(item), locales, fields, texts, nums, times, bools, refs); err != nil {
-		return fmt.Errorf("postgres: replace index %s: %w", item, err)
-	}
-	return nil
+	b.Queue(`INSERT INTO field_index (item_id, scope, module, locale, field, v_text, v_num, v_time, v_bool, v_ref)
+		SELECT $1, sc, $2, l, f, t, n, ts, b, r
+		FROM unnest($3::text[]) AS s(sc),
+			unnest($4::text[], $5::text[], $6::text[], $7::float8[], $8::timestamptz[], $9::bool[], $10::uuid[])
+			AS u(l, f, t, n, ts, b, r)`, uid(item), module, scopes, c.locales, c.fields, c.texts, c.nums, c.times, c.bools, c.refs)
 }
 
 func (s contentStore) ReplaceSearch(ctx context.Context, item ids.UUID, proj store.Projection, docs []store.SearchDoc) error {
-	if proj != store.ProjectionPublished {
-		return errNotImplemented // H5a T2
+	scope, err := scopeOf(proj)
+	if err != nil {
+		return err
 	}
-	if _, err := s.tx.Exec(ctx, `DELETE FROM content_search WHERE item_id = $1`, uid(item)); err != nil {
-		return fmt.Errorf("postgres: replace search %s: %w", item, err)
-	}
-	if len(docs) == 0 {
-		return nil
-	}
-	// left(…, 100000) = storeutil.MaxSearchChars: the statement bounds its input even if a caller skips the Go cap.
-	locales, plain := storeutil.SearchTexts(docs)
-	if _, err := s.tx.Exec(ctx, `INSERT INTO content_search (item_id, locale, tsv, plain)
-		SELECT $1, l, to_tsvector('simple', left(t, 100000)), left(t, 100000)
+	b := &pgx.Batch{}
+	b.Queue(`DELETE FROM content_search WHERE item_id = $1 AND scope = $2`, uid(item), scope)
+	if len(docs) > 0 {
+		// left(…, 100000) = storeutil.MaxSearchChars: the statement bounds its input even if a caller skips the Go cap.
+		locales, plain := storeutil.SearchTexts(docs)
+		b.Queue(`INSERT INTO content_search (item_id, scope, locale, tsv, plain)
+		SELECT $1, $4, l, to_tsvector('simple', left(t, 100000)), left(t, 100000)
 		FROM unnest($2::text[], $3::text[]) AS u(l, t)`,
-		uid(item), locales, plain); err != nil {
+			uid(item), locales, plain, scope)
+	}
+	if err := s.sendBatch(ctx, b); err != nil {
 		return fmt.Errorf("postgres: replace search %s: %w", item, err)
 	}
 	return nil
@@ -513,11 +577,4 @@ func (s contentStore) ItemIDsOfType(ctx context.Context, typ string, after ids.U
 		return nil, fmt.Errorf("postgres: item ids of type %q: %w", typ, err)
 	}
 	return out, nil
-}
-
-// errNotImplemented marks H5a placeholders (T2 working projections, T1 auth store).
-var errNotImplemented = errors.New("not implemented yet (H5a)")
-
-func (s contentStore) ReplaceModuleIndex(context.Context, ids.UUID, string, []store.IndexRow) error {
-	return errNotImplemented // H5a T2
 }

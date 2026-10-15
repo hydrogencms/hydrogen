@@ -47,11 +47,15 @@ func start(t *testing.T, env string, vars map[string]string, configure func(*hyd
 	addr := make(chan string, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- hydrogen.Run(ctx, []string{"serve"}, configure, hydrogen.RunOptions{Config: opts, Stderr: io.Discard,
+		done <- hydrogen.Run(ctx, []string{"serve"}, configure, hydrogen.RunOptions{Config: opts, Stderr: io.Discard, PasswordIterations: 1000,
 			Listening: func(a string) { addr <- a }})
 	}()
+	exited := false
 	t.Cleanup(func() {
 		cancel()
+		if exited {
+			return
+		}
 		if err := <-done; err != nil {
 			t.Errorf("serve: %v", err)
 		}
@@ -60,6 +64,7 @@ func start(t *testing.T, env string, vars map[string]string, configure func(*hyd
 	case a := <-addr:
 		return &server{t: t, base: "http://" + a + "/api/manage/v1"}
 	case err := <-done:
+		exited = true
 		t.Fatalf("serve exited: %v", err)
 	case <-time.After(30 * time.Second):
 		t.Fatal("serve did not start")

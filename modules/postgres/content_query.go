@@ -36,6 +36,14 @@ func (c *compiler) locale() string {
 	return c.loc
 }
 
+// projection is the SQL literal of the field_index and search scope the query reads.
+func (c *compiler) projection() string {
+	if c.q.Working {
+		return "'w'"
+	}
+	return "'p'"
+}
+
 // columnInfo maps a Column to its field_index column and the array type used to bind OpIn lists.
 func columnInfo(col store.Column) (name, arrayType string, err error) {
 	switch col {
@@ -176,7 +184,7 @@ func (c *compiler) cond(cd store.Cond) (string, error) {
 			return "", fmt.Errorf("unknown operator %q", cd.Op)
 		}
 	}
-	return exists + " (SELECT 1 FROM field_index fi WHERE fi.item_id = item.id AND fi.field = " + c.bind(cd.Field) +
+	return exists + " (SELECT 1 FROM field_index fi WHERE fi.item_id = item.id AND fi.scope = " + c.projection() + " AND fi.field = " + c.bind(cd.Field) +
 		" AND fi.locale IN ('', " + c.locale() + ")" + pred + ")", nil
 }
 
@@ -199,6 +207,34 @@ func (c *compiler) available() string {
 		c.bind(c.q.Available) + "::text[]))))"
 }
 
+// scope compiles Query.Scope: an OR of terms, each an AND of its creator list and conditions.
+func (c *compiler) scope() (string, error) {
+	for _, t := range c.q.Scope {
+		if len(t.CreatedBy) == 0 && len(t.Where) == 0 {
+			return "true", nil // an unrestricted term admits everything; bind nothing for the others
+		}
+	}
+	terms := make([]string, 0, len(c.q.Scope))
+	for _, t := range c.q.Scope {
+		var parts []string
+		if len(t.CreatedBy) > 0 {
+			parts = append(parts, "item.created_by = ANY("+c.bind(t.CreatedBy)+"::text[])")
+		}
+		for _, cd := range t.Where {
+			p, err := c.cond(cd)
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, p)
+		}
+		terms = append(terms, "("+strings.Join(parts, " AND ")+")")
+	}
+	if len(terms) == 0 {
+		return "false", nil
+	}
+	return "(" + strings.Join(terms, " OR ") + ")", nil
+}
+
 // itemConds compiles the item-level and field conditions (no search) into predicates on item.
 func (c *compiler) itemConds() ([]string, error) {
 	q := c.q
@@ -217,6 +253,13 @@ func (c *compiler) itemConds() ([]string, error) {
 	}
 	if q.Available != nil {
 		conds = append(conds, c.available())
+	}
+	if q.Scoped {
+		p, err := c.scope()
+		if err != nil {
+			return nil, err
+		}
+		conds = append(conds, p)
 	}
 	for _, cd := range q.Where {
 		p, err := c.cond(cd)
@@ -241,7 +284,7 @@ func (c *compiler) filter() (from, where string, err error) {
 		from += ` JOIN (
 		SELECT cs.item_id, MAX(ts_rank(cs.tsv, query.q))::float8 AS rank
 		FROM content_search cs, to_tsquery('simple', ` + c.bind(tsquery(terms)) + `) AS query(q)
-		WHERE cs.tsv @@ query.q AND cs.locale IN ('', ` + c.locale() + `)
+		WHERE cs.scope = ` + c.projection() + ` AND cs.tsv @@ query.q AND cs.locale IN ('', ` + c.locale() + `)
 		GROUP BY cs.item_id) srch ON srch.item_id = item.id`
 	} else if strings.TrimSpace(q.Search) != "" {
 		conds = append(conds, "false") // only punctuation: nothing can match
@@ -257,6 +300,10 @@ func (c *compiler) nameExpr() string {
 	pub := `(SELECT NULLIF(vl.name, '') FROM item_version_locale vl WHERE vl.item_id = item.id
 		AND vl.version = item.published_version AND vl.locale = `
 	draft := `(SELECT NULLIF(dp.name, '') FROM draft_part dp WHERE dp.item_id = item.id AND dp.part = `
+	if c.q.Working {
+		return "(COALESCE(" + draft + loc + "), " + pub + loc + "), " + draft + "item.main_locale), " +
+			pub + "item.main_locale), '') COLLATE \"C\")"
+	}
 	return "(COALESCE(" + pub + loc + "), " + pub + "item.main_locale), " + draft + loc + "), " +
 		draft + "item.main_locale), '') COLLATE \"C\")"
 }
@@ -287,7 +334,7 @@ func (c *compiler) sortKey(s store.Sort) (string, error) {
 		return "", err
 	}
 	// An item may have several rows for a field (list values, shared plus locale): order by its first or last.
-	return "(SELECT fi." + name + " FROM field_index fi WHERE fi.item_id = item.id AND fi.field = " + c.bind(s.Field) +
+	return "(SELECT fi." + name + " FROM field_index fi WHERE fi.item_id = item.id AND fi.scope = " + c.projection() + " AND fi.field = " + c.bind(s.Field) +
 		" AND fi.locale IN ('', " + c.locale() + ") AND fi." + name + " IS NOT NULL ORDER BY fi." + name + dir +
 		" LIMIT 1)" + dir + " NULLS LAST", nil
 }
@@ -345,9 +392,6 @@ type queryer interface {
 }
 
 func (s contentStore) Query(ctx context.Context, q store.Query) (store.QueryResult, error) {
-	if q.Working || q.Scoped {
-		return store.QueryResult{}, errNotImplemented // H5a T2
-	}
 	return runQuery(ctx, s.tx, q)
 }
 
@@ -377,7 +421,7 @@ func (c *compiler) walkSQL(limit, offset int) (string, error) {
 	}
 	field, loc, dir := c.bind(s.Field), c.locale(), walkDir(s)
 	has := func(a string) string {
-		return a + ".field = " + field + " AND " + a + ".locale IN ('', " + loc + ") AND " + a + "." + name + " IS NOT NULL"
+		return a + ".scope = " + c.projection() + " AND " + a + ".field = " + field + " AND " + a + ".locale IN ('', " + loc + ") AND " + a + "." + name + " IS NOT NULL"
 	}
 	// The dedupe runs last so that it only probes rows that passed every other condition. It compares
 	// (value, ctid) with the item's extreme one by an inequality: the planner then guesses a third of the rows
@@ -408,7 +452,7 @@ func (c *compiler) missingSQL(limit, offset int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	conds = append(conds, "NOT EXISTS (SELECT 1 FROM field_index fi WHERE fi.item_id = item.id AND fi.field = "+
+	conds = append(conds, "NOT EXISTS (SELECT 1 FROM field_index fi WHERE fi.item_id = item.id AND fi.scope = "+c.projection()+" AND fi.field = "+
 		c.bind(s.Field)+" AND fi.locale IN ('', "+c.locale()+") AND fi."+name+" IS NOT NULL)")
 	return "SELECT " + itemColumns + ", 0::float8 FROM item WHERE " + strings.Join(conds, " AND ") +
 		" ORDER BY item.id " + walkDir(s) + " LIMIT " + c.bind(limit) + " OFFSET " + c.bind(offset), nil
@@ -425,7 +469,7 @@ func (c *compiler) countWalkSQL() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	conds = append(conds, "EXISTS (SELECT 1 FROM field_index fi WHERE fi.item_id = item.id AND fi.field = "+c.bind(s.Field)+
+	conds = append(conds, "EXISTS (SELECT 1 FROM field_index fi WHERE fi.item_id = item.id AND fi.scope = "+c.projection()+" AND fi.field = "+c.bind(s.Field)+
 		" AND fi.locale IN ('', "+c.locale()+") AND fi."+name+" IS NOT NULL)")
 	return "SELECT count(*) FROM item WHERE " + strings.Join(conds, " AND "), nil
 }
@@ -433,6 +477,11 @@ func (c *compiler) countWalkSQL() (string, error) {
 func runQuery(ctx context.Context, db queryer, q store.Query) (store.QueryResult, error) {
 	q = storeutil.Normalize(q)
 	var res store.QueryResult
+	if q.Scoped {
+		if q.Scope = storeutil.LiveTerms(q.Scope); len(q.Scope) == 0 {
+			return res, nil
+		}
+	}
 	var err error
 	if storeutil.IndexWalk(q) {
 		res.Items, err = storeutil.RunWalk(q, storeutil.WalkPhases{
@@ -472,7 +521,7 @@ func runQuery(ctx context.Context, db queryer, q store.Query) (store.QueryResult
 	if err != nil {
 		return store.QueryResult{}, fmt.Errorf("postgres: query: %w", err)
 	}
-	if err := decorate(ctx, db, q.Locale, res.Items); err != nil {
+	if err := decorate(ctx, db, q, res.Items); err != nil {
 		return store.QueryResult{}, err
 	}
 	if res.Total, err = total(ctx, db, q, len(res.Items)); err != nil {
@@ -517,11 +566,12 @@ func total(ctx context.Context, db queryer, q store.Query, got int) (int, error)
 }
 
 // decorate fills Name, Drafts and Locales for a page of items with two set-based queries.
-func decorate(ctx context.Context, db queryer, locale string, items []store.ItemSummary) error {
+func decorate(ctx context.Context, db queryer, q store.Query, items []store.ItemSummary) error {
 	if len(items) == 0 {
 		return nil
 	}
-	d := storeutil.NewDecorator(locale, items)
+	d := storeutil.NewDecorator(q.Locale, items)
+	d.Working = q.Working
 	idList := d.IDs()
 
 	rows, err := db.Query(ctx, `SELECT vl.item_id, vl.locale, vl.name FROM item_version_locale vl

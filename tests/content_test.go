@@ -518,9 +518,11 @@ func TestListProjections(t *testing.T) {
 			}
 		}
 
-		// The projection follows the current version, not drafts, and updates on republish.
+		// Management lists the working copy; a published-only list follows the current version, and updates on republish.
 		e.update(a.ID, "en", `{"rating":4}`)
-		eqSlice(t, "draft invisible", list(w("rating", store.OpEq, 4)), nil)
+		eqSlice(t, "draft visible", list(w("rating", store.OpEq, 4)), []string{"Alpha"})
+		eqSlice(t, "draft not published", list(content.ListOptions{Type: "article", Status: store.StatusPublished,
+			Where: []content.Filter{{Field: "rating", Op: store.OpEq, Value: 4}}}), nil)
 		e.publish(a.ID)
 		eqSlice(t, "after republish", list(w("rating", store.OpEq, 4)), []string{"Alpha"})
 	})
@@ -871,6 +873,16 @@ types:
 		vs := mustVersions(t, e, p.ID)
 		if vs[0].SchemaRev <= oldRev || vs[1].SchemaRev != oldRev {
 			t.Errorf("schema revs = %+v (old %d)", vs, oldRev)
+		}
+		for _, tc := range []struct {
+			search string
+			status store.Status
+			want   int
+		}{{"King", store.StatusAny, 1}, {"Lovelace", store.StatusAny, 0}, {"Lovelace", store.StatusPublished, 1}, {"King", store.StatusPublished, 0}} {
+			res, err := e.svc.List(ctx, content.ListOptions{Type: "person", Search: tc.search, Status: tc.status})
+			if err != nil || res.Total != tc.want {
+				t.Errorf("migrated working rows: search %q status %v = %+v, %v; want %d", tc.search, tc.status, res, err, tc.want)
+			}
 		}
 		e.publish(p.ID) // draft was rebased: no conflict
 		if rev, err := e.svc.BreakingChanges(ctx); err != nil || len(rev) != 0 {

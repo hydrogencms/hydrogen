@@ -8,13 +8,29 @@ import (
 )
 
 // RebuildProjections rebuilds the derived data of an item whose rows an import wrote itself: references, field
-// index, search text and delivery snapshots, all from the published version v. It runs no hooks and emits no
-// events. An item that was never published (v nil) has none. The item's type must exist in the schema.
+// index, search text and delivery snapshots from the published version v, and the working index and search
+// rows from the drafts laid over it. It runs no hooks and emits no events. An item that was never published
+// (v nil) has only working rows. The item's type must exist in the schema.
 func (s *Service) RebuildProjections(ctx context.Context, c store.ContentStore, it store.Item, v *store.Version) error {
-	if v == nil || it.PublishedVersion == 0 {
-		return nil
+	if v != nil && it.PublishedVersion > 0 {
+		if err := s.rebuild(ctx, c, it, v, true); err != nil {
+			return err
+		}
 	}
-	return s.rebuild(ctx, c, it, v, true)
+	return s.rebuildWorking(ctx, c, it)
+}
+
+// rebuildWorking rebuilds the working index and search rows of an item from its stored drafts and published
+// version.
+func (s *Service) rebuildWorking(ctx context.Context, c store.ContentStore, it store.Item) error {
+	st, err := s.newState(it)
+	if err != nil {
+		return err
+	}
+	if err := st.load(ctx, c); err != nil {
+		return err
+	}
+	return s.projectWorking(ctx, c, st)
 }
 
 // rebuildSnapshots rebuilds only the delivery snapshots of a published item (its key or availability changed).

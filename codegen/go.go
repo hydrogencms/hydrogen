@@ -88,9 +88,11 @@ func Go(types []*schema.Type, groups []*schema.Group, o GoOptions) (map[string][
 			return nil, err
 		}
 		body += fmt.Sprintf(`
-// %[1]s is the typed handle for the "%[3]s" content type. Register hooks and use the Local API through it:
+// %[1]s is the typed handle for the "%[3]s" content type. Register hooks and access rules and use the Local API
+// through it:
 //
 //	%[1]s.BeforeSave(h, func(c *hooks.Context, doc *%[2]s) error { return nil })
+//	%[1]s.Access(h, access.Rules{Read: func(ctx context.Context, p *access.Principal) access.Result { return access.Allow() }})
 var %[1]s = content.Handle[%[2]s]{Type: %[4]s}
 `, handle, name, t.Name, strconv.Quote(t.Name))
 		file := fileBase(t.Name)

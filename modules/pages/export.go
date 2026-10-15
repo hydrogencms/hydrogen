@@ -14,7 +14,7 @@ import (
 // exporter writes the module's tables as typed records (modules/pages.ndjson): nodes first, parents before
 // children, then slugs, mount items and routes. Import restores the rows as they are, so paths, sort keys and
 // the redirect history are exactly the source's.
-type exporter struct{}
+type exporter struct{ svc func() (*service, error) }
 
 // pageRecord is one line: T names the table and selects the fields in use.
 type pageRecord struct {
@@ -116,7 +116,7 @@ func (exporter) Export(ctx context.Context, tx store.Tx, w *exportfmt.ModuleWrit
 
 func bytesOf(m json.RawMessage) json.RawMessage { return append(json.RawMessage(nil), m...) }
 
-func (exporter) Import(ctx context.Context, tx store.Tx, r *exportfmt.ModuleReader) error {
+func (exp exporter) Import(ctx context.Context, tx store.Tx, r *exportfmt.ModuleReader) error {
 	q := tx.SQL()
 	var n int
 	if err := q.QueryRow(ctx, `SELECT count(*) FROM page_node`).Scan(&n); err != nil {
@@ -132,7 +132,7 @@ func (exporter) Import(ctx context.Context, tx store.Tx, r *exportfmt.ModuleRead
 			return err
 		}
 		if !ok {
-			return nil
+			return exp.reindex(ctx, tx)
 		}
 		if err := insertRecord(ctx, q, rec); err != nil {
 			return fmt.Errorf("pages: import %s: %w", rec.T, err)
@@ -174,5 +174,15 @@ func insertRecord(ctx context.Context, q store.SQL, rec pageRecord) error {
 	default:
 		return fmt.Errorf("unknown record type %q", rec.T)
 	}
+	return err
+}
+
+// reindex builds the module index rows of the imported placements; the items came in before the module.
+func (exp exporter) reindex(ctx context.Context, tx store.Tx) error {
+	s, err := exp.svc()
+	if err != nil {
+		return err
+	}
+	_, err = s.rebuildIndex(ctx, func(fn func(store.Tx) error) error { return fn(tx) })
 	return err
 }

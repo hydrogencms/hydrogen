@@ -222,7 +222,7 @@ func (d *deliverer) tree(w http.ResponseWriter, r *http.Request) {
 	}
 	locale := delivery.Languages(r)[0]
 	ctx := r.Context()
-	nodes, err := s.tree(ctx, site, locale, nil, depth)
+	nodes, err := s.tree(ctx, site, locale, nil, depth, nil)
 	if err != nil {
 		delivery.Fail(w, r, err)
 		return

@@ -53,7 +53,7 @@ func start(t *testing.T, env string, vars map[string]string) *server {
 	addr := make(chan string, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- hydrogen.Run(ctx, []string{"serve"}, configure, hydrogen.RunOptions{Config: opts, Stderr: io.Discard,
+		done <- hydrogen.Run(ctx, []string{"serve"}, configure, hydrogen.RunOptions{Config: opts, Stderr: io.Discard, PasswordIterations: 1000,
 			Listening: func(a string) { addr <- a }})
 	}()
 	select {

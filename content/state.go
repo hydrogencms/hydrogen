@@ -95,7 +95,11 @@ type itemState struct {
 	typ    *schema.Type
 	drafts map[string]*draft
 	pub    *pubVersion
+	prev   *prevRows // rows the projections held before the operation, see rememberRows
 }
+
+// prevRows are the remembered rows; published is nil for a never-published item.
+type prevRows struct{ working, published *rowset }
 
 func (s *Service) newState(it store.Item) (*itemState, error) {
 	t, err := s.typeOf(it.Type)

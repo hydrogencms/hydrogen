@@ -24,9 +24,9 @@ func (*probeModule) Name() string       { return "probe" }
 func (*probeModule) Requires() []string { return []string{"pages"} }
 
 func (p *probeModule) Register(r *kernel.Registry) error {
-	r.ManageRoute(manage.Route{Method: "GET", Path: "/probe/get", Summary: "GetForChannel", Handler: p.get})
-	r.ManageRoute(manage.Route{Method: "GET", Path: "/probe/url", Summary: "URL", Handler: p.url})
-	r.ManageRoute(manage.Route{Method: "GET", Path: "/probe/link", Summary: "LinkURL", Handler: p.link})
+	r.ManageRoute(manage.Route{Method: "GET", Path: "/probe/get", Summary: "GetForChannel", Handler: p.get, Policy: manage.Authenticated})
+	r.ManageRoute(manage.Route{Method: "GET", Path: "/probe/url", Summary: "URL", Handler: p.url, Policy: manage.Authenticated})
+	r.ManageRoute(manage.Route{Method: "GET", Path: "/probe/link", Summary: "LinkURL", Handler: p.link, Policy: manage.Authenticated})
 	return nil
 }
 

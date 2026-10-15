@@ -52,7 +52,16 @@ func (s *Service) Locate(ctx context.Context, rawURL string, h http.Header) (*Lo
 	if err != nil {
 		return nil, err
 	}
-	return impl.locate(ctx, rawURL, h)
+	res, err := impl.locate(ctx, rawURL, h)
+	if err != nil {
+		return nil, err
+	}
+	if hidden, err := impl.limitResolution(ctx, res.Resolution); err != nil {
+		return nil, err
+	} else if hidden {
+		return &Located{Channel: res.Channel, Kind: ResolvedNotFound, Resolution: notFoundResolution()}, nil
+	}
+	return res, nil
 }
 
 // URL is the item's absolute URL in a channel; false when it has no route there.

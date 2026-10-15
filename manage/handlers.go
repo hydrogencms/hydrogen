@@ -232,14 +232,14 @@ func (a *api) references(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	refs, err := a.c.References(r.Context(), id)
+	refs, hidden, err := a.c.ReferencesVisible(r.Context(), id)
 	if err != nil {
 		return err
 	}
 	if refs == nil {
 		refs = []content.Referrer{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"items": refs, "total": len(refs)})
+	WriteJSON(w, http.StatusOK, map[string]any{"items": refs, "total": len(refs), "hidden": hidden})
 	return nil
 }
 

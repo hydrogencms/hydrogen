@@ -13,7 +13,7 @@ import (
 
 // pagesAPI is the part of *Service the management routes use; tests substitute a fake.
 type pagesAPI interface {
-	Sites() []string
+	SitesFor(ctx context.Context) ([]string, error)
 	Place(ctx context.Context, site string, in Place) (*Node, error)
 	AddMount(ctx context.Context, site string, in Mount) (*Node, error)
 	AddLink(ctx context.Context, site string, in Link) (*Node, error)
@@ -46,15 +46,15 @@ func routes(svc func() *Service) []manage.Route {
 func apiRoutes(get func() pagesAPI) []manage.Route {
 	h := &handlers{get: get}
 	return []manage.Route{
-		{Method: "GET", Path: "/pages/sites", Summary: "List page sites", Handler: h.sites, OpenAPI: opSites()},
-		{Method: "GET", Path: "/pages/sites/{site}/tree", Summary: "Page tree", Handler: h.tree, OpenAPI: opTree()},
-		{Method: "POST", Path: "/pages/sites/{site}/nodes", Summary: "Add a node", Handler: h.create, OpenAPI: opCreate()},
-		{Method: "GET", Path: "/pages/nodes/{id}", Summary: "Get a node", Handler: h.node, OpenAPI: opNode()},
-		{Method: "PATCH", Path: "/pages/nodes/{id}", Summary: "Move, reorder or update a node", Handler: h.patch, OpenAPI: opPatch()},
-		{Method: "DELETE", Path: "/pages/nodes/{id}", Summary: "Delete a mount or link node", Handler: h.remove, OpenAPI: opDelete()},
-		{Method: "GET", Path: "/pages/sites/{site}/resolve", Summary: "Resolve a path", Handler: h.resolve, OpenAPI: opResolve()},
-		{Method: "GET", Path: "/pages/items/{id}/paths", Summary: "Paths of an item", Handler: h.paths, OpenAPI: opPaths()},
-		{Method: "GET", Path: "/pages/locate", Summary: "Locate a URL through the channels", Handler: h.locate, OpenAPI: opLocate()},
+		{Method: "GET", Path: "/pages/sites", Summary: "List page sites", Policy: policyRead, Handler: h.sites, OpenAPI: opSites()},
+		{Method: "GET", Path: "/pages/sites/{site}/tree", Summary: "Page tree", Policy: policyRead, Handler: h.tree, OpenAPI: opTree()},
+		{Method: "POST", Path: "/pages/sites/{site}/nodes", Summary: "Add a node", Policy: policyEdit, Handler: h.create, OpenAPI: opCreate()},
+		{Method: "GET", Path: "/pages/nodes/{id}", Summary: "Get a node", Policy: policyRead, Handler: h.node, OpenAPI: opNode()},
+		{Method: "PATCH", Path: "/pages/nodes/{id}", Summary: "Move, reorder or update a node", Policy: policyEdit, Handler: h.patch, OpenAPI: opPatch()},
+		{Method: "DELETE", Path: "/pages/nodes/{id}", Summary: "Delete a mount or link node", Policy: policyEdit, Handler: h.remove, OpenAPI: opDelete()},
+		{Method: "GET", Path: "/pages/sites/{site}/resolve", Summary: "Resolve a path", Policy: policyRead, Handler: h.resolve, OpenAPI: opResolve()},
+		{Method: "GET", Path: "/pages/items/{id}/paths", Summary: "Paths of an item", Policy: policyRead, Handler: h.paths, OpenAPI: opPaths()},
+		{Method: "GET", Path: "/pages/locate", Summary: "Locate a URL through the channels", Policy: policyRead, Handler: h.locate, OpenAPI: opLocate()},
 	}
 }
 
@@ -92,7 +92,11 @@ func (h *handlers) sites(w http.ResponseWriter, r *http.Request) {
 	if a == nil {
 		return
 	}
-	items := a.Sites()
+	items, err := a.SitesFor(r.Context())
+	if err != nil {
+		manage.Fail(w, r, err)
+		return
+	}
 	if items == nil {
 		items = []string{}
 	}

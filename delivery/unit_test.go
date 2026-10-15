@@ -20,6 +20,7 @@ import (
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/schema"
 	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/store/storeutil"
 )
 
 func TestSplice(t *testing.T) {
@@ -657,15 +658,15 @@ func TestMatchesWhere(t *testing.T) {
 		{store.Cond{Field: "missing", Column: store.ColText, Op: store.OpEq, Value: "x"}, false},
 	}
 	for _, c := range cases {
-		if got := matchesWhere([]store.Cond{c.c}, sch.IndexValues(typ, fields)); got != c.want {
+		if got := storeutil.MatchWhere([]store.Cond{c.c}, sch.IndexValues(typ, fields)); got != c.want {
 			t.Errorf("%+v: %v, want %v", c.c, got, c.want)
 		}
 	}
 	// An empty string is not indexed, so it is absent.
 	vals := sch.IndexValues(typ, empty)
-	if matchesWhere([]store.Cond{{Field: "slug", Column: store.ColText, Op: store.OpEq, Value: ""}}, vals) ||
-		matchesWhere([]store.Cond{{Field: "slug", Op: store.OpExists, Value: true}}, vals) ||
-		!matchesWhere([]store.Cond{{Field: "author", Op: store.OpExists, Value: false}}, vals) {
+	if storeutil.MatchWhere([]store.Cond{{Field: "slug", Column: store.ColText, Op: store.OpEq, Value: ""}}, vals) ||
+		storeutil.MatchWhere([]store.Cond{{Field: "slug", Op: store.OpExists, Value: true}}, vals) ||
+		!storeutil.MatchWhere([]store.Cond{{Field: "author", Op: store.OpExists, Value: false}}, vals) {
 		t.Error("empty strings must count as absent")
 	}
 }

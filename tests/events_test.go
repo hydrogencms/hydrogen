@@ -70,7 +70,7 @@ func newEventsApp(t *testing.T, db store.DB, clk clock.Clock, appYAML string, jo
 		t.Fatal(err)
 	}
 	mods = append([]kernel.Module{sqlite.Module(), postgres.Module()}, mods...)
-	app, err := kernel.New(context.Background(), kernel.Options{Config: cfg, Clock: clk, DB: db, Stderr: io.Discard, JobHold: jobHold}, mods...)
+	app, err := kernel.New(context.Background(), kernel.Options{Config: cfg, Clock: clk, DB: db, Stderr: io.Discard, JobHold: jobHold, PasswordIterations: 1000}, mods...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestEndpoints(t *testing.T) {
 					s := kernel.ServicesFrom(r.Context())
 					writeJSON(w, map[string]any{"hello": r.PathValue("name"), "env": s.Env})
 				}},
-				{"POST", "/secure", kernel.ManageToken, func(w http.ResponseWriter, r *http.Request) {
+				{"POST", "/secure", kernel.Authenticated, func(w http.ResponseWriter, r *http.Request) {
 					writeJSON(w, map[string]any{"services": kernel.ServicesFrom(r.Context()) != nil})
 				}},
 				{"GET", "/boom", kernel.Public, func(http.ResponseWriter, *http.Request) { panic("boom") }},
@@ -334,6 +334,7 @@ func TestEndpoints(t *testing.T) {
 		}
 		do := func(method, path, token string) (int, string) {
 			req := httptest.NewRequest(method, path, bytes.NewReader(nil))
+			req.RemoteAddr = "127.0.0.1:50000" // the dev token only works from loopback
 			if token != "" {
 				req.Header.Set("Authorization", "Bearer "+token)
 			}

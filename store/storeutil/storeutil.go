@@ -186,6 +186,9 @@ func capChars(s string, n int) string {
 // Decorator fills ItemSummary.Name, Drafts and Locales for a page from the published locale rows and draft
 // parts an adapter reads with set-based queries.
 type Decorator struct {
+	// Working picks names the way the working projection reads: a draft name beats the published one.
+	Working bool
+
 	locale string
 	items  []store.ItemSummary
 	index  map[ids.UUID]int
@@ -237,14 +240,19 @@ func (d *Decorator) Draft(id ids.UUID, part, name string) {
 }
 
 // Finish sorts the locale and draft lists and picks each name: published in the query locale, published in
-// the main locale, then the same two for drafts.
+// the main locale, then the same two for drafts. With Working, the draft and published names of each locale
+// swap places.
 func (d *Decorator) Finish() {
 	for i := range d.items {
 		it := &d.items[i]
 		slices.Sort(it.Locales)
 		slices.Sort(it.Drafts)
 		n := d.names[i]
-		for _, c := range []string{n.pubLoc, n.pubMain, n.draftLoc, n.draftMain} {
+		order := [4]string{n.pubLoc, n.pubMain, n.draftLoc, n.draftMain}
+		if d.Working {
+			order = [4]string{n.draftLoc, n.pubLoc, n.draftMain, n.pubMain}
+		}
+		for _, c := range order {
 			if c != "" {
 				it.Name = c
 				break
@@ -312,4 +320,21 @@ func RunWalk(q store.Query, p WalkPhases) ([]store.ItemSummary, error) {
 		return nil, err
 	}
 	return append(items, more...), nil
+}
+
+// LiveTerms returns the scope terms that can match something: a term with an empty "in" list never does.
+// Adapters drop the others, and answer a scoped query without terms with an empty result, because a constant
+// false in the middle of a compiled index walk is not something every planner accepts.
+func LiveTerms(terms []store.ScopeTerm) []store.ScopeTerm {
+	out := make([]store.ScopeTerm, 0, len(terms))
+terms:
+	for _, t := range terms {
+		for _, c := range t.Where {
+			if l, err := List(c.Column, c.Value); c.Op == store.OpIn && err == nil && len(l) == 0 {
+				continue terms
+			}
+		}
+		out = append(out, t)
+	}
+	return out
 }

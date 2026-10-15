@@ -68,20 +68,26 @@ func OpenAPI(s *schema.Schema, extra ...Route) obj {
 		singletonPaths(paths, t)
 	}
 
+	authPaths(paths)
 	modulePaths(paths, extra)
 
 	return obj{
 		"openapi": "3.1.0",
 		"info": obj{"title": "Hydrogen management API", "version": "1",
-			"description": "Content management for a Hydrogen project. Every route except this document needs a bearer token."},
+			"description": "Content management for a Hydrogen project. Every route except login needs credentials: " +
+				"a bearer API token, or the session cookie from login with X-CSRF-Token on unsafe methods. " +
+				"What a caller may do depends on its roles; 403 means no grant allows it."},
 		"servers":  []any{obj{"url": "/api/manage/v1"}},
-		"security": []any{obj{"bearerAuth": []any{}}},
+		"security": []any{obj{"bearerAuth": []any{}}, obj{"cookieAuth": []any{}}},
 		"paths":    paths,
 		"components": obj{
-			"securitySchemes": obj{"bearerAuth": obj{"type": "http", "scheme": "bearer"}},
-			"schemas":         schemas,
-			"parameters":      parameters(collections, singletons),
-			"responses":       errorResponses(),
+			"securitySchemes": obj{
+				"bearerAuth": obj{"type": "http", "scheme": "bearer"},
+				"cookieAuth": obj{"type": "apiKey", "in": "cookie", "name": "hydrogen_session"},
+			},
+			"schemas":    schemas,
+			"parameters": parameters(collections, singletons),
+			"responses":  errorResponses(),
 		},
 	}
 }
@@ -90,7 +96,7 @@ func baseSchemas() obj {
 	uuid := str("uuid")
 	dt := str("date-time")
 	strs := arrayOf(str(""))
-	return mergeObj(channelSchemas(), obj{
+	return mergeObj(mergeObj(channelSchemas(), authSchemas()), obj{
 		"FieldError": obj{"type": "object", "required": []any{"path", "code", "message"},
 			"properties": obj{"path": str(""), "code": str(""), "message": str("")}},
 		"Referrer": obj{"type": "object", "required": []any{"id", "type", "name", "field", "kind", "onDelete"},
@@ -101,12 +107,13 @@ func baseSchemas() obj {
 			"properties": obj{
 				"code": obj{"type": "string", "description": "Machine-readable code; modules may add their own.",
 					"examples": []any{"bad_request", "unauthorized", "not_found", "unsupported_media_type",
-						"too_large", "invalid", "conflict", "referenced", "duplicate_key", "internal"}},
+						"too_large", "invalid", "conflict", "referenced", "duplicate_key", "forbidden", "csrf", "throttled", "internal"}},
 				"message":   str(""),
 				"fields":    arrayOf(schemaRef("FieldError")),
 				"locale":    str(""),
 				"parts":     strs,
 				"referrers": arrayOf(schemaRef("Referrer")),
+				"hidden":    obj{"type": "integer", "description": "Referrers the caller may not read."},
 			}}}},
 		"Summary": obj{"type": "object",
 			"required": []any{"id", "type", "name", "status", "version", "locales", "draftParts", "createdAt", "updatedAt"},
@@ -120,7 +127,8 @@ func baseSchemas() obj {
 		"VersionList": obj{"type": "object", "required": []any{"items", "total"},
 			"properties": obj{"items": arrayOf(schemaRef("VersionMeta")), "total": obj{"type": "integer"}}},
 		"ReferrerList": obj{"type": "object", "required": []any{"items", "total"},
-			"properties": obj{"items": arrayOf(schemaRef("Referrer")), "total": obj{"type": "integer"}}},
+			"properties": obj{"items": arrayOf(schemaRef("Referrer")), "total": obj{"type": "integer"},
+				"hidden": obj{"type": "integer", "description": "Referrers the caller may not read."}}},
 		"CreateRequest": createRequest(obj{"type": "object", "additionalProperties": true}),
 		"UpdateRequest": updateRequest(obj{"type": "object", "additionalProperties": true,
 			"description": "JSON merge patch: null removes a field."}),
@@ -151,7 +159,10 @@ func itemView(fields obj, typeName string) obj {
 		"properties": obj{"id": str("uuid"), "type": typ, "key": str(""), "locale": str(""), "mainLocale": str(""),
 			"alwaysAvailable": obj{"type": "boolean"}, "status": statusSchema(), "version": obj{"type": "integer"},
 			"draft": obj{"type": "boolean"}, "name": str(""), "fields": fields, "locales": strs, "draftParts": strs,
-			"createdAt": str("date-time"), "updatedAt": str("date-time"), "publishedAt": str("date-time")}}
+			"createdAt": str("date-time"), "updatedAt": str("date-time"), "publishedAt": str("date-time"),
+			"actions": obj{"type": "object", "required": []any{"edit", "publish", "delete"},
+				"description": "What the calling principal may do with the item.",
+				"properties":  obj{"edit": obj{"type": "boolean"}, "publish": obj{"type": "boolean"}, "delete": obj{"type": "boolean"}}}}}
 }
 
 func createRequest(fields obj) obj {
@@ -196,6 +207,7 @@ func parameters(collections, singletons []*schema.Type) obj {
 		"Parts": obj{"name": "parts", "in": "query", "schema": str(""),
 			"description": "Comma-separated draft parts (shared or locale codes); default all."},
 	}
+	maps.Copy(p, authParameters())
 	p["CollectionType"] = typeParam(collections)
 	p["SingletonType"] = typeParam(singletons)
 	return p
@@ -219,9 +231,12 @@ func errorResponses() obj {
 	}
 	return obj{
 		"BadRequest": mk("Malformed request."),
-		"Unauthorized": obj{"description": "Missing or invalid bearer token.", "headers": obj{"WWW-Authenticate": obj{"schema": str("")}},
+		"Unauthorized": obj{"description": "Missing or invalid credentials.", "headers": obj{"WWW-Authenticate": obj{"schema": str("")}},
 			"content": obj{"application/json": obj{"schema": schemaRef("Error")}}},
-		"NotFound":         mk("Unknown type or item."),
+		"NotFound":  mk("Unknown type or item."),
+		"Forbidden": mk("Authenticated, but no grant allows it (code forbidden, message the policy) or the CSRF token is missing (code csrf)."),
+		"Throttled": obj{"description": "Too many failed attempts.", "headers": obj{"Retry-After": obj{"schema": obj{"type": "integer"}}},
+			"content": obj{"application/json": obj{"schema": schemaRef("Error")}}},
 		"Conflict":         mk("The published version changed (conflict), the item is referenced (referenced) or the key is taken (duplicate_key)."),
 		"Invalid":          mk("Validation failed; error.fields lists the problems."),
 		"TooLarge":         mk("Request body too large."),
@@ -245,7 +260,7 @@ func params(names ...string) []any {
 
 func errs(codes ...string) obj {
 	m := map[string]string{"400": "BadRequest", "401": "Unauthorized", "404": "NotFound", "409": "Conflict",
-		"413": "TooLarge", "415": "UnsupportedMedia", "422": "Invalid"}
+		"403": "Forbidden", "413": "TooLarge", "415": "UnsupportedMedia", "422": "Invalid", "429": "Throttled"}
 	out := obj{}
 	for _, c := range codes {
 		out[c] = ref("responses", m[c])
@@ -277,49 +292,49 @@ var listParams = []string{"Locale", "Status", "Q", "Sort", "Limit", "Offset", "W
 func genericPaths(paths obj, collections, singletons []*schema.Type) {
 	view := okResp("The item.", schemaRef("ItemView"))
 	paths["/types"] = obj{"get": operation("listTypes", "List content types", nil, nil,
-		responses(obj{"200": okResp("Compiled types.", arrayOf(obj{"type": "object"}))}, "401"))}
+		responses(obj{"200": okResp("Compiled types.", arrayOf(obj{"type": "object"}))}, "401", "403"))}
 	paths["/types/{type}"] = obj{"get": operation("getType", "A compiled type and its JSON Schema",
 		[]any{obj{"name": "type", "in": "path", "required": true, "schema": str("")}}, nil,
 		responses(obj{"200": okResp("The type.", obj{"type": "object", "required": []any{"type", "jsonSchema"},
-			"properties": obj{"type": obj{"type": "object"}, "jsonSchema": obj{"type": "object"}}})}, "401", "404"))}
+			"properties": obj{"type": obj{"type": "object"}, "jsonSchema": obj{"type": "object"}}})}, "401", "403", "404"))}
 	if len(collections) > 0 {
 		paths["/collections/{type}/items"] = obj{
 			"get": operation("listItems", "List items of a collection type", params(append([]string{"CollectionType"}, listParams...)...), nil,
-				responses(obj{"200": okResp("A page of items.", schemaRef("ListResult"))}, "400", "401", "404")),
+				responses(obj{"200": okResp("A page of items.", schemaRef("ListResult"))}, "400", "401", "403", "404")),
 			"post": operation("createItem", "Create a draft item", params("CollectionType"), body(schemaRef("CreateRequest")),
 				responses(obj{"201": obj{"description": "The new draft.", "headers": obj{"Location": obj{"schema": str("")}},
-					"content": jsonContent(schemaRef("ItemView"))}}, "400", "401", "404", "409", "413", "415", "422")),
+					"content": jsonContent(schemaRef("ItemView"))}}, "400", "401", "403", "404", "409", "413", "415", "422")),
 		}
 	}
 	paths["/items/{id}"] = obj{
 		"get": operation("getItem", "Read an item", params("ItemId", "Locale", "Draft"), nil,
-			responses(obj{"200": view}, "400", "401", "404")),
+			responses(obj{"200": view}, "400", "401", "403", "404")),
 		"patch": operation("updateItem", "Update the draft (merge patch)", params("ItemId"), body(schemaRef("UpdateRequest")),
-			responses(obj{"200": view}, "400", "401", "404", "409", "413", "415", "422")),
+			responses(obj{"200": view}, "400", "401", "403", "404", "409", "413", "415", "422")),
 		"delete": operation("deleteItem", "Delete an item", params("ItemId"), nil,
-			responses(obj{"204": obj{"description": "Deleted."}}, "401", "404", "409")),
+			responses(obj{"204": obj{"description": "Deleted."}}, "401", "403", "404", "409")),
 	}
 	paths["/items/{id}/publish"] = obj{"post": operation("publishItem", "Publish draft parts", params("ItemId"),
-		optionalBody(schemaRef("PublishRequest")), responses(obj{"200": view}, "400", "401", "404", "409", "413", "415", "422"))}
+		optionalBody(schemaRef("PublishRequest")), responses(obj{"200": view}, "400", "401", "403", "404", "409", "413", "415", "422"))}
 	paths["/items/{id}/draft"] = obj{"delete": operation("discardDraft", "Discard draft parts", params("ItemId", "Parts"), nil,
-		responses(obj{"204": obj{"description": "Discarded."}}, "400", "401", "404"))}
+		responses(obj{"204": obj{"description": "Discarded."}}, "400", "401", "403", "404"))}
 	paths["/items/{id}/versions"] = obj{"get": operation("listVersions", "Version history", params("ItemId"), nil,
-		responses(obj{"200": okResp("Versions, newest first.", schemaRef("VersionList"))}, "401", "404"))}
+		responses(obj{"200": okResp("Versions, newest first.", schemaRef("VersionList"))}, "401", "403", "404"))}
 	paths["/items/{id}/references"] = obj{"get": operation("listReferences", "Items pointing at this one", params("ItemId"), nil,
-		responses(obj{"200": okResp("Referrers.", schemaRef("ReferrerList"))}, "401", "404"))}
+		responses(obj{"200": okResp("Referrers.", schemaRef("ReferrerList"))}, "401", "403", "404"))}
 	if len(singletons) > 0 {
 		paths["/singletons/{type}"] = obj{
 			"get": operation("getSingleton", "Read a singleton", params("SingletonType", "Locale", "Draft"), nil,
-				responses(obj{"200": view}, "400", "401", "404")),
+				responses(obj{"200": view}, "400", "401", "403", "404")),
 			"patch": operation("updateSingleton", "Update a singleton's draft (merge patch)", params("SingletonType"),
-				body(schemaRef("UpdateRequest")), responses(obj{"200": view}, "400", "401", "404", "409", "413", "415", "422")),
+				body(schemaRef("UpdateRequest")), responses(obj{"200": view}, "400", "401", "403", "404", "409", "413", "415", "422")),
 		}
 		paths["/singletons/{type}/publish"] = obj{"post": operation("publishSingleton", "Publish a singleton",
 			params("SingletonType"), optionalBody(schemaRef("PublishRequest")),
-			responses(obj{"200": view}, "400", "401", "404", "409", "413", "415", "422"))}
+			responses(obj{"200": view}, "400", "401", "403", "404", "409", "413", "415", "422"))}
 	}
 	paths["/channels"] = obj{"get": operation("listChannels", "List delivery channels", nil, nil,
-		responses(obj{"200": okResp("The configured channels, sorted by name.", schemaRef("ChannelList"))}, "401"))}
+		responses(obj{"200": okResp("The configured channels, sorted by name.", schemaRef("ChannelList"))}, "401", "403"))}
 	paths["/openapi.json"] = obj{"get": obj{"operationId": "getOpenAPI", "summary": "This document",
 		"responses": obj{"200": okResp("The OpenAPI document.", obj{"type": "object"})}}}
 }
@@ -331,13 +346,13 @@ func optionalBody(sch any) obj {
 func collectionPaths(paths obj, t *schema.Type) {
 	n := pascal(t.Name)
 	list := operation("list"+n, "List "+t.Label+" items", params(listParams...), nil,
-		responses(obj{"200": okResp("A page of items.", schemaRef("ListResult"))}, "400", "401"))
+		responses(obj{"200": okResp("A page of items.", schemaRef("ListResult"))}, "400", "401", "403"))
 	list["description"] = filterNote(t)
 	paths["/collections/"+t.Name+"/items"] = obj{
 		"get": list,
 		"post": operation("create"+n, "Create a draft "+t.Label, nil, body(schemaRef("Create_"+t.Name)),
 			responses(obj{"201": obj{"description": "The new draft.", "headers": obj{"Location": obj{"schema": str("")}},
-				"content": jsonContent(schemaRef("ItemView_" + t.Name))}}, "400", "401", "409", "413", "415", "422")),
+				"content": jsonContent(schemaRef("ItemView_" + t.Name))}}, "400", "401", "403", "409", "413", "415", "422")),
 	}
 }
 
@@ -346,12 +361,12 @@ func singletonPaths(paths obj, t *schema.Type) {
 	view := okResp("The singleton.", schemaRef("ItemView_"+t.Name))
 	paths["/singletons/"+t.Name] = obj{
 		"get": operation("get"+n, "Read "+t.Label, params("Locale", "Draft"), nil,
-			responses(obj{"200": view}, "400", "401", "404")),
+			responses(obj{"200": view}, "400", "401", "403", "404")),
 		"patch": operation("update"+n, "Update "+t.Label+" (merge patch)", nil, body(schemaRef("Update_"+t.Name)),
-			responses(obj{"200": view}, "400", "401", "404", "409", "413", "415", "422")),
+			responses(obj{"200": view}, "400", "401", "403", "404", "409", "413", "415", "422")),
 	}
 	paths["/singletons/"+t.Name+"/publish"] = obj{"post": operation("publish"+n, "Publish "+t.Label, nil,
-		optionalBody(schemaRef("PublishRequest")), responses(obj{"200": view}, "400", "401", "404", "409", "413", "415", "422"))}
+		optionalBody(schemaRef("PublishRequest")), responses(obj{"200": view}, "400", "401", "403", "404", "409", "413", "415", "422"))}
 }
 
 func filterNote(t *schema.Type) string {
@@ -422,7 +437,7 @@ func moduleOperation(rt Route, names []string) obj {
 		}
 		op["parameters"] = ps
 	}
-	codes := []string{"400", "401", "404", "409", "422"}
+	codes := []string{"400", "401", "403", "404", "409", "422"}
 	ok := okResp("Success.", obj{"type": "object"})
 	switch rt.Method {
 	case http.MethodPost, http.MethodPatch, http.MethodPut:

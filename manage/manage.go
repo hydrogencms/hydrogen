@@ -5,16 +5,15 @@ package manage
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/audit"
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/ids"
@@ -33,7 +32,7 @@ type Content interface {
 	Delete(ctx context.Context, id ids.UUID) error
 	List(ctx context.Context, o content.ListOptions) (*content.ListResult, error)
 	Versions(ctx context.Context, id ids.UUID) ([]store.VersionMeta, error)
-	References(ctx context.Context, id ids.UUID) ([]content.Referrer, error)
+	ReferencesVisible(ctx context.Context, id ids.UUID) ([]content.Referrer, int, error)
 	Singleton(ctx context.Context, typ string, o content.GetOptions) (*content.View, error)
 	UpdateSingleton(ctx context.Context, typ string, in content.UpdateInput) (*content.View, error)
 	PublishSingleton(ctx context.Context, typ string, o content.PublishOptions) (*content.View, error)
@@ -43,22 +42,54 @@ var _ Content = (*content.Service)(nil)
 
 const defaultMaxBody = 4 << 20
 
+// Authenticator turns requests into principals and runs login and logout; *access.Authenticator satisfies it.
+type Authenticator interface {
+	Authenticate(r *http.Request) (*access.Authn, error)
+	CheckCSRF(r *http.Request, an *access.Authn) error
+	Login(w http.ResponseWriter, r *http.Request, login, password string) (*access.LoginResult, error)
+	Logout(w http.ResponseWriter, r *http.Request) error
+}
+
+// Gate answers the coarse route question: does the principal in ctx hold the policy under any grant (nil: yes)?
+// Grants feeds GET /auth/session. *access.Checker satisfies it.
+type Gate interface {
+	Holds(ctx context.Context, policy string) error
+	Grants(ctx context.Context, p *access.Principal) ([]access.Grant, error)
+}
+
 // Options configures New.
 type Options struct {
 	Content Content
 	// Channels are listed by GET /channels; nil lists none.
 	Channels *channel.Set
-	Token    string // required bearer token
-	Log      *slog.Logger
-	MaxBody  int64 // default 4 MiB
+	// Auth authenticates requests. Without it, Token alone authenticates (a super principal), which is enough
+	// for tools and tests without a database.
+	Auth  Authenticator
+	Token string // the config token when Auth is nil
+	// Gate is the coarse policy check of routes; without one only super principals pass policy routes.
+	Gate Gate
+	// Admin serves the user, group, role, token and audit routes; without it they answer 404.
+	Admin *access.Admin
+	// Catalog is listed by GET /policies and checks the policy names of module routes.
+	Catalog *access.Catalog
+	Log     *slog.Logger
+	MaxBody int64 // default 4 MiB
 	// Prefix is where the handler is mounted (e.g. "/api/manage/v1"); Location headers are Prefix plus the
 	// route path. Empty keeps them relative to the mount point.
 	Prefix string
-	// Routes are module endpoints served next to the core ones, behind the same bearer token, body limit,
+	// Routes are module endpoints served next to the core ones, behind the same authentication, body limit,
 	// panic recovery and logging, and listed in /openapi.json. A route that conflicts with a core route or
 	// another module route makes New fail.
 	Routes []Route
 }
+
+// Access levels for Route.Policy besides a policy name.
+const (
+	// Authenticated routes need any authenticated principal (a session, an API token or the config token).
+	Authenticated = "@authenticated"
+	// Public routes need no credentials.
+	Public = "@public"
+)
 
 // Route is an endpoint a module adds to the management API.
 type Route struct {
@@ -71,6 +102,10 @@ type Route struct {
 	OpenAPI map[string]any
 	// Module names the module that registered the route, for error messages.
 	Module string
+	// Policy is required: a policy name ("pages.edit"), Authenticated or Public. The middleware refuses callers
+	// that hold no grant of the policy at all; it is a coarse gate, and the module's service must still check
+	// the policy against what the request acts on (a node, a site, an item).
+	Policy string
 }
 
 func (rt Route) describe() string {
@@ -92,16 +127,22 @@ func (rt Route) validate() error {
 	if rt.Handler == nil {
 		return fmt.Errorf("manage: %s: Handler is required", rt.describe())
 	}
+	if rt.Policy == "" {
+		return fmt.Errorf("manage: %s: Policy is required (a policy name, manage.Authenticated or manage.Public)", rt.describe())
+	}
 	return nil
 }
 
 type api struct {
-	c        Content
-	sc       *schema.Schema
-	log      *slog.Logger
-	maxBody  int64
-	prefix   string
-	tokenSum [sha256.Size]byte
+	c       Content
+	sc      *schema.Schema
+	log     *slog.Logger
+	maxBody int64
+	prefix  string
+	auth    Authenticator
+	gate    Gate
+	admin   *access.Admin
+	catalog *access.Catalog
 
 	channels     *channel.Set
 	channelsJSON []byte
@@ -113,27 +154,30 @@ type api struct {
 
 type route struct {
 	method, path string
+	policy       string
 	h            func(*api, http.ResponseWriter, *http.Request) error
 }
 
 // routes is the single list of endpoints; the mux and the tests' OpenAPI coverage check both read it.
-var routes = []route{
-	{"GET", "/types", (*api).listTypes},
-	{"GET", "/types/{type}", (*api).getType},
-	{"GET", "/collections/{type}/items", (*api).listItems},
-	{"POST", "/collections/{type}/items", (*api).createItem},
-	{"GET", "/items/{id}", (*api).getItem},
-	{"PATCH", "/items/{id}", (*api).updateItem},
-	{"POST", "/items/{id}/publish", (*api).publishItem},
-	{"DELETE", "/items/{id}/draft", (*api).discardDraft},
-	{"DELETE", "/items/{id}", (*api).deleteItem},
-	{"GET", "/items/{id}/versions", (*api).versions},
-	{"GET", "/items/{id}/references", (*api).references},
-	{"GET", "/singletons/{type}", (*api).getSingleton},
-	{"PATCH", "/singletons/{type}", (*api).updateSingleton},
-	{"POST", "/singletons/{type}/publish", (*api).publishSingleton},
-	{"GET", "/channels", (*api).listChannels},
-	{"GET", "/openapi.json", (*api).serveOpenAPI},
+var routes = slices.Concat(coreRoutes, authRoutes)
+
+var coreRoutes = []route{
+	{"GET", "/types", Authenticated, (*api).listTypes},
+	{"GET", "/types/{type}", Authenticated, (*api).getType},
+	{"GET", "/collections/{type}/items", access.PolicyContentRead, (*api).listItems},
+	{"POST", "/collections/{type}/items", access.PolicyContentCreate, (*api).createItem},
+	{"GET", "/items/{id}", access.PolicyContentRead, (*api).getItem},
+	{"PATCH", "/items/{id}", access.PolicyContentEdit, (*api).updateItem},
+	{"POST", "/items/{id}/publish", access.PolicyContentPublish, (*api).publishItem},
+	{"DELETE", "/items/{id}/draft", access.PolicyContentEdit, (*api).discardDraft},
+	{"DELETE", "/items/{id}", access.PolicyContentDelete, (*api).deleteItem},
+	{"GET", "/items/{id}/versions", access.PolicyContentRead, (*api).versions},
+	{"GET", "/items/{id}/references", access.PolicyContentRead, (*api).references},
+	{"GET", "/singletons/{type}", access.PolicyContentRead, (*api).getSingleton},
+	{"PATCH", "/singletons/{type}", access.PolicyContentEdit, (*api).updateSingleton},
+	{"POST", "/singletons/{type}/publish", access.PolicyContentPublish, (*api).publishSingleton},
+	{"GET", "/channels", Authenticated, (*api).listChannels},
+	{"GET", "/openapi.json", Authenticated, (*api).serveOpenAPI},
 }
 
 // New returns the API handler. Every route, /openapi.json included, needs the bearer token. Routes are relative: mount it with http.StripPrefix("/api/manage/v1", h).
@@ -141,14 +185,21 @@ func New(o Options) (http.Handler, error) {
 	if o.Content == nil {
 		return nil, errors.New("manage: Content is required")
 	}
-	if o.Token == "" {
-		return nil, errors.New("manage: Token is required")
+	if o.Auth == nil && o.Token == "" {
+		return nil, errors.New("manage: Auth or Token is required")
 	}
 	sc := o.Content.Schema()
 	if sc == nil {
 		return nil, errors.New("manage: content service has no schema")
 	}
-	a := &api{c: o.Content, sc: sc, log: o.Log, maxBody: o.MaxBody, prefix: strings.TrimRight(o.Prefix, "/"), tokenSum: sha256.Sum256([]byte(o.Token)), channels: o.Channels}
+	a := &api{c: o.Content, sc: sc, log: o.Log, maxBody: o.MaxBody, prefix: strings.TrimRight(o.Prefix, "/"), auth: o.Auth,
+		gate: o.Gate, admin: o.Admin, catalog: o.Catalog, channels: o.Channels}
+	if a.auth == nil {
+		var err error
+		if a.auth, err = access.NewAuthenticator(access.AuthOptions{ConfigToken: o.Token}); err != nil {
+			return nil, err
+		}
+	}
 	if a.log == nil {
 		a.log = slog.New(slog.DiscardHandler)
 	}
@@ -159,13 +210,16 @@ func New(o Options) (http.Handler, error) {
 		if err := rt.validate(); err != nil {
 			return nil, err
 		}
+		if err := a.checkPolicy(rt); err != nil {
+			return nil, err
+		}
 	}
 	if err := a.buildCaches(o.Routes); err != nil {
 		return nil, err
 	}
 	mux := http.NewServeMux()
 	for _, rt := range routes {
-		mux.Handle(rt.method+" "+rt.path, a.auth(a.handle(rt.h)))
+		mux.Handle(rt.method+" "+rt.path, a.guard(rt.policy, a.handle(rt.h)))
 	}
 	for _, rt := range o.Routes {
 		if err := a.handleRoute(mux, rt); err != nil {
@@ -182,7 +236,18 @@ func (a *api) handleRoute(mux *http.ServeMux, rt Route) (err error) {
 			err = fmt.Errorf("manage: %s: %v", rt.describe(), v)
 		}
 	}()
-	mux.Handle(rt.Method+" "+rt.Path, a.auth(rt.Handler))
+	mux.Handle(rt.Method+" "+rt.Path, a.guard(rt.Policy, rt.Handler))
+	return nil
+}
+
+// checkPolicy rejects a module route naming a policy nobody declared.
+func (a *api) checkPolicy(rt Route) error {
+	if rt.Policy == Authenticated || rt.Policy == Public || a.catalog == nil {
+		return nil
+	}
+	if _, ok := a.catalog.Policy(rt.Policy); !ok {
+		return fmt.Errorf("manage: %s: unknown policy %q (declare it with Registry.Policy)", rt.describe(), rt.Policy)
+	}
 	return nil
 }
 
@@ -194,18 +259,48 @@ func (a *api) handle(fn func(*api, http.ResponseWriter, *http.Request) error) ht
 	})
 }
 
-func (a *api) auth(next http.Handler) http.Handler {
+type authnKey struct{}
+
+// authnFrom is the authenticated request in ctx (nil on public routes).
+func authnFrom(ctx context.Context) *access.Authn {
+	an, _ := ctx.Value(authnKey{}).(*access.Authn)
+	return an
+}
+
+// guard authenticates the request, checks CSRF on session requests, puts the principal (and so the audit
+// actor) in the context and applies the route's coarse policy gate. Public routes skip all of it.
+func (a *api) guard(policy string, next http.Handler) http.Handler {
+	if policy == Public {
+		return next
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		scheme, tok, _ := strings.Cut(r.Header.Get("Authorization"), " ")
-		sum := sha256.Sum256([]byte(strings.TrimSpace(tok)))
-		if !strings.EqualFold(scheme, "Bearer") || subtle.ConstantTimeCompare(sum[:], a.tokenSum[:]) != 1 {
-			w.Header().Set("WWW-Authenticate", "Bearer")
-			Fail(w, r, &Error{Status: http.StatusUnauthorized, Code: "unauthorized", Message: "missing or invalid bearer token"})
+		an, err := a.auth.Authenticate(r)
+		if err == nil {
+			err = a.auth.CheckCSRF(r, an)
+		}
+		if err != nil {
+			Fail(w, r, err)
 			return
 		}
-		ctx := audit.WithActor(r.Context(), audit.Actor{Kind: "token", ID: "manage"})
+		ctx := context.WithValue(access.WithPrincipal(r.Context(), an.Principal), authnKey{}, an)
+		if policy != Authenticated {
+			if err := a.holds(ctx, an.Principal, policy); err != nil {
+				Fail(w, r, err)
+				return
+			}
+		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func (a *api) holds(ctx context.Context, p *access.Principal, policy string) error {
+	if p.Super {
+		return nil
+	}
+	if a.gate == nil {
+		return fmt.Errorf("%w: %s", access.ErrForbidden, policy)
+	}
+	return a.gate.Holds(ctx, policy)
 }
 
 type statusWriter struct {

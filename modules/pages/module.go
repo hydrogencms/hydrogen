@@ -45,11 +45,14 @@ func (m *module) Register(r *kernel.Registry) error {
 		r.ChannelOption(o)
 	}
 	r.ChannelCheck(checkMatchers)
-	if err := r.Exporter("pages", exporter{}); err != nil {
+	if err := r.Exporter("pages", exporter{func() (*service, error) { return m.svc.get() }}); err != nil {
 		return err
 	}
 
 	m.svc = &Service{}
+	if err := m.registerAccess(r); err != nil {
+		return err
+	}
 	kernel.Provide(r, m.svc)
 	registerDelivery(r, func() *Service { return m.svc })
 	for _, rt := range routes(func() *Service { return m.svc }) {
@@ -93,6 +96,13 @@ func (m *module) Register(r *kernel.Registry) error {
 func (m *module) Boot(_ context.Context, s *kernel.Services) error {
 	m.svc.impl = newService(m.cfg.Sites, s)
 	return nil
+}
+
+func (m *module) Start(ctx context.Context) error {
+	if m.svc.impl == nil {
+		return nil
+	}
+	return m.svc.impl.ensureAccessIndex(ctx)
 }
 
 func (c *Config) validate() error {

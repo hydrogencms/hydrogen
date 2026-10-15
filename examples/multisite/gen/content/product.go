@@ -12,7 +12,9 @@ type Product struct {
 	Sku   string `json:"sku,omitempty"`
 }
 
-// ProductType is the typed handle for the "product" content type. Register hooks and use the Local API through it:
+// ProductType is the typed handle for the "product" content type. Register hooks and access rules and use the Local API
+// through it:
 //
 //	ProductType.BeforeSave(h, func(c *hooks.Context, doc *Product) error { return nil })
+//	ProductType.Access(h, access.Rules{Read: func(ctx context.Context, p *access.Principal) access.Result { return access.Allow() }})
 var ProductType = content.Handle[Product]{Type: "product"}

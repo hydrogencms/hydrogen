@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/audit"
 	"github.com/hydrogencms/hydrogen/hooks"
 	"github.com/hydrogencms/hydrogen/ids"
@@ -15,8 +16,12 @@ import (
 
 // Publish makes the selected draft parts the next published version.
 func (s *Service) Publish(ctx context.Context, id ids.UUID, o PublishOptions) (*View, error) {
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
 	var v *View
 	err := s.o.DB.Tx(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
 		it, err := getItem(ctx, tx, id, true)
 		if err != nil {
 			return err
@@ -32,9 +37,13 @@ func (s *Service) PublishSingleton(ctx context.Context, typ string, o PublishOpt
 	if _, err := s.singletonType(typ); err != nil {
 		return nil, err
 	}
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
 	var v *View
 	err := s.o.DB.Tx(ctx, func(tx store.Tx) error {
-		it, err := getItemByKey(ctx, tx, typ)
+		ctx := store.WithTx(ctx, tx)
+		it, err := getSingletonItem(ctx, tx, typ)
 		if err != nil {
 			return err
 		}
@@ -73,9 +82,15 @@ func (s *Service) publish(ctx context.Context, tx store.Tx, it store.Item, o Pub
 	if err := st.load(ctx, c); err != nil {
 		return nil, err
 	}
+	if err := s.check(ctx, access.PolicyContentPublish, st, nil); err != nil {
+		return nil, err
+	}
 	sel, err := st.selectParts(o)
 	if err != nil {
 		return nil, fmt.Errorf("content: publish %s: %w", it.ID, err)
+	}
+	if err := s.check(ctx, access.PolicyContentPublish, st, st.publishLocales(sel)); err != nil {
+		return nil, err
 	}
 	if !o.Force {
 		if err := st.checkConflicts(ctx, c, sel); err != nil {
@@ -87,6 +102,17 @@ func (s *Service) publish(ctx context.Context, tx store.Tx, it store.Item, o Pub
 		return nil, fmt.Errorf("content: publish %s: %w", it.ID, err)
 	}
 	return v, nil
+}
+
+// publishLocales are the locales a publish changes: the selected ones, or every locale of the new version when
+// the shared part goes.
+func (st *itemState) publishLocales(sel selection) []string {
+	all := slices.Clone(sel.locales)
+	if st.pub != nil {
+		all = append(all, st.pub.codes()...)
+	}
+	slices.Sort(all)
+	return sel.changedLocales(slices.Compact(all))
 }
 
 func (st *itemState) selectParts(o PublishOptions) (selection, error) {
@@ -218,6 +244,7 @@ type localeOut struct {
 }
 
 func (s *Service) publishParts(ctx context.Context, tx store.Tx, st *itemState, sel selection) (*View, error) {
+	s.rememberRows(st)
 	shared, sharedData, outs, err := st.nextVersion(sel)
 	if err != nil {
 		return nil, err
@@ -244,6 +271,9 @@ func (s *Service) publishParts(ctx context.Context, tx store.Tx, st *itemState, 
 	if err := st.dropDrafts(ctx, c, drop); err != nil {
 		return nil, err
 	}
+	if err := s.projectWorking(ctx, c, st); err != nil {
+		return nil, err
+	}
 	changed := sel.changedLocales(codesOf(outs))
 	data := map[string]any{"type": st.typ.Name, "version": st.item.PublishedVersion, "locales": changed}
 	if err := s.record(ctx, tx, actor, "item.publish", st.item.ID, data); err != nil {
@@ -255,7 +285,9 @@ func (s *Service) publishParts(ctx context.Context, tx store.Tx, st *itemState, 
 	if err := s.afterPublish(ctx, tx, st, outs, changed); err != nil {
 		return nil, err
 	}
-	return st.publishedResult(outs), nil
+	v := st.publishedResult(outs)
+	s.withActions(ctx, st, v)
+	return v, nil
 }
 
 // nextVersion assembles the documents of the version after the current one: the current version with the

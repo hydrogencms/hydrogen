@@ -30,7 +30,9 @@ const (
 	RedirectStatusCodeX308 RedirectStatusCode = "308"
 )
 
-// RedirectType is the typed handle for the "redirect" content type. Register hooks and use the Local API through it:
+// RedirectType is the typed handle for the "redirect" content type. Register hooks and access rules and use the Local API
+// through it:
 //
 //	RedirectType.BeforeSave(h, func(c *hooks.Context, doc *Redirect) error { return nil })
+//	RedirectType.Access(h, access.Rules{Read: func(ctx context.Context, p *access.Principal) access.Result { return access.Allow() }})
 var RedirectType = content.Handle[Redirect]{Type: "redirect"}

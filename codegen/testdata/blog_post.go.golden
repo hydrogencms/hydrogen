@@ -11,7 +11,9 @@ type BlogPost struct {
 	Seo *SeoGroup `json:"seo,omitempty"`
 }
 
-// BlogPostType is the typed handle for the "blogPost" content type. Register hooks and use the Local API through it:
+// BlogPostType is the typed handle for the "blogPost" content type. Register hooks and access rules and use the Local API
+// through it:
 //
 //	BlogPostType.BeforeSave(h, func(c *hooks.Context, doc *BlogPost) error { return nil })
+//	BlogPostType.Access(h, access.Rules{Read: func(ctx context.Context, p *access.Principal) access.Result { return access.Allow() }})
 var BlogPostType = content.Handle[BlogPost]{Type: "blogPost"}

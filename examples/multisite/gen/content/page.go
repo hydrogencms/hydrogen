@@ -15,7 +15,9 @@ type Page struct {
 	VanityPath *string `json:"vanityPath,omitempty"`
 }
 
-// PageType is the typed handle for the "page" content type. Register hooks and use the Local API through it:
+// PageType is the typed handle for the "page" content type. Register hooks and access rules and use the Local API
+// through it:
 //
 //	PageType.BeforeSave(h, func(c *hooks.Context, doc *Page) error { return nil })
+//	PageType.Access(h, access.Rules{Read: func(ctx context.Context, p *access.Principal) access.Result { return access.Allow() }})
 var PageType = content.Handle[Page]{Type: "page"}

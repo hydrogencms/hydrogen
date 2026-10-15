@@ -37,7 +37,7 @@ func boot(t *testing.T, databaseURL string, env string) {
 	addr := make(chan string, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- hydrogen.Run(ctx, []string{"serve"}, configure, hydrogen.RunOptions{Config: opts, Stderr: io.Discard,
+		done <- hydrogen.Run(ctx, []string{"serve"}, configure, hydrogen.RunOptions{Config: opts, Stderr: io.Discard, PasswordIterations: 1000,
 			Listening: func(a string) { addr <- a }})
 	}()
 	var base string

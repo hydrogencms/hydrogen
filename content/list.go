@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/schema"
 	"github.com/hydrogencms/hydrogen/store"
@@ -20,6 +21,24 @@ func (s *Service) List(ctx context.Context, o ListOptions) (*ListResult, error) 
 	q, err := s.query(o)
 	if err != nil {
 		return nil, err
+	}
+	// Management lists what editors see: drafts included, unless only published items are asked for.
+	q.Working = o.Status != store.StatusPublished
+	if s.guarded(ctx) {
+		if o.Type == "" {
+			return nil, badRequest("a content type is required")
+		}
+		if err := s.o.Access.Prepare(ctx); err != nil {
+			return nil, err
+		}
+		scoped, terms, err := s.o.Access.ListScope(ctx, access.PolicyContentRead, o.Type)
+		if err != nil {
+			return nil, err
+		}
+		if scoped && len(terms) == 0 {
+			return &ListResult{Items: []Summary{}}, nil
+		}
+		q.Scoped, q.Scope = scoped, terms
 	}
 	var res store.QueryResult
 	err = s.o.DB.View(ctx, func(tx store.Tx) (err error) {

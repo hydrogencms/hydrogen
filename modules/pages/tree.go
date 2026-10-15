@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/ids"
@@ -27,7 +28,9 @@ func (t *treeLevel) done() TreeNode {
 	return t.TreeNode
 }
 
-func (s *service) tree(ctx context.Context, site, locale string, parent *ids.UUID, depth int) ([]TreeNode, error) {
+// tree lists the children of parent. vis, when set, builds the filter a restricted reader sees through; it
+// returns nil for readers that see everything.
+func (s *service) tree(ctx context.Context, site, locale string, parent *ids.UUID, depth int, vis func(context.Context, store.SQL, string) (*visibility, error)) ([]TreeNode, error) {
 	if err := s.checkSite(site); err != nil {
 		return nil, err
 	}
@@ -35,12 +38,25 @@ func (s *service) tree(ctx context.Context, site, locale string, parent *ids.UUI
 		return nil, badRequest("depth is at most %d", maxTreeDepth)
 	}
 	depth = max(depth, 1)
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
 	var out []TreeNode
 	err := s.db.View(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
 		q := tx.SQL()
 		top, ok, err := s.treeTop(ctx, q, site, parent)
 		if err != nil || !ok {
 			return err
+		}
+		var v *visibility
+		if vis != nil {
+			if v, err = vis(ctx, q, site); err != nil {
+				return err
+			}
+			if v != nil && !v.visible(ctx, top) {
+				return notFound("page node %s", top.ID)
+			}
 		}
 		g := newGraph(q)
 		if err := g.loadNodesWithAncestors(ctx, []nodeRow{top}); err != nil {
@@ -49,7 +65,7 @@ func (s *service) tree(ctx context.Context, site, locale string, parent *ids.UUI
 		root := &treeLevel{row: top}
 		level := []*treeLevel{root}
 		for d := 0; d < depth && len(level) > 0; d++ {
-			if level, err = s.expandLevel(ctx, tx, g, locale, level); err != nil {
+			if level, err = s.expandLevel(ctx, tx, g, locale, level, v); err != nil {
 				return err
 			}
 		}
@@ -79,7 +95,7 @@ func (s *service) treeTop(ctx context.Context, q store.SQL, site string, parent 
 }
 
 // expandLevel loads the children of every node in level, attaches them and returns them as the next level.
-func (s *service) expandLevel(ctx context.Context, tx store.Tx, g *graph, locale string, level []*treeLevel) ([]*treeLevel, error) {
+func (s *service) expandLevel(ctx context.Context, tx store.Tx, g *graph, locale string, level []*treeLevel, v *visibility) ([]*treeLevel, error) {
 	q := tx.SQL()
 	byID := make(map[ids.UUID]*treeLevel, len(level))
 	parents := make([]ids.UUID, len(level))
@@ -98,12 +114,17 @@ func (s *service) expandLevel(ctx context.Context, tx store.Tx, g *graph, locale
 		return nil, err
 	}
 	slices.SortStableFunc(rows, compareKeys)
-	next := make([]*treeLevel, len(rows))
-	for i, r := range rows {
+	next := make([]*treeLevel, 0, len(rows))
+	for _, r := range rows {
+		permitted := v == nil || v.permitted(ctx, r)
+		if !permitted && !v.context[r.ID] {
+			continue
+		}
 		t := &treeLevel{row: r}
+		t.Restricted = !permitted
 		t.ID, t.Site, t.Parent, t.Kind, t.Item, t.Hidden, t.Depth = r.ID, r.Site, r.Parent, r.Kind, r.Item, r.Hidden, r.Depth
 		t.CreatedAt, t.UpdatedAt = r.Created, r.Updated
-		next[i] = t
+		next = append(next, t)
 		p := byID[*r.Parent]
 		p.kids = append(p.kids, t)
 	}
@@ -131,6 +152,19 @@ func (s *service) describe(ctx context.Context, tx store.Tx, g *graph, locale st
 	q, c := tx.SQL(), tx.Content()
 	var pages, all []ids.UUID
 	var mounts []nodeRow
+	var hidden []*treeLevel
+	level = slices.DeleteFunc(slices.Clone(level), func(t *treeLevel) bool {
+		if t.Restricted {
+			hidden = append(hidden, t)
+		}
+		return t.Restricted
+	})
+	if err := s.describeRestricted(ctx, q, locale, hidden); err != nil {
+		return err
+	}
+	if len(level) == 0 {
+		return nil
+	}
 	for _, t := range level {
 		all = append(all, t.row.ID)
 		switch t.row.Kind {
@@ -384,4 +418,45 @@ func (s *service) linkTargets(ctx context.Context, q store.SQL, g *graph, locale
 		}
 	}
 	return out, nil
+}
+
+// describeRestricted fills what a context ancestor shows: its name. The child count is left out, since it would
+// count children the reader cannot see.
+func (s *service) describeRestricted(ctx context.Context, q store.SQL, locale string, level []*treeLevel) error {
+	if len(level) == 0 {
+		return nil
+	}
+	var pages []ids.UUID
+	for _, t := range level {
+		if t.row.Kind == KindPage {
+			pages = append(pages, t.row.ID)
+		}
+	}
+	names, _, err := pageNamesAndPaths(ctx, q, pages, locale)
+	if err != nil {
+		return err
+	}
+	for _, t := range level {
+		t.Item, t.Hidden, t.CreatedAt, t.UpdatedAt = nil, false, time.Time{}, time.Time{}
+		switch t.row.Kind {
+		case KindPage:
+			t.Name = names[slugKey{t.row.ID, locale}]
+			if t.Name == "" {
+				t.Name = names[slugKey{t.row.ID, t.row.MainLocale}]
+			}
+		case KindMount:
+			var spec MountSpec
+			if err := jsonUnmarshal(t.row.Data, &spec); err != nil {
+				return err
+			}
+			t.Name = labelFor(spec.Label, locale, spec.Segment)
+		case KindLink:
+			var spec LinkSpec
+			if err := jsonUnmarshal(t.row.Data, &spec); err != nil {
+				return err
+			}
+			t.Name = labelFor(spec.Label, locale, "")
+		}
+	}
+	return nil
 }

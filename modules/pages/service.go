@@ -29,6 +29,7 @@ type service struct {
 	log    *slog.Logger
 	audit  *audit.Log
 	outbox *outbox.Outbox
+	svcs   *kernel.Services
 
 	mounts mountCache
 	web    *webIndex
@@ -40,7 +41,7 @@ func newService(sites []string, s *kernel.Services) *service {
 		chans = s.Channels.All()
 	}
 	return &service{sites: slices.Clone(sites), db: s.DB, schema: s.Schema, clock: s.Clock, ids: s.IDs, log: s.Log,
-		audit: s.Audit, outbox: s.Outbox, web: newWebIndex(chans, sites)}
+		audit: s.Audit, outbox: s.Outbox, svcs: s, web: newWebIndex(chans, sites)}
 }
 
 func (s *Service) get() (*service, error) {

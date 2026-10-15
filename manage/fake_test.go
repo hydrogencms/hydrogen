@@ -123,8 +123,8 @@ func (f *fake) Versions(_ context.Context, id ids.UUID) ([]store.VersionMeta, er
 	return f.versions, f.rec(call{name: "Versions", id: id})
 }
 
-func (f *fake) References(_ context.Context, id ids.UUID) ([]content.Referrer, error) {
-	return f.refs, f.rec(call{name: "References", id: id})
+func (f *fake) ReferencesVisible(_ context.Context, id ids.UUID) ([]content.Referrer, int, error) {
+	return f.refs, 0, f.rec(call{name: "References", id: id})
 }
 
 func (f *fake) Singleton(_ context.Context, typ string, o content.GetOptions) (*content.View, error) {

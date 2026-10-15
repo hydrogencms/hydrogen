@@ -12,7 +12,9 @@ type Settings struct {
 	FooterLinks []content.Ref `json:"footerLinks,omitempty"`
 }
 
-// SettingsType is the typed handle for the "settings" content type. Register hooks and use the Local API through it:
+// SettingsType is the typed handle for the "settings" content type. Register hooks and access rules and use the Local API
+// through it:
 //
 //	SettingsType.BeforeSave(h, func(c *hooks.Context, doc *Settings) error { return nil })
+//	SettingsType.Access(h, access.Rules{Read: func(ctx context.Context, p *access.Principal) access.Result { return access.Allow() }})
 var SettingsType = content.Handle[Settings]{Type: "settings"}

@@ -13,7 +13,9 @@ type Person struct {
 	Bio       *string `json:"bio,omitempty"`
 }
 
-// PersonType is the typed handle for the "person" content type. Register hooks and use the Local API through it:
+// PersonType is the typed handle for the "person" content type. Register hooks and access rules and use the Local API
+// through it:
 //
 //	PersonType.BeforeSave(h, func(c *hooks.Context, doc *Person) error { return nil })
+//	PersonType.Access(h, access.Rules{Read: func(ctx context.Context, p *access.Principal) access.Result { return access.Allow() }})
 var PersonType = content.Handle[Person]{Type: "person"}

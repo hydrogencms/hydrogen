@@ -7,10 +7,15 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
+	"math"
 	"mime"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/schema"
@@ -52,6 +57,7 @@ type errorBody struct {
 	Locale    string              `json:"locale,omitempty"`
 	Parts     []string            `json:"parts,omitempty"`
 	Referrers []content.Referrer  `json:"referrers,omitempty"`
+	Hidden    int                 `json:"hidden,omitempty"`
 }
 
 // WriteJSON writes v as a JSON response with the API's standard headers.
@@ -80,8 +86,22 @@ func Fail(w http.ResponseWriter, r *http.Request, err error) {
 		ve *content.ValidationError
 		ce *content.ConflictError
 		re *content.ReferencedError
+		te *access.ThrottledError
+		ie *access.InvalidError
 	)
 	switch {
+	case errors.Is(err, access.ErrUnauthenticated):
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		writeErrorBody(w, http.StatusUnauthorized, errorBody{Code: "unauthorized", Message: "missing or invalid credentials"})
+	case errors.Is(err, access.ErrCSRF):
+		writeErrorBody(w, http.StatusForbidden, errorBody{Code: "csrf", Message: "missing or wrong X-CSRF-Token"})
+	case errors.Is(err, access.ErrForbidden):
+		writeErrorBody(w, http.StatusForbidden, errorBody{Code: "forbidden", Message: forbiddenPolicy(err)})
+	case errors.As(err, &te):
+		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(te.RetryAfter.Seconds()))))
+		writeErrorBody(w, http.StatusTooManyRequests, errorBody{Code: "throttled", Message: "too many attempts; retry later"})
+	case errors.As(err, &ie):
+		writeErrorBody(w, http.StatusBadRequest, errorBody{Code: "bad_request", Message: "invalid input", Fields: invalidFields(ie)})
 	case errors.As(err, &me):
 		if me.Status >= http.StatusInternalServerError {
 			requestLog(r).Error("manage: request failed", "method", r.Method, "path", r.URL.Path, "err", err)
@@ -98,7 +118,7 @@ func Fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeErrorBody(w, http.StatusConflict, errorBody{Code: "conflict", Message: ce.Error(), Parts: ce.Parts})
 	case errors.As(err, &re):
 		writeErrorBody(w, http.StatusConflict,
-			errorBody{Code: "referenced", Message: "item is referenced by other items", Referrers: re.Referrers})
+			errorBody{Code: "referenced", Message: "item is referenced by other items", Referrers: re.Referrers, Hidden: re.Hidden})
 	case errors.Is(err, content.ErrUnknownType), errors.Is(err, content.ErrNotFound), errors.Is(err, store.ErrNotFound):
 		writeErrorBody(w, http.StatusNotFound, errorBody{Code: "not_found", Message: err.Error()})
 	case errors.Is(err, content.ErrBadRequest):
@@ -115,6 +135,29 @@ func Fail(w http.ResponseWriter, r *http.Request, err error) {
 		requestLog(r).Error("manage: request failed", "method", r.Method, "path", r.URL.Path, "err", err)
 		writeErrorBody(w, http.StatusInternalServerError, errorBody{Code: "internal", Message: "internal error"})
 	}
+}
+
+// forbiddenPolicy is the policy an ErrForbidden error names, and nothing else of its context.
+func forbiddenPolicy(err error) string {
+	const marker = "access: forbidden: "
+	msg := err.Error()
+	i := strings.Index(msg, marker)
+	if i < 0 {
+		return "forbidden"
+	}
+	msg = msg[i+len(marker):]
+	if j := strings.IndexAny(msg, ":\n"); j >= 0 {
+		msg = msg[:j]
+	}
+	return strings.TrimSpace(msg)
+}
+
+func invalidFields(e *access.InvalidError) []schema.FieldError {
+	out := make([]schema.FieldError, 0, len(e.Fields))
+	for _, path := range slices.Sorted(maps.Keys(e.Fields)) {
+		out = append(out, schema.FieldError{Path: path, Code: "invalid", Message: e.Fields[path]})
+	}
+	return out
 }
 
 // reqState is what the middleware leaves in the request context for the exported helpers.

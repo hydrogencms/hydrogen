@@ -29,9 +29,9 @@ type fakeAPI struct {
 }
 
 func (f *fakeAPI) rec(s string) { f.calls = append(f.calls, s) }
-func (f *fakeAPI) Sites() []string {
+func (f *fakeAPI) SitesFor(context.Context) ([]string, error) {
 	f.rec("sites")
-	return nil
+	return nil, nil
 }
 func (f *fakeAPI) Place(_ context.Context, site string, in Place) (*Node, error) {
 	f.rec("place " + site)

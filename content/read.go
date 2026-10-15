@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/store"
 )
@@ -17,8 +18,12 @@ const maxNamedReferrers = 100
 // parts. A locale the item lacks yields a view with only the shared fields and an empty Name, so a client can
 // start a translation from it. A never-published item without Draft is ErrNotFound.
 func (s *Service) Get(ctx context.Context, id ids.UUID, o GetOptions) (*View, error) {
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
 	var v *View
 	err := s.o.DB.View(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
 		it, err := getItem(ctx, tx, id, false)
 		if err != nil {
 			return err
@@ -31,9 +36,21 @@ func (s *Service) Get(ctx context.Context, id ids.UUID, o GetOptions) (*View, er
 
 // GetByKey is Get for an item addressed by its key.
 func (s *Service) GetByKey(ctx context.Context, key string, o GetOptions) (*View, error) {
+	return s.getByKey(ctx, key, "", o)
+}
+
+// getByKey reads the item with the key; with singleton set it must be of that type.
+func (s *Service) getByKey(ctx context.Context, key, singleton string, o GetOptions) (*View, error) {
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
 	var v *View
 	err := s.o.DB.View(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
 		it, err := getItemByKey(ctx, tx, key)
+		if err == nil && singleton != "" && it.Type != singleton {
+			err = fmt.Errorf("%w: key %s", ErrNotFound, key)
+		}
 		if err != nil {
 			return err
 		}
@@ -48,7 +65,17 @@ func (s *Service) Singleton(ctx context.Context, typ string, o GetOptions) (*Vie
 	if _, err := s.singletonType(typ); err != nil {
 		return nil, err
 	}
-	return s.GetByKey(ctx, typ, o)
+	return s.getByKey(ctx, typ, typ, o)
+}
+
+// getSingletonItem finds the item of a singleton type by its key. An item of another type holding the key
+// (created before keys named after singletons were refused) is not the singleton.
+func getSingletonItem(ctx context.Context, tx store.Tx, typ string) (store.Item, error) {
+	it, err := getItemByKey(ctx, tx, typ)
+	if err == nil && it.Type != typ {
+		return it, fmt.Errorf("%w: key %s", ErrNotFound, typ)
+	}
+	return it, err
 }
 
 func (s *Service) singletonType(name string) (singleton bool, err error) {
@@ -73,13 +100,20 @@ func (s *Service) viewOf(ctx context.Context, tx store.Tx, it store.Item, o GetO
 	if err != nil {
 		return nil, err
 	}
-	if it.PublishedVersion == 0 && !o.Draft {
-		return nil, fmt.Errorf("%w: %s is not published", ErrNotFound, it.ID)
-	}
 	if err := st.load(ctx, tx.Content()); err != nil {
 		return nil, err
 	}
-	return st.view(locale, o.Draft)
+	if err := s.checkRead(ctx, st, o.Draft); err != nil {
+		return nil, err
+	}
+	if it.PublishedVersion == 0 && !o.Draft {
+		return nil, fmt.Errorf("%w: %s is not published", ErrNotFound, it.ID)
+	}
+	v, err := st.view(locale, o.Draft)
+	if err == nil {
+		s.withActions(ctx, st, v)
+	}
+	return v, err
 }
 
 // view builds the view of one locale from the loaded state.
@@ -155,12 +189,19 @@ func storagePart(p string) string {
 }
 
 func (s *Service) Versions(ctx context.Context, id ids.UUID) ([]store.VersionMeta, error) {
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
 	var out []store.VersionMeta
 	err := s.o.DB.View(ctx, func(tx store.Tx) error {
-		if _, err := getItem(ctx, tx, id, false); err != nil {
+		ctx := store.WithTx(ctx, tx)
+		it, err := getItem(ctx, tx, id, false)
+		if err != nil {
 			return err
 		}
-		var err error
+		if err := s.authorizeItem(ctx, tx.Content(), it, access.PolicyContentRead, nil); err != nil {
+			return err
+		}
 		out, err = tx.Content().ListVersions(ctx, id)
 		return err
 	})
@@ -169,26 +210,41 @@ func (s *Service) Versions(ctx context.Context, id ids.UUID) ([]store.VersionMet
 
 // References lists items whose published versions point at id.
 func (s *Service) References(ctx context.Context, id ids.UUID) ([]Referrer, error) {
-	var out []Referrer
-	err := s.o.DB.View(ctx, func(tx store.Tx) error {
-		if _, err := getItem(ctx, tx, id, false); err != nil {
+	out, _, err := s.ReferencesVisible(ctx, id)
+	return out, err
+}
+
+// ReferencesVisible is References for the principal in ctx: referrers it may not read are left out and
+// counted in hidden.
+func (s *Service) ReferencesVisible(ctx context.Context, id ids.UUID) (out []Referrer, hidden int, err error) {
+	if err := s.prepare(ctx); err != nil {
+		return nil, 0, err
+	}
+	err = s.o.DB.View(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
+		it, err := getItem(ctx, tx, id, false)
+		if err != nil {
+			return err
+		}
+		if err := s.authorizeItem(ctx, tx.Content(), it, access.PolicyContentRead, nil); err != nil {
 			return err
 		}
 		refs, err := tx.Content().IncomingRefs(ctx, id)
 		if err != nil {
 			return fmt.Errorf("content: references of %s: %w", id, err)
 		}
-		out, err = s.referrers(ctx, tx.Content(), refs, len(refs))
+		out, hidden, err = s.referrers(ctx, tx.Content(), refs, len(refs))
 		return err
 	})
-	return out, err
+	return out, hidden, err
 }
 
 // referrers resolves refs to referrers with the type and name of the referring item. Types come from one
 // batched read; names need one version read per distinct item, so only the first nameLimit items get one.
-func (s *Service) referrers(ctx context.Context, c store.ContentStore, refs []store.Ref, nameLimit int) ([]Referrer, error) {
+// Referrers the principal in ctx may not read are dropped and counted.
+func (s *Service) referrers(ctx context.Context, c store.ContentStore, refs []store.Ref, nameLimit int) ([]Referrer, int, error) {
 	if len(refs) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 	slices.SortFunc(refs, func(a, b store.Ref) int {
 		if c := slices.Compare(a.From[:], b.From[:]); c != 0 {
@@ -198,29 +254,45 @@ func (s *Service) referrers(ctx context.Context, c store.ContentStore, refs []st
 	})
 	items, err := c.GetItems(ctx, distinctFrom(refs))
 	if err != nil {
-		return nil, fmt.Errorf("content: load referrers: %w", err)
+		return nil, 0, fmt.Errorf("content: load referrers: %w", err)
 	}
 	byID := make(map[ids.UUID]store.Item, len(items))
 	for _, it := range items {
 		byID[it.ID] = it
 	}
 	names := map[ids.UUID]string{}
+	readable := map[ids.UUID]bool{}
+	hidden := 0
 	out := make([]Referrer, 0, len(refs))
 	for _, r := range refs {
 		it, ok := byID[r.From]
 		if !ok {
 			continue
 		}
+		if s.guarded(ctx) {
+			vis, seen := readable[r.From]
+			if !seen {
+				var err error
+				if vis, err = s.readable(ctx, c, it); err != nil {
+					return nil, 0, err
+				}
+				readable[r.From] = vis
+			}
+			if !vis {
+				hidden++
+				continue
+			}
+		}
 		name, seen := names[r.From]
 		if !seen && len(names) < nameLimit {
 			if name, err = s.publishedName(ctx, c, it); err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 			names[r.From] = name
 		}
 		out = append(out, Referrer{ItemID: r.From, Type: it.Type, Name: name, FieldPath: r.FieldPath, Kind: r.Kind, OnDelete: r.OnDelete})
 	}
-	return out, nil
+	return out, hidden, nil
 }
 
 func compareRefs(a, b store.Ref) int {

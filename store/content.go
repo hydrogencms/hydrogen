@@ -204,10 +204,10 @@ type Query struct {
 	Scoped bool
 	Scope  []ScopeTerm
 	Where  []Cond
-	Search    string
-	Sort      []Sort
-	Limit     int // 1..500
-	Offset    int
+	Search string
+	Sort   []Sort
+	Limit  int // 1..500
+	Offset int
 }
 
 // ScopeTerm ANDs its parts: CreatedBy (any of these actors; empty = any) and Where.

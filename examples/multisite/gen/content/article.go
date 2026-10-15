@@ -13,7 +13,9 @@ type Article struct {
 	Body  content.RichText `json:"body,omitempty"`
 }
 
-// ArticleType is the typed handle for the "article" content type. Register hooks and use the Local API through it:
+// ArticleType is the typed handle for the "article" content type. Register hooks and access rules and use the Local API
+// through it:
 //
 //	ArticleType.BeforeSave(h, func(c *hooks.Context, doc *Article) error { return nil })
+//	ArticleType.Access(h, access.Rules{Read: func(ctx context.Context, p *access.Principal) access.Result { return access.Allow() }})
 var ArticleType = content.Handle[Article]{Type: "article"}

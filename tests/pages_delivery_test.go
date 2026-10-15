@@ -88,7 +88,7 @@ func newPDNode(t testing.TB, db store.DB, clk *clock.Manual) *pdEnv {
 	}
 	cnt := &pdDB{DB: db}
 	cdb := &delivDB{DB: cnt}
-	a, err := kernel.New(context.Background(), kernel.Options{Config: cfg, Clock: clk, DB: cdb, Stderr: io.Discard},
+	a, err := kernel.New(context.Background(), kernel.Options{Config: cfg, Clock: clk, DB: cdb, Stderr: io.Discard, PasswordIterations: 1000},
 		sqlite.Module(), postgres.Module(), pages.Module())
 	if err != nil {
 		t.Fatal(err)

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/audit"
 	"github.com/hydrogencms/hydrogen/cachetag"
 	"github.com/hydrogencms/hydrogen/channel"
@@ -40,6 +41,9 @@ type HTTPConfig struct {
 	Addr              string        `yaml:"addr"`
 	ReadHeaderTimeout time.Duration `yaml:"read_header_timeout"`
 	ShutdownTimeout   time.Duration `yaml:"shutdown_timeout"`
+	// TrustedProxies are the CIDRs (or addresses) of reverse proxies whose X-Forwarded-For is believed when
+	// the server needs a client address (login throttling, session records).
+	TrustedProxies []string `yaml:"trusted_proxies"`
 }
 
 type DatabaseConfig struct {
@@ -69,8 +73,8 @@ type ContentConfig struct {
 }
 
 type ManageConfig struct {
-	// Token authorises the management API (Authorization: Bearer). Until user accounts exist (H5), it is the
-	// only credential: required outside dev, "dev-token" in dev when unset.
+	// Token is a bearer token with every right, for automation and bootstrapping (audited as token:config).
+	// Optional: when unset only users and API tokens authenticate. In dev it defaults to "dev-token".
 	Token string `yaml:"token" config:"secret"`
 }
 
@@ -93,6 +97,7 @@ type CoreConfig struct {
 	Jobs     JobsConfig
 	Content  ContentConfig
 	Manage   ManageConfig
+	Auth     AuthConfig
 	Delivery DeliveryConfig
 	// Webhooks deliver outbox events to HTTP endpoints, by name.
 	Webhooks map[string]webhook.Config
@@ -118,6 +123,12 @@ type Services struct {
 	// Delivery is the delivery API (/api/deliver/v1): response cache, purge listener and preview tokens. It is
 	// built after every module booted, so it is nil in Boot.
 	Delivery *delivery.API
+	// Catalog lists policies, limitations and code access rules; Access authorizes the principal in a context
+	// (no principal: the system). Auth authenticates requests; Admin manages users, groups, roles and tokens.
+	Catalog *access.Catalog
+	Access  *access.Checker
+	Auth    *access.Authenticator
+	Admin   *access.Admin
 
 	reg     *Registry
 	mappers []cachetag.Mapper
@@ -135,6 +146,9 @@ type Options struct {
 	Stderr io.Writer      // default os.Stderr
 	// JobHold is how long a job keeps its lock after a run (default 2s); tests with a manual clock shorten it.
 	JobHold time.Duration
+	// PasswordIterations lowers the PBKDF2 cost of password hashes so tests run fast (0 = 600 000). Never read
+	// from configuration.
+	PasswordIterations int
 }
 
 type App struct {
@@ -195,15 +209,29 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 	}
 	gen := ids.NewGenerator(o.Clock, o.Rand)
 	al := audit.New(o.Clock)
-	svc, err = content.New(content.Options{DB: db, Schema: p.schema, Hooks: hookReg, Outbox: ob, Audit: al,
-		Clock: o.Clock, IDs: gen, DefaultLocale: core.Content.DefaultLocale, Migrations: migrations})
+	catalog := reg.accessCatalog()
+	checker := access.NewChecker(access.CheckerOptions{DB: db, Catalog: catalog, Schema: p.schema, Log: log})
+	proxies, _ := trustedProxies(core.HTTP.TrustedProxies) // validated by prepare
+	authn, err := access.NewAuthenticator(access.AuthOptions{DB: db, Clock: o.Clock, Rand: o.Rand, Log: log,
+		ConfigToken: core.Manage.Token, DevToken: core.Manage.Token == DevManageToken, SessionIdle: core.Auth.SessionIdle, SessionMax: core.Auth.SessionMax,
+		InsecureCookies: core.Auth.InsecureCookies, TrustedProxies: proxies, PasswordIterations: o.PasswordIterations})
+	if err == nil {
+		var admin *access.Admin
+		admin, err = access.NewAdmin(access.AdminOptions{DB: db, Outbox: ob, Audit: al, Clock: o.Clock, IDs: gen,
+			Rand: o.Rand, Catalog: catalog, Checker: checker, Log: log, PasswordIterations: o.PasswordIterations})
+		if err == nil {
+			svc, err = content.New(content.Options{DB: db, Schema: p.schema, Hooks: hookReg, Outbox: ob, Audit: al,
+				Clock: o.Clock, IDs: gen, DefaultLocale: core.Content.DefaultLocale, Migrations: migrations, Access: checker})
+			a.services = &Services{
+				Env: cfg.Env(), Config: cfg, Core: core, Log: log, Clock: o.Clock, IDs: gen, DB: db, Outbox: ob,
+				Audit: al, Schema: p.schema, Hooks: hookReg, Content: svc, Channels: p.chans, Catalog: catalog,
+				Access: checker, Auth: authn, Admin: admin, reg: reg, mappers: mappers,
+			}
+		}
+	}
 	if err != nil {
 		a.closeDB(db)
 		return nil, err
-	}
-	a.services = &Services{
-		Env: cfg.Env(), Config: cfg, Core: core, Log: log, Clock: o.Clock, IDs: gen, DB: db, Outbox: ob,
-		Audit: al, Schema: p.schema, Hooks: hookReg, Content: svc, Channels: p.chans, reg: reg, mappers: mappers,
 	}
 	if a.runner, err = newRunner(a.services, reg, o.JobHold); err != nil {
 		a.closeDB(db)
@@ -280,7 +308,7 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 			path   string
 			target any
 		}{{"http", &core.HTTP}, {"database", &core.Database}, {"log", &core.Log}, {"outbox", &core.Outbox}, {"jobs", &core.Jobs},
-			{"manage", &core.Manage}, {"delivery", &core.Delivery}, {"webhooks", &core.Webhooks}}...)
+			{"manage", &core.Manage}, {"auth", &core.Auth}, {"delivery", &core.Delivery}, {"webhooks", &core.Webhooks}}...)
 	}
 	for _, d := range sections {
 		if err := cfg.Decode(d.path, d.target); err != nil {
@@ -288,6 +316,12 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 		}
 	}
 	reg := newRegistry()
+	if runtime {
+		reg.current = "core"
+		if err := reg.Job("auth.cleanup", "0 * * * *", cleanupSessions); err != nil {
+			return nil, err
+		}
+	}
 	for _, m := range ordered {
 		if c, ok := m.(Configurable); ok {
 			if err := cfg.Decode("modules."+m.Name(), c.Config()); err != nil {
@@ -308,6 +342,22 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 	if runtime {
 		if p.chans, err = compileChannels(cfg, core.Content.DefaultLocale, s, reg); err != nil {
 			return nil, err
+		}
+		if err := addCoreLimitations(reg, s, p.chans); err != nil {
+			return nil, err
+		}
+		for _, typ := range reg.accessCatalog().RuleTypes() {
+			if _, ok := s.Type(typ); !ok {
+				return nil, fmt.Errorf("access rules for unknown content type %q", typ)
+			}
+		}
+		for _, e := range reg.endpoints {
+			if name, ok := e.value.auth.policy(); ok {
+				if _, known := reg.accessCatalog().Policy(name); !known {
+					return nil, fmt.Errorf("module %s: endpoint %s %s: unknown policy %q (declare it with Registry.Policy)",
+						e.module, e.value.method, e.value.path, name)
+				}
+			}
 		}
 		if err := p.checkRuntime(cfg); err != nil {
 			return nil, err
@@ -331,22 +381,18 @@ func (p *plan) checkRuntime(cfg *config.Config) error {
 	if err := validateWebhooks(p.core.Webhooks, dev); err != nil {
 		return err
 	}
-	// The management API exists only when there is content to manage; then it needs a token, as do custom
-	// endpoints that ask for it.
-	needsToken := len(p.schema.Types()) > 0
-	why := "the schema defines content types"
-	for _, e := range p.reg.endpoints {
-		if e.value.auth == ManageToken {
-			if !needsToken {
-				why = fmt.Sprintf("module %s has a ManageToken endpoint", e.module)
-			}
-			needsToken = true
-		}
+	if err := p.core.Auth.check(dev); err != nil {
+		return err
 	}
-	if p.core.Manage.Token == "" && needsToken {
-		if !dev {
-			return fmt.Errorf("manage.token is required outside %s (%s)", config.DevEnv, why)
-		}
+	if _, err := trustedProxies(p.core.HTTP.TrustedProxies); err != nil {
+		return err
+	}
+	// The dev token stands in for the config token while developing, wherever something needs credentials.
+	needsToken := len(p.schema.Types()) > 0
+	for _, e := range p.reg.endpoints {
+		needsToken = needsToken || e.value.auth != Public
+	}
+	if p.core.Manage.Token == "" && needsToken && dev {
 		p.core.Manage.Token = DevManageToken
 	}
 	if _, err := opener(p.reg, p.core.Database.URL); err != nil {
@@ -489,7 +535,8 @@ func (a *App) Handler() (http.Handler, error) {
 	mux.HandleFunc("GET /readyz", a.ready)
 	if len(a.services.Schema.Types()) > 0 {
 		const prefix = "/api/manage/v1"
-		api, err := manage.New(manage.Options{Content: a.services.Content, Token: a.services.Core.Manage.Token,
+		api, err := manage.New(manage.Options{Content: a.services.Content, Auth: a.services.Auth, Gate: a.services.Access,
+			Admin: a.services.Admin, Catalog: a.services.Catalog,
 			Channels: a.services.Channels, Log: a.services.Log, Prefix: prefix,
 			Routes: append(slices.Clone(a.reg.manageRts), a.services.Delivery.PreviewTokenRoute())})
 		if err != nil {
@@ -598,6 +645,11 @@ func (a *App) Run(ctx context.Context, listening func(addr string)) error {
 			s.Log.Error("outbox worker stopped", "err", err)
 		}
 	})
+	wg.Go(func() {
+		if err := s.Access.Run(ctx); err != nil {
+			s.Log.Error("access grant invalidation stopped", "err", err)
+		}
+	})
 	if err := s.Delivery.Start(ctx); err != nil {
 		cancel()
 		return fmt.Errorf("delivery: %w", err)
@@ -623,7 +675,7 @@ func (a *App) Run(ctx context.Context, listening func(addr string)) error {
 	go func() { serveErr <- srv.Serve(ln) }()
 	s.Log.Info("serving", "addr", ln.Addr().String(), "env", s.Env, "db", s.DB.Dialect(), "modules", a.Modules())
 	if s.Core.Manage.Token == DevManageToken {
-		s.Log.Warn("the management API accepts the dev token; set manage.token before exposing this server")
+		s.Log.Warn("the config token is the dev token, which has every right; set manage.token before exposing this server")
 	}
 	if listening != nil {
 		listening(ln.Addr().String())

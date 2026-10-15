@@ -3,6 +3,7 @@ package tests
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -159,7 +160,7 @@ func tryNodeConfig(t testing.TB, db store.DB, clk *clock.Manual, channels, appYA
 	}
 	cdb := &delivDB{DB: db}
 	mods = append([]kernel.Module{sqlite.Module(), postgres.Module()}, mods...)
-	a, err := kernel.New(context.Background(), kernel.Options{Config: cfg, Clock: clk, DB: cdb, Stderr: io.Discard}, mods...)
+	a, err := kernel.New(context.Background(), kernel.Options{Config: cfg, Clock: clk, DB: cdb, Stderr: io.Discard, PasswordIterations: 1000}, mods...)
 	if err != nil {
 		return nil, err
 	}
@@ -213,6 +214,7 @@ func (n *dnode) do(method, path string, hdr map[string]string, body any) resp {
 		rd = bytes.NewReader(b)
 	}
 	req := httptest.NewRequest(method, path, rd)
+	req.RemoteAddr = "127.0.0.1:50000" // the dev token only works from loopback
 	for k, v := range hdr {
 		req.Header.Set(k, v)
 	}
@@ -789,7 +791,7 @@ func TestDeliveryPreview(t *testing.T) {
 		n.wantStatus("/items/"+draft.String()+"?channel=web_de", 401, previewHeaderName, tok)
 		n.wantStatus(path, 401, previewHeaderName, tok+"x")
 		n.wantStatus(path, 401, previewHeaderName, "garbage")
-		n.wantStatus(path, 401, previewHeaderName, scoped[:len(scoped)-2]+"AA")
+		n.wantStatus(path, 401, previewHeaderName, tamper(t, scoped))
 		n.clk.Advance(16 * time.Minute)
 		n.wantStatus(path, 401, previewHeaderName, tok)
 		n.wantStatus(path, 404) // the published view needs no token
@@ -1221,4 +1223,16 @@ func TestPreviewListsCoveredDraft(t *testing.T) {
 			}
 		}
 	})
+}
+
+// tamper returns the token with one bit of its signature flipped, so it always differs from the original.
+func tamper(t *testing.T, tok string) string {
+	t.Helper()
+	i := strings.LastIndexByte(tok, '.')
+	sig, err := base64.RawURLEncoding.DecodeString(tok[i+1:])
+	if err != nil || len(sig) == 0 {
+		t.Fatalf("token %q has no decodable signature: %v", tok, err)
+	}
+	sig[0] ^= 1
+	return tok[:i+1] + base64.RawURLEncoding.EncodeToString(sig)
 }

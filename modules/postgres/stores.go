@@ -105,9 +105,14 @@ func (a auditStore) List(ctx context.Context, q store.AuditQuery) ([]store.Audit
 	if q.Limit <= 0 {
 		q.Limit = 100
 	}
+	since := q.Since
+	if since.IsZero() {
+		since = time.Unix(0, 0)
+	}
 	rows, err := a.tx.Query(ctx, `SELECT id, at, actor_kind, actor_id, action, subject, data FROM audit_event
-		WHERE ($1 = '' OR subject = $1) AND ($2 = '' OR action = $2) ORDER BY id DESC LIMIT $3`,
-		q.Subject, q.Action, q.Limit)
+		WHERE ($1 = '' OR subject = $1) AND ($2 = '' OR action = $2) AND ($3 = '' OR actor_kind = $3)
+		AND ($4 = '' OR actor_id = $4) AND at >= $5 ORDER BY id DESC LIMIT $6 OFFSET $7`,
+		q.Subject, q.Action, q.ActorKind, q.ActorID, since, q.Limit, max(q.Offset, 0))
 	if err != nil {
 		return nil, fmt.Errorf("postgres: audit list: %w", err)
 	}

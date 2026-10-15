@@ -60,6 +60,7 @@ func (e *ConflictError) Is(target error) bool { return target == ErrConflict }
 // ReferencedError: delete blocked by items whose fields point here; errors.Is ErrReferenced.
 type ReferencedError struct {
 	Referrers []Referrer
+	Hidden    int // referrers the caller may not read
 }
 
 func (e *ReferencedError) Error() string {
@@ -123,6 +124,16 @@ type View struct {
 	CreatedAt       time.Time      `json:"createdAt"`
 	UpdatedAt       time.Time      `json:"updatedAt"`
 	PublishedAt     *time.Time     `json:"publishedAt,omitempty"`
+	// Actions says what the calling principal may do with the item; nil when no principal is acting.
+	Actions *Actions `json:"actions,omitempty"`
+}
+
+// Actions are the item operations a principal may perform, for the admin's buttons. The services still check
+// every operation.
+type Actions struct {
+	Edit    bool `json:"edit"`
+	Publish bool `json:"publish"`
+	Delete  bool `json:"delete"`
 }
 
 type Summary struct {
@@ -226,4 +237,6 @@ type Options struct {
 	IDs           *ids.Generator
 	DefaultLocale string // default "en"
 	Migrations    []Migration
+	// Access authorizes the principal in a context (access.WithPrincipal); nil allows everything.
+	Access Access
 }

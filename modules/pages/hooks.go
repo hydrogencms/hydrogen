@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/hooks"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/modules/pages/internal/route"
@@ -62,6 +63,9 @@ func (s *service) beforePublish(hc *hooks.Context) error {
 		return s.checkPage(hc)
 	case classRedirect:
 		return s.checkRedirect(hc)
+	}
+	if err := s.checkMembership(hc); err != nil {
+		return err
 	}
 	clashes, err := s.previewMounted(hc, hc.Tx, hc.Item.ID, hc.Item.Type, hc.Locale, hc.Doc)
 	if err != nil {
@@ -415,4 +419,17 @@ func sitePathOf(target string) (string, bool) {
 		target = target[:i]
 	}
 	return target, true
+}
+
+// checkMembership refuses a publish whose document joins a mount outside the publisher's pages limits: mount
+// membership follows the document, so changing a filter field would otherwise move the item into another
+// subtree. The content service checks the item's existing placements; this adds the mounts it would join.
+func (s *service) checkMembership(hc *hooks.Context) error {
+	if !s.restricted(hc) {
+		return nil
+	}
+	ctx := store.WithTx(hc.Context, hc.Tx)
+	it := store.Item{ID: hc.Item.ID, Type: hc.Item.Type}
+	return s.svcs.Access.Can(ctx, access.PolicyContentPublish, access.Target{Type: it.Type, Item: &it,
+		Locales: []string{hc.Locale}, Doc: hc.Doc})
 }

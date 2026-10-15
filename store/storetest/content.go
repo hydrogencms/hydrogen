@@ -38,6 +38,11 @@ var contentTests = []struct {
 	{"ContentDeleteCascade", testDeleteCascade},
 	{"ContentMigrations", testContentMigrations},
 	{"ContentItemIDsOfType", testItemIDsOfType},
+	{"ContentWorkingIndex", testWorkingIndex},
+	{"ContentWorkingSearch", testWorkingSearch},
+	{"ContentWorkingNames", testWorkingNames},
+	{"ContentModuleIndex", testModuleIndex},
+	{"ContentQueryScope", testQueryScope},
 }
 
 func withContent(t *testing.T, db store.DB, fn func(store.ContentStore) error) {
@@ -529,7 +534,9 @@ func testIndexReplace(t *testing.T, db store.DB) {
 
 	two := store.IndexRow{Field: "x", Text: str("a"), Num: new(float64)}
 	for name, row := range map[string]store.IndexRow{"two values": two, "no value": {Field: "x"}} {
-		if err := expectErr(db, func(c store.ContentStore) error { return c.ReplaceIndex(ctx, id, store.ProjectionPublished, []store.IndexRow{row}) }); err == nil {
+		if err := expectErr(db, func(c store.ContentStore) error {
+			return c.ReplaceIndex(ctx, id, store.ProjectionPublished, []store.IndexRow{row})
+		}); err == nil {
 			t.Fatalf("row with %s accepted", name)
 		}
 	}
@@ -1249,7 +1256,9 @@ func testSearch(t *testing.T, db store.DB) {
 	if got := cat.letters(search("en", "kiwi papaya")); got != "B" {
 		t.Errorf("after replace, merged docs: %q", got)
 	}
-	withContent(t, db, func(c store.ContentStore) error { return c.ReplaceSearch(ctx, cat.ids['B'], store.ProjectionPublished, nil) })
+	withContent(t, db, func(c store.ContentStore) error {
+		return c.ReplaceSearch(ctx, cat.ids['B'], store.ProjectionPublished, nil)
+	})
 	if got := cat.letters(search("en", "kiwi")); got != "" {
 		t.Errorf("after clearing: %q", got)
 	}

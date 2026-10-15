@@ -56,6 +56,9 @@ type AuthStore interface {
 
 	CreateSession(ctx context.Context, s Session) error
 	SessionByHash(ctx context.Context, hash []byte) (Session, error)
+	// SessionUserByHash returns the session with its user and the user's group ids (by id) in one query, the
+	// per-request lookup. ErrNotFound when the session does not exist.
+	SessionUserByHash(ctx context.Context, hash []byte) (SessionUser, error)
 	// TouchSession sets last_seen_at and expires_at.
 	TouchSession(ctx context.Context, hash []byte, seen, expires time.Time) error
 	DeleteSession(ctx context.Context, hash []byte) error
@@ -153,4 +156,11 @@ type Session struct {
 	ExpiresAt  time.Time
 	IP         string
 	UserAgent  string
+}
+
+// SessionUser is a session with the user it belongs to.
+type SessionUser struct {
+	Session Session
+	User    User
+	Groups  []ids.UUID
 }

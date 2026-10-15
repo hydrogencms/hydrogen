@@ -153,3 +153,30 @@ func TestRunWalk(t *testing.T) {
 		}
 	}
 }
+
+func TestLiveTerms(t *testing.T) {
+	empty := store.Cond{Field: "f", Column: store.ColText, Op: store.OpIn, Value: []string{}}
+	some := store.Cond{Field: "f", Column: store.ColText, Op: store.OpIn, Value: []string{"a"}}
+	got := LiveTerms([]store.ScopeTerm{{Where: []store.Cond{some, empty}}, {CreatedBy: []string{"u"}}, {Where: []store.Cond{some}}})
+	if len(got) != 2 || got[0].CreatedBy[0] != "u" || len(got[1].Where) != 1 {
+		t.Errorf("LiveTerms = %+v", got)
+	}
+	if got := LiveTerms(nil); len(got) != 0 {
+		t.Errorf("LiveTerms(nil) = %+v", got)
+	}
+}
+
+func TestDecoratorWorkingNames(t *testing.T) {
+	id := ids.UUID{1}
+	for working, want := range map[bool]string{false: "Published", true: "Draft"} {
+		items := []store.ItemSummary{{Item: store.Item{ID: id, MainLocale: "en"}}}
+		d := NewDecorator("en", items)
+		d.Working = working
+		d.Published(id, "en", "Published")
+		d.Draft(id, "en", "Draft")
+		d.Finish()
+		if items[0].Name != want {
+			t.Errorf("working=%v name = %q, want %q", working, items[0].Name, want)
+		}
+	}
+}

@@ -16,7 +16,9 @@ type Landing struct {
 	Seo        *SeoGroup `json:"seo,omitempty"`
 }
 
-// LandingType is the typed handle for the "landing" content type. Register hooks and use the Local API through it:
+// LandingType is the typed handle for the "landing" content type. Register hooks and access rules and use the Local API
+// through it:
 //
 //	LandingType.BeforeSave(h, func(c *hooks.Context, doc *Landing) error { return nil })
+//	LandingType.Access(h, access.Rules{Read: func(ctx context.Context, p *access.Principal) access.Result { return access.Allow() }})
 var LandingType = content.Handle[Landing]{Type: "landing"}

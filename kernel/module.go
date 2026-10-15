@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/cachetag"
 	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/content"
@@ -94,6 +95,7 @@ type Registry struct {
 	varies      []delivery.Varier
 	previewURLs []delivery.PreviewURLer
 	exporters   []exportfmt.NamedExporter
+	catalog     *access.Catalog
 }
 
 type registered[T any] struct {

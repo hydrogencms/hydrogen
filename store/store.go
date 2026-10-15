@@ -135,9 +135,13 @@ type AuditEvent struct {
 }
 
 type AuditQuery struct {
-	Subject string
-	Action  string
-	Limit   int // newest first; 0 means 100
+	Subject   string
+	Action    string
+	ActorKind string
+	ActorID   string
+	Since     time.Time // zero: no lower bound
+	Limit     int       // newest first; 0 means 100
+	Offset    int
 }
 
 type AuditStore interface {

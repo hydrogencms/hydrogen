@@ -2,36 +2,35 @@ package kernel
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"slices"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/audit"
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/manage"
 )
 
-// Auth says who may call a custom endpoint.
-type Auth int
+// Auth says who may call a custom endpoint: Public, Authenticated or Policy("module.action").
+type Auth string
 
 const (
 	// Public endpoints need no credentials.
-	Public Auth = iota + 1
-	// ManageToken endpoints need the management API token (manage.token) as a bearer token.
-	ManageToken
+	Public Auth = "public"
+	// Authenticated endpoints need any authenticated principal: a session, an API token or the config token.
+	Authenticated Auth = "authenticated"
 )
 
-func (a Auth) String() string {
-	switch a {
-	case Public:
-		return "Public"
-	case ManageToken:
-		return "ManageToken"
-	}
-	return fmt.Sprintf("Auth(%d)", int(a))
-}
+const policyPrefix = "policy:"
+
+// Policy endpoints need a principal that holds the policy (a registered policy name, e.g. "content.edit"). The
+// check is coarse, as for management routes: the handler must check the policy against what the request acts
+// on, with Services.Access.Can.
+func Policy(name string) Auth { return Auth(policyPrefix + name) }
+
+func (a Auth) policy() (string, bool) { return strings.CutPrefix(string(a), policyPrefix) }
+
+func (a Auth) String() string { return string(a) }
 
 // EndpointPrefix is where custom endpoints are mounted.
 const EndpointPrefix = "/api/x"
@@ -53,8 +52,8 @@ func ServicesFrom(ctx context.Context) *Services {
 var endpointMethods = []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"}
 
 // Endpoint adds an HTTP endpoint under /api/x (path is relative, net/http pattern syntax, e.g. "/sync/{id}").
-// The handler gets the services from ServicesFrom(r.Context()); a ManageToken endpoint's context also carries
-// the audit actor. Panics are recovered as a 500, and manage.WriteJSON, DecodeJSON and Fail work as in
+// The handler gets the services from ServicesFrom(r.Context()); a non-public endpoint's context also carries the
+// principal (access.PrincipalFrom) and the audit actor. Panics are recovered as a 500, and manage.WriteJSON, DecodeJSON and Fail work as in
 // management routes. Registering the same method and path twice is an error naming both modules.
 func (r *Registry) Endpoint(method, path string, auth Auth, h http.HandlerFunc) error {
 	switch {
@@ -62,8 +61,8 @@ func (r *Registry) Endpoint(method, path string, auth Auth, h http.HandlerFunc) 
 		return fmt.Errorf("endpoint %s %s: method must be one of %s", method, path, strings.Join(endpointMethods, ", "))
 	case !strings.HasPrefix(path, "/") || strings.ContainsAny(path, " \t\r\n?#") || strings.Contains(path, "//"):
 		return fmt.Errorf("endpoint %s %s: path must start with / and have no spaces, query or empty segments", method, path)
-	case auth != Public && auth != ManageToken:
-		return fmt.Errorf("endpoint %s %s: unknown auth %v", method, path, auth)
+	case !auth.valid():
+		return fmt.Errorf("endpoint %s %s: unknown auth %q (use Public, Authenticated or Policy(name))", method, path, auth)
 	case h == nil:
 		return fmt.Errorf("endpoint %s %s: no handler", method, path)
 	}
@@ -76,9 +75,13 @@ func (r *Registry) Endpoint(method, path string, auth Auth, h http.HandlerFunc) 
 	return nil
 }
 
+func (a Auth) valid() bool {
+	name, ok := a.policy()
+	return a == Public || a == Authenticated || ok && name != ""
+}
+
 func (a *App) mountEndpoints(mux *http.ServeMux) error {
 	s := a.services
-	tokenSum := sha256.Sum256([]byte(s.Core.Manage.Token))
 	for _, e := range a.reg.endpoints {
 		ep := e.value
 		var h http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -93,15 +96,12 @@ func (a *App) mountEndpoints(mux *http.ServeMux) error {
 				}
 			}()
 			ctx := context.WithValue(r.Context(), servicesKey{}, s)
-			if ep.auth == ManageToken {
-				scheme, tok, _ := strings.Cut(r.Header.Get("Authorization"), " ")
-				sum := sha256.Sum256([]byte(strings.TrimSpace(tok)))
-				if s.Core.Manage.Token == "" || !strings.EqualFold(scheme, "Bearer") || subtle.ConstantTimeCompare(sum[:], tokenSum[:]) != 1 {
-					w.Header().Set("WWW-Authenticate", "Bearer")
-					manage.Fail(w, r, &manage.Error{Status: http.StatusUnauthorized, Code: "unauthorized", Message: "missing or invalid bearer token"})
+			if ep.auth != Public {
+				var err error
+				if ctx, err = a.authorizeEndpoint(r.WithContext(ctx), ep.auth); err != nil {
+					manage.Fail(w, r, err)
 					return
 				}
-				ctx = audit.WithActor(ctx, audit.Actor{Kind: "token", ID: "manage"})
 			}
 			ep.handler(w, r.WithContext(ctx))
 		})
@@ -110,4 +110,24 @@ func (a *App) mountEndpoints(mux *http.ServeMux) error {
 		}
 	}
 	return nil
+}
+
+// authorizeEndpoint authenticates the request like the management API (bearer token or session with CSRF) and
+// returns a context carrying the principal and audit actor.
+func (a *App) authorizeEndpoint(r *http.Request, auth Auth) (context.Context, error) {
+	s := a.services
+	an, err := s.Auth.Authenticate(r)
+	if err == nil {
+		err = s.Auth.CheckCSRF(r, an)
+	}
+	if err != nil {
+		return nil, err
+	}
+	ctx := access.WithPrincipal(r.Context(), an.Principal)
+	if name, ok := auth.policy(); ok {
+		if err := s.Access.Holds(ctx, name); err != nil {
+			return nil, err
+		}
+	}
+	return ctx, nil
 }

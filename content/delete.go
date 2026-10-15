@@ -6,6 +6,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/audit"
 	"github.com/hydrogencms/hydrogen/hooks"
 	"github.com/hydrogencms/hydrogen/ids"
@@ -16,9 +17,16 @@ import (
 // Delete removes an item with its versions and drafts. Items that reference it with on_delete block stop the
 // delete (ReferencedError); nullify referrers get a new published version without the reference.
 func (s *Service) Delete(ctx context.Context, id ids.UUID) error {
+	if err := s.prepare(ctx); err != nil {
+		return err
+	}
 	return s.o.DB.Tx(ctx, func(tx store.Tx) error {
+		ctx := store.WithTx(ctx, tx)
 		it, err := getItem(ctx, tx, id, true)
 		if err != nil {
+			return err
+		}
+		if err := s.authorizeItem(ctx, tx.Content(), it, access.PolicyContentDelete, nil); err != nil {
 			return err
 		}
 		if err := s.deleteItem(ctx, tx, it); err != nil {
@@ -86,11 +94,11 @@ func (s *Service) checkNotBlocked(ctx context.Context, c store.ContentStore, ref
 	if len(blocking) == 0 {
 		return nil
 	}
-	rs, err := s.referrers(ctx, c, blocking, maxNamedReferrers)
+	rs, hidden, err := s.referrers(ctx, c, blocking, maxNamedReferrers)
 	if err != nil {
 		return err
 	}
-	return &ReferencedError{Referrers: rs}
+	return &ReferencedError{Referrers: rs, Hidden: hidden}
 }
 
 // nullifyReferrers gives every item that references target with on_delete nullify a new published version
@@ -137,6 +145,9 @@ func (s *Service) nullifyRef(ctx context.Context, tx store.Tx, id, target ids.UU
 		return err
 	}
 	if err := st.removeDraftRefs(ctx, c, sc, tid, oldVersion, s.now()); err != nil {
+		return err
+	}
+	if err := s.projectWorking(ctx, c, st); err != nil {
 		return err
 	}
 	data := map[string]any{"type": st.typ.Name, "removedRef": tid, "version": st.item.PublishedVersion}

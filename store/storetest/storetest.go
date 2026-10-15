@@ -49,6 +49,7 @@ func Run(t *testing.T, open Opener) {
 	}
 	tests = append(tests, contentTests...)
 	tests = append(tests, snapshotTests...)
+	tests = append(tests, authTests...)
 	tests = append(tests, sqlTests...)
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -184,6 +185,18 @@ func testAudit(t *testing.T, db store.DB) {
 	}
 	if got := list(store.AuditQuery{Action: "item.publish", Limit: 1}); len(got) != 1 || got[0].Subject != "b" {
 		t.Fatalf("by action with limit: %+v", got)
+	}
+	if got := list(store.AuditQuery{ActorKind: "agent"}); len(got) != 1 || got[0].ActorID != "bot" {
+		t.Fatalf("by actor kind: %+v", got)
+	}
+	if got := list(store.AuditQuery{ActorKind: "user", ActorID: "u1"}); len(got) != 1 || got[0].Subject != "a" {
+		t.Fatalf("by actor: %+v", got)
+	}
+	if got := list(store.AuditQuery{Since: t0.Add(2123 * time.Millisecond)}); len(got) != 2 {
+		t.Fatalf("since: %+v", got)
+	}
+	if got := list(store.AuditQuery{Limit: 1, Offset: 1}); len(got) != 1 || got[0].Subject != "a" || got[0].ActorKind != "agent" {
+		t.Fatalf("offset: %+v", got)
 	}
 }
 

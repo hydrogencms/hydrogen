@@ -150,6 +150,9 @@ func (s *Service) migrateItem(ctx context.Context, tx store.Tx, m Migration, id 
 	if err := s.writePlans(ctx, c, st, plans, oldVersion); err != nil {
 		return err
 	}
+	if err := s.projectWorking(ctx, c, st); err != nil {
+		return err
+	}
 	data := map[string]any{"migration": m.Name, "type": st.typ.Name, "version": st.item.PublishedVersion}
 	return s.record(ctx, tx, audit.System, "item.migrate", id, data)
 }

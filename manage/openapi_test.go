@@ -78,17 +78,17 @@ func TestOpenAPIPaths(t *testing.T) {
 	if _, ok := paths["/collections/settings/items"]; ok {
 		t.Error("singleton listed as collection")
 	}
-	// One bearer scheme, global; no operation opts out of it.
-	sec := doc["components"].(map[string]any)["securitySchemes"].(map[string]any)["bearerAuth"].(map[string]any)
-	if sec["scheme"] != "bearer" {
-		t.Errorf("security %v", sec)
+	// A bearer token or the session cookie, global; only login opts out.
+	schemes := doc["components"].(map[string]any)["securitySchemes"].(map[string]any)
+	if schemes["bearerAuth"].(map[string]any)["scheme"] != "bearer" || schemes["cookieAuth"].(map[string]any)["in"] != "cookie" {
+		t.Errorf("security %v", schemes)
 	}
-	if g, ok := doc["security"].([]any); !ok || len(g) != 1 {
+	if g, ok := doc["security"].([]any); !ok || len(g) != 2 {
 		t.Errorf("global security %v", doc["security"])
 	}
 	for path, item := range paths {
 		for method, op := range item.(map[string]any) {
-			if _, ok := op.(map[string]any)["security"]; ok {
+			if _, ok := op.(map[string]any)["security"]; ok && path != "/auth/login" {
 				t.Errorf("%s %s overrides security", method, path)
 			}
 		}

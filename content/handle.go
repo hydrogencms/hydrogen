@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/hooks"
 	"github.com/hydrogencms/hydrogen/ids"
 )
@@ -26,6 +27,16 @@ type Item[T any] struct {
 	Meta View // Meta.Fields is nil; use Doc
 	Doc  T
 }
+
+// AccessRegistrar receives access rules; *hydrogen.Builder and the kernel registry implement it.
+type AccessRegistrar interface {
+	AccessRules(typ string, rules access.Rules)
+}
+
+// Access registers code access rules for the type: ANDed with role grants and with other rules for it, never
+// applied to the system or the config token. A rule returns access.Allow(), access.Deny() or
+// access.Where(field, op, value) on an indexed field, which scopes listings and checks every item read or written.
+func (h Handle[T]) Access(r AccessRegistrar, rules access.Rules) { r.AccessRules(h.Type, rules) }
 
 type HookOption func(*hooks.Hook)
 

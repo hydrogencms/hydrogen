@@ -316,9 +316,19 @@ func (s *service) rebuildMembership(ctx context.Context, tx store.Tx, node nodeR
 	if _, err := q.Exec(ctx, "DELETE FROM page_mount_item WHERE node_id = ?", node.ID); err != nil {
 		return err
 	}
-	pat, err := route.Parse(spec.Route)
+	rows, err := s.membershipRows(ctx, tx, node.ID, spec)
 	if err != nil {
 		return err
+	}
+	_, err = insertRows(ctx, q, "page_mount_item", "node_id, item_id, locale, rel", "", rows)
+	return err
+}
+
+// membershipRows lists the page_mount_item rows of the published items that belong to a mount.
+func (s *service) membershipRows(ctx context.Context, tx store.Tx, node ids.UUID, spec *MountSpec) ([][]any, error) {
+	pat, err := route.Parse(spec.Route)
+	if err != nil {
+		return nil, err
 	}
 	c := tx.Content()
 	var rows [][]any
@@ -326,7 +336,7 @@ func (s *service) rebuildMembership(ctx context.Context, tx store.Tx, node nodeR
 	for {
 		batch, err := c.ItemIDsOfType(ctx, spec.Collection, after, 500)
 		if err != nil {
-			return fmt.Errorf("pages: list %s: %w", spec.Collection, err)
+			return nil, fmt.Errorf("pages: list %s: %w", spec.Collection, err)
 		}
 		if len(batch) == 0 {
 			break
@@ -334,26 +344,38 @@ func (s *service) rebuildMembership(ctx context.Context, tx store.Tx, node nodeR
 		after = batch[len(batch)-1]
 		items, err := c.GetItems(ctx, batch)
 		if err != nil {
-			return fmt.Errorf("pages: read %s items: %w", spec.Collection, err)
+			return nil, fmt.Errorf("pages: read %s items: %w", spec.Collection, err)
 		}
 		slices.SortFunc(items, func(a, b store.Item) int { return slices.Compare(a.ID[:], b.ID[:]) })
 		for _, it := range items {
 			docs, err := publishedDocs(ctx, c, it)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			for _, d := range docs {
 				if !matches(spec.Filter, d.Doc) {
 					continue
 				}
 				if rel, ok := relPath(pat, it.ID, d.Doc); ok {
-					rows = append(rows, []any{node.ID, it.ID, d.Locale, rel})
+					rows = append(rows, []any{node, it.ID, d.Locale, rel})
 				}
 			}
 		}
 	}
-	_, err = insertRows(ctx, q, "page_mount_item", "node_id, item_id, locale, rel", "", rows)
-	return err
+	return rows, nil
+}
+
+// membershipItems lists the items a mount with this spec would route.
+func (s *service) membershipItems(ctx context.Context, tx store.Tx, spec *MountSpec) ([]ids.UUID, error) {
+	rows, err := s.membershipRows(ctx, tx, ids.Nil, spec)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ids.UUID, len(rows))
+	for i, r := range rows {
+		out[i] = r[1].(ids.UUID)
+	}
+	return out, nil
 }
 
 // mountsOf returns the mounts of a collection in every site, from the short-lived cache when possible.
@@ -420,6 +442,9 @@ func (s *service) syncMountedItem(ctx context.Context, tx store.Tx, item ids.UUI
 		insert[i] = []any{m.Node, m.Item, m.Locale, m.Rel}
 	}
 	if _, err := insertRows(ctx, q, "page_mount_item", "node_id, item_id, locale, rel", "", insert); err != nil {
+		return nil, err
+	}
+	if err := s.reindexItems(ctx, tx, []ids.UUID{item}); err != nil {
 		return nil, err
 	}
 	var out []change
@@ -499,4 +524,14 @@ func distinctSites(rows []nodeRow) []string {
 		}
 	}
 	return out
+}
+
+// reindexMount rewrites the module index rows of a mount's items and of the earlier ones (after its membership
+// or collection changed).
+func (s *service) reindexMount(ctx context.Context, tx store.Tx, node ids.UUID, earlier []ids.UUID) error {
+	now, err := mountItemsOf(ctx, tx.SQL(), node)
+	if err != nil {
+		return err
+	}
+	return s.reindexItems(ctx, tx, append(now, earlier...))
 }

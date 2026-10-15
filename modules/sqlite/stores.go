@@ -127,9 +127,14 @@ func (a auditStore) List(ctx context.Context, q store.AuditQuery) ([]store.Audit
 	if q.Limit <= 0 {
 		q.Limit = 100
 	}
+	var since int64
+	if !q.Since.IsZero() {
+		since = ms(q.Since)
+	}
 	rows, err := a.tx.QueryContext(ctx, `SELECT id, at, actor_kind, actor_id, action, subject, data FROM audit_event
-		WHERE (? = '' OR subject = ?) AND (? = '' OR action = ?) ORDER BY id DESC LIMIT ?`,
-		q.Subject, q.Subject, q.Action, q.Action, q.Limit)
+		WHERE (? = '' OR subject = ?) AND (? = '' OR action = ?) AND (? = '' OR actor_kind = ?)
+		AND (? = '' OR actor_id = ?) AND at >= ? ORDER BY id DESC LIMIT ? OFFSET ?`,
+		q.Subject, q.Subject, q.Action, q.Action, q.ActorKind, q.ActorKind, q.ActorID, q.ActorID, since, q.Limit, max(q.Offset, 0))
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: audit list: %w", err)
 	}

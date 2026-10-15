@@ -63,7 +63,7 @@ func Open(ctx context.Context, url string, o store.OpenOptions) (store.DB, error
 	if o.Clock == nil {
 		o.Clock = clock.System{}
 	}
-	pragmas := "_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+	pragmas := "_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-8192)"
 	writer, err := sql.Open("sqlite", "file:"+path+"?"+pragmas+"&_txlock=immediate")
 	if err != nil {
 		return nil, err
@@ -132,9 +132,6 @@ type tx struct {
 func (t *tx) Outbox() store.OutboxStore   { return outboxStore{t.tx} }
 func (t *tx) Audit() store.AuditStore     { return auditStore{t.tx} }
 func (t *tx) Content() store.ContentStore { return contentStore{t.tx} }
-
-// Auth is a placeholder until H5a T1.
-func (t *tx) Auth() store.AuthStore { return nil }
 
 func (t *tx) Notify(channel, payload string) error {
 	if t.readOnly {

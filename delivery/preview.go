@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/ids"
@@ -126,7 +127,7 @@ func (a *API) PreviewTokenRoute() manage.Route {
 	errRef := func(code string) m { return m{"$ref": "#/components/responses/" + code} }
 	return manage.Route{
 		Method: http.MethodPost, Path: "/preview-tokens", Summary: "Mint a delivery preview token",
-		Handler: a.mintHandler,
+		Handler: a.mintHandler, Policy: access.PolicyContentPreview,
 		OpenAPI: m{
 			"operationId": "createPreviewToken",
 			"summary":     "Mint a delivery preview token",
@@ -150,7 +151,7 @@ func (a *API) PreviewTokenRoute() manage.Route {
 					"type": "object", "required": []any{"token", "expiresAt"},
 					"properties": m{"token": m{"type": "string"}, "expiresAt": m{"type": "string", "format": "date-time"},
 						"url": m{"type": "string", "description": "The preview link; only with item, when a URL resolves."}}}}}},
-				"400": errRef("BadRequest"), "401": errRef("Unauthorized"), "413": errRef("TooLarge"), "415": errRef("UnsupportedMedia"),
+				"400": errRef("BadRequest"), "401": errRef("Unauthorized"), "403": errRef("Forbidden"), "413": errRef("TooLarge"), "415": errRef("UnsupportedMedia"),
 			},
 		},
 	}
@@ -182,6 +183,15 @@ func (a *API) mintHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Locale != "" && !slices.Contains(ch.Languages, in.Locale) {
 		manage.Fail(w, r, manage.BadRequest("channel %q does not serve locale %q", ch.Name, in.Locale))
+		return
+	}
+	if item.IsZero() {
+		err = a.o.Content.CanPreviewChannel(r.Context(), ch)
+	} else {
+		err = a.o.Content.CanPreview(r.Context(), ch, item)
+	}
+	if err != nil {
+		manage.Fail(w, r, err)
 		return
 	}
 	tok, exp, err := a.MintPreviewToken(in.Channel, item, ttl)

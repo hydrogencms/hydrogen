@@ -3,6 +3,7 @@ package content
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,23 +16,130 @@ import (
 	"github.com/hydrogencms/hydrogen/store/storeutil"
 )
 
-// project rebuilds the reference, index and search projections of an item's current published version.
+// rowset is the index and search rows of one projection of an item.
+type rowset struct {
+	index  []store.IndexRow
+	search []store.SearchDoc
+}
+
+func (s *Service) rowsOf(st *itemState, outs []*localeOut) *rowset {
+	return &rowset{index: s.projectIndex(st, outs), search: s.searchDocs(st, outs)}
+}
+
+// rememberRows records the rows the item's projections hold now, from the state loaded before an operation
+// changes it, so the operation can skip rewriting a projection whose rows come out the same. The rows are
+// derived from the documents in memory, which the stored rows follow (EnsureWorkingProjections builds them for
+// databases that predate them); an item that fails to derive keeps no memory and is written in full.
+func (s *Service) rememberRows(st *itemState) {
+	st.prev = nil
+	w, err := s.workingOuts(st)
+	if err != nil {
+		return
+	}
+	prev := &prevRows{working: s.rowsOf(st, w)}
+	if st.pub != nil {
+		p, err := s.publishedOuts(st)
+		if err != nil {
+			return
+		}
+		prev.published = s.rowsOf(st, p)
+	}
+	st.prev = prev
+}
+
+func (s *Service) publishedOuts(st *itemState) ([]*localeOut, error) {
+	sc := s.o.Schema
+	shared, err := st.pub.sharedDoc()
+	if err != nil {
+		return nil, err
+	}
+	var outs []*localeOut
+	for _, code := range st.pub.codes() {
+		loc, _, err := st.pub.localeDoc(code)
+		if err != nil {
+			return nil, err
+		}
+		doc := mergeParts(cloneDoc(shared), cloneDoc(loc))
+		sc.Normalize(st.typ, doc)
+		sc.Prune(st.typ, doc)
+		outs = append(outs, &localeOut{code: code, doc: doc, name: st.pub.Locales[st.pub.idx[code]].Name})
+	}
+	return outs, nil
+}
+
+// project rebuilds the reference, index and search projections of an item's current published version. Index
+// and search rows equal to the remembered ones are not rewritten.
 func (s *Service) project(ctx context.Context, c store.ContentStore, st *itemState, outs []*localeOut) error {
 	id := st.item.ID
 	refs := projectRefs(id, outs)
 	if err := c.ReplaceRefs(ctx, id, refs); err != nil {
 		return fmt.Errorf("content: project refs of %s: %w", id, err)
 	}
-	if err := c.ReplaceIndex(ctx, id, store.ProjectionPublished, s.projectIndex(st, outs)); err != nil {
-		return fmt.Errorf("content: project index of %s: %w", id, err)
+	var prev *rowset
+	if st.prev != nil {
+		prev = st.prev.published
 	}
+	if err := s.writeRows(ctx, c, id, store.ProjectionPublished, s.rowsOf(st, outs), prev); err != nil {
+		return fmt.Errorf("content: project %s: %w", id, err)
+	}
+	return nil
+}
+
+// writeRows replaces the rows of a projection, leaving a part alone when prev (the rows it holds) equals it.
+func (s *Service) writeRows(ctx context.Context, c store.ContentStore, id ids.UUID, p store.Projection, rows, prev *rowset) error {
+	if prev == nil || !reflect.DeepEqual(rows.index, prev.index) {
+		if err := c.ReplaceIndex(ctx, id, p, rows.index); err != nil {
+			return fmt.Errorf("index: %w", err)
+		}
+	}
+	if prev == nil || !reflect.DeepEqual(rows.search, prev.search) {
+		if err := c.ReplaceSearch(ctx, id, p, rows.search); err != nil {
+			return fmt.Errorf("search: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) searchDocs(st *itemState, outs []*localeOut) []store.SearchDoc {
 	docs := make([]store.SearchDoc, len(outs))
 	for i, o := range outs {
 		text := capSearchText(strings.TrimSpace(o.name + " " + s.o.Schema.SearchText(st.typ, o.doc)))
 		docs[i] = store.SearchDoc{Locale: o.code, Text: text}
 	}
-	if err := c.ReplaceSearch(ctx, id, store.ProjectionPublished, docs); err != nil {
-		return fmt.Errorf("content: project search of %s: %w", id, err)
+	return docs
+}
+
+// workingOuts lists the locales of an item's working view: its draft parts laid over the published version.
+func (s *Service) workingOuts(st *itemState) ([]*localeOut, error) {
+	sc := s.o.Schema
+	outs := make([]*localeOut, 0, len(st.drafts)+1)
+	for _, code := range st.locales(true) {
+		shared, loc, _, err := st.workingParts(code)
+		if err != nil {
+			return nil, err
+		}
+		doc := mergeParts(cloneDoc(shared), cloneDoc(loc))
+		sc.Normalize(st.typ, doc)
+		sc.Prune(st.typ, doc)
+		// The name comes from the merged document: a shared draft edit can change it in locales without a draft.
+		outs = append(outs, &localeOut{code: code, doc: doc, name: sc.Name(st.typ, doc)})
+	}
+	return outs, nil
+}
+
+// projectWorking rebuilds the working index and search rows of an item (management listings), skipping what
+// is unchanged since rememberRows. st must hold the drafts and the published version.
+func (s *Service) projectWorking(ctx context.Context, c store.ContentStore, st *itemState) error {
+	outs, err := s.workingOuts(st)
+	if err != nil {
+		return err
+	}
+	var prev *rowset
+	if st.prev != nil {
+		prev = st.prev.working
+	}
+	if err := s.writeRows(ctx, c, st.item.ID, store.ProjectionWorking, s.rowsOf(st, outs), prev); err != nil {
+		return fmt.Errorf("content: project working %s: %w", st.item.ID, err)
 	}
 	return nil
 }
@@ -64,6 +172,9 @@ func projectRefs(from ids.UUID, outs []*localeOut) []store.Ref {
 // fields per locale.
 func (s *Service) projectIndex(st *itemState, outs []*localeOut) []store.IndexRow {
 	var rows []store.IndexRow
+	if len(outs) == 0 {
+		return nil
+	}
 	primary := outs[0]
 	for _, o := range outs {
 		if o.code == st.item.MainLocale {

@@ -15,11 +15,11 @@ import (
 
 func moduleRoutes() []Route {
 	return []Route{
-		{Method: "GET", Path: "/pages/sites/{site}/tree", Summary: "Site tree", Module: "pages",
+		{Method: "GET", Path: "/pages/sites/{site}/tree", Summary: "Site tree", Module: "pages", Policy: Authenticated,
 			Handler: func(w http.ResponseWriter, r *http.Request) {
 				WriteJSON(w, http.StatusOK, map[string]any{"site": r.PathValue("site")})
 			}},
-		{Method: "POST", Path: "/pages/move", Summary: "Move a page", Module: "pages",
+		{Method: "POST", Path: "/pages/move", Summary: "Move a page", Module: "pages", Policy: Authenticated,
 			OpenAPI: map[string]any{"operationId": "movePage", "responses": map[string]any{"204": map[string]any{"description": "Moved."}}},
 			Handler: func(w http.ResponseWriter, r *http.Request) {
 				var in struct {
@@ -140,12 +140,13 @@ func TestModuleRouteConflicts(t *testing.T) {
 		rts  []Route
 		want string
 	}{
-		{"core", []Route{{Method: "GET", Path: "/types", Handler: h, Module: "evil"}}, "module evil: route GET /types"},
-		{"core wildcard", []Route{{Method: "GET", Path: "/items/{other}", Handler: h, Module: "evil"}}, "module evil"},
-		{"module", []Route{{Method: "GET", Path: "/a", Handler: h, Module: "one"}, {Method: "GET", Path: "/a", Handler: h, Module: "two"}}, "module two: route GET /a"},
-		{"method", []Route{{Method: "TRACE", Path: "/a", Handler: h}}, "method must be"},
-		{"path", []Route{{Method: "GET", Path: "a", Handler: h}}, "path must start with /"},
-		{"handler", []Route{{Method: "GET", Path: "/a"}}, "Handler is required"},
+		{"core", []Route{{Method: "GET", Path: "/types", Handler: h, Module: "evil", Policy: Authenticated}}, "module evil: route GET /types"},
+		{"core wildcard", []Route{{Method: "GET", Path: "/items/{other}", Handler: h, Module: "evil", Policy: Authenticated}}, "module evil"},
+		{"module", []Route{{Method: "GET", Path: "/a", Handler: h, Module: "one", Policy: Authenticated}, {Method: "GET", Path: "/a", Handler: h, Module: "two", Policy: Authenticated}}, "module two: route GET /a"},
+		{"method", []Route{{Method: "TRACE", Path: "/a", Handler: h, Policy: Public}}, "method must be"},
+		{"path", []Route{{Method: "GET", Path: "a", Handler: h, Policy: Public}}, "path must start with /"},
+		{"handler", []Route{{Method: "GET", Path: "/a", Policy: Public}}, "Handler is required"},
+		{"policy", []Route{{Method: "GET", Path: "/a", Handler: h, Module: "one"}}, "module one: route GET /a: Policy is required"},
 	}
 	for _, tc := range tests {
 		_, err := New(Options{Content: newFake(t), Token: token, Routes: tc.rts})
@@ -155,7 +156,7 @@ func TestModuleRouteConflicts(t *testing.T) {
 	}
 	// Different methods on one path are fine.
 	if _, err := New(Options{Content: newFake(t), Token: token, Routes: []Route{
-		{Method: "GET", Path: "/a", Handler: h}, {Method: "POST", Path: "/a", Handler: h}}}); err != nil {
+		{Method: "GET", Path: "/a", Handler: h, Policy: Authenticated}, {Method: "POST", Path: "/a", Handler: h, Policy: Authenticated}}}); err != nil {
 		t.Error(err)
 	}
 }

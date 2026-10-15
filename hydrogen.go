@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"text/tabwriter"
 
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/cachetag"
 	"github.com/hydrogencms/hydrogen/codegen"
 	"github.com/hydrogencms/hydrogen/config"
@@ -44,6 +45,12 @@ type Builder struct {
 	endpoints  []endpoint
 	jobs       []job
 	mappers    []cachetag.Mapper
+	rules      []typeRules
+}
+
+type typeRules struct {
+	typ   string
+	rules access.Rules
 }
 
 type endpoint struct {
@@ -89,6 +96,13 @@ func (b *Builder) Endpoint(method, path string, auth kernel.Auth, h http.Handler
 // database each tick runs once. "job:run <name>" runs a job now.
 func (b *Builder) Job(name, schedule string, fn func(ctx context.Context, s *kernel.Services) error) {
 	b.jobs = append(b.jobs, job{name, schedule, fn})
+}
+
+// AccessRules registers code access rules for a content type, ANDed with role grants and with other rules for
+// the type; the system and the config token are never restricted by them. Prefer the typed handle in gen/content:
+// content.Article.Access(h, rules).
+func (b *Builder) AccessRules(typ string, rules access.Rules) {
+	b.rules = append(b.rules, typeRules{typ, rules})
 }
 
 // TagMapper maps outbox events to cache tags, for cache purges and webhooks (see kernel.Registry.TagMapper).
@@ -137,6 +151,9 @@ func (p project) Register(r *kernel.Registry) error {
 	for _, m := range p.b.mappers {
 		r.TagMapper(m)
 	}
+	for _, tr := range p.b.rules {
+		r.AccessRules(tr.typ, tr.rules)
+	}
 	return nil
 }
 
@@ -161,11 +178,14 @@ func Main(configure func(*Builder)) {
 }
 
 type RunOptions struct {
-	Config    *config.Options // default: config.OSOptions()
-	Stdout    io.Writer       // default os.Stdout
-	Stderr    io.Writer       // default os.Stderr
-	DB        store.DB        // inject a database (tests)
-	Listening func(addr string)
+	Config *config.Options // default: config.OSOptions()
+	Stdin  io.Reader       // default os.Stdin
+	Stdout io.Writer       // default os.Stdout
+	Stderr io.Writer       // default os.Stderr
+	DB     store.DB        // inject a database (tests)
+	// PasswordIterations lowers the PBKDF2 cost of password hashes so tests run fast (0 = 600 000).
+	PasswordIterations int
+	Listening          func(addr string)
 }
 
 var core = []struct{ name, summary string }{
@@ -173,9 +193,12 @@ var core = []struct{ name, summary string }{
 	{"migrate", "apply pending database migrations"},
 	{"config:check", "validate configuration, schema and modules (-db: also check the database)"},
 	{"content:migrate", "apply pending content migrations"},
+	{"content:reindex", "rebuild every item's index, search, reference, snapshot and working projections"},
 	{"generate", "write typed Go (gen/content) and TypeScript (gen/types.ts) from the schema"},
 	{"job:run", "run a scheduled job now: job:run <name>"},
 	{"check-frontend", "check that a frontend has a template for every page type and mount: check-frontend -templates <file> [-channel name] [-db]"},
+	{"users:create-admin", "create or reset an administrator: users:create-admin <login> (password from HYDROGEN_ADMIN_PASSWORD or one line of stdin)"},
+	{"tokens:create", "create an API token and print its secret once: tokens:create -name <n> -role <role> [-agent] [-expires 720h]"},
 	{"export", "write content and module data to a directory: export [-published-only] <dir>"},
 	{"import", "restore an export into an empty database: import [-allow-schema-change] <dir>"},
 	{"version", "print the Hydrogen version"},
@@ -183,6 +206,9 @@ var core = []struct{ name, summary string }{
 
 // Run executes one command. It is Main without the process handling, for tests and embedding.
 func Run(ctx context.Context, args []string, configure func(*Builder), o RunOptions) error {
+	if o.Stdin == nil {
+		o.Stdin = os.Stdin
+	}
 	if o.Stdout == nil {
 		o.Stdout = os.Stdout
 	}
@@ -232,6 +258,12 @@ func Run(ctx context.Context, args []string, configure func(*Builder), o RunOpti
 		return migrate(ctx, app, o)
 	case "content:migrate":
 		return contentMigrate(ctx, app, o)
+	case "content:reindex":
+		return contentReindex(ctx, app, o, rest)
+	case "users:create-admin":
+		return createAdmin(ctx, app, o, rest)
+	case "tokens:create":
+		return createToken(ctx, app, o, rest)
 	case "job:run":
 		return jobRun(ctx, app, o, rest)
 	case "export":
@@ -261,7 +293,7 @@ func newApp(ctx context.Context, b *Builder, o RunOptions) (*kernel.App, error) 
 	if err != nil {
 		return nil, err
 	}
-	return kernel.New(ctx, kernel.Options{Config: cfg, DB: o.DB, Stderr: o.Stderr}, b.all()...)
+	return kernel.New(ctx, kernel.Options{Config: cfg, DB: o.DB, Stderr: o.Stderr, PasswordIterations: o.PasswordIterations}, b.all()...)
 }
 
 func serve(ctx context.Context, app *kernel.App, o RunOptions) error {
@@ -280,6 +312,9 @@ func serve(ctx context.Context, app *kernel.App, o RunOptions) error {
 		}
 	}
 	if err := readyContent(ctx, app); err != nil {
+		return err
+	}
+	if err := s.Admin.SeedTemplates(ctx); err != nil {
 		return err
 	}
 	return app.Run(ctx, o.Listening)
@@ -309,7 +344,29 @@ func readyContent(ctx context.Context, app *kernel.App) error {
 			return err
 		}
 	}
+	if _, err = s.Content.EnsureWorkingProjections(ctx); err != nil {
+		return err
+	}
 	_, err = s.Content.EnsureSchemaRev(ctx)
+	return err
+}
+
+func contentReindex(ctx context.Context, app *kernel.App, o RunOptions, args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("content:reindex takes no arguments")
+	}
+	pending, err := app.Pending(ctx)
+	if err != nil {
+		return err
+	}
+	if len(pending) > 0 {
+		return fmt.Errorf("%d pending database migrations; run migrate first", len(pending))
+	}
+	n, err := app.Services().Content.Reindex(ctx, func(done int) { fmt.Fprintf(o.Stderr, "reindexed %d items\n", done) })
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(o.Stdout, "reindexed %d items\n", n)
 	return err
 }
 
@@ -326,6 +383,9 @@ func contentMigrate(ctx context.Context, app *kernel.App, o RunOptions) error {
 		return err
 	}
 	if _, err := app.Services().Content.EnsureSchemaRev(ctx); err != nil {
+		return err
+	}
+	if _, err := app.Services().Content.EnsureWorkingProjections(ctx); err != nil {
 		return err
 	}
 	if len(applied) == 0 {
@@ -383,7 +443,10 @@ func migrate(ctx context.Context, app *kernel.App, o RunOptions) error {
 	for _, m := range pending {
 		fmt.Fprintf(o.Stdout, "applied %s/%04d_%s\n", m.Source, m.Version, m.Name)
 	}
-	return nil
+	if _, err = app.Services().Content.EnsureWorkingProjections(ctx); err != nil {
+		return err
+	}
+	return app.Services().Admin.SeedTemplates(ctx)
 }
 
 func configCheck(ctx context.Context, b *Builder, o RunOptions, args []string) error {
