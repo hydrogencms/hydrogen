@@ -181,12 +181,17 @@ async function reloadSwap(o = {}) {
     const res = await (o.fetch ?? w.fetch.bind(w))(w.location.href, { credentials: 'include', headers: { accept: 'text/html' } });
     if (!res.ok)
         throw new Error(`reload: ${res.status} ${res.statusText}`);
+    const gone = new Error('reload: preview expired or lost');
+    if (res.redirected)
+        throw gone;
     const next = new w.DOMParser().parseFromString(await res.text(), 'text/html');
     const d = w.document;
     const sel = o.root ?? '[data-h-root]';
     const [x, y] = [w.scrollX, w.scrollY];
     const cur = d.querySelector(sel);
     const nxt = next.querySelector(sel);
+    if (cur && !nxt)
+        throw gone;
     if (cur && nxt)
         cur.replaceWith(d.importNode(nxt, true));
     else

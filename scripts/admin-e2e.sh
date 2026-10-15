@@ -166,7 +166,7 @@ fi
 # new_cms NAME BIN PORT FIXTURE_DIR: runs in the example's directory.
 new_cms() {
   local name=$1 bin=$2 p=$3 fixture=$4
-  mkdir -p "$work/run-$name"
+  rm -rf "$work/run-$name" && mkdir -p "$work/run-$name"
   export DATABASE_URL="sqlite:$work/run-$name/h.db" LISTEN_ADDR="127.0.0.1:$p"
   "$bin" migrate >"$work/server.log" 2>&1 || fail "$name migrate"
   "$bin" import "$fixture" >>"$work/server.log" 2>&1 || fail "$name import"
