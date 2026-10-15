@@ -51,6 +51,45 @@ type Options struct {
 	// Prefix is where the handler is mounted (e.g. "/api/manage/v1"); Location headers are Prefix plus the
 	// route path. Empty keeps them relative to the mount point.
 	Prefix string
+	// Routes are module endpoints served next to the core ones, behind the same bearer token, body limit,
+	// panic recovery and logging, and listed in /openapi.json. A route that conflicts with a core route or
+	// another module route makes New fail.
+	Routes []Route
+}
+
+// Route is an endpoint a module adds to the management API.
+type Route struct {
+	Method  string // GET, POST, PATCH, PUT or DELETE
+	Path    string // relative to the API prefix, ServeMux syntax, e.g. "/pages/sites/{site}/tree"
+	Handler http.HandlerFunc
+	Summary string
+	// OpenAPI is the operation object for the document (parameters, requestBody, responses); optional. Without
+	// it the document gets a generic operation: path parameters and the standard error responses.
+	OpenAPI map[string]any
+	// Module names the module that registered the route, for error messages.
+	Module string
+}
+
+func (rt Route) describe() string {
+	if rt.Module != "" {
+		return fmt.Sprintf("module %s: route %s %s", rt.Module, rt.Method, rt.Path)
+	}
+	return fmt.Sprintf("route %s %s", rt.Method, rt.Path)
+}
+
+func (rt Route) validate() error {
+	switch rt.Method {
+	case http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete:
+	default:
+		return fmt.Errorf("manage: %s: method must be GET, POST, PATCH, PUT or DELETE", rt.describe())
+	}
+	if !strings.HasPrefix(rt.Path, "/") || strings.ContainsAny(rt.Path, " \t") {
+		return fmt.Errorf("manage: %s: path must start with / and contain no spaces", rt.describe())
+	}
+	if rt.Handler == nil {
+		return fmt.Errorf("manage: %s: Handler is required", rt.describe())
+	}
+	return nil
 }
 
 type api struct {
@@ -110,20 +149,41 @@ func New(o Options) (http.Handler, error) {
 	if a.maxBody <= 0 {
 		a.maxBody = defaultMaxBody
 	}
-	if err := a.buildCaches(); err != nil {
+	for _, rt := range o.Routes {
+		if err := rt.validate(); err != nil {
+			return nil, err
+		}
+	}
+	if err := a.buildCaches(o.Routes); err != nil {
 		return nil, err
 	}
 	mux := http.NewServeMux()
 	for _, rt := range routes {
 		mux.Handle(rt.method+" "+rt.path, a.auth(a.handle(rt.h)))
 	}
+	for _, rt := range o.Routes {
+		if err := a.handleRoute(mux, rt); err != nil {
+			return nil, err
+		}
+	}
 	return a.recoverer(mux), nil
+}
+
+// handleRoute mounts a module route; ServeMux panics on a conflicting pattern.
+func (a *api) handleRoute(mux *http.ServeMux, rt Route) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("manage: %s: %v", rt.describe(), v)
+		}
+	}()
+	mux.Handle(rt.Method+" "+rt.Path, a.auth(rt.Handler))
+	return nil
 }
 
 func (a *api) handle(fn func(*api, http.ResponseWriter, *http.Request) error) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := fn(a, w, r); err != nil {
-			a.fail(w, r, err)
+			Fail(w, r, err)
 		}
 	})
 }
@@ -134,7 +194,7 @@ func (a *api) auth(next http.Handler) http.Handler {
 		sum := sha256.Sum256([]byte(strings.TrimSpace(tok)))
 		if !strings.EqualFold(scheme, "Bearer") || subtle.ConstantTimeCompare(sum[:], a.tokenSum[:]) != 1 {
 			w.Header().Set("WWW-Authenticate", "Bearer")
-			a.writeError(w, &httpError{http.StatusUnauthorized, "unauthorized", "missing or invalid bearer token"})
+			Fail(w, r, &Error{Status: http.StatusUnauthorized, Code: "unauthorized", Message: "missing or invalid bearer token"})
 			return
 		}
 		ctx := audit.WithActor(r.Context(), audit.Actor{Kind: "token", ID: "manage"})
@@ -168,6 +228,7 @@ func (s *statusWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 func (a *api) recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		r = r.WithContext(context.WithValue(r.Context(), reqStateKey{}, reqState{log: a.log, maxBody: a.maxBody}))
 		defer func() {
 			if v := recover(); v != nil {
 				if v == http.ErrAbortHandler { //nolint:errorlint // sentinel panic value
@@ -175,7 +236,7 @@ func (a *api) recoverer(next http.Handler) http.Handler {
 				}
 				a.log.Error("manage: panic", "method", r.Method, "path", r.URL.Path, "panic", fmt.Sprint(v), "stack", string(debug.Stack()))
 				if !sw.wrote {
-					a.writeError(sw, &httpError{http.StatusInternalServerError, "internal", "internal error"})
+					writeErrorBody(sw, http.StatusInternalServerError, errorBody{Code: "internal", Message: "internal error"})
 				}
 			}
 			a.log.Debug("manage request", "method", r.Method, "path", r.URL.Path, "status", sw.status)

@@ -8,9 +8,12 @@ import (
 
 // Page is the "page" content type.
 type Page struct {
-	Title string    `json:"title,omitempty"`
-	Intro *string   `json:"intro,omitempty"`
-	Seo   *SeoGroup `json:"seo,omitempty"`
+	Title string  `json:"title,omitempty"`
+	Intro *string `json:"intro,omitempty"`
+	Slug  *string `json:"slug,omitempty"`
+	// Extra URL serving this page, e.g. /promo
+	VanityPath *string   `json:"vanityPath,omitempty"`
+	Seo        *SeoGroup `json:"seo,omitempty"`
 }
 
 // PageType is the typed handle for the "page" content type. Register hooks and use the Local API through it:

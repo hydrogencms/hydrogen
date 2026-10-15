@@ -1,4 +1,4 @@
-// Command content is the H1 example project: every field type, a module schema transform (seo), a typed
+// Command content is the H1 example project: every field type, a module schema transform (seo), the pages module, a typed
 // project hook and a content migration, served through the management API.
 package main
 
@@ -8,6 +8,7 @@ import (
 	"github.com/hydrogencms/hydrogen"
 	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/hooks"
+	"github.com/hydrogencms/hydrogen/modules/pages"
 	"github.com/hydrogencms/hydrogen/modules/postgres"
 	"github.com/hydrogencms/hydrogen/modules/sqlite"
 
@@ -18,7 +19,7 @@ import (
 func main() { hydrogen.Main(configure) }
 
 func configure(h *hydrogen.Builder) {
-	h.Use(sqlite.Module(), postgres.Module(), seo.Module())
+	h.Use(sqlite.Module(), postgres.Module(), pages.Module(), seo.Module())
 	gen.ArticleType.BeforeSave(h, readingTime)
 	h.Migration(splitName)
 }

@@ -1,6 +1,8 @@
 package manage
 
 import (
+	"maps"
+	"net/http"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -29,8 +31,8 @@ func pascal(s string) string {
 }
 
 // OpenAPI builds the OpenAPI 3.1 document for the management API with per-type schemas. The result is
-// deterministic: marshal it with encoding/json (sorted keys).
-func OpenAPI(s *schema.Schema) obj {
+// deterministic: marshal it with encoding/json (sorted keys). Module routes are listed under their paths.
+func OpenAPI(s *schema.Schema, extra ...Route) obj {
 	var collections, singletons []*schema.Type
 	for _, t := range s.Types() {
 		if t.Singleton {
@@ -66,6 +68,8 @@ func OpenAPI(s *schema.Schema) obj {
 		singletonPaths(paths, t)
 	}
 
+	modulePaths(paths, extra)
+
 	return obj{
 		"openapi": "3.1.0",
 		"info": obj{"title": "Hydrogen management API", "version": "1",
@@ -95,8 +99,9 @@ func baseSchemas() obj {
 		"Error": obj{"type": "object", "required": []any{"error"}, "properties": obj{"error": obj{
 			"type": "object", "required": []any{"code", "message"},
 			"properties": obj{
-				"code": obj{"type": "string", "enum": []any{"bad_request", "unauthorized", "not_found", "unsupported_media_type",
-					"too_large", "invalid", "conflict", "referenced", "duplicate_key", "internal"}},
+				"code": obj{"type": "string", "description": "Machine-readable code; modules may add their own.",
+					"examples": []any{"bad_request", "unauthorized", "not_found", "unsupported_media_type",
+						"too_large", "invalid", "conflict", "referenced", "duplicate_key", "internal"}},
 				"message":   str(""),
 				"fields":    arrayOf(schemaRef("FieldError")),
 				"locale":    str(""),
@@ -353,4 +358,79 @@ func filterNote(t *schema.Type) string {
 		return "No fields are indexed; filter and sort on name, key, createdAt and updatedAt."
 	}
 	return "Indexed fields for where and sort: " + strings.Join(idx, ", ") + "."
+}
+
+// modulePaths adds module routes to paths, in the order given; operations of one path share a path item.
+func modulePaths(paths obj, routes []Route) {
+	for _, rt := range routes {
+		path, names := openAPIPath(rt.Path)
+		item, _ := paths[path].(obj)
+		if item == nil {
+			item = obj{}
+			paths[path] = item
+		}
+		item[strings.ToLower(rt.Method)] = moduleOperation(rt, names)
+	}
+}
+
+// openAPIPath converts a ServeMux pattern to an OpenAPI path and lists its parameter names. A trailing {$}
+// matches the exact path and a {name...} wildcard is a parameter named name.
+func openAPIPath(p string) (string, []string) {
+	p = strings.TrimSuffix(p, "{$}")
+	var names []string
+	var sb strings.Builder
+	for {
+		i := strings.IndexByte(p, '{')
+		j := strings.IndexByte(p, '}')
+		if i < 0 || j < i {
+			sb.WriteString(p)
+			break
+		}
+		name := strings.TrimSuffix(p[i+1:j], "...")
+		names = append(names, name)
+		sb.WriteString(p[:i+1] + name + "}")
+		p = p[j+1:]
+	}
+	return sb.String(), names
+}
+
+func moduleOperation(rt Route, names []string) obj {
+	op := obj{}
+	if rt.OpenAPI != nil {
+		maps.Copy(op, rt.OpenAPI)
+	}
+	if _, ok := op["operationId"]; !ok {
+		op["operationId"] = strings.ToLower(rt.Method) + pathWords(rt.Path)
+	}
+	if _, ok := op["summary"]; !ok && rt.Summary != "" {
+		op["summary"] = rt.Summary
+	}
+	if rt.OpenAPI != nil {
+		return op
+	}
+	if len(names) > 0 {
+		ps := make([]any, len(names))
+		for i, n := range names {
+			ps[i] = obj{"name": n, "in": "path", "required": true, "schema": str("")}
+		}
+		op["parameters"] = ps
+	}
+	codes := []string{"400", "401", "404", "409", "422"}
+	ok := okResp("Success.", obj{"type": "object"})
+	switch rt.Method {
+	case http.MethodPost, http.MethodPatch, http.MethodPut:
+		op["requestBody"] = obj{"required": false, "content": jsonContent(obj{"type": "object"})}
+		codes = append(codes, "413", "415")
+	}
+	op["responses"] = responses(obj{"200": ok}, codes...)
+	return op
+}
+
+// pathWords turns "/pages/sites/{site}/tree" into "PagesSitesSiteTree".
+func pathWords(p string) string {
+	var sb strings.Builder
+	for _, w := range strings.FieldsFunc(p, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		sb.WriteString(pascal(w))
+	}
+	return sb.String()
 }

@@ -23,6 +23,11 @@ never commit it, quote it in commit messages or public docs, or move its content
   service = Local API: drafts, publish, projections, delete policies, hooks, content migrations), `hooks/`,
   `manage/` (management REST API + OpenAPI at `/api/manage/v1`), `codegen/` (typed Go and TypeScript),
   `store/storeutil` (dialect-neutral helpers shared by the adapters' query compilers).
+- Module extension points (H2): `Tx.SQL()` / `DB.Read()` (portable SQL for modules' own tables: `?`
+  placeholders, ids.UUID/time conversion), schema type options (`Registry.TypeOption`), module management routes
+  (`Registry.ManageRoute`, `manage.WriteJSON/DecodeJSON/Fail`).
+- `modules/pages`: page tree per site, mounts, links, routes with history, manual redirects, Resolve; its SQL lives
+  in `modules/pages/migrations/{sqlite,postgres}` and its contract in `planning/design/pages-h2.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/content`: every field type, a module schema transform, a typed hook and a content migration, tested
   through the management API on SQLite and Postgres.
@@ -47,7 +52,9 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - Contract for H1 packages: `planning/design/content-core.md` (Deviations section records every agreed change).
 - Generated code (`gen/`, `codegen/testdata/*.golden`) is never edited by hand: `hydrogen generate`,
   `go test ./codegen -update`.
-- Core packages never write SQL. Storage features are an interface in `store`, an implementation in every
+- Core packages never write SQL. Modules may, through `Tx.SQL()`/`DB.Read()`, branching on `Dialect()` where
+  syntax differs; byte slices handed out by drivers must be copied before the next row (pgx reuses buffers).
+- Structural writes in the pages module take a per-site lock (Postgres advisory xact lock); keep it that way. Storage features are an interface in `store`, an implementation in every
   adapter, and a check in `storetest`.
 - macOS scans a newly built binary on first launch (~300 ms); measure start-up from the second run.
 - Scratch projects inside the repo (`.work/`) need `GOWORK=off`, or the repo's `go.work` claims them.
@@ -68,4 +75,5 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - Schema lives in project files; never hand-edit generated code.
 - No raw CSS or HTML in content; style through design tokens.
 - Comments: minimal; only where the implementation is non-obvious.
-- Branch `main`. Commit when asked; push only when asked. Commits: no "Generated with Claude Code" footer.
+- Branch `main`. Commit by default once the full gate passes (`make tidy vet lint test smoke`): each milestone,
+  and checkpoints within one. Push only when asked. Commits: no "Generated with Claude Code" footer.

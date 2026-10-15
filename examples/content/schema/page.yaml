@@ -1,6 +1,13 @@
 types:
   page:
     page: true
+    children: [page]
     fields:
       title: { type: string, translatable: true, required: true }
       intro: { type: text, translatable: true }
+  landing:
+    page: true
+    children: []
+    fields:
+      title: { type: string, translatable: true, required: true }
+      headline: { type: string, translatable: true }

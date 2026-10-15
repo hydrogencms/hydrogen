@@ -55,7 +55,8 @@ type Type struct {
 	NamePattern string // e.g. "{title}"; "" means the first string field
 	Admin       TypeAdmin
 	AI          TypeAI
-	Fields      []*Field // file order
+	Fields      []*Field       // file order
+	Options     map[string]any // module options by key (Registry.TypeOption); nil when none
 	Pos         Pos
 }
 

@@ -49,6 +49,7 @@ func (b *Builder) Compile() (*Schema, error) {
 		s.types = append(s.types, t)
 		s.byName[name] = t
 	}
+	c.checkTypeOptions()
 	if err := c.errs.err(); err != nil {
 		return nil, err
 	}
@@ -59,6 +60,23 @@ func (b *Builder) Compile() (*Schema, error) {
 	sum := sha256.Sum256(data)
 	s.hash = hex.EncodeToString(sum[:])
 	return s, nil
+}
+
+// checkTypeOptions runs the module checks of type options once every type is declared.
+func (c *compiler) checkTypeOptions() {
+	for _, name := range sortedKeys(c.b.types) {
+		def := c.b.types[name]
+		for _, key := range sortedKeys(def.options) {
+			check, ok := c.reg.opts[key]
+			if !ok {
+				continue
+			}
+			o := def.options[key]
+			if err := check(&TypeBuilder{b: c.b, def: def}, o.value); err != nil {
+				c.errs.add(o.pos, "type %q: option %q: %v", name, key, err)
+			}
+		}
+	}
 }
 
 func (c *compiler) groupFields(name string) ([]*Field, bool) {
@@ -91,6 +109,12 @@ func (c *compiler) compileType(def *typeDef) *Type {
 		NamePattern: def.namePattern.s, Pos: def.pos,
 		Admin: TypeAdmin{Group: def.adminGroup, Icon: def.adminIcon},
 		AI:    TypeAI{Instructions: def.aiInstr},
+	}
+	if len(def.options) > 0 {
+		t.Options = make(map[string]any, len(def.options))
+		for k, o := range def.options {
+			t.Options[k] = o.value
+		}
 	}
 	if t.Label == "" {
 		t.Label = SplitName(def.name)

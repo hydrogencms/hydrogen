@@ -48,6 +48,7 @@ type DB struct {
 	listener *listener
 	stop     context.CancelFunc
 	wg       sync.WaitGroup
+	rewrite  *rewriteCache
 }
 
 func Open(ctx context.Context, url string, o store.OpenOptions) (store.DB, error) {
@@ -73,7 +74,7 @@ func Open(ctx context.Context, url string, o store.OpenOptions) (store.DB, error
 		o.Log = slog.New(slog.DiscardHandler)
 	}
 	lctx, stop := context.WithCancel(context.Background())
-	db := &DB{pool: pool, clock: o.Clock, stop: stop}
+	db := &DB{pool: pool, clock: o.Clock, stop: stop, rewrite: newRewriteCache()}
 	db.listener = newListener(lctx, cfg.ConnConfig, o.Log, &db.wg)
 	return db, nil
 }
@@ -110,7 +111,7 @@ func (db *DB) run(ctx context.Context, opts pgx.TxOptions, fn func(store.Tx) err
 			panic(r)
 		}
 	}()
-	if err := fn(&tx{tx: pgTx}); err != nil {
+	if err := fn(&tx{tx: pgTx, rewrite: db.rewrite}); err != nil {
 		_ = pgTx.Rollback(context.Background())
 		return err
 	}
@@ -120,7 +121,10 @@ func (db *DB) run(ctx context.Context, opts pgx.TxOptions, fn func(store.Tx) err
 	return nil
 }
 
-type tx struct{ tx pgx.Tx }
+type tx struct {
+	tx      pgx.Tx
+	rewrite *rewriteCache
+}
 
 func (t *tx) Outbox() store.OutboxStore { return outboxStore{t.tx} }
 func (t *tx) Audit() store.AuditStore   { return auditStore{t.tx} }

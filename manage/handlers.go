@@ -42,7 +42,7 @@ func (a *api) typeOf(r *http.Request, singleton bool) (*schema.Type, error) {
 		if singleton {
 			kind = "singleton"
 		}
-		return nil, notFound("unknown %s type %q", kind, name)
+		return nil, NotFound("unknown %s type %q", kind, name)
 	}
 	return t, nil
 }
@@ -60,7 +60,7 @@ func getOptions(r *http.Request) (content.GetOptions, error) {
 	}
 	if d != "" {
 		if o.Draft, err = strconv.ParseBool(d); err != nil {
-			return o, badRequest("draft must be true or false")
+			return o, BadRequest("draft must be true or false")
 		}
 	}
 	return o, nil
@@ -83,7 +83,7 @@ func (a *api) listItems(w http.ResponseWriter, r *http.Request) error {
 	if items == nil {
 		items = []content.Summary{}
 	}
-	a.writeJSON(w, http.StatusOK, content.ListResult{Items: items, Total: res.Total})
+	WriteJSON(w, http.StatusOK, content.ListResult{Items: items, Total: res.Total})
 	return nil
 }
 
@@ -93,7 +93,7 @@ func (a *api) createItem(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var b createBody
-	if err := a.decode(w, r, &b, false); err != nil {
+	if err := decodeBody(w, r, &b, false); err != nil {
 		return err
 	}
 	if b.Fields == nil {
@@ -105,7 +105,7 @@ func (a *api) createItem(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	w.Header().Set("Location", a.prefix+"/items/"+v.ID.String())
-	a.writeJSON(w, http.StatusCreated, v)
+	WriteJSON(w, http.StatusCreated, v)
 	return nil
 }
 
@@ -122,7 +122,7 @@ func (a *api) getItem(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	a.writeJSON(w, http.StatusOK, v)
+	WriteJSON(w, http.StatusOK, v)
 	return nil
 }
 
@@ -132,14 +132,14 @@ func (a *api) updateItem(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var b updateBody
-	if err := a.decode(w, r, &b, false); err != nil {
+	if err := decodeBody(w, r, &b, false); err != nil {
 		return err
 	}
 	v, err := a.c.Update(r.Context(), id, b.input())
 	if err != nil {
 		return err
 	}
-	a.writeJSON(w, http.StatusOK, v)
+	WriteJSON(w, http.StatusOK, v)
 	return nil
 }
 
@@ -149,14 +149,14 @@ func (a *api) publishItem(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var b publishBody
-	if err := a.decode(w, r, &b, true); err != nil {
+	if err := decodeBody(w, r, &b, true); err != nil {
 		return err
 	}
 	v, err := a.c.Publish(r.Context(), id, content.PublishOptions{Locales: b.Locales, Force: b.Force})
 	if err != nil {
 		return err
 	}
-	a.writeJSON(w, http.StatusOK, v)
+	WriteJSON(w, http.StatusOK, v)
 	return nil
 }
 
@@ -174,7 +174,7 @@ func (a *api) discardDraft(w http.ResponseWriter, r *http.Request) error {
 	if raw != "" {
 		for _, p := range strings.Split(raw, ",") {
 			if p = strings.TrimSpace(p); p == "" {
-				return badRequest("parts has an empty entry")
+				return BadRequest("parts has an empty entry")
 			}
 			parts = append(parts, p)
 		}
@@ -223,7 +223,7 @@ func (a *api) versions(w http.ResponseWriter, r *http.Request) error {
 		}
 		items[i] = versionMeta{v.Version, v.SchemaRev, locales, v.CreatedAt, v.CreatedBy}
 	}
-	a.writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items)})
+	WriteJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items)})
 	return nil
 }
 
@@ -239,7 +239,7 @@ func (a *api) references(w http.ResponseWriter, r *http.Request) error {
 	if refs == nil {
 		refs = []content.Referrer{}
 	}
-	a.writeJSON(w, http.StatusOK, map[string]any{"items": refs, "total": len(refs)})
+	WriteJSON(w, http.StatusOK, map[string]any{"items": refs, "total": len(refs)})
 	return nil
 }
 
@@ -256,7 +256,7 @@ func (a *api) getSingleton(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	a.writeJSON(w, http.StatusOK, v)
+	WriteJSON(w, http.StatusOK, v)
 	return nil
 }
 
@@ -266,14 +266,14 @@ func (a *api) updateSingleton(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var b updateBody
-	if err := a.decode(w, r, &b, false); err != nil {
+	if err := decodeBody(w, r, &b, false); err != nil {
 		return err
 	}
 	v, err := a.c.UpdateSingleton(r.Context(), t.Name, b.input())
 	if err != nil {
 		return err
 	}
-	a.writeJSON(w, http.StatusOK, v)
+	WriteJSON(w, http.StatusOK, v)
 	return nil
 }
 
@@ -283,13 +283,13 @@ func (a *api) publishSingleton(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var b publishBody
-	if err := a.decode(w, r, &b, true); err != nil {
+	if err := decodeBody(w, r, &b, true); err != nil {
 		return err
 	}
 	v, err := a.c.PublishSingleton(r.Context(), t.Name, content.PublishOptions{Locales: b.Locales, Force: b.Force})
 	if err != nil {
 		return err
 	}
-	a.writeJSON(w, http.StatusOK, v)
+	WriteJSON(w, http.StatusOK, v)
 	return nil
 }

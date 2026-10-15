@@ -369,6 +369,32 @@ func (s contentStore) GetDraftParts(ctx context.Context, id ids.UUID) ([]store.D
 	return out, rows.Err()
 }
 
+func (s contentStore) DraftPartsOf(ctx context.Context, list []ids.UUID) (map[ids.UUID][]string, error) {
+	out := map[ids.UUID][]string{}
+	for chunk := range slices.Chunk(list, maxVars) {
+		rows, err := s.tx.QueryContext(ctx, `SELECT item_id, part FROM draft_part WHERE item_id IN (`+placeholders(len(chunk))+`)
+			ORDER BY item_id, part`, idArgs(chunk)...)
+		if err != nil {
+			return nil, fmt.Errorf("sqlite: draft parts of: %w", err)
+		}
+		for rows.Next() {
+			var raw []byte
+			var part string
+			if err := rows.Scan(&raw, &part); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("sqlite: draft parts of: %w", err)
+			}
+			var id ids.UUID
+			copy(id[:], raw)
+			out[id] = append(out[id], part)
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			return nil, fmt.Errorf("sqlite: draft parts of: %w", err)
+		}
+	}
+	return out, nil
+}
+
 func (s contentStore) DeleteDraftParts(ctx context.Context, id ids.UUID, parts []string) error {
 	var err error
 	if parts == nil {

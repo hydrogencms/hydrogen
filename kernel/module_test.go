@@ -1,8 +1,13 @@
 package kernel
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/hydrogencms/hydrogen/manage"
+	"github.com/hydrogencms/hydrogen/schema"
 )
 
 type mod struct {
@@ -45,5 +50,45 @@ func TestOrderErrors(t *testing.T) {
 		if _, err := order(tc.mods); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("order(%s): %v, want %q", names(tc.mods), err, tc.want)
 		}
+	}
+}
+
+func TestCompileSchemaTypeOptions(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte("types:\n  home:\n    children: [a]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	check := func(*schema.TypeBuilder, any) error { return nil }
+	reg := newRegistry()
+	reg.current = "pages"
+	reg.TypeOption("children", check)
+	s, err := compileSchema(dir, nil, reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ty, _ := s.Type("home"); ty.Options["children"] == nil {
+		t.Error("option not stored")
+	}
+
+	reg = newRegistry()
+	reg.current = "pages"
+	reg.TypeOption("children", check)
+	reg.current = "other"
+	reg.TypeOption("children", check)
+	if _, err := compileSchema(dir, nil, reg); err == nil || !strings.Contains(err.Error(), "module other") {
+		t.Errorf("duplicate option: %v", err)
+	}
+
+	if _, err := compileSchema(dir, nil, newRegistry()); err == nil || !strings.Contains(err.Error(), `unknown key "children"`) {
+		t.Errorf("unregistered option: %v", err)
+	}
+}
+
+func TestManageRouteRecordsModule(t *testing.T) {
+	reg := newRegistry()
+	reg.current = "pages"
+	reg.ManageRoute(manage.Route{Method: "GET", Path: "/x"})
+	if len(reg.manageRts) != 1 || reg.manageRts[0].Module != "pages" {
+		t.Errorf("routes = %+v", reg.manageRts)
 	}
 }

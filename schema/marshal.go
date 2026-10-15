@@ -46,6 +46,9 @@ func (s *Schema) typeJSON(t *Type) map[string]any {
 	put(m, "singleton", t.Singleton)
 	put(m, "page", t.Page)
 	put(m, "namePattern", t.NamePattern)
+	if len(t.Options) > 0 {
+		m["options"] = t.Options
+	}
 	admin := map[string]any{}
 	put(admin, "group", t.Admin.Group)
 	put(admin, "icon", t.Admin.Icon)

@@ -28,7 +28,7 @@ func single(q url.Values, key string) (string, error) {
 	case 1:
 		return v[0], nil
 	}
-	return "", badRequest("query parameter %q given more than once", key)
+	return "", BadRequest("query parameter %q given more than once", key)
 }
 
 func parseStatus(s string) (store.Status, error) {
@@ -40,7 +40,7 @@ func parseStatus(s string) (store.Status, error) {
 	case "draft":
 		return store.StatusDraft, nil
 	}
-	return 0, badRequest("status must be any, published or draft")
+	return 0, BadRequest("status must be any, published or draft")
 }
 
 func parseInt(q url.Values, key string, def, lo, hi int) (int, error) {
@@ -50,7 +50,7 @@ func parseInt(q url.Values, key string, def, lo, hi int) (int, error) {
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil || n < lo || n > hi {
-		return 0, badRequest("%s must be a whole number from %d to %d", key, lo, hi)
+		return 0, BadRequest("%s must be a whole number from %d to %d", key, lo, hi)
 	}
 	return n, nil
 }
@@ -61,7 +61,7 @@ func parseSort(s string) ([]content.SortSpec, error) {
 	}
 	parts := strings.Split(s, ",")
 	if len(parts) > content.MaxSortKeys {
-		return nil, badRequest("too many sort keys: %d (at most %d)", len(parts), content.MaxSortKeys)
+		return nil, BadRequest("too many sort keys: %d (at most %d)", len(parts), content.MaxSortKeys)
 	}
 	out := make([]content.SortSpec, 0, len(parts))
 	for _, p := range parts {
@@ -69,7 +69,7 @@ func parseSort(s string) ([]content.SortSpec, error) {
 		desc := strings.HasPrefix(p, "-")
 		p = strings.TrimPrefix(p, "-")
 		if p == "" {
-			return nil, badRequest("sort has an empty field name")
+			return nil, BadRequest("sort has an empty field name")
 		}
 		out = append(out, content.SortSpec{Field: p, Desc: desc})
 	}
@@ -93,18 +93,18 @@ func parseWhere(q url.Values) ([]content.Filter, error) {
 		}
 		for _, v := range q[k] {
 			if len(out) >= content.MaxConditions {
-				return nil, badRequest("too many filters (at most %d)", content.MaxConditions)
+				return nil, BadRequest("too many filters (at most %d)", content.MaxConditions)
 			}
 			if op == store.OpIn {
 				if n := strings.Count(v, ",") + 1; n > content.MaxInValues {
-					return nil, badRequest("too many values in %s: %d (at most %d)", k, n, content.MaxInValues)
+					return nil, BadRequest("too many values in %s: %d (at most %d)", k, n, content.MaxInValues)
 				}
 			}
 			var val any = v
 			if op == store.OpExists {
 				b, err := strconv.ParseBool(v)
 				if err != nil {
-					return nil, badRequest("%s needs true or false", k)
+					return nil, BadRequest("%s needs true or false", k)
 				}
 				val = b
 			}
@@ -118,18 +118,18 @@ func splitWhereKey(k string) (string, store.Op, error) {
 	rest, _ := strings.CutPrefix(k, "where[")
 	field, rest, ok := strings.Cut(rest, "]")
 	if !ok || field == "" || strings.ContainsAny(field, "[") {
-		return "", "", badRequest("malformed filter %q; use where[field][op]=value", k)
+		return "", "", BadRequest("malformed filter %q; use where[field][op]=value", k)
 	}
 	op := store.OpEq
 	if rest != "" {
 		name, ok := strings.CutPrefix(rest, "[")
 		name, ok2 := strings.CutSuffix(name, "]")
 		if !ok || !ok2 || strings.ContainsAny(name, "[]") {
-			return "", "", badRequest("malformed filter %q; use where[field][op]=value", k)
+			return "", "", BadRequest("malformed filter %q; use where[field][op]=value", k)
 		}
 		op = store.Op(name)
 		if !slices.Contains(ops, op) {
-			return "", "", badRequest("unknown filter operator %q in %q", name, k)
+			return "", "", BadRequest("unknown filter operator %q in %q", name, k)
 		}
 	}
 	return field, op, nil
@@ -142,7 +142,7 @@ func parseList(typ string, q url.Values) (content.ListOptions, error) {
 		case "locale", "status", "q", "sort", "limit", "offset":
 		default:
 			if !strings.HasPrefix(k, "where[") {
-				return o, badRequest("unknown query parameter %q", k)
+				return o, BadRequest("unknown query parameter %q", k)
 			}
 		}
 	}
@@ -161,7 +161,7 @@ func parseList(typ string, q url.Values) (content.ListOptions, error) {
 		return o, err
 	}
 	if n := len(storeutil.SearchTerms(o.Search)); n > content.MaxSearchTerms {
-		return o, badRequest("too many search terms: %d (at most %d)", n, content.MaxSearchTerms)
+		return o, BadRequest("too many search terms: %d (at most %d)", n, content.MaxSearchTerms)
 	}
 	sort, err := single(q, "sort")
 	if err != nil {

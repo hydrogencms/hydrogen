@@ -22,6 +22,7 @@ var contentTests = []struct {
 	{"ContentItems", testItems},
 	{"ContentVersions", testVersions},
 	{"ContentDraftParts", testDraftParts},
+	{"ContentDraftPartsOf", testDraftPartsOf},
 	{"ContentRefs", testRefs},
 	{"ContentIndex", testIndexReplace},
 	{"ContentSearch", testSearch},
@@ -383,6 +384,43 @@ func testDraftParts(t *testing.T, db store.DB) {
 	}
 	if len(get(other)) != 1 {
 		t.Fatal("another item's parts were deleted")
+	}
+}
+
+func testDraftPartsOf(t *testing.T, db store.DB) {
+	ctx := context.Background()
+	g := newIDs()
+	a, b, none, missing := g.New(), g.New(), g.New(), g.New()
+	withContent(t, db, func(c store.ContentStore) error {
+		for _, id := range []ids.UUID{a, b, none} {
+			if err := c.InsertItem(ctx, newItem(id, "article", "")); err != nil {
+				return err
+			}
+		}
+		for _, p := range []store.DraftPart{{ItemID: a, Part: "fr"}, {ItemID: a, Part: ""}, {ItemID: a, Part: "de"}, {ItemID: b, Part: "en"}} {
+			p.Data, p.UpdatedAt = []byte(`{}`), t0
+			if err := c.PutDraftPart(ctx, p); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	var got map[ids.UUID][]string
+	viewContent(t, db, func(c store.ContentStore) error {
+		var err error
+		got, err = c.DraftPartsOf(ctx, []ids.UUID{a, b, none, missing})
+		return err
+	})
+	if len(got) != 2 || !slices.Equal(got[a], []string{"", "de", "fr"}) || !slices.Equal(got[b], []string{"en"}) {
+		t.Fatalf("draft parts of: %v", got)
+	}
+	viewContent(t, db, func(c store.ContentStore) error {
+		var err error
+		got, err = c.DraftPartsOf(ctx, nil)
+		return err
+	})
+	if len(got) != 0 {
+		t.Fatalf("no items: %v", got)
 	}
 }
 

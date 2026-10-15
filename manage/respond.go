@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"strings"
@@ -18,19 +19,30 @@ import (
 
 const jsonType = "application/json; charset=utf-8"
 
-type httpError struct {
-	status        int
-	code, message string
+// Error is a failure with an HTTP status and the management API's error envelope. Module handlers return
+// or pass it to Fail; core code uses it too.
+type Error struct {
+	Status  int
+	Code    string
+	Message string
+	Fields  []schema.FieldError
 }
 
-func (e *httpError) Error() string { return e.message }
+func (e *Error) Error() string { return e.Message }
 
-func badRequest(format string, args ...any) *httpError {
-	return &httpError{http.StatusBadRequest, "bad_request", fmt.Sprintf(format, args...)}
+// BadRequest is a 400 "bad_request" error.
+func BadRequest(format string, args ...any) *Error {
+	return &Error{Status: http.StatusBadRequest, Code: "bad_request", Message: fmt.Sprintf(format, args...)}
 }
 
-func notFound(format string, args ...any) *httpError {
-	return &httpError{http.StatusNotFound, "not_found", fmt.Sprintf(format, args...)}
+// NotFound is a 404 "not_found" error.
+func NotFound(format string, args ...any) *Error {
+	return &Error{Status: http.StatusNotFound, Code: "not_found", Message: fmt.Sprintf(format, args...)}
+}
+
+// Conflict is a 409 error with a module-chosen code, e.g. "path_taken".
+func Conflict(code, format string, args ...any) *Error {
+	return &Error{Status: http.StatusConflict, Code: code, Message: fmt.Sprintf(format, args...)}
 }
 
 type errorBody struct {
@@ -42,7 +54,8 @@ type errorBody struct {
 	Referrers []content.Referrer  `json:"referrers,omitempty"`
 }
 
-func (a *api) writeJSON(w http.ResponseWriter, status int, v any) {
+// WriteJSON writes v as a JSON response with the API's standard headers.
+func WriteJSON(w http.ResponseWriter, status int, v any) {
 	h := w.Header()
 	h.Set("Content-Type", jsonType)
 	h.Set("Cache-Control", "no-store")
@@ -50,76 +63,98 @@ func (a *api) writeJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
-		a.log.Error("manage: encode response", "err", err)
-	}
+	_ = enc.Encode(v) // the status is sent; a failure here is a gone client
 }
 
-func (a *api) writeError(w http.ResponseWriter, e *httpError) {
-	a.writeJSON(w, e.status, map[string]any{"error": errorBody{Code: e.code, Message: e.message}})
+func writeErrorBody(w http.ResponseWriter, status int, b errorBody) {
+	WriteJSON(w, status, map[string]any{"error": b})
 }
 
-func (a *api) writeErrorBody(w http.ResponseWriter, status int, b errorBody) {
-	a.writeJSON(w, status, map[string]any{"error": b})
-}
-
-// fail maps a service or request error to the error envelope.
-func (a *api) fail(w http.ResponseWriter, r *http.Request, err error) {
+// Fail writes err as the error envelope, mapping it like the core routes: *Error as given, content errors by
+// kind, anything else as a logged 500. It must be called from a handler served by this package.
+func Fail(w http.ResponseWriter, r *http.Request, err error) {
 	var (
-		he *httpError
+		me *Error
 		ve *content.ValidationError
 		ce *content.ConflictError
 		re *content.ReferencedError
 	)
 	switch {
-	case errors.As(err, &he):
-		a.writeError(w, he)
+	case errors.As(err, &me):
+		if me.Status >= http.StatusInternalServerError {
+			requestLog(r).Error("manage: request failed", "method", r.Method, "path", r.URL.Path, "err", err)
+		}
+		writeErrorBody(w, me.Status, errorBody{Code: me.Code, Message: me.Message, Fields: me.Fields})
 	case errors.As(err, &ve):
 		fields := ve.Errors
 		if fields == nil {
 			fields = []schema.FieldError{}
 		}
-		a.writeErrorBody(w, http.StatusUnprocessableEntity,
+		writeErrorBody(w, http.StatusUnprocessableEntity,
 			errorBody{Code: "invalid", Message: "validation failed", Fields: fields, Locale: ve.Locale})
 	case errors.As(err, &ce):
-		a.writeErrorBody(w, http.StatusConflict, errorBody{Code: "conflict", Message: ce.Error(), Parts: ce.Parts})
+		writeErrorBody(w, http.StatusConflict, errorBody{Code: "conflict", Message: ce.Error(), Parts: ce.Parts})
 	case errors.As(err, &re):
-		a.writeErrorBody(w, http.StatusConflict,
+		writeErrorBody(w, http.StatusConflict,
 			errorBody{Code: "referenced", Message: "item is referenced by other items", Referrers: re.Referrers})
 	case errors.Is(err, content.ErrUnknownType), errors.Is(err, content.ErrNotFound), errors.Is(err, store.ErrNotFound):
-		a.writeErrorBody(w, http.StatusNotFound, errorBody{Code: "not_found", Message: err.Error()})
+		writeErrorBody(w, http.StatusNotFound, errorBody{Code: "not_found", Message: err.Error()})
 	case errors.Is(err, content.ErrBadRequest):
-		a.writeErrorBody(w, http.StatusBadRequest, errorBody{Code: "bad_request", Message: err.Error()})
+		writeErrorBody(w, http.StatusBadRequest, errorBody{Code: "bad_request", Message: err.Error()})
 	case errors.Is(err, content.ErrInvalid):
-		a.writeErrorBody(w, http.StatusUnprocessableEntity, errorBody{Code: "invalid", Message: err.Error()})
+		writeErrorBody(w, http.StatusUnprocessableEntity, errorBody{Code: "invalid", Message: err.Error()})
 	case errors.Is(err, content.ErrConflict):
-		a.writeErrorBody(w, http.StatusConflict, errorBody{Code: "conflict", Message: err.Error()})
+		writeErrorBody(w, http.StatusConflict, errorBody{Code: "conflict", Message: err.Error()})
 	case errors.Is(err, content.ErrReferenced):
-		a.writeErrorBody(w, http.StatusConflict, errorBody{Code: "referenced", Message: err.Error()})
+		writeErrorBody(w, http.StatusConflict, errorBody{Code: "referenced", Message: err.Error()})
 	case errors.Is(err, content.ErrDuplicateKey), errors.Is(err, store.ErrDuplicateKey):
-		a.writeErrorBody(w, http.StatusConflict, errorBody{Code: "duplicate_key", Message: "key is already in use"})
+		writeErrorBody(w, http.StatusConflict, errorBody{Code: "duplicate_key", Message: "key is already in use"})
 	default:
-		a.log.Error("manage: request failed", "method", r.Method, "path", r.URL.Path, "err", err)
-		a.writeError(w, &httpError{http.StatusInternalServerError, "internal", "internal error"})
+		requestLog(r).Error("manage: request failed", "method", r.Method, "path", r.URL.Path, "err", err)
+		writeErrorBody(w, http.StatusInternalServerError, errorBody{Code: "internal", Message: "internal error"})
 	}
 }
 
-// decode reads one JSON object into dst: size-limited, JSON content type (required only when the body has
+// reqState is what the middleware leaves in the request context for the exported helpers.
+type reqState struct {
+	log     *slog.Logger
+	maxBody int64
+}
+
+type reqStateKey struct{}
+
+func state(r *http.Request) reqState {
+	if st, ok := r.Context().Value(reqStateKey{}).(reqState); ok {
+		return st
+	}
+	return reqState{log: slog.Default(), maxBody: defaultMaxBody}
+}
+
+func requestLog(r *http.Request) *slog.Logger { return state(r).log }
+
+// DecodeJSON reads the request body, which must be one JSON object, into dst. Rules shared with the core
+// routes: size-limited, a JSON Content-Type, numbers kept exact (json.Number in any), unknown fields and
+// trailing data rejected, an empty body is an error. It returns an *Error to pass to Fail.
+func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+	return decodeBody(w, r, dst, false)
+}
+
+// decodeBody reads one JSON object into dst: size-limited, JSON content type (required only when the body has
 // bytes), numbers kept exact, unknown top-level keys and trailing data rejected. With optional, an empty
 // body, chunked or not, leaves dst untouched.
-func (a *api) decode(w http.ResponseWriter, r *http.Request, dst any, optional bool) error {
-	body := bufio.NewReader(http.MaxBytesReader(w, r.Body, a.maxBody))
+func decodeBody(w http.ResponseWriter, r *http.Request, dst any, optional bool) error {
+	body := bufio.NewReader(http.MaxBytesReader(w, r.Body, state(r).maxBody))
 	if _, err := body.Peek(1); err != nil {
 		if errors.Is(err, io.EOF) {
 			if optional {
 				return nil
 			}
-			return badRequest("request body is empty")
+			return BadRequest("request body is empty")
 		}
 		return bodyError(err)
 	}
 	if !isJSON(r.Header.Get("Content-Type")) {
-		return &httpError{http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json"}
+		return &Error{Status: http.StatusUnsupportedMediaType, Code: "unsupported_media_type", Message: "Content-Type must be application/json"}
 	}
 	dec := json.NewDecoder(body)
 	dec.UseNumber()
@@ -129,7 +164,7 @@ func (a *api) decode(w http.ResponseWriter, r *http.Request, dst any, optional b
 			if optional {
 				return nil
 			}
-			return badRequest("request body is empty")
+			return BadRequest("request body is empty")
 		}
 		return bodyError(err)
 	}
@@ -138,17 +173,17 @@ func (a *api) decode(w http.ResponseWriter, r *http.Request, dst any, optional b
 		if errors.As(err, &mb) {
 			return bodyError(err)
 		}
-		return badRequest("unexpected data after the JSON body")
+		return BadRequest("unexpected data after the JSON body")
 	}
 	return nil
 }
 
-func bodyError(err error) *httpError {
+func bodyError(err error) *Error {
 	var mb *http.MaxBytesError
 	if errors.As(err, &mb) {
-		return &httpError{http.StatusRequestEntityTooLarge, "too_large", fmt.Sprintf("body exceeds %d bytes", mb.Limit)}
+		return &Error{Status: http.StatusRequestEntityTooLarge, Code: "too_large", Message: fmt.Sprintf("body exceeds %d bytes", mb.Limit)}
 	}
-	return badRequest("invalid JSON body: %v", err)
+	return BadRequest("invalid JSON body: %v", err)
 }
 
 func isJSON(ct string) bool {
@@ -159,7 +194,7 @@ func isJSON(ct string) bool {
 func pathID(r *http.Request) (ids.UUID, error) {
 	id, err := ids.Parse(r.PathValue("id"))
 	if err != nil {
-		return ids.Nil, notFound("item not found")
+		return ids.Nil, NotFound("item not found")
 	}
 	return id, nil
 }

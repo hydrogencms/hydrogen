@@ -9,3 +9,7 @@ content:
 
 manage:
   token: ${env:MANAGE_TOKEN:-dev-token}
+
+modules:
+  pages:
+    sites: [main]

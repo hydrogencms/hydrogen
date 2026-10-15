@@ -81,10 +81,23 @@ export interface ArticleAddress {
   city?: string;
 }
 
+/** The "landing" content type. */
+export interface Landing {
+  title: string;
+  headline?: string;
+  slug?: string;
+  /** Extra URL serving this page, e.g. /promo */
+  vanityPath?: string;
+  seo?: SeoGroup;
+}
+
 /** The "page" content type. */
 export interface Page {
   title: string;
   intro?: string;
+  slug?: string;
+  /** Extra URL serving this page, e.g. /promo */
+  vanityPath?: string;
   seo?: SeoGroup;
 }
 
@@ -93,6 +106,22 @@ export interface Person {
   firstName: string;
   lastName?: string;
   bio?: string;
+}
+
+/**
+ * The "redirect" content type.
+ *
+ * Sends visitors from one path to another URL.
+ */
+export interface Redirect {
+  /** Site path to redirect, e.g. /old-page */
+  from: string;
+  /** Absolute URL, site path starting with /, or item:<id> */
+  to: string;
+  statusCode?: "301" | "302" | "307" | "308";
+  site?: string;
+  /** Locale code; empty: every locale */
+  forLocale?: string;
 }
 
 /** The "settings" content type. */
@@ -104,8 +133,10 @@ export interface Settings {
 /** Field types by content type name. */
 export interface HydrogenTypes {
   article: Article;
+  landing: Landing;
   page: Page;
   person: Person;
+  redirect: Redirect;
   settings: Settings;
 }
 

@@ -37,6 +37,11 @@ type DB interface {
 	Tx(ctx context.Context, fn func(Tx) error) error
 	// View runs fn in a read-only transaction.
 	View(ctx context.Context, fn func(Tx) error) error
+	// Read returns read-only statements that run without a transaction (autocommit), for hot read paths of
+	// one or two queries: a BEGIN/COMMIT pair costs two extra round trips on Postgres. Conversions are those of
+	// Tx.SQL. Each statement sees its own snapshot, so use View when several statements must agree. Exec
+	// returns an error. A write committed by Tx is visible to every Read that starts after it returns.
+	Read() SQL
 
 	Notifier() Notifier
 	Locker() Locker
@@ -55,6 +60,8 @@ type Tx interface {
 	Outbox() OutboxStore
 	Audit() AuditStore
 	Content() ContentStore
+	// SQL runs a module's own statements in this transaction.
+	SQL() SQL
 	// Notify queues a notification on channel, sent after commit.
 	Notify(channel, payload string) error
 }

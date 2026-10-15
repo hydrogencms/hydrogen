@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -32,6 +33,13 @@ type typeDef struct {
 	aiInstr     string
 	aiGenerate  []located
 	fields      []*fieldDef
+	options     map[string]optionDef
+}
+
+// optionDef is a module type option as written in the schema.
+type optionDef struct {
+	value any
+	pos   Pos
 }
 
 type groupDef struct {
@@ -50,7 +58,7 @@ func (s src) defName(k *yaml.Node, what string) (string, bool) {
 	return name, true
 }
 
-func parseType(s src, k, v *yaml.Node) *typeDef {
+func parseType(s src, reg *Registry, k, v *yaml.Node) *typeDef {
 	name, ok := s.defName(k, "type")
 	if !ok {
 		return nil
@@ -78,8 +86,20 @@ func parseType(s src, k, v *yaml.Node) *typeDef {
 		case "fields":
 			def.fields = s.fieldDefs(e.v)
 		default:
-			s.errorf(e.k, "unknown key %q in type %q (known: admin, ai, description, fields, label, name, page, singleton)",
-				e.key, name)
+			if _, ok := reg.opts[e.key]; !ok {
+				known := uniqueSorted(append(coreTypeKeys(), sortedKeys(reg.opts)...))
+				s.errorf(e.k, "unknown key %q in type %q (known: %s)", e.key, name, strings.Join(known, ", "))
+				break
+			}
+			v, err := toValue(e.v)
+			if err != nil {
+				s.errorf(e.k, "type %q: %s: %v", name, e.key, err)
+				break
+			}
+			if def.options == nil {
+				def.options = map[string]optionDef{}
+			}
+			def.options[e.key] = optionDef{value: v, pos: s.pos(e.k)}
 		}
 	}
 	return def

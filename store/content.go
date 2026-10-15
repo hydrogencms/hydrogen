@@ -38,6 +38,9 @@ type ContentStore interface {
 
 	PutDraftPart(ctx context.Context, p DraftPart) error // insert or replace
 	GetDraftParts(ctx context.Context, id ids.UUID) ([]DraftPart, error)
+	// DraftPartsOf lists the draft part names ("" = shared) of many items in one query, sorted. Items
+	// without draft parts are absent from the map.
+	DraftPartsOf(ctx context.Context, items []ids.UUID) (map[ids.UUID][]string, error)
 	DeleteDraftParts(ctx context.Context, id ids.UUID, parts []string) error // nil parts: all
 
 	// Projections of an item's current published version; Replace* deletes the item's old rows first.

@@ -48,6 +48,7 @@ func Run(t *testing.T, open Opener) {
 		{"Locks", testLocks},
 	}
 	tests = append(tests, contentTests...)
+	tests = append(tests, sqlTests...)
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			db := open(t)

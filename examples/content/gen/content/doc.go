@@ -4,4 +4,4 @@
 package content
 
 // Types lists the content type names in this package, sorted.
-var Types = []string{"article", "page", "person", "settings"}
+var Types = []string{"article", "landing", "page", "person", "redirect", "settings"}

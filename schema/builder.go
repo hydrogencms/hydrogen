@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -147,7 +148,7 @@ func (b *Builder) addNamed(s src, n *yaml.Node, what string, fn func(k, v *yaml.
 }
 
 func (b *Builder) registerType(s src, k, v *yaml.Node) {
-	def := parseType(s, k, v)
+	def := parseType(s, b.reg, k, v)
 	if def == nil {
 		return
 	}
@@ -231,6 +232,37 @@ type TypeBuilder struct {
 func (t *TypeBuilder) Name() string    { return t.def.name }
 func (t *TypeBuilder) Page() bool      { return t.def.page }
 func (t *TypeBuilder) Singleton() bool { return t.def.singleton }
+
+// Type returns another type of the same builder, for checks that relate types to each other.
+func (t *TypeBuilder) Type(name string) (*TypeBuilder, bool) { return t.b.Type(name) }
+
+// Option returns the value of a module type option set on this type (JSON-compatible; numbers are json.Number).
+func (t *TypeBuilder) Option(name string) (any, bool) {
+	o, ok := t.def.options[name]
+	return o.value, ok
+}
+
+// SetOption sets a module type option registered with Registry.TypeOption, replacing an earlier value. The
+// value is checked at Compile, like one from YAML.
+func (t *TypeBuilder) SetOption(name string, v any) error {
+	if _, ok := t.b.reg.opts[name]; !ok {
+		return fmt.Errorf("%s: type %q: unknown type option %q (registered: %s)", t.b.origin, t.def.name, name,
+			strings.Join(sortedKeys(t.b.reg.opts), ", "))
+	}
+	n, err := toNode(v)
+	if err != nil {
+		return fmt.Errorf("%s: type %q option %q: %w", t.b.origin, t.def.name, name, err)
+	}
+	val, err := toValue(n)
+	if err != nil {
+		return fmt.Errorf("%s: type %q option %q: %w", t.b.origin, t.def.name, name, err)
+	}
+	if t.def.options == nil {
+		t.def.options = map[string]optionDef{}
+	}
+	t.def.options[name] = optionDef{value: val, pos: Pos{File: t.b.origin}}
+	return nil
+}
 
 func (t *TypeBuilder) HasField(name string) bool {
 	return slices.ContainsFunc(t.def.fields, func(f *fieldDef) bool { return f.name == name })

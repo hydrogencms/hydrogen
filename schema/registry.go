@@ -18,11 +18,17 @@ type FieldType interface {
 // Registry holds the known field types.
 type Registry struct {
 	types map[string]FieldType
+	opts  map[string]func(t *TypeBuilder, v any) error
+}
+
+// coreTypeKeys are the keys a type spec has on its own; type options may not reuse them.
+func coreTypeKeys() []string {
+	return []string{"admin", "ai", "description", "fields", "label", "name", "page", "singleton"}
 }
 
 // NewRegistry returns a registry with all core field types.
 func NewRegistry() *Registry {
-	r := &Registry{types: map[string]FieldType{}}
+	r := &Registry{types: map[string]FieldType{}, opts: map[string]func(*TypeBuilder, any) error{}}
 	for _, ft := range coreTypes() {
 		if err := r.Register(ft); err != nil {
 			panic(err) // core names are distinct
@@ -40,6 +46,27 @@ func (r *Registry) Register(ft FieldType) error {
 		return fmt.Errorf("schema: field type %q is already registered", name)
 	}
 	r.types[name] = ft
+	return nil
+}
+
+// TypeOption registers a type-level schema key for a module. Type specs (YAML or Spec) may then carry the key;
+// its value is any JSON-compatible value (numbers are json.Number), stored in Type.Options and part of the
+// canonical JSON and hash. check runs at Compile, after all transforms, for every type that sets the option;
+// it may inspect other types through t. Its error is reported at the option's position. The name must be a
+// valid lower camel-case identifier that is neither a core type key nor an already registered option.
+func (r *Registry) TypeOption(name string, check func(t *TypeBuilder, v any) error) error {
+	switch {
+	case !nameRE.MatchString(name) || len(name) > maxName:
+		return fmt.Errorf("schema: type option name %q must match %s and be at most %d characters", name, nameRE, maxName)
+	case check == nil:
+		return fmt.Errorf("schema: type option %q needs a check function", name)
+	case slices.Contains(coreTypeKeys(), name):
+		return fmt.Errorf("schema: type option %q clashes with a core type key", name)
+	}
+	if _, dup := r.opts[name]; dup {
+		return fmt.Errorf("schema: type option %q is already registered", name)
+	}
+	r.opts[name] = check
 	return nil
 }
 

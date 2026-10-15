@@ -16,6 +16,7 @@ import (
 
 	"github.com/hydrogencms/hydrogen"
 	"github.com/hydrogencms/hydrogen/config"
+	"github.com/hydrogencms/hydrogen/modules/pages"
 	"github.com/hydrogencms/hydrogen/modules/postgres/pgtest"
 )
 
@@ -216,7 +217,7 @@ func TestLifecyclePostgres(t *testing.T) {
 
 // configureV1 is the project before the person schema changed: no migration yet.
 func configureV1(h *hydrogen.Builder) {
-	h.Use(sqliteModule(), postgresModule())
+	h.Use(sqliteModule(), postgresModule(), pages.Module())
 }
 
 func TestContentMigration(t *testing.T) {

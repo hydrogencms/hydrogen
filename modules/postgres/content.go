@@ -330,6 +330,31 @@ func (s contentStore) GetDraftParts(ctx context.Context, id ids.UUID) ([]store.D
 	return out, nil
 }
 
+func (s contentStore) DraftPartsOf(ctx context.Context, list []ids.UUID) (map[ids.UUID][]string, error) {
+	out := map[ids.UUID][]string{}
+	if len(list) == 0 {
+		return out, nil
+	}
+	rows, err := s.tx.Query(ctx, `SELECT item_id, part FROM draft_part WHERE item_id = ANY($1)
+		ORDER BY item_id, part COLLATE "C"`, idArgs(list))
+	if err != nil {
+		return nil, fmt.Errorf("postgres: draft parts of: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id [16]byte
+		var part string
+		if err := rows.Scan(&id, &part); err != nil {
+			return nil, fmt.Errorf("postgres: draft parts of: %w", err)
+		}
+		out[ids.UUID(id)] = append(out[ids.UUID(id)], part)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: draft parts of: %w", err)
+	}
+	return out, nil
+}
+
 func (s contentStore) DeleteDraftParts(ctx context.Context, id ids.UUID, parts []string) error {
 	var err error
 	if parts == nil {

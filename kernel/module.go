@@ -16,6 +16,7 @@ import (
 
 	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/hooks"
+	"github.com/hydrogencms/hydrogen/manage"
 	"github.com/hydrogencms/hydrogen/outbox"
 	"github.com/hydrogencms/hydrogen/schema"
 	"github.com/hydrogencms/hydrogen/store"
@@ -74,6 +75,8 @@ type Registry struct {
 	commands   map[string]registered[Command]
 	provided   map[reflect.Type]any
 	fieldTypes []registered[schema.FieldType]
+	typeOpts   []registered[typeOption]
+	manageRts  []manage.Route
 	hooks      hooks.Registry
 	contentMig []registered[content.Migration]
 }
@@ -81,6 +84,11 @@ type Registry struct {
 type registered[T any] struct {
 	module string
 	value  T
+}
+
+type typeOption struct {
+	name  string
+	check func(t *schema.TypeBuilder, v any) error
 }
 
 type route struct {
@@ -123,6 +131,19 @@ func (r *Registry) Consumer(c outbox.Consumer) {
 // FieldType adds a schema field type.
 func (r *Registry) FieldType(ft schema.FieldType) {
 	r.fieldTypes = append(r.fieldTypes, registered[schema.FieldType]{r.current, ft})
+}
+
+// TypeOption registers a type-level schema key (see schema.Registry.TypeOption); the project's schema files
+// and Schemer modules may then set it on types, and check validates its value at compile time.
+func (r *Registry) TypeOption(name string, check func(t *schema.TypeBuilder, v any) error) {
+	r.typeOpts = append(r.typeOpts, registered[typeOption]{r.current, typeOption{name, check}})
+}
+
+// ManageRoute adds an endpoint to the management API under /api/manage/v1, behind its bearer token. The
+// management API is mounted only when the schema defines types; without types the route is not served.
+func (r *Registry) ManageRoute(rt manage.Route) {
+	rt.Module = r.current
+	r.manageRts = append(r.manageRts, rt)
 }
 
 // AddHook registers a content hook; generated typed handles call it (content.HookRegistrar).

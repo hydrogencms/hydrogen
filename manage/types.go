@@ -10,7 +10,7 @@ import (
 )
 
 // buildCaches precomputes the type responses and the OpenAPI document; the schema is immutable.
-func (a *api) buildCaches() error {
+func (a *api) buildCaches(extra []Route) error {
 	raw, err := a.sc.MarshalJSON()
 	if err != nil {
 		return fmt.Errorf("manage: encode schema: %w", err)
@@ -41,7 +41,7 @@ func (a *api) buildCaches() error {
 	if a.typesJSON, err = encode(summaries); err != nil {
 		return err
 	}
-	if a.openapi, err = encode(OpenAPI(a.sc)); err != nil {
+	if a.openapi, err = encode(OpenAPI(a.sc, extra...)); err != nil {
 		return fmt.Errorf("manage: encode openapi: %w", err)
 	}
 	sum := sha256.Sum256(a.openapi)
@@ -79,7 +79,7 @@ func (a *api) listTypes(w http.ResponseWriter, _ *http.Request) error {
 func (a *api) getType(w http.ResponseWriter, r *http.Request) error {
 	b, ok := a.typeJSON[r.PathValue("type")]
 	if !ok {
-		return notFound("unknown type %q", r.PathValue("type"))
+		return NotFound("unknown type %q", r.PathValue("type"))
 	}
 	a.writeRaw(w, b)
 	return nil

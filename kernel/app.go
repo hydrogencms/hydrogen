@@ -298,6 +298,11 @@ func compileSchema(dir string, ordered []Module, reg *Registry) (*schema.Schema,
 			return nil, fmt.Errorf("module %s: field type %s: %w", ft.module, ft.value.Name(), err)
 		}
 	}
+	for _, o := range reg.typeOpts {
+		if err := types.TypeOption(o.value.name, o.value.check); err != nil {
+			return nil, fmt.Errorf("module %s: %w", o.module, err)
+		}
+	}
 	b := schema.NewBuilder(types)
 	if err := b.LoadDir(dir); err != nil {
 		return nil, err
@@ -404,7 +409,7 @@ func (a *App) Handler() (http.Handler, error) {
 	if len(a.services.Schema.Types()) > 0 {
 		const prefix = "/api/manage/v1"
 		api, err := manage.New(manage.Options{Content: a.services.Content, Token: a.services.Core.Manage.Token,
-			Log: a.services.Log, Prefix: prefix})
+			Log: a.services.Log, Prefix: prefix, Routes: a.reg.manageRts})
 		if err != nil {
 			return nil, err
 		}
