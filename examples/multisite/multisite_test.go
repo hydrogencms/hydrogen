@@ -405,6 +405,7 @@ func tokenConfigCheck(env string, vars map[string]string) error {
 	vars["SCHEMA_DIR"] = "schema"
 	vars["DATABASE_URL"] = "sqlite:" + filepath.Join(os.TempDir(), "multisite-token-check.db")
 	vars["MANAGE_TOKEN"] = token
+	vars["PREVIEW_SECRET"] = "test-preview-secret-0123456789abcdef"
 	opts := &config.Options{Dir: "config", Env: env, LookupEnv: func(k string) (string, bool) { v, ok := vars[k]; return v, ok }}
 	return hydrogen.Run(context.Background(), []string{"config:check"}, configure, hydrogen.RunOptions{Config: opts, Stdout: io.Discard, Stderr: io.Discard})
 }

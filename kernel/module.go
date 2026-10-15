@@ -14,8 +14,11 @@ import (
 	"regexp"
 	"sort"
 
+	"github.com/hydrogencms/hydrogen/cachetag"
 	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/delivery"
+	"github.com/hydrogencms/hydrogen/exportfmt"
 	"github.com/hydrogencms/hydrogen/hooks"
 	"github.com/hydrogencms/hydrogen/manage"
 	"github.com/hydrogencms/hydrogen/outbox"
@@ -68,20 +71,28 @@ var moduleName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 // Registry collects what modules contribute during Register.
 type Registry struct {
-	current    string
-	openers    map[string]registered[store.Opener]
-	migrations []registered[MigrationSource]
-	consumers  []outbox.Consumer
-	routes     []registered[route]
-	commands   map[string]registered[Command]
-	provided   map[reflect.Type]any
-	fieldTypes []registered[schema.FieldType]
-	typeOpts   []registered[typeOption]
-	manageRts  []manage.Route
-	hooks      hooks.Registry
-	contentMig []registered[content.Migration]
-	chanOpts   []registered[channel.Option]
-	chanChecks []registered[channel.Check]
+	current     string
+	openers     map[string]registered[store.Opener]
+	migrations  []registered[MigrationSource]
+	consumers   []outbox.Consumer
+	routes      []registered[route]
+	commands    map[string]registered[Command]
+	provided    map[reflect.Type]any
+	fieldTypes  []registered[schema.FieldType]
+	typeOpts    []registered[typeOption]
+	manageRts   []manage.Route
+	hooks       hooks.Registry
+	contentMig  []registered[content.Migration]
+	chanOpts    []registered[channel.Option]
+	chanChecks  []registered[channel.Check]
+	endpoints   []registered[endpoint]
+	jobs        []registered[job]
+	mappers     []cachetag.Mapper
+	deliveryRts []registered[delivery.Route]
+	decorators  []registered[delivery.Decorator]
+	publicOpts  []registered[string]
+	varies      []delivery.Varier
+	exporters   []exportfmt.NamedExporter
 }
 
 type registered[T any] struct {

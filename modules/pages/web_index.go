@@ -55,6 +55,25 @@ func (m matcher) key() string {
 	return k
 }
 
+// overlaps reports whether some request can fit both matchers: their hosts agree or one is open, one prefix
+// contains the other, and their headers do not demand different values of the same header.
+func (m matcher) overlaps(o matcher) bool {
+	if m.Host != "" && o.Host != "" && m.Host != o.Host {
+		return false
+	}
+	if m.Prefix != "" && o.Prefix != "" {
+		if _, ok := cutPrefix(m.Prefix, o.Prefix); !ok {
+			if _, ok := cutPrefix(o.Prefix, m.Prefix); !ok {
+				return false
+			}
+		}
+	}
+	if m.Header != nil && o.Header != nil && m.Header.Name == o.Header.Name && m.Header.Value != o.Header.Value {
+		return false
+	}
+	return true
+}
+
 // matches reports the site path (after the prefix) when the request fits the matcher.
 func (m matcher) matches(host, path string, h http.Header) (string, bool) {
 	if m.Host != "" && m.Host != host {

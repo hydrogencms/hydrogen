@@ -44,6 +44,7 @@ func (r *Registry) checkChannelOptions() error {
 		}
 		seen[op.value.Name] = op.module
 	}
+	errs = append(errs, r.checkPublicOptions())
 	return errors.Join(errs...)
 }
 

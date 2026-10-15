@@ -207,5 +207,10 @@ func (db *DB) Migrate(ctx context.Context, sets []store.MigrationSet) error {
 			return fmt.Errorf("sqlite: migration %s/%04d_%s: %w", m.Source, m.Version, m.Name, err)
 		}
 	}
+	if len(pending) > 0 {
+		if _, err := db.writer.ExecContext(ctx, `PRAGMA optimize`); err != nil {
+			return fmt.Errorf("sqlite: optimize: %w", err)
+		}
+	}
 	return nil
 }

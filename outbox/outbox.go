@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hydrogencms/hydrogen/clock"
@@ -108,25 +109,39 @@ func (o *Outbox) Publish(ctx context.Context, tx store.Tx, topic string, payload
 	return id, nil
 }
 
-// Run delivers events until ctx ends, waking on notifications and polling as a fallback.
+// Run delivers events until ctx ends. Every consumer runs its own loop (claim, deliver, wake on notification
+// or poll), so a slow consumer, such as a webhook timing out, never delays the others.
 func (o *Outbox) Run(ctx context.Context) error {
 	if len(o.consumers) == 0 {
 		<-ctx.Done()
 		return nil
 	}
-	wake, err := o.db.Notifier().Listen(ctx, NotifyChannel)
-	if err != nil {
-		return err
+	wakes := make([]<-chan store.Notification, len(o.consumers))
+	for i := range o.consumers {
+		w, err := o.db.Notifier().Listen(ctx, NotifyChannel)
+		if err != nil {
+			return err
+		}
+		wakes[i] = w
 	}
+	var wg sync.WaitGroup
+	for i, cn := range o.consumers {
+		wg.Go(func() { o.runConsumer(ctx, cn, wakes[i]) })
+	}
+	wg.Wait()
+	return nil
+}
+
+func (o *Outbox) runConsumer(ctx context.Context, cn Consumer, wake <-chan store.Notification) {
 	tick := time.NewTicker(o.opts.Poll)
 	defer tick.Stop()
 	for {
-		if _, err := o.Drain(ctx); err != nil && ctx.Err() == nil {
-			o.log.Error("outbox: delivery round failed", "err", err)
+		if err := o.drainConsumer(ctx, cn, new(int)); err != nil && ctx.Err() == nil {
+			o.log.Error("outbox: delivery round failed", "consumer", cn.Name, "err", err)
 		}
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case <-wake:
 		case <-tick.C:
 		}
@@ -137,18 +152,25 @@ func (o *Outbox) Run(ctx context.Context) error {
 func (o *Outbox) Drain(ctx context.Context) (int, error) {
 	total := 0
 	for _, cn := range o.consumers {
-		for {
-			n, err := o.round(ctx, cn)
-			total += n
-			if err != nil {
-				return total, err
-			}
-			if n < o.opts.Batch {
-				break
-			}
+		if err := o.drainConsumer(ctx, cn, &total); err != nil {
+			return total, err
 		}
 	}
 	return total, nil
+}
+
+// drainConsumer delivers the consumer's due events until a round comes back short, adding to *total.
+func (o *Outbox) drainConsumer(ctx context.Context, cn Consumer, total *int) error {
+	for {
+		n, err := o.round(ctx, cn)
+		*total += n
+		if err != nil {
+			return err
+		}
+		if n < o.opts.Batch {
+			return nil
+		}
+	}
 }
 
 func (o *Outbox) round(ctx context.Context, cn Consumer) (int, error) {

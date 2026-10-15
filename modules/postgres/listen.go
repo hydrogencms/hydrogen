@@ -18,7 +18,17 @@ import (
 
 // listener holds one connection that LISTENs on every channel any subscriber asked for and fans notifications
 // out. Listen returns only once the channel is LISTENed, so a commit right after Listen is not missed. After a
-// reconnect every subscriber gets an empty-payload notification, because messages sent meanwhile are lost.
+// reconnect every subscriber gets an empty-payload notification, because messages sent meanwhile are lost. A
+// subscriber whose buffer is full is marked and gets an empty-payload notification as soon as there is room
+// (later notifications are covered by it, so they are not queued meanwhile): notifications are never
+// dropped silently.
+type subscriber struct {
+	ch       chan store.Notification
+	channel  string
+	overflow bool // an empty-payload notification is owed
+	closed   bool
+}
+
 type listener struct {
 	ctx context.Context
 	cfg *pgx.ConnConfig
@@ -26,7 +36,7 @@ type listener struct {
 	wg  *sync.WaitGroup
 
 	mu      sync.Mutex
-	subs    map[string]map[chan store.Notification]struct{}
+	subs    map[string]map[*subscriber]struct{}
 	waiters []chan struct{}
 	wake    context.CancelFunc
 	running bool
@@ -38,17 +48,17 @@ func newListener(ctx context.Context, cfg *pgx.ConnConfig, log *slog.Logger, wg 
 	cfg.BuildContextWatcherHandler = func(pc *pgconn.PgConn) ctxwatch.Handler {
 		return &pgconn.DeadlineContextWatcherHandler{Conn: pc.Conn()}
 	}
-	return &listener{ctx: ctx, cfg: cfg, log: log, wg: wg, subs: map[string]map[chan store.Notification]struct{}{}}
+	return &listener{ctx: ctx, cfg: cfg, log: log, wg: wg, subs: map[string]map[*subscriber]struct{}{}}
 }
 
 func (l *listener) Listen(ctx context.Context, channel string) (<-chan store.Notification, error) {
-	ch := make(chan store.Notification, 64)
+	sub := &subscriber{ch: make(chan store.Notification, 64), channel: channel}
 	ack := make(chan struct{})
 	l.mu.Lock()
 	if l.subs[channel] == nil {
-		l.subs[channel] = map[chan store.Notification]struct{}{}
+		l.subs[channel] = map[*subscriber]struct{}{}
 	}
-	l.subs[channel][ch] = struct{}{}
+	l.subs[channel][sub] = struct{}{}
 	l.waiters = append(l.waiters, ack)
 	if !l.running {
 		l.running = true
@@ -60,9 +70,10 @@ func (l *listener) Listen(ctx context.Context, channel string) (<-chan store.Not
 
 	remove := func() {
 		l.mu.Lock()
-		delete(l.subs[channel], ch)
+		delete(l.subs[channel], sub)
+		sub.closed = true
+		close(sub.ch)
 		l.mu.Unlock()
-		close(ch)
 	}
 	select {
 	case <-ack:
@@ -80,7 +91,7 @@ func (l *listener) Listen(ctx context.Context, channel string) (<-chan store.Not
 		}
 		remove()
 	})
-	return ch, nil
+	return sub.ch, nil
 }
 
 func (l *listener) run() {
@@ -168,11 +179,8 @@ func (l *listener) requeue(ws []chan struct{}) {
 func (l *listener) dispatch(n store.Notification) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	for ch := range l.subs[n.Channel] {
-		select {
-		case ch <- n:
-		default:
-		}
+	for sub := range l.subs[n.Channel] {
+		l.deliver(sub, n)
 	}
 }
 
@@ -180,11 +188,47 @@ func (l *listener) broadcastReconnect() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for c, subs := range l.subs {
-		for ch := range subs {
-			select {
-			case ch <- store.Notification{Channel: c}:
-			default:
-			}
+		for sub := range subs {
+			l.deliver(sub, store.Notification{Channel: c})
+		}
+	}
+}
+
+// deliver (with l.mu held) hands n to the subscriber without blocking. A full buffer marks the subscriber, and
+// flush owes it an empty-payload notification; until that arrives, further notifications are covered by it.
+func (l *listener) deliver(sub *subscriber, n store.Notification) {
+	if sub.closed || sub.overflow {
+		return
+	}
+	select {
+	case sub.ch <- n:
+	default:
+		sub.overflow = true
+		l.wg.Go(func() { l.flush(sub) })
+	}
+}
+
+func (l *listener) flush(sub *subscriber) {
+	t := time.NewTicker(10 * time.Millisecond)
+	defer t.Stop()
+	for {
+		l.mu.Lock()
+		if sub.closed {
+			l.mu.Unlock()
+			return
+		}
+		select {
+		case sub.ch <- store.Notification{Channel: sub.channel}:
+			sub.overflow = false
+			l.mu.Unlock()
+			return
+		default:
+		}
+		l.mu.Unlock()
+		select {
+		case <-t.C:
+		case <-l.ctx.Done():
+			return
 		}
 	}
 }

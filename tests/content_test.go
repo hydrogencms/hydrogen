@@ -123,7 +123,7 @@ func TestCreateWithDefaults(t *testing.T) {
 		if len(evs) != 1 || evs[0].Topic != "item.created" {
 			t.Fatalf("events = %+v", evs)
 		}
-		eq(t, "payload", asJSON(doc(t, string(evs[0].Payload))), fmt.Sprintf(`{"id":%q,"locales":["en"],"type":"article","version":0}`, v.ID))
+		eq(t, "payload", asJSON(doc(t, string(evs[0].Payload))), fmt.Sprintf(`{"draft":true,"id":%q,"locales":["en"],"type":"article","version":0}`, v.ID))
 	})
 }
 

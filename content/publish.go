@@ -213,6 +213,8 @@ type localeOut struct {
 	name string
 	refs []schema.RefValue
 	errs []schema.FieldError
+
+	final bool // doc went through Normalize and Prune (prepareOuts)
 }
 
 func (s *Service) publishParts(ctx context.Context, tx store.Tx, st *itemState, sel selection) (*View, error) {
@@ -221,7 +223,8 @@ func (s *Service) publishParts(ctx context.Context, tx store.Tx, st *itemState, 
 		return nil, err
 	}
 	c := tx.Content()
-	if err := s.prepareOuts(ctx, tx, st, shared, outs); err != nil {
+	sharedData, err = s.prepareOuts(ctx, tx, st, shared, sharedData, outs)
+	if err != nil {
 		return nil, err
 	}
 	if err := s.checkRefs(ctx, c, st.typ, outs); err != nil {
@@ -302,23 +305,72 @@ func (st *itemState) localeOut(code string, sel selection) (*localeOut, error) {
 
 // prepareOuts merges every locale with the shared document and runs normalisation, validation and the
 // publish hooks on it. Problems are collected per locale; a hook returning an error aborts.
-func (s *Service) prepareOuts(ctx context.Context, tx store.Tx, st *itemState, shared map[string]any, outs []*localeOut) error {
+//
+// Changes a BeforePublish hook makes to a document are persisted into the version, so snapshots, projection
+// rebuilds and content migrations all see what publish saw: translatable fields go to that locale's data,
+// shared fields come from the main locale's result (the first locale's when the main one is not in the
+// version) and replace the shared data for every locale. It returns the shared data to store.
+func (s *Service) prepareOuts(ctx context.Context, tx store.Tx, st *itemState, shared map[string]any, sharedData []byte, outs []*localeOut) ([]byte, error) {
 	sc := s.o.Schema
-	for _, o := range outs {
+	pre := make([]map[string]any, len(outs))
+	for i, o := range outs {
 		doc := mergeParts(cloneDoc(shared), cloneDoc(o.doc))
 		sc.Normalize(st.typ, doc)
 		sc.Prune(st.typ, doc)
 		o.errs = sc.Validate(st.typ, doc, schema.ModePublish)
 		for _, ev := range []hooks.Event{hooks.Validate, hooks.BeforePublish} {
+			if ev == hooks.BeforePublish {
+				pre[i] = cloneDoc(doc)
+			}
 			rep, err := s.runHooks(ctx, tx, st.item, ev, o.code, doc)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			o.errs = append(o.errs, rep.Errors()...)
 		}
-		o.doc, o.name, o.refs = doc, sc.Name(st.typ, doc), sc.Refs(st.typ, doc)
+		o.doc, o.name, o.refs, o.final = doc, sc.Name(st.typ, doc), sc.Refs(st.typ, doc), true
 	}
-	return nil
+	return s.persistHookChanges(st, sharedData, pre, outs)
+}
+
+func (s *Service) persistHookChanges(st *itemState, sharedData []byte, pre []map[string]any, outs []*localeOut) ([]byte, error) {
+	changed := false
+	locChanged := make([]bool, len(outs))
+	for i, o := range outs {
+		if equalDocs(pre[i], o.doc) {
+			continue
+		}
+		changed = true
+		_, a := splitDoc(st.typ, pre[i])
+		_, b := splitDoc(st.typ, o.doc)
+		locChanged[i] = !equalDocs(a, b)
+	}
+	if !changed || len(outs) == 0 {
+		return sharedData, nil
+	}
+	primary := outs[0]
+	for _, o := range outs {
+		if o.code == st.item.MainLocale {
+			primary = o
+		}
+	}
+	finalShared, _ := splitDoc(st.typ, primary.doc)
+	data, err := encodeDoc(finalShared)
+	if err != nil {
+		return nil, fmt.Errorf("content: encode shared document of %s: %w", st.item.ID, err)
+	}
+	sc := s.o.Schema
+	for i, o := range outs {
+		_, loc := splitDoc(st.typ, o.doc)
+		if locChanged[i] {
+			if o.data, err = encodeDoc(loc); err != nil {
+				return nil, fmt.Errorf("content: encode %s document of %s: %w", o.code, st.item.ID, err)
+			}
+		}
+		o.doc = mergeParts(cloneDoc(finalShared), loc)
+		o.name, o.refs = sc.Name(st.typ, o.doc), sc.Refs(st.typ, o.doc)
+	}
+	return data, nil
 }
 
 func reportFirstFailure(outs []*localeOut) error {
@@ -359,7 +411,10 @@ func (s *Service) commitVersion(ctx context.Context, c store.ContentStore, st *i
 		return itemErr(st.item.ID.String(), err)
 	}
 	st.pub = newPubVersion(v)
-	return s.project(ctx, c, st, outs)
+	if err := s.project(ctx, c, st, outs); err != nil {
+		return err
+	}
+	return s.putSnapshots(ctx, c, st, outs, v.Version, now)
 }
 
 func (s *Service) afterPublish(ctx context.Context, tx store.Tx, st *itemState, outs []*localeOut, changed []string) error {

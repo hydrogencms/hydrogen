@@ -24,8 +24,16 @@ func SeedBench(tb testing.TB, db store.DB) {
 			id := g.New()
 			it := newItem(id, "article", "")
 			it.PublishedVersion = 1
+			it.AlwaysAvailable = i%10 == 0
 			it.UpdatedAt = t0.Add(time.Duration(i) * time.Minute)
 			if err := c.InsertItem(ctx, it); err != nil {
+				return err
+			}
+			snaps := []store.Snapshot{snap(id, "article", "", "en", 1, `{}`)}
+			if i%2 == 0 {
+				snaps = append(snaps, snap(id, "article", "", "de", 1, `{}`))
+			}
+			if err := c.PutSnapshots(ctx, id, snaps); err != nil {
 				return err
 			}
 			published := t0.Add(time.Duration(i*37%BenchItems) * time.Hour)
@@ -41,11 +49,27 @@ func SeedBench(tb testing.TB, db store.DB) {
 	}); err != nil {
 		tb.Fatal(err)
 	}
+	// A freshly filled Postgres has no statistics until autovacuum analyses it, and plans without them
+	// are far from what a running system gets. (SQLite plans without statistics by design.)
+	if db.Dialect() == "postgres" {
+		if err := db.Tx(ctx, func(tx store.Tx) error {
+			_, err := tx.SQL().Exec(ctx, "ANALYZE")
+			return err
+		}); err != nil {
+			tb.Fatal(err)
+		}
+	}
+}
+
+// withAvailable is q: only published items with a snapshot in "en" or "de", or always available.
+func withAvailable(q store.Query) store.Query {
+	q.Available = []string{"en", "de"}
+	return q
 }
 
 // BenchQueries are the query shapes the adapters benchmark.
 func BenchQueries() map[string]store.Query {
-	return map[string]store.Query{
+	base := map[string]store.Query{
 		"FilterSortLimit": {
 			Type: "article", Locale: "en", Limit: 50,
 			Where: []store.Cond{
@@ -64,13 +88,16 @@ func BenchQueries() map[string]store.Query {
 			Where: []store.Cond{{Field: "rating", Column: store.ColNum, Op: store.OpLt, Value: 50.0}},
 		},
 	}
+	base["FilterSortLimitAvailable"] = withAvailable(base["FilterSortLimit"])
+	base["SortByIndexFieldAvailable"] = withAvailable(base["SortByIndexField"])
+	return base
 }
 
 // BenchmarkQuery runs BenchQueries against a database seeded with SeedBench.
 func BenchmarkQuery(b *testing.B, db store.DB) {
 	SeedBench(b, db)
 	ctx := context.Background()
-	for _, name := range []string{"FilterSortLimit", "Default", "SortByIndexField", "Deep"} {
+	for _, name := range []string{"FilterSortLimit", "Default", "SortByIndexField", "Deep", "FilterSortLimitAvailable", "SortByIndexFieldAvailable"} {
 		q := BenchQueries()[name]
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()

@@ -12,6 +12,7 @@ import (
 	"github.com/hydrogencms/hydrogen/clock"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/store/storeutil"
 )
 
 var contentTests = []struct {
@@ -30,6 +31,8 @@ var contentTests = []struct {
 	{"ContentQueryFilters", testQueryFilters},
 	{"ContentQuerySort", testQuerySort},
 	{"ContentQueryPaging", testQueryPaging},
+	{"ContentQueryWalk", testQueryWalk},
+	{"ContentQueryAvailable", testQueryAvailable},
 	{"ContentQueryNames", testQueryNames},
 	{"ContentQueryInvalid", testQueryInvalid},
 	{"ContentDeleteCascade", testDeleteCascade},
@@ -854,6 +857,191 @@ func testQueryPaging(t *testing.T, db store.DB) {
 	}
 }
 
+// walkCatalog seeds 40 items shaped to break an index-ordered walk: tied values, list fields (with equal
+// duplicates), values in the shared row and in locale rows, items without the field, and a spread of types and
+// statuses. It returns the ids in creation order.
+func walkCatalog(t *testing.T, db store.DB) []ids.UUID {
+	t.Helper()
+	ctx := context.Background()
+	g := newIDs()
+	var out []ids.UUID
+	withContent(t, db, func(c store.ContentStore) error {
+		if _, err := c.AddSchemaRev(ctx, "h", []byte(`{}`), t0); err != nil {
+			return err
+		}
+		for i := range 40 {
+			id := g.New()
+			out = append(out, id)
+			typ := "article"
+			if i%7 == 3 {
+				typ = "page"
+			}
+			it := newItem(id, typ, "")
+			at := t0.Add(time.Duration(i*i%11) * time.Minute) // ties in updatedAt
+			it.CreatedAt, it.UpdatedAt = at, at
+			if i%3 != 0 {
+				it.PublishedVersion = 1
+			}
+			if err := c.InsertItem(ctx, it); err != nil {
+				return err
+			}
+			if i%3 == 0 && i%2 == 0 {
+				if err := c.PutDraftPart(ctx, store.DraftPart{ItemID: id, Part: "en", Name: "d", Data: []byte(`{}`), UpdatedAt: at}); err != nil {
+					return err
+				}
+			}
+			var rows []store.IndexRow
+			if i%5 != 0 { // 8 items have no score
+				rows = append(rows, num("", "score", float64(i%7)))
+				switch i % 4 {
+				case 0:
+					rows = append(rows, num("", "score", float64(i%7+3)), num("", "score", float64(i%7))) // list, equal duplicate
+				case 1:
+					rows = append(rows, num("en", "score", float64(i%7))) // shared and locale row, same value
+				}
+			}
+			switch i % 4 {
+			case 0:
+				rows = append(rows, txt("", "label", string(rune('a'+i%6))))
+			case 1:
+				rows = append(rows, txt("en", "label", string(rune('a'+i%6))), txt("de", "label", string(rune('f'-i%6))))
+			case 2:
+				rows = append(rows, txt("", "label", string(rune('a'+i%6))), txt("", "label", string(rune('a'+(i+2)%6))))
+			}
+			if i%6 != 0 {
+				rows = append(rows, tim("", "when", t0.Add(time.Duration(i%9)*time.Hour)), bln("", "flag", i%2 == 0))
+			}
+			if err := c.ReplaceIndex(ctx, id, rows); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return out
+}
+
+// testQueryWalk compares the index-ordered plan with the compiled sort plan on the same data. A query with
+// more than MaxWalkConds conditions never walks, so padding it with always-true ones forces the other plan.
+func testQueryWalk(t *testing.T, db store.DB) {
+	walkCatalog(t, db)
+	ctx := context.Background()
+	pad := func(q store.Query) store.Query {
+		w := slices.Clone(q.Where)
+		for range storeutil.MaxWalkConds + 1 {
+			w = append(w, store.Cond{Field: "nosuchfield", Op: store.OpExists, Value: false})
+		}
+		q.Where = w
+		return q
+	}
+	run := func(q store.Query) store.QueryResult {
+		var tx store.QueryResult
+		viewContent(t, db, func(c store.ContentStore) error {
+			var err error
+			tx, err = c.Query(ctx, q)
+			return err
+		})
+		return tx
+	}
+	viaReader := func(q store.Query) store.QueryResult {
+		rd, err := db.Reader().Query(ctx, q)
+		if err != nil {
+			t.Fatalf("reader: %v", err)
+		}
+		return rd
+	}
+	filters := map[string][]store.Cond{
+		"none":          nil,
+		"score>=2":      where("score", store.ColNum, store.OpGte, 2.0),
+		"score<5":       where("score", store.ColNum, store.OpLt, 5.0),
+		"score!=3":      where("score", store.ColNum, store.OpNe, 3.0),
+		"label exists":  {{Field: "label", Column: store.ColText, Op: store.OpExists, Value: true}},
+		"score missing": {{Field: "score", Op: store.OpExists, Value: false}},
+		"two":           {{Field: "score", Column: store.ColNum, Op: store.OpGt, Value: 0.0}, {Field: "when", Op: store.OpExists, Value: true}},
+		"eq (no walk)":  where("score", store.ColNum, store.OpEq, 3.0),
+	}
+	filterNames := make([]string, 0, len(filters))
+	for n := range filters {
+		filterNames = append(filterNames, n)
+	}
+	slices.Sort(filterNames)
+	sorts := []store.Sort{
+		{Field: "score", Column: store.ColNum}, {Field: "score", Column: store.ColNum, Desc: true},
+		{Field: "label", Column: store.ColText}, {Field: "label", Column: store.ColText, Desc: true},
+		{Field: "when", Column: store.ColTime}, {Field: "flag", Column: store.ColBool, Desc: true},
+		{Field: "nosuchfield", Column: store.ColNum},
+	}
+	pages := [][2]int{{5, 0}, {7, 13}, {50, 0}, {4, 26}, {5, 100}}
+	nonEmpty := 0
+	for _, fn := range filterNames {
+		for _, srt := range sorts {
+			for _, loc := range []string{"en", "de"} {
+				if loc == "de" && srt.Field != "label" {
+					continue // only locale rows depend on the locale
+				}
+				statuses := []store.Status{store.StatusPublished}
+				if fn == "none" {
+					statuses = []store.Status{store.StatusPublished, store.StatusAny, store.StatusDraft}
+				}
+				for _, st := range statuses {
+					for pi, pg := range pages {
+						q := store.Query{Type: "article", Locale: loc, Status: st, Where: filters[fn], Sort: []store.Sort{srt}, Limit: pg[0], Offset: pg[1]}
+						want := run(pad(q))
+						results := []store.QueryResult{run(q)}
+						if pi < 2 {
+							results = append(results, viaReader(q))
+						}
+						for i, got := range results {
+							if !slices.Equal(idsOf(got), idsOf(want)) || got.Total != want.Total {
+								t.Fatalf("%s sort %+v locale %s status %d page %v (reader %v): got %d items total %d, want %d items total %d",
+									fn, srt, loc, st, pg, i == 1, len(got.Items), got.Total, len(want.Items), want.Total)
+							}
+						}
+						if len(want.Items) > 0 {
+							nonEmpty++
+						}
+					}
+				}
+			}
+		}
+	}
+	if nonEmpty < 200 {
+		t.Fatalf("only %d queries returned items", nonEmpty)
+	}
+
+	// Every item once, whatever the plan: pages of 3 over the whole set reproduce the single page.
+	for _, srt := range sorts[:4] {
+		q := store.Query{Locale: "en", Status: store.StatusAny, Sort: []store.Sort{srt}, Limit: 500}
+		all := run(q)
+		if len(all.Items) != 40 || all.Total != 40 {
+			t.Fatalf("sort %+v: %d items, total %d", srt, len(all.Items), all.Total)
+		}
+		seen := map[ids.UUID]bool{}
+		for _, it := range all.Items {
+			if seen[it.ID] {
+				t.Fatalf("sort %+v: item listed twice", srt)
+			}
+			seen[it.ID] = true
+		}
+		var paged []ids.UUID
+		for off := 0; off < 40; off += 3 {
+			q.Limit, q.Offset = 3, off
+			p := run(q)
+			paged = append(paged, idsOf(p)...)
+		}
+		if !slices.Equal(paged, idsOf(all)) {
+			t.Fatalf("sort %+v: paging differs from one page", srt)
+		}
+	}
+}
+
+func idsOf(res store.QueryResult) []ids.UUID {
+	out := make([]ids.UUID, len(res.Items))
+	for i, it := range res.Items {
+		out[i] = it.ID
+	}
+	return out
+}
+
 func testQueryNames(t *testing.T, db store.DB) {
 	cat := seedCatalog(t, db)
 	byLetter := func(locale string) map[byte]store.ItemSummary {
@@ -1211,4 +1399,139 @@ func sameItem(a, b store.Item) bool {
 	ta, tb := [2]time.Time{a.CreatedAt, a.UpdatedAt}, [2]time.Time{b.CreatedAt, b.UpdatedAt}
 	a.CreatedAt, a.UpdatedAt, b.CreatedAt, b.UpdatedAt = time.Time{}, time.Time{}, time.Time{}, time.Time{}
 	return a == b && ta[0].Equal(tb[0]) && ta[1].Equal(tb[1])
+}
+
+// testQueryAvailable checks Query.Available on every plan: eight kinds of item, ten of each.
+func testQueryAvailable(t *testing.T, db store.DB) {
+	ctx := context.Background()
+	g := newIDs()
+	// kind: snapshot locales, published, always available.
+	kinds := []struct {
+		locales          []string
+		published, alway bool
+	}{
+		0: {[]string{"en"}, true, false},
+		1: {[]string{"de"}, true, false},
+		2: {[]string{"en", "de"}, true, false},
+		3: {[]string{"fr"}, true, false},
+		4: {nil, true, true},
+		5: {nil, true, false},
+		6: {[]string{"en", "fr"}, false, true}, // unpublished: a stale snapshot must not count
+		7: {[]string{"en", "fr"}, true, false},
+	}
+	idxOf := map[ids.UUID]int{}
+	withContent(t, db, func(c store.ContentStore) error {
+		for i := range 80 {
+			k := kinds[i%8]
+			id := g.New()
+			idxOf[id] = i
+			it := newItem(id, "avail", "")
+			it.AlwaysAvailable = k.alway
+			if k.published {
+				it.PublishedVersion = 1
+			}
+			it.UpdatedAt = t0.Add(time.Duration(i) * time.Minute)
+			if err := c.InsertItem(ctx, it); err != nil {
+				return err
+			}
+			var snaps []store.Snapshot
+			for _, l := range k.locales {
+				snaps = append(snaps, snap(id, "avail", "", l, 1, `{}`))
+			}
+			if err := c.PutSnapshots(ctx, id, snaps); err != nil {
+				return err
+			}
+			rows := []store.IndexRow{num("", "rating", float64(i))}
+			if i%3 != 0 { // some items have no value, for the walk's second phase
+				rows = append(rows, txt("", "title", "x"))
+			}
+			if err := c.ReplaceIndex(ctx, id, rows); err != nil {
+				return err
+			}
+			text := "gadget"
+			if i%2 == 1 {
+				text = "other"
+			}
+			if err := c.ReplaceSearch(ctx, id, []store.SearchDoc{{Locale: "en", Text: text}}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	run := func(q store.Query) (res store.QueryResult) {
+		viewContent(t, db, func(c store.ContentStore) error {
+			var err error
+			res, err = c.Query(ctx, q)
+			return err
+		})
+		return res
+	}
+	has := func(kind int, avail []string) bool {
+		k := kinds[kind]
+		return k.published && (k.alway || slices.ContainsFunc(k.locales, func(l string) bool { return slices.Contains(avail, l) }))
+	}
+	rating := store.Sort{Field: "rating", Column: store.ColNum}
+	ge20 := []store.Cond{{Field: "rating", Column: store.ColNum, Op: store.OpGte, Value: 20.0}}
+	eq := []store.Cond{{Field: "title", Column: store.ColText, Op: store.OpEq, Value: "x"}}
+	type shape struct {
+		name string
+		q    store.Query
+		keep func(i int) bool // which of the 80 items match apart from Available
+	}
+	all := func(int) bool { return true }
+	shapes := []shape{
+		{"default", store.Query{}, all},
+		{"walk", store.Query{Sort: []store.Sort{rating}}, all},
+		{"walk desc filter", store.Query{Sort: []store.Sort{{Field: "rating", Column: store.ColNum, Desc: true}}, Where: ge20}, func(i int) bool { return i >= 20 }},
+		{"eq", store.Query{Where: eq}, func(i int) bool { return i%3 != 0 }},
+		{"eq sorted", store.Query{Where: eq, Sort: []store.Sort{rating}}, func(i int) bool { return i%3 != 0 }},
+		{"search", store.Query{Search: "gadget"}, func(i int) bool { return i%2 == 0 }},
+		{"search sorted", store.Query{Search: "gadget", Sort: []store.Sort{{Field: "createdAt"}}}, func(i int) bool { return i%2 == 0 }},
+	}
+	for _, avail := range [][]string{{"fr"}, {"en"}, {"de", "fr"}, {"es"}, {}} {
+		for _, sh := range shapes {
+			want := map[ids.UUID]bool{}
+			for id, i := range idxOf {
+				if sh.keep(i) && has(i%8, avail) {
+					want[id] = true
+				}
+			}
+			if len(want) == 0 && len(avail) > 0 && avail[0] != "es" {
+				t.Fatalf("%v %s: empty expectation", avail, sh.name)
+			}
+			for _, limit := range []int{500, 7} {
+				q := sh.q
+				q.Type, q.Locale, q.Status, q.Available, q.Limit = "avail", "en", store.StatusPublished, avail, limit
+				got := map[ids.UUID]bool{}
+				for off := 0; ; off += limit {
+					q.Offset = off
+					res := run(q)
+					viaReader, err := db.Reader().Query(ctx, q)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if res.Total != len(want) || viaReader.Total != len(want) || !slices.Equal(idsOf(res), idsOf(viaReader)) {
+						t.Fatalf("%v %s limit %d offset %d: total %d/%d, want %d", avail, sh.name, limit, off, res.Total, viaReader.Total, len(want))
+					}
+					for _, it := range res.Items {
+						if !want[it.ID] || got[it.ID] {
+							t.Fatalf("%v %s: unexpected or repeated item of kind %d", avail, sh.name, idxOf[it.ID]%8)
+						}
+						got[it.ID] = true
+					}
+					if len(res.Items) < limit {
+						break
+					}
+				}
+				if len(got) != len(want) {
+					t.Fatalf("%v %s limit %d: paged %d items, want %d", avail, sh.name, limit, len(got), len(want))
+				}
+			}
+		}
+	}
+	// Unset keeps everything of the type that is published, snapshot or not.
+	res := run(store.Query{Type: "avail", Locale: "en", Status: store.StatusPublished, Limit: 1})
+	if res.Total != 70 {
+		t.Fatalf("without Available: total %d, want 70", res.Total)
+	}
 }

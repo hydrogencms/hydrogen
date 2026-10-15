@@ -213,7 +213,9 @@ func (db *DB) Migrate(ctx context.Context, sets []store.MigrationSet) error {
 			return fmt.Errorf("postgres: migration %s/%04d_%s: %w", m.Source, m.Version, m.Name, err)
 		}
 	}
-	return nil
+	// Tables the migrations just created or reshaped have no statistics yet; refresh them so the first queries
+	// are planned on real numbers.
+	return analyzeTouched(ctx, conn.Conn(), pending)
 }
 
 // Locks

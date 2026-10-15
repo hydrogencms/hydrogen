@@ -17,6 +17,8 @@ var ErrDuplicateKey = errors.New("store: duplicate key")
 // ContentStore persists items, versions, drafts and the projections of published versions. Documents are JSON
 // bytes; the content service owns their meaning. Contract: planning/design/content-core.md.
 type ContentStore interface {
+	SnapshotStore
+
 	// Schema revisions. AddSchemaRev is idempotent on hash.
 	SchemaRev(ctx context.Context, hash string) (rev int, ok bool, err error)
 	AddSchemaRev(ctx context.Context, hash string, compiled []byte, at time.Time) (rev int, err error)
@@ -187,11 +189,14 @@ type Query struct {
 	Type   string
 	Locale string // for names, locale-specific index rows and search
 	Status Status
-	Where  []Cond
-	Search string
-	Sort   []Sort
-	Limit  int // 1..500
-	Offset int
+	// Available, when set, keeps only published items a channel can show: a published snapshot in one of these
+	// locales, or published and always available. Totals and paging respect it.
+	Available []string
+	Where     []Cond
+	Search    string
+	Sort      []Sort
+	Limit     int // 1..500
+	Offset    int
 }
 
 type QueryResult struct {
@@ -205,4 +210,37 @@ type ItemSummary struct {
 	Drafts   []string // draft part names ("" = shared)
 	Locales  []string // locales in the published version
 	Searched float64  // search rank, when Search is set
+}
+
+// Snapshot is the delivery JSON of one item in one locale, built when a version is written. Payload is stored
+// and served byte-for-byte. Contract: planning/design/delivery-h4.md.
+type Snapshot struct {
+	ItemID          ids.UUID
+	Locale          string
+	Version         int
+	Type            string
+	Key             string
+	MainLocale      string
+	AlwaysAvailable bool
+	Payload         []byte     // JSON object
+	ETag            string     // hex SHA-256 of Payload
+	Refs            []ids.UUID // referenced items, sorted, unique
+	PublishedAt     time.Time
+}
+
+// SnapshotStore writes snapshots inside a transaction (ContentStore embeds it).
+type SnapshotStore interface {
+	// PutSnapshots replaces every locale of the item.
+	PutSnapshots(ctx context.Context, item ids.UUID, snaps []Snapshot) error
+	DeleteSnapshots(ctx context.Context, item ids.UUID) error
+}
+
+// Reader serves the delivery hot path: read-only, without a transaction (each call sees its own snapshot).
+type Reader interface {
+	// Snapshots returns the rows of those items in those locales (any order; missing ones absent).
+	Snapshots(ctx context.Context, items []ids.UUID, locales []string) ([]Snapshot, error)
+	// SnapshotsByKey returns the rows of the item with that key in those locales.
+	SnapshotsByKey(ctx context.Context, key string, locales []string) ([]Snapshot, error)
+	// Query has the same semantics as ContentStore.Query.
+	Query(ctx context.Context, q Query) (QueryResult, error)
 }

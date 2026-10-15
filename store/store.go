@@ -42,6 +42,8 @@ type DB interface {
 	// Tx.SQL. Each statement sees its own snapshot, so use View when several statements must agree. Exec
 	// returns an error. A write committed by Tx is visible to every Read that starts after it returns.
 	Read() SQL
+	// Reader serves content reads for delivery without a transaction.
+	Reader() Reader
 
 	Notifier() Notifier
 	Locker() Locker
@@ -72,8 +74,11 @@ type Notification struct {
 }
 
 // Notifier delivers notifications sent by committed transactions, across processes when the adapter is
-// multi-node. After a reconnect, listeners receive a notification with an empty payload: delivery may have
-// gaps, so listeners re-check state instead of relying on every message.
+// multi-node. Delivery may have gaps, so listeners re-check state instead of relying on every message:
+// a notification with an empty payload means "anything may have changed" (clear everything, re-scan). It is
+// sent after a reconnect, and to a listener whose buffer overflowed (a slow consumer): the adapter never drops
+// silently, it marks the listener and sends the empty notification as soon as there is room, and
+// notifications that arrive before then are not queued.
 type Notifier interface {
 	// Listen returns a channel that is closed when ctx ends.
 	Listen(ctx context.Context, channel string) (<-chan Notification, error)

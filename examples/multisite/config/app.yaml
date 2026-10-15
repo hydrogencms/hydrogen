@@ -14,3 +14,7 @@ manage:
 modules:
   pages:
     sites: [corporate, careers]
+
+delivery:
+  # Signs preview tokens: at least 32 characters; required outside dev (dev derives it from manage.token).
+  preview_secret: ${env:PREVIEW_SECRET:-}

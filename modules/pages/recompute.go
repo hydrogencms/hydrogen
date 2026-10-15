@@ -125,8 +125,11 @@ func (s *service) syncPage(ctx context.Context, tx store.Tx, item ids.UUID, main
 	if err := putSlug(ctx, q, n.ID, locale, row); err != nil {
 		return nil, fmt.Errorf("pages: save slug of %s: %w", n.ID, err)
 	}
+	// A new name changes the navigation labels even when no route moves.
+	renamed := !has || old.Name != row.Name
+	self := []change{{n.Site, &n.ID}}
 	if has && old.Slug == row.Slug && old.Vanity == row.Vanity && !mainChanged {
-		return nil, nil
+		return self, nil
 	}
 	locales := []string{locale}
 	if locale == mainLocale || mainChanged {
@@ -137,10 +140,13 @@ func (s *service) syncPage(ctx context.Context, tx store.Tx, item ids.UUID, main
 	for _, w := range res.tooLong {
 		s.log.WarnContext(ctx, "pages: page path too long, no route", "item", w.Item, "locale", w.Locale, "length", len(w.Path))
 	}
-	if err != nil || !res.changed {
+	if err != nil {
 		return nil, err
 	}
-	return []change{{n.Site, &n.ID}}, nil
+	if !res.changed && !renamed {
+		return nil, nil
+	}
+	return self, nil
 }
 
 // removeItem drops everything the module keeps for a deleted item: its page node, memberships and routes,

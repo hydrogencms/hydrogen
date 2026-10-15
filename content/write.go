@@ -91,6 +91,12 @@ func (s *Service) update(ctx context.Context, tx store.Tx, it store.Item, in Upd
 	if err != nil {
 		return nil, fmt.Errorf("content: update %s: %w", it.ID, err)
 	}
+	if it.PublishedVersion > 0 && (st.item.Key != it.Key || st.item.AlwaysAvailable != it.AlwaysAvailable) {
+		// The key and availability apply to the published version at once, and the snapshots carry them.
+		if err := s.rebuildSnapshots(ctx, tx.Content(), st.item); err != nil {
+			return nil, fmt.Errorf("content: update %s: %w", it.ID, err)
+		}
+	}
 	return v, nil
 }
 
@@ -276,7 +282,10 @@ func (s *Service) finishWrite(ctx context.Context, tx store.Tx, st *itemState, r
 	if err := s.record(ctx, tx, actor, action, st.item.ID, data); err != nil {
 		return err
 	}
-	return s.emit(ctx, tx, topic, st.item, st.item.PublishedVersion, []string{req.locale})
+	// Only a key or availability change of a published item alters what delivery serves.
+	draft := !req.meta || st.item.PublishedVersion == 0
+	return s.emitEvent(ctx, tx, topic, eventPayload{ID: st.item.ID, Type: st.item.Type, Version: st.item.PublishedVersion,
+		Locales: []string{req.locale}, Draft: draft})
 }
 
 // Discard drops draft parts ("shared" or locale codes); nil drops all.
@@ -306,7 +315,10 @@ func (s *Service) Discard(ctx context.Context, id ids.UUID, parts []string) erro
 		if err := c.UpdateItem(ctx, st.item); err != nil {
 			return itemErr(id.String(), err)
 		}
-		return s.record(ctx, tx, actor, "item.discard", id, map[string]any{"parts": partNames(drop)})
+		if err := s.record(ctx, tx, actor, "item.discard", id, map[string]any{"parts": partNames(drop)}); err != nil {
+			return err
+		}
+		return s.emitEvent(ctx, tx, "item.updated", eventPayload{ID: id, Type: it.Type, Version: it.PublishedVersion, Draft: true})
 	})
 }
 

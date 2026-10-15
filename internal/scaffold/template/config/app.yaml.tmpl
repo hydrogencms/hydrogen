@@ -8,3 +8,7 @@ database:
 manage:
   # Bearer token for /api/manage/v1 (required outside dev; dev-token in dev).
   token: ${env:MANAGE_TOKEN:-dev-token}
+
+delivery:
+  # Signs preview tokens: at least 32 characters; required outside dev (dev derives it from manage.token).
+  preview_secret: ${env:PREVIEW_SECRET:-}

@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/hydrogencms/hydrogen/store"
 )
@@ -10,39 +11,73 @@ import (
 // hub delivers notifications within the process; SQLite runs on one node.
 type hub struct {
 	mu   sync.Mutex
-	subs map[string]map[chan store.Notification]struct{}
+	subs map[string]map[*subscriber]struct{}
 }
 
-func newHub() *hub { return &hub{subs: map[string]map[chan store.Notification]struct{}{}} }
+type subscriber struct {
+	ch       chan store.Notification
+	channel  string
+	overflow bool // an empty-payload notification is owed
+	closed   bool
+}
+
+func newHub() *hub { return &hub{subs: map[string]map[*subscriber]struct{}{}} }
 
 func (h *hub) Listen(ctx context.Context, channel string) (<-chan store.Notification, error) {
-	ch := make(chan store.Notification, 64)
+	sub := &subscriber{ch: make(chan store.Notification, 64), channel: channel}
 	h.mu.Lock()
 	if h.subs[channel] == nil {
-		h.subs[channel] = map[chan store.Notification]struct{}{}
+		h.subs[channel] = map[*subscriber]struct{}{}
 	}
-	h.subs[channel][ch] = struct{}{}
+	h.subs[channel][sub] = struct{}{}
 	h.mu.Unlock()
 	go func() {
 		<-ctx.Done()
 		h.mu.Lock()
-		delete(h.subs[channel], ch)
+		delete(h.subs[channel], sub)
+		sub.closed = true
+		close(sub.ch)
 		h.mu.Unlock()
-		close(ch)
 	}()
-	return ch, nil
+	return sub.ch, nil
 }
 
-// send never blocks: a listener with a full buffer already has a wake-up pending, and listeners re-check
-// state rather than counting messages.
+// send never blocks. A subscriber with a full buffer is marked and gets an empty-payload notification as soon
+// as there is room; notifications sent meanwhile are covered by it, so none is dropped silently.
 func (h *hub) send(n store.Notification) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for ch := range h.subs[n.Channel] {
+	for sub := range h.subs[n.Channel] {
+		if sub.closed || sub.overflow {
+			continue
+		}
 		select {
-		case ch <- n:
+		case sub.ch <- n:
+		default:
+			sub.overflow = true
+			go h.flush(sub)
+		}
+	}
+}
+
+func (h *hub) flush(sub *subscriber) {
+	t := time.NewTicker(10 * time.Millisecond)
+	defer t.Stop()
+	for {
+		h.mu.Lock()
+		if sub.closed {
+			h.mu.Unlock()
+			return
+		}
+		select {
+		case sub.ch <- store.Notification{Channel: sub.channel}:
+			sub.overflow = false
+			h.mu.Unlock()
+			return
 		default:
 		}
+		h.mu.Unlock()
+		<-t.C
 	}
 }
 

@@ -189,10 +189,19 @@ func tsquery(terms []string) string {
 	return strings.Join(parts, " & ")
 }
 
-// filter compiles everything before ORDER BY: the FROM clause (with the search join) and the WHERE clause.
-func (c *compiler) filter() (from, where string, err error) {
+// available compiles Query.Available: one probe of the snapshot primary key (item_id, locale) per row.
+func (c *compiler) available() string {
+	pub := "item.published_version > 0 AND "
+	if len(c.q.Available) == 0 {
+		return pub + "item.always_available"
+	}
+	return "(" + pub + "(item.always_available OR EXISTS (SELECT 1 FROM published_snapshot ps WHERE ps.item_id = item.id AND ps.locale = ANY(" +
+		c.bind(c.q.Available) + "::text[]))))"
+}
+
+// itemConds compiles the item-level and field conditions (no search) into predicates on item.
+func (c *compiler) itemConds() ([]string, error) {
 	q := c.q
-	from = "item"
 	var conds []string
 	if q.Type != "" {
 		conds = append(conds, "item.type = "+c.bind(q.Type))
@@ -204,14 +213,28 @@ func (c *compiler) filter() (from, where string, err error) {
 	case store.StatusDraft:
 		conds = append(conds, "EXISTS (SELECT 1 FROM draft_part dp WHERE dp.item_id = item.id)")
 	default:
-		return "", "", fmt.Errorf("unknown status %d", q.Status)
+		return nil, fmt.Errorf("unknown status %d", q.Status)
+	}
+	if q.Available != nil {
+		conds = append(conds, c.available())
 	}
 	for _, cd := range q.Where {
 		p, err := c.cond(cd)
 		if err != nil {
-			return "", "", err
+			return nil, err
 		}
 		conds = append(conds, p)
+	}
+	return conds, nil
+}
+
+// filter compiles everything before ORDER BY: the FROM clause (with the search join) and the WHERE clause.
+func (c *compiler) filter() (from, where string, err error) {
+	q := c.q
+	from = "item"
+	conds, err := c.itemConds()
+	if err != nil {
+		return "", "", err
 	}
 	if terms := storeutil.SearchTerms(q.Search); len(terms) > 0 {
 		c.searching = true
@@ -315,38 +338,163 @@ func selectSQL(q store.Query) (text string, args []any, err error) {
 	return text, c.args, nil
 }
 
+// queryer is what the page queries need of a connection: a transaction or a pool.
+type queryer interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 func (s contentStore) Query(ctx context.Context, q store.Query) (store.QueryResult, error) {
+	return runQuery(ctx, s.tx, q)
+}
+
+// walkDir is the index walk's direction keyword.
+func walkDir(s store.Sort) string {
+	if s.Desc {
+		return "DESC"
+	}
+	return "ASC"
+}
+
+// walkSQL compiles the ordered phase of an index-ordered query: the sort field's value index in value
+// order, joined to item for the other conditions. A row counts only if it is the item's first (ascending)
+// or last (descending) value, so list fields yield each item once, exactly where the sort key puts it.
+func (c *compiler) walkSQL(limit, offset int) (string, error) {
+	s := c.q.Sort[0]
+	if !storeutil.ValidField(s.Field) {
+		return "", fmt.Errorf("invalid field name %q", s.Field)
+	}
+	name, _, err := columnInfo(s.Column)
+	if err != nil {
+		return "", err
+	}
+	conds, err := c.itemConds()
+	if err != nil {
+		return "", err
+	}
+	field, loc, dir := c.bind(s.Field), c.locale(), walkDir(s)
+	has := func(a string) string {
+		return a + ".field = " + field + " AND " + a + ".locale IN ('', " + loc + ") AND " + a + "." + name + " IS NOT NULL"
+	}
+	// The dedupe runs last so that it only probes rows that passed every other condition. It compares
+	// (value, ctid) with the item's extreme one by an inequality: the planner then guesses a third of the rows
+	// pass, where an equality would look so selective that it abandons the ordered index scan for a full read.
+	cmp, tie := "<=", "ASC"
+	if c.q.Sort[0].Desc {
+		cmp, tie = ">=", "DESC"
+	}
+	conds = append(conds, "(fi."+name+", fi.ctid) "+cmp+" (SELECT f2."+name+", f2.ctid FROM field_index f2 WHERE f2.item_id = fi.item_id AND "+
+		has("f2")+" ORDER BY f2."+name+" "+dir+", f2.ctid "+tie+" LIMIT 1)")
+	return "SELECT " + itemColumns + ", 0::float8 FROM field_index fi JOIN item ON item.id = fi.item_id WHERE " +
+		has("fi") + " AND " + strings.Join(conds, " AND ") +
+		" ORDER BY fi." + name + " " + dir + ", fi.item_id " + dir +
+		" LIMIT " + c.bind(limit) + " OFFSET " + c.bind(offset), nil
+}
+
+// missingSQL compiles the second phase: the matching items without a value for the sort field, in id order.
+func (c *compiler) missingSQL(limit, offset int) (string, error) {
+	s := c.q.Sort[0]
+	if !storeutil.ValidField(s.Field) {
+		return "", fmt.Errorf("invalid field name %q", s.Field)
+	}
+	name, _, err := columnInfo(s.Column)
+	if err != nil {
+		return "", err
+	}
+	conds, err := c.itemConds()
+	if err != nil {
+		return "", err
+	}
+	conds = append(conds, "NOT EXISTS (SELECT 1 FROM field_index fi WHERE fi.item_id = item.id AND fi.field = "+
+		c.bind(s.Field)+" AND fi.locale IN ('', "+c.locale()+") AND fi."+name+" IS NOT NULL)")
+	return "SELECT " + itemColumns + ", 0::float8 FROM item WHERE " + strings.Join(conds, " AND ") +
+		" ORDER BY item.id " + walkDir(s) + " LIMIT " + c.bind(limit) + " OFFSET " + c.bind(offset), nil
+}
+
+// countWalkSQL counts the matching items that have a value for the sort field.
+func (c *compiler) countWalkSQL() (string, error) {
+	s := c.q.Sort[0]
+	name, _, err := columnInfo(s.Column)
+	if err != nil {
+		return "", err
+	}
+	conds, err := c.itemConds()
+	if err != nil {
+		return "", err
+	}
+	conds = append(conds, "EXISTS (SELECT 1 FROM field_index fi WHERE fi.item_id = item.id AND fi.field = "+c.bind(s.Field)+
+		" AND fi.locale IN ('', "+c.locale()+") AND fi."+name+" IS NOT NULL)")
+	return "SELECT count(*) FROM item WHERE " + strings.Join(conds, " AND "), nil
+}
+
+func runQuery(ctx context.Context, db queryer, q store.Query) (store.QueryResult, error) {
 	q = storeutil.Normalize(q)
-	sqlText, args, err := selectSQL(q)
-	if err != nil {
-		return store.QueryResult{}, fmt.Errorf("postgres: query: %w", err)
-	}
-	rows, err := s.tx.Query(ctx, sqlText, args...)
-	if err != nil {
-		return store.QueryResult{}, fmt.Errorf("postgres: query: %w", err)
-	}
 	var res store.QueryResult
-	res.Items, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (store.ItemSummary, error) {
-		var searched float64
-		it, err := scanItem(r, &searched)
-		return store.ItemSummary{Item: it, Searched: searched}, err
-	})
+	var err error
+	if storeutil.IndexWalk(q) {
+		res.Items, err = storeutil.RunWalk(q, storeutil.WalkPhases{
+			Ordered: func(limit, offset int) ([]store.ItemSummary, error) {
+				c := &compiler{q: q}
+				text, err := c.walkSQL(limit, offset)
+				if err != nil {
+					return nil, err
+				}
+				return pageRows(ctx, db, text, c.args)
+			},
+			Missing: func(limit, offset int) ([]store.ItemSummary, error) {
+				c := &compiler{q: q}
+				text, err := c.missingSQL(limit, offset)
+				if err != nil {
+					return nil, err
+				}
+				return pageRows(ctx, db, text, c.args)
+			},
+			CountOrdered: func() (n int, err error) {
+				c := &compiler{q: q}
+				text, err := c.countWalkSQL()
+				if err != nil {
+					return 0, err
+				}
+				err = db.QueryRow(ctx, text, c.args...).Scan(&n)
+				return n, err
+			},
+		})
+	} else {
+		var sqlText string
+		var args []any
+		if sqlText, args, err = selectSQL(q); err == nil {
+			res.Items, err = pageRows(ctx, db, sqlText, args)
+		}
+	}
 	if err != nil {
 		return store.QueryResult{}, fmt.Errorf("postgres: query: %w", err)
 	}
-	if err := s.decorate(ctx, q.Locale, res.Items); err != nil {
+	if err := decorate(ctx, db, q.Locale, res.Items); err != nil {
 		return store.QueryResult{}, err
 	}
-	if res.Total, err = s.total(ctx, q, len(res.Items)); err != nil {
+	if res.Total, err = total(ctx, db, q, len(res.Items)); err != nil {
 		return store.QueryResult{}, err
 	}
 	return res, nil
 }
 
+// pageRows runs a page statement whose last column is the search rank.
+func pageRows(ctx context.Context, db queryer, text string, args []any) ([]store.ItemSummary, error) {
+	rows, err := db.Query(ctx, text, args...)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (store.ItemSummary, error) {
+		var searched float64
+		it, err := scanItem(r, &searched)
+		return store.ItemSummary{Item: it, Searched: searched}, err
+	})
+}
+
 // total counts the matches. A short page answers it without a query; otherwise a separate COUNT(*) is used
 // rather than COUNT(*) OVER (), because the window function would force the engine to produce every matching
 // row before LIMIT, defeating index-ordered early termination of the main query.
-func (s contentStore) total(ctx context.Context, q store.Query, got int) (int, error) {
+func total(ctx context.Context, db queryer, q store.Query, got int) (int, error) {
 	if got > 0 && got < q.Limit {
 		return q.Offset + got, nil
 	}
@@ -359,21 +507,21 @@ func (s contentStore) total(ctx context.Context, q store.Query, got int) (int, e
 		return 0, fmt.Errorf("postgres: query: %w", err)
 	}
 	var n int
-	if err := s.tx.QueryRow(ctx, "SELECT count(*) FROM "+from+where, c.args...).Scan(&n); err != nil {
+	if err := db.QueryRow(ctx, "SELECT count(*) FROM "+from+where, c.args...).Scan(&n); err != nil {
 		return 0, fmt.Errorf("postgres: query count: %w", err)
 	}
 	return n, nil
 }
 
 // decorate fills Name, Drafts and Locales for a page of items with two set-based queries.
-func (s contentStore) decorate(ctx context.Context, locale string, items []store.ItemSummary) error {
+func decorate(ctx context.Context, db queryer, locale string, items []store.ItemSummary) error {
 	if len(items) == 0 {
 		return nil
 	}
 	d := storeutil.NewDecorator(locale, items)
 	idList := d.IDs()
 
-	rows, err := s.tx.Query(ctx, `SELECT vl.item_id, vl.locale, vl.name FROM item_version_locale vl
+	rows, err := db.Query(ctx, `SELECT vl.item_id, vl.locale, vl.name FROM item_version_locale vl
 		JOIN item ON item.id = vl.item_id AND item.published_version = vl.version
 		WHERE vl.item_id = ANY($1)`, idArgs(idList))
 	if err != nil {
@@ -388,7 +536,7 @@ func (s contentStore) decorate(ctx context.Context, locale string, items []store
 		return fmt.Errorf("postgres: query locales: %w", err)
 	}
 
-	rows, err = s.tx.Query(ctx, `SELECT item_id, part, name FROM draft_part WHERE item_id = ANY($1)`, idArgs(idList))
+	rows, err = db.Query(ctx, `SELECT item_id, part, name FROM draft_part WHERE item_id = ANY($1)`, idArgs(idList))
 	if err != nil {
 		return fmt.Errorf("postgres: query drafts: %w", err)
 	}

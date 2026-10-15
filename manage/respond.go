@@ -66,8 +66,10 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	_ = enc.Encode(v) // the status is sent; a failure here is a gone client
 }
 
+func envelope(b errorBody) map[string]any { return map[string]any{"error": b} }
+
 func writeErrorBody(w http.ResponseWriter, status int, b errorBody) {
-	WriteJSON(w, status, map[string]any{"error": b})
+	WriteJSON(w, status, envelope(b))
 }
 
 // Fail writes err as the error envelope, mapping it like the core routes: *Error as given, content errors by

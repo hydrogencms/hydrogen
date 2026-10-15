@@ -32,6 +32,7 @@ func start(t *testing.T, env string, vars map[string]string, configure func(*hyd
 	t.Helper()
 	vars["LISTEN_ADDR"] = "127.0.0.1:0"
 	vars["MANAGE_TOKEN"] = token
+	vars["PREVIEW_SECRET"] = "test-preview-secret-0123456789abcdef"
 	opts := &config.Options{Dir: "config", Env: env, LookupEnv: func(k string) (string, bool) { v, ok := vars[k]; return v, ok }}
 	ctx, cancel := context.WithCancel(context.Background())
 	run := func(args ...string) error {
@@ -230,7 +231,7 @@ func TestContentMigration(t *testing.T) {
 		s.must(s.do("POST", "/items/"+p.ID+"/publish", map[string]any{}, nil), 200, "v1 publish")
 	}()
 	t.Run("breaking change without migration fails", func(t *testing.T) {
-		vars := map[string]string{"DATABASE_URL": db, "MANAGE_TOKEN": token}
+		vars := map[string]string{"DATABASE_URL": db, "MANAGE_TOKEN": token, "PREVIEW_SECRET": "test-preview-secret-0123456789abcdef"}
 		opts := &config.Options{Dir: "config", LookupEnv: func(k string) (string, bool) { v, ok := vars[k]; return v, ok }}
 		err := hydrogen.Run(context.Background(), []string{"serve"}, configureV1, hydrogen.RunOptions{Config: opts, Stderr: io.Discard})
 		if err == nil || !strings.Contains(err.Error(), "person.fullName") {

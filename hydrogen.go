@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -22,6 +23,7 @@ import (
 	"syscall"
 	"text/tabwriter"
 
+	"github.com/hydrogencms/hydrogen/cachetag"
 	"github.com/hydrogencms/hydrogen/codegen"
 	"github.com/hydrogencms/hydrogen/config"
 	"github.com/hydrogencms/hydrogen/content"
@@ -39,6 +41,20 @@ type Builder struct {
 	schemas    []func(*schema.Builder) error
 	migrations []content.Migration
 	commands   []kernel.Command
+	endpoints  []endpoint
+	jobs       []job
+	mappers    []cachetag.Mapper
+}
+
+type endpoint struct {
+	method, path string
+	auth         kernel.Auth
+	h            http.HandlerFunc
+}
+
+type job struct {
+	name, schedule string
+	fn             func(ctx context.Context, s *kernel.Services) error
 }
 
 // Use adds modules to the project.
@@ -62,6 +78,21 @@ func (b *Builder) Migration(m content.Migration) { b.migrations = append(b.migra
 
 // Command adds a command to the project binary.
 func (b *Builder) Command(c kernel.Command) { b.commands = append(b.commands, c) }
+
+// Endpoint adds an HTTP endpoint under /api/x (see kernel.Registry.Endpoint). Handlers reach the services with
+// kernel.ServicesFrom(r.Context()). Conflicts and invalid arguments fail at start-up and config:check.
+func (b *Builder) Endpoint(method, path string, auth kernel.Auth, h http.HandlerFunc) {
+	b.endpoints = append(b.endpoints, endpoint{method, path, auth, h})
+}
+
+// Job runs fn on a schedule: a 5-field cron expression (UTC) or "@every <duration>". Across servers sharing a
+// database each tick runs once. "job:run <name>" runs a job now.
+func (b *Builder) Job(name, schedule string, fn func(ctx context.Context, s *kernel.Services) error) {
+	b.jobs = append(b.jobs, job{name, schedule, fn})
+}
+
+// TagMapper maps outbox events to cache tags, for cache purges and webhooks (see kernel.Registry.TagMapper).
+func (b *Builder) TagMapper(m cachetag.Mapper) { b.mappers = append(b.mappers, m) }
 
 // all returns the modules plus the project itself, which registers after every module.
 func (b *Builder) all() []kernel.Module { return append(slices.Clone(b.modules), project{b}) }
@@ -92,6 +123,19 @@ func (p project) Register(r *kernel.Registry) error {
 		if err := r.Command(c); err != nil {
 			return err
 		}
+	}
+	for _, e := range p.b.endpoints {
+		if err := r.Endpoint(e.method, e.path, e.auth, e.h); err != nil {
+			return err
+		}
+	}
+	for _, j := range p.b.jobs {
+		if err := r.Job(j.name, j.schedule, j.fn); err != nil {
+			return err
+		}
+	}
+	for _, m := range p.b.mappers {
+		r.TagMapper(m)
 	}
 	return nil
 }
@@ -130,6 +174,10 @@ var core = []struct{ name, summary string }{
 	{"config:check", "validate configuration, schema and modules (-db: also check the database)"},
 	{"content:migrate", "apply pending content migrations"},
 	{"generate", "write typed Go (gen/content) and TypeScript (gen/types.ts) from the schema"},
+	{"job:run", "run a scheduled job now: job:run <name>"},
+	{"check-frontend", "check that a frontend has a template for every page type and mount: check-frontend -templates <file> [-channel name] [-db]"},
+	{"export", "write content and module data to a directory: export [-published-only] <dir>"},
+	{"import", "restore an export into an empty database: import [-allow-schema-change] <dir>"},
 	{"version", "print the Hydrogen version"},
 }
 
@@ -162,6 +210,8 @@ func Run(ctx context.Context, args []string, configure func(*Builder), o RunOpti
 		return configCheck(ctx, b, o, rest)
 	case "generate":
 		return generate(b, o, rest)
+	case "check-frontend":
+		return checkFrontend(ctx, b, o, rest)
 	}
 
 	app, err := newApp(ctx, b, o)
@@ -182,11 +232,28 @@ func Run(ctx context.Context, args []string, configure func(*Builder), o RunOpti
 		return migrate(ctx, app, o)
 	case "content:migrate":
 		return contentMigrate(ctx, app, o)
+	case "job:run":
+		return jobRun(ctx, app, o, rest)
+	case "export":
+		return exportCommand(ctx, app, o, rest)
+	case "import":
+		return importCommand(ctx, app, o, rest)
 	}
 	if c, ok := app.Command(name); ok {
 		return c.Run(ctx, app, rest)
 	}
 	return fmt.Errorf("unknown command %q (run with no arguments for a list)", name)
+}
+
+func jobRun(ctx context.Context, app *kernel.App, o RunOptions, args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: job:run <name> (jobs: %s)", strings.Join(app.JobNames(), ", "))
+	}
+	if err := app.RunJob(ctx, args[0]); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintln(o.Stdout, "job", args[0], "done")
+	return err
 }
 
 func newApp(ctx context.Context, b *Builder, o RunOptions) (*kernel.App, error) {

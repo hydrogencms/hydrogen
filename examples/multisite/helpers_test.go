@@ -29,6 +29,7 @@ func start(t *testing.T, env string, vars map[string]string, configure func(*hyd
 	t.Helper()
 	vars["LISTEN_ADDR"] = "127.0.0.1:0"
 	vars["MANAGE_TOKEN"] = token
+	vars["PREVIEW_SECRET"] = "test-preview-secret-0123456789abcdef"
 	vars["IOS_TOKEN"] = iosToken
 	opts := &config.Options{Dir: "config", Env: env, LookupEnv: func(k string) (string, bool) { v, ok := vars[k]; return v, ok }}
 	ctx, cancel := context.WithCancel(context.Background())

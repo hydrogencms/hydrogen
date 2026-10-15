@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,16 +17,20 @@ import (
 	"time"
 
 	"github.com/hydrogencms/hydrogen/audit"
+	"github.com/hydrogencms/hydrogen/cachetag"
 	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/clock"
 	"github.com/hydrogencms/hydrogen/config"
 	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/delivery"
 	"github.com/hydrogencms/hydrogen/hooks"
 	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/jobs"
 	"github.com/hydrogencms/hydrogen/manage"
 	"github.com/hydrogencms/hydrogen/outbox"
 	"github.com/hydrogencms/hydrogen/schema"
 	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/webhook"
 )
 
 // DefaultDevDatabase is used in the dev environment when no database is configured.
@@ -51,6 +56,13 @@ type OutboxConfig struct {
 	Lease time.Duration `yaml:"lease"`
 }
 
+// JobsConfig controls the scheduled jobs runner.
+type JobsConfig struct {
+	// Enabled starts the runner in serve (default true). A node that sets it to false never runs scheduled jobs;
+	// job:run still works.
+	Enabled bool `yaml:"enabled"`
+}
+
 type ContentConfig struct {
 	SchemaDir     string `yaml:"schema_dir"`     // default "schema"
 	DefaultLocale string `yaml:"default_locale"` // default "en"
@@ -65,13 +77,25 @@ type ManageConfig struct {
 // DevManageToken is the management API token in dev when manage.token is unset.
 const DevManageToken = "dev-token"
 
+type DeliveryConfig struct {
+	// CacheBytes bounds the in-process response cache of the delivery API; 0 turns it off. Default 32 MiB.
+	CacheBytes int64 `yaml:"cache_bytes"`
+	// PreviewSecret signs preview tokens: at least 32 characters, and required outside dev. In dev, when unset,
+	// it derives from manage.token, so every node sharing that token accepts the same previews.
+	PreviewSecret string `yaml:"preview_secret" config:"secret"`
+}
+
 type CoreConfig struct {
 	HTTP     HTTPConfig
 	Database DatabaseConfig
 	Log      LogConfig
 	Outbox   OutboxConfig
+	Jobs     JobsConfig
 	Content  ContentConfig
 	Manage   ManageConfig
+	Delivery DeliveryConfig
+	// Webhooks deliver outbox events to HTTP endpoints, by name.
+	Webhooks map[string]webhook.Config
 }
 
 // Services are the core services modules receive in Boot.
@@ -91,8 +115,12 @@ type Services struct {
 	// Channels are the compiled delivery channels (config/channels.yaml); one implicit "default" channel when
 	// none are configured.
 	Channels *channel.Set
+	// Delivery is the delivery API (/api/deliver/v1): response cache, purge listener and preview tokens. It is
+	// built after every module booted, so it is nil in Boot.
+	Delivery *delivery.API
 
-	reg *Registry
+	reg     *Registry
+	mappers []cachetag.Mapper
 }
 
 // LookupService finds a value a module provided.
@@ -105,6 +133,8 @@ type Options struct {
 	Log    *slog.Logger   // default from the log config, on stderr
 	DB     store.DB       // inject a database instead of opening database.url (tests)
 	Stderr io.Writer      // default os.Stderr
+	// JobHold is how long a job keeps its lock after a run (default 2s); tests with a manual clock shorten it.
+	JobHold time.Duration
 }
 
 type App struct {
@@ -112,6 +142,7 @@ type App struct {
 	modules  []Module
 	reg      *Registry
 	ownDB    bool
+	runner   *jobs.Runner
 }
 
 func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
@@ -148,6 +179,10 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 	// Async hooks become outbox consumers; their handlers reach the content service, built just below.
 	var svc *content.Service
 	consumers := append(slices.Clone(reg.consumers), content.AsyncHookConsumers(reg.hooks.Async(), func() *content.Service { return svc })...)
+	mappers := tagMappers(p.schema, reg.mappers)
+	consumers = append(consumers, purgeConsumer(db, mappers))
+	consumers = append(consumers, webhookConsumers(core.Webhooks, o.Clock,
+		func(topic string, payload json.RawMessage) []string { return cachetag.Tags(mappers, topic, payload) })...)
 	ob, err := outbox.New(db, o.Clock, log, consumers, outbox.Options{Poll: core.Outbox.Poll, Lease: core.Outbox.Lease})
 	if err != nil {
 		a.closeDB(db)
@@ -168,7 +203,11 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 	}
 	a.services = &Services{
 		Env: cfg.Env(), Config: cfg, Core: core, Log: log, Clock: o.Clock, IDs: gen, DB: db, Outbox: ob,
-		Audit: al, Schema: p.schema, Hooks: hookReg, Content: svc, Channels: p.chans, reg: reg,
+		Audit: al, Schema: p.schema, Hooks: hookReg, Content: svc, Channels: p.chans, reg: reg, mappers: mappers,
+	}
+	if a.runner, err = newRunner(a.services, reg, o.JobHold); err != nil {
+		a.closeDB(db)
+		return nil, err
 	}
 	for _, m := range ordered {
 		if b, ok := m.(Booter); ok {
@@ -177,6 +216,10 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 				return nil, fmt.Errorf("module %s: boot: %w", m.Name(), err)
 			}
 		}
+	}
+	if a.services.Delivery, err = newDelivery(a.services, reg); err != nil {
+		a.closeDB(db)
+		return nil, err
 	}
 	return a, nil
 }
@@ -222,9 +265,11 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 		return nil, err
 	}
 	core := CoreConfig{
-		HTTP:    HTTPConfig{Addr: ":8080", ReadHeaderTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second},
-		Log:     LogConfig{Level: "info"},
-		Content: ContentConfig{SchemaDir: "schema", DefaultLocale: "en"},
+		HTTP:     HTTPConfig{Addr: ":8080", ReadHeaderTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second},
+		Log:      LogConfig{Level: "info"},
+		Content:  ContentConfig{SchemaDir: "schema", DefaultLocale: "en"},
+		Delivery: DeliveryConfig{CacheBytes: delivery.DefaultCacheBytes},
+		Jobs:     JobsConfig{Enabled: true},
 	}
 	sections := []struct {
 		path   string
@@ -234,8 +279,8 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 		sections = append(sections, []struct {
 			path   string
 			target any
-		}{{"http", &core.HTTP}, {"database", &core.Database}, {"log", &core.Log}, {"outbox", &core.Outbox},
-			{"manage", &core.Manage}}...)
+		}{{"http", &core.HTTP}, {"database", &core.Database}, {"log", &core.Log}, {"outbox", &core.Outbox}, {"jobs", &core.Jobs},
+			{"manage", &core.Manage}, {"delivery", &core.Delivery}, {"webhooks", &core.Webhooks}}...)
 	}
 	for _, d := range sections {
 		if err := cfg.Decode(d.path, d.target); err != nil {
@@ -283,10 +328,24 @@ func (p *plan) checkRuntime(cfg *config.Config) error {
 		}
 		p.core.Database.URL = DefaultDevDatabase
 	}
-	// The management API exists only when there is content to manage; then it needs a token.
-	if p.core.Manage.Token == "" && len(p.schema.Types()) > 0 {
+	if err := validateWebhooks(p.core.Webhooks, dev); err != nil {
+		return err
+	}
+	// The management API exists only when there is content to manage; then it needs a token, as do custom
+	// endpoints that ask for it.
+	needsToken := len(p.schema.Types()) > 0
+	why := "the schema defines content types"
+	for _, e := range p.reg.endpoints {
+		if e.value.auth == ManageToken {
+			if !needsToken {
+				why = fmt.Sprintf("module %s has a ManageToken endpoint", e.module)
+			}
+			needsToken = true
+		}
+	}
+	if p.core.Manage.Token == "" && needsToken {
 		if !dev {
-			return fmt.Errorf("manage.token is required outside %s (the schema defines content types)", config.DevEnv)
+			return fmt.Errorf("manage.token is required outside %s (%s)", config.DevEnv, why)
 		}
 		p.core.Manage.Token = DevManageToken
 	}
@@ -338,6 +397,20 @@ func CompileSchema(cfg *config.Config, mods ...Module) (*schema.Schema, error) {
 		return nil, err
 	}
 	return p.schema, nil
+}
+
+// Inspect returns the compiled schema and channels without opening the database, for tools that only need the
+// project's shape (check-frontend). Runtime configuration must be valid, as for Check.
+func Inspect(cfg *config.Config, mods ...Module) (*schema.Schema, *channel.Set, []string, error) {
+	p, err := prepare(cfg, mods, true)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	names := make([]string, len(p.ordered))
+	for i, m := range p.ordered {
+		names[i] = m.Name()
+	}
+	return p.schema, p.chans, names, nil
 }
 
 // Check validates configuration and module wiring without opening the database (config:check).
@@ -417,11 +490,16 @@ func (a *App) Handler() (http.Handler, error) {
 	if len(a.services.Schema.Types()) > 0 {
 		const prefix = "/api/manage/v1"
 		api, err := manage.New(manage.Options{Content: a.services.Content, Token: a.services.Core.Manage.Token,
-			Channels: a.services.Channels, Log: a.services.Log, Prefix: prefix, Routes: a.reg.manageRts})
+			Channels: a.services.Channels, Log: a.services.Log, Prefix: prefix,
+			Routes: append(slices.Clone(a.reg.manageRts), a.services.Delivery.PreviewTokenRoute())})
 		if err != nil {
 			return nil, err
 		}
 		mux.Handle(prefix+"/", http.StripPrefix(prefix, api))
+		mux.Handle(delivery.Prefix+"/", http.StripPrefix(delivery.Prefix, a.services.Delivery.Handler()))
+	}
+	if err := a.mountEndpoints(mux); err != nil {
+		return nil, err
 	}
 	for _, rt := range a.reg.routes {
 		if err := handle(mux, rt.value.pattern, rt.value.handler); err != nil {
@@ -520,6 +598,19 @@ func (a *App) Run(ctx context.Context, listening func(addr string)) error {
 			s.Log.Error("outbox worker stopped", "err", err)
 		}
 	})
+	if err := s.Delivery.Start(ctx); err != nil {
+		cancel()
+		return fmt.Errorf("delivery: %w", err)
+	}
+	if s.Core.Jobs.Enabled {
+		wg.Go(func() {
+			if err := a.runner.Run(ctx); err != nil {
+				s.Log.Error("job runner stopped", "err", err)
+			}
+		})
+	} else {
+		s.Log.Info("scheduled jobs are disabled on this node (jobs.enabled: false)")
+	}
 
 	ln, err := net.Listen("tcp", s.Core.HTTP.Addr)
 	if err != nil {
@@ -577,4 +668,13 @@ func newLogger(c LogConfig, env string, w io.Writer) (*slog.Logger, error) {
 		return slog.New(slog.NewJSONHandler(w, opts)), nil
 	}
 	return nil, fmt.Errorf("log.format: %q is not text or json", format)
+}
+
+func newRunner(s *Services, reg *Registry, hold time.Duration) (*jobs.Runner, error) {
+	list := make([]jobs.Job, len(reg.jobs))
+	for i, j := range reg.jobs {
+		list[i] = jobs.Job{Name: j.value.name, Schedule: j.value.schedule,
+			Run: func(ctx context.Context) error { return j.value.fn(ctx, s) }}
+	}
+	return jobs.NewRunner(jobs.Options{Clock: s.Clock, Locker: s.DB.Locker(), Log: s.Log, Hold: hold}, list)
 }

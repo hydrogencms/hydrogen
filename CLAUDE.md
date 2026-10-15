@@ -32,6 +32,12 @@ never commit it, quote it in commit messages or public docs, or move its content
   tokens, preview patterns, module options), `config.Node` (position-aware config for modules), web channels in
   `modules/pages/web*.go` (match/site/reserved options, Match, Locate, canonical, hreflang, URL/LinkURL).
   Contract: `planning/design/channels-h3.md`.
+- Delivery (H4): published snapshots (`content/snapshot.go`, `store.Reader`, `RebuildProjections`), `delivery/`
+  (read API at `/api/deliver/v1`: channel/locale selection, `include`, LRU cache purged by tag, ETag, preview
+  tokens), `cachetag/` (tags and the `cache.purge` consumer), `webhook/` (signed `Hydrogen-Signature`), `jobs/`
+  (cron jobs under a lock), `kernel/endpoints.go` (`/api/x`), export/import (`exportfmt/`, `store/export.go`,
+  `hydrogen_export.go`), `client/` (Go client), `hydrogen_frontend.go` (`check-frontend`). Pages adds `/route`
+  and `/tree`. Contract: `planning/design/delivery-h4.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/content`: every field type, a module schema transform, a typed hook and a content migration, tested
   through the management API on SQLite and Postgres.
@@ -45,8 +51,10 @@ make smoke                      # hydrogen new → config:check → migrate → 
 ```
 
 In a project: `hydrogen dev` (live reload; regenerates `gen/` on schema changes), `hydrogen generate`,
-`hydrogen migrate`, `hydrogen content:migrate`, `hydrogen config:check [-db]`. The management API token is
-`manage.token` (`dev-token` in dev when unset; required elsewhere once the schema has types).
+`hydrogen migrate`, `hydrogen content:migrate`, `hydrogen config:check [-db]`, `hydrogen export|import <dir>`,
+`hydrogen check-frontend -templates <file> [-channel name] [-db]`. The management API token is `manage.token`
+(`dev-token` in dev when unset; required elsewhere once the schema has types). `delivery.preview_secret` (≥ 32
+characters) is required outside dev; dev derives it from `manage.token`.
 
 Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) and skip without it unless
 `HYDROGEN_TEST_REQUIRE_POSTGRES=1` (CI). Use `modules/postgres/pgtest.Scratch(t)` for a throwaway database.
@@ -60,6 +68,9 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
   syntax differs; byte slices handed out by drivers must be copied before the next row (pgx reuses buffers).
 - Structural writes in the pages module take a per-site lock (Postgres advisory xact lock); keep it that way. Storage features are an interface in `store`, an implementation in every
   adapter, and a check in `storetest`.
+- Delivery reads published snapshots only. A change that alters a published document's shape (schema change
+  without a content migration) needs `RebuildProjections`, or the API serves stale snapshots.
+- Delivery listings return `{items, hasMore}`; `total` costs a count and is only computed with `?total=true`.
 - macOS scans a newly built binary on first launch (~300 ms); measure start-up from the second run.
 - Scratch projects inside the repo (`.work/`) need `GOWORK=off`, or the repo's `go.work` claims them.
 

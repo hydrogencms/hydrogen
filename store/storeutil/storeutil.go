@@ -252,3 +252,64 @@ func (d *Decorator) Finish() {
 		}
 	}
 }
+
+// MaxWalkConds is the most field conditions a query may have to be served by walking the sort field's value
+// index. More conditions make a walk likely to cross much of the index before the page fills, and the
+// compiled plan (filters first, then sort) is the better bet.
+const MaxWalkConds = 3
+
+// IndexWalk reports whether q should be answered by walking the value index of its sort field: a single sort
+// key on an indexed field, no text search, few conditions and none that usually matches only a few items
+// (equality, membership, prefix). With such a condition it is cheaper to build the matching set and sort it
+// than to walk an index that may hold few matches; the walk wins when the conditions are ranges or tests
+// that most items pass, because the page then fills after a short walk. q must be normalised.
+func IndexWalk(q store.Query) bool {
+	if len(q.Sort) != 1 || q.Sort[0].Column == "" || len(q.Where) > MaxWalkConds || strings.TrimSpace(q.Search) != "" {
+		return false
+	}
+	for _, c := range q.Where {
+		if Selective(c.Op) {
+			return false
+		}
+	}
+	return true
+}
+
+// Selective reports whether an operator usually matches few items.
+func Selective(op store.Op) bool {
+	return op == store.OpEq || op == store.OpIn || op == store.OpContains || op == store.OpPrefix
+}
+
+// WalkPhases are the statements an index-ordered query runs. Items with a value for the sort field come in
+// value order (a list-valued field counts once, at its smallest value ascending or largest descending),
+// then items without one in id order, in the direction of the sort.
+type WalkPhases struct {
+	// Ordered returns a page of the items that have a value.
+	Ordered func(limit, offset int) ([]store.ItemSummary, error)
+	// Missing returns a page of the matching items that have no value.
+	Missing func(limit, offset int) ([]store.ItemSummary, error)
+	// CountOrdered counts the matching items that have a value; it runs only when the page starts beyond them.
+	CountOrdered func() (int, error)
+}
+
+// RunWalk assembles the page [q.Offset, q.Offset+q.Limit) of the two sequences. q must be normalised.
+func RunWalk(q store.Query, p WalkPhases) ([]store.ItemSummary, error) {
+	items, err := p.Ordered(q.Limit, q.Offset)
+	if err != nil || len(items) == q.Limit {
+		return items, err
+	}
+	// The ordered sequence ended inside or before this page.
+	skip := 0
+	if len(items) == 0 && q.Offset > 0 {
+		n, err := p.CountOrdered()
+		if err != nil {
+			return nil, err
+		}
+		skip = max(q.Offset-n, 0)
+	}
+	more, err := p.Missing(q.Limit-len(items), skip)
+	if err != nil {
+		return nil, err
+	}
+	return append(items, more...), nil
+}

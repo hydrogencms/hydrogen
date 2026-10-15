@@ -45,9 +45,13 @@ func (m *module) Register(r *kernel.Registry) error {
 		r.ChannelOption(o)
 	}
 	r.ChannelCheck(checkMatchers)
+	if err := r.Exporter("pages", exporter{}); err != nil {
+		return err
+	}
 
 	m.svc = &Service{}
 	kernel.Provide(r, m.svc)
+	registerDelivery(r, func() *Service { return m.svc })
 	for _, rt := range routes(func() *Service { return m.svc }) {
 		r.ManageRoute(rt)
 	}

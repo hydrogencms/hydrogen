@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strconv"
@@ -19,6 +20,8 @@ type compiler struct {
 	q    store.Query
 	args []any
 	loc  string // placeholder of q.Locale, bound on first use
+
+	driver string // select of the item ids that drive the FROM clause, see itemConds
 
 	searching bool // the FROM clause joins the search results as srch
 }
@@ -100,7 +103,7 @@ var compareOps = map[store.Op]string{
 
 // cond compiles one field condition into a predicate on item. Positive conditions are semi-joins on the
 // field's value index, negative ones probe the item's own rows.
-func (c *compiler) cond(cd store.Cond) (string, error) {
+func (c *compiler) cond(cd store.Cond, probe, drive bool) (string, error) {
 	if !storeutil.ValidField(cd.Field) {
 		return "", fmt.Errorf("invalid field name %q", cd.Field)
 	}
@@ -165,13 +168,17 @@ func (c *compiler) cond(cd store.Cond) (string, error) {
 		}
 	}
 	field, loc := c.bind(cd.Field), c.locale()
-	if exists == "EXISTS" {
+	if exists == "EXISTS" && !probe {
 		// A semi-join: SQLite builds the matching item ids once from the value index (a plain EXISTS would be
 		// planned as one probe per item, and without table statistics it picks a range scan per probe).
-		return "item.id IN (SELECT fi.item_id FROM field_index fi WHERE fi.field = " + field +
-			" AND fi.locale IN ('', " + loc + ")" + pred + ")", nil
+		set := "SELECT fi.item_id FROM field_index fi WHERE fi.field = " + field +
+			" AND fi.locale IN ('', " + loc + ")" + pred
+		if drive {
+			return set, nil
+		}
+		return "item.id IN (" + set + ")", nil
 	}
-	return "NOT EXISTS (SELECT 1 FROM field_index fi INDEXED BY field_index_item WHERE fi.item_id = item.id AND fi.field = " +
+	return exists + " (SELECT 1 FROM field_index fi INDEXED BY field_index_item WHERE fi.item_id = item.id AND fi.field = " +
 		field + " AND fi.locale IN ('', " + loc + ")" + pred + ")", nil
 }
 
@@ -184,10 +191,28 @@ func match(terms []string) string {
 	return strings.Join(parts, " ")
 }
 
-// filter compiles everything before ORDER BY: the FROM clause (with the search join) and the WHERE clause.
-func (c *compiler) filter() (from, where string, err error) {
+// available compiles Query.Available: one probe of the snapshot primary key (item_id, locale) per row.
+func (c *compiler) available() string {
+	pub := "item.published_version > 0 AND "
+	if len(c.q.Available) == 0 {
+		return pub + "item.always_available = 1"
+	}
+	ph := make([]string, len(c.q.Available))
+	for i, l := range c.q.Available {
+		ph[i] = c.bind(l)
+	}
+	return "(" + pub + "(item.always_available = 1 OR EXISTS (SELECT 1 FROM published_snapshot ps WHERE ps.item_id = item.id AND ps.locale IN (" +
+		strings.Join(ph, ", ") + "))))"
+}
+
+// itemConds compiles the item-level and field conditions (no search) into predicates on item.
+//
+// A positive field condition is either a semi-join (the matching item ids are built once from the value
+// index) or a probe of the item's own rows. One semi-join may drive the query, the most selective looking
+// one (equality before ranges); the rest are probes, since each extra set would be built in full. With
+// probes set (index walks stop early, so building sets costs more than it saves) all are probes.
+func (c *compiler) itemConds(probes bool) ([]string, error) {
 	q := c.q
-	from = "item"
 	var conds []string
 	if q.Type != "" {
 		conds = append(conds, "item.type = "+c.bind(q.Type))
@@ -199,15 +224,61 @@ func (c *compiler) filter() (from, where string, err error) {
 	case store.StatusDraft:
 		conds = append(conds, "EXISTS (SELECT 1 FROM draft_part dp WHERE dp.item_id = item.id)")
 	default:
-		return "", "", fmt.Errorf("unknown status %d", q.Status)
+		return nil, fmt.Errorf("unknown status %d", q.Status)
 	}
-	for _, cd := range q.Where {
-		p, err := c.cond(cd)
+	if q.Available != nil {
+		conds = append(conds, c.available())
+	}
+	driver := -1
+	if !probes {
+		for i, cd := range q.Where {
+			switch cd.Op {
+			case store.OpNe:
+			case store.OpExists:
+			case store.OpEq, store.OpIn, store.OpContains, store.OpPrefix:
+				if driver < 0 || !storeutil.Selective(q.Where[driver].Op) {
+					driver = i
+				}
+			default:
+				if driver < 0 {
+					driver = i
+				}
+			}
+		}
+	}
+	for i, cd := range q.Where {
+		// A selective driver becomes the outer table of the join: SQLite would otherwise scan every item of
+		// the type and test membership.
+		drive := i == driver && storeutil.Selective(cd.Op) && cd.Op != store.OpExists
+		p, err := c.cond(cd, i != driver, drive)
 		if err != nil {
-			return "", "", err
+			return nil, err
+		}
+		if drive && p != "0" {
+			c.driver = p
+			continue
 		}
 		conds = append(conds, p)
 	}
+	return conds, nil
+}
+
+// itemFrom is the FROM clause the conditions of itemConds expect.
+func (c *compiler) itemFrom() string {
+	if c.driver == "" {
+		return "item"
+	}
+	return "(SELECT DISTINCT * FROM (" + c.driver + ")) drv CROSS JOIN item ON item.id = drv.item_id"
+}
+
+// filter compiles everything before ORDER BY: the FROM clause (with the search join) and the WHERE clause.
+func (c *compiler) filter() (from, where string, err error) {
+	q := c.q
+	conds, err := c.itemConds(false)
+	if err != nil {
+		return "", "", err
+	}
+	from = c.itemFrom()
 	if terms := storeutil.SearchTerms(q.Search); len(terms) > 0 {
 		c.searching = true
 		// The rank column is bm25 with default weights (lower is better). The bm25() function itself cannot
@@ -312,42 +383,164 @@ func selectSQL(q store.Query) (text string, args []any, err error) {
 	return text, c.args, nil
 }
 
+// queryer is what the page queries need of a connection: a transaction or a pool.
+type queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 func (s contentStore) Query(ctx context.Context, q store.Query) (store.QueryResult, error) {
+	return runQuery(ctx, s.tx, q)
+}
+
+// walkDir is the index walk's direction keyword.
+func walkDir(s store.Sort) string {
+	if s.Desc {
+		return "DESC"
+	}
+	return "ASC"
+}
+
+// walkSQL compiles the ordered phase of an index-ordered query: the sort field's value index in value
+// order, joined to item for the other conditions. A row counts only if it is the item's first (ascending)
+// or last (descending) value, so list fields yield each item once, exactly where the sort key puts it.
+func (c *compiler) walkSQL(limit, offset int) (string, error) {
+	s := c.q.Sort[0]
+	if !storeutil.ValidField(s.Field) {
+		return "", fmt.Errorf("invalid field name %q", s.Field)
+	}
+	name, err := columnName(s.Column)
+	if err != nil {
+		return "", err
+	}
+	conds, err := c.itemConds(true)
+	if err != nil {
+		return "", err
+	}
+	field, loc, dir := c.bind(s.Field), c.locale(), walkDir(s)
+	has := func(a string) string {
+		return a + ".field = " + field + " AND " + a + ".locale IN ('', " + loc + ") AND " + a + "." + name + " IS NOT NULL"
+	}
+	// The dedupe runs last so that it only probes rows that passed every other condition.
+	conds = append(conds, "fi.rowid = (SELECT f2.rowid FROM field_index f2 INDEXED BY field_index_item WHERE f2.item_id = fi.item_id AND "+
+		has("f2")+" ORDER BY f2."+name+" "+dir+", f2.rowid LIMIT 1)")
+	where := has("fi") + " AND " + strings.Join(conds, " AND ")
+	return "SELECT " + itemColumns + ", 0 FROM field_index fi INDEXED BY field_index_" + string(s.Column) +
+		" CROSS JOIN item ON item.id = fi.item_id WHERE " + where +
+		" ORDER BY fi." + name + " " + dir + ", fi.item_id " + dir +
+		" LIMIT " + c.bind(limit) + " OFFSET " + c.bind(offset), nil
+}
+
+// missingSQL compiles the second phase: the matching items without a value for the sort field, in id order.
+func (c *compiler) missingSQL(limit, offset int) (string, error) {
+	s := c.q.Sort[0]
+	if !storeutil.ValidField(s.Field) {
+		return "", fmt.Errorf("invalid field name %q", s.Field)
+	}
+	name, err := columnName(s.Column)
+	if err != nil {
+		return "", err
+	}
+	conds, err := c.itemConds(false)
+	if err != nil {
+		return "", err
+	}
+	conds = append(conds, "NOT EXISTS (SELECT 1 FROM field_index fi INDEXED BY field_index_item WHERE fi.item_id = item.id AND fi.field = "+
+		c.bind(s.Field)+" AND fi.locale IN ('', "+c.locale()+") AND fi."+name+" IS NOT NULL)")
+	return "SELECT " + itemColumns + ", 0 FROM " + c.itemFrom() + " WHERE " + strings.Join(conds, " AND ") +
+		" ORDER BY item.id " + walkDir(s) + " LIMIT " + c.bind(limit) + " OFFSET " + c.bind(offset), nil
+}
+
+// countWalkSQL counts the matching items that have a value for the sort field.
+func (c *compiler) countWalkSQL() (string, error) {
+	s := c.q.Sort[0]
+	name, err := columnName(s.Column)
+	if err != nil {
+		return "", err
+	}
+	conds, err := c.itemConds(false)
+	if err != nil {
+		return "", err
+	}
+	conds = append(conds, "item.id IN (SELECT fi.item_id FROM field_index fi WHERE fi.field = "+c.bind(s.Field)+
+		" AND fi.locale IN ('', "+c.locale()+") AND fi."+name+" IS NOT NULL)")
+	return "SELECT COUNT(*) FROM " + c.itemFrom() + " WHERE " + strings.Join(conds, " AND "), nil
+}
+
+func runQuery(ctx context.Context, db queryer, q store.Query) (store.QueryResult, error) {
 	q = storeutil.Normalize(q)
-	sqlText, args, err := selectSQL(q)
-	if err != nil {
-		return store.QueryResult{}, fmt.Errorf("sqlite: query: %w", err)
-	}
-	rows, err := s.tx.QueryContext(ctx, sqlText, args...)
-	if err != nil {
-		return store.QueryResult{}, fmt.Errorf("sqlite: query: %w", err)
-	}
 	var res store.QueryResult
-	for rows.Next() {
-		var searched float64
-		it, err := scanItem(rows, &searched)
-		if err != nil {
-			_ = rows.Close()
-			return store.QueryResult{}, fmt.Errorf("sqlite: query: %w", err)
+	var err error
+	if storeutil.IndexWalk(q) {
+		res.Items, err = storeutil.RunWalk(q, storeutil.WalkPhases{
+			Ordered: func(limit, offset int) ([]store.ItemSummary, error) {
+				c := &compiler{q: q}
+				text, err := c.walkSQL(limit, offset)
+				if err != nil {
+					return nil, err
+				}
+				return pageRows(ctx, db, text, c.args)
+			},
+			Missing: func(limit, offset int) ([]store.ItemSummary, error) {
+				c := &compiler{q: q}
+				text, err := c.missingSQL(limit, offset)
+				if err != nil {
+					return nil, err
+				}
+				return pageRows(ctx, db, text, c.args)
+			},
+			CountOrdered: func() (n int, err error) {
+				c := &compiler{q: q}
+				text, err := c.countWalkSQL()
+				if err != nil {
+					return 0, err
+				}
+				err = db.QueryRowContext(ctx, text, c.args...).Scan(&n)
+				return n, err
+			},
+		})
+	} else {
+		var sqlText string
+		var args []any
+		if sqlText, args, err = selectSQL(q); err == nil {
+			res.Items, err = pageRows(ctx, db, sqlText, args)
 		}
-		res.Items = append(res.Items, store.ItemSummary{Item: it, Searched: searched})
 	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+	if err != nil {
 		return store.QueryResult{}, fmt.Errorf("sqlite: query: %w", err)
 	}
-	if err := s.decorate(ctx, q.Locale, res.Items); err != nil {
+	if err := decorate(ctx, db, q.Locale, res.Items); err != nil {
 		return store.QueryResult{}, err
 	}
-	if res.Total, err = s.total(ctx, q, len(res.Items)); err != nil {
+	if res.Total, err = total(ctx, db, q, len(res.Items)); err != nil {
 		return store.QueryResult{}, err
 	}
 	return res, nil
 }
 
+// pageRows runs a page statement whose last column is the search rank.
+func pageRows(ctx context.Context, db queryer, text string, args []any) ([]store.ItemSummary, error) {
+	rows, err := db.QueryContext(ctx, text, args...)
+	if err != nil {
+		return nil, err
+	}
+	var out []store.ItemSummary
+	for rows.Next() {
+		var searched float64
+		it, err := scanItem(rows, &searched)
+		if err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		out = append(out, store.ItemSummary{Item: it, Searched: searched})
+	}
+	return out, errors.Join(rows.Err(), rows.Close())
+}
+
 // total counts the matches. A short page answers it without a query; otherwise a separate COUNT(*) is used
 // rather than COUNT(*) OVER (), because the window function would force the engine to produce every matching
 // row before LIMIT, defeating index-ordered early termination of the main query.
-func (s contentStore) total(ctx context.Context, q store.Query, got int) (int, error) {
+func total(ctx context.Context, db queryer, q store.Query, got int) (int, error) {
 	if got > 0 && got < q.Limit {
 		return q.Offset + got, nil
 	}
@@ -360,14 +553,14 @@ func (s contentStore) total(ctx context.Context, q store.Query, got int) (int, e
 		return 0, fmt.Errorf("sqlite: query: %w", err)
 	}
 	var n int
-	if err := s.tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+from+where, c.args...).Scan(&n); err != nil {
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+from+where, c.args...).Scan(&n); err != nil {
 		return 0, fmt.Errorf("sqlite: query count: %w", err)
 	}
 	return n, nil
 }
 
 // decorate fills Name, Drafts and Locales for a page of items with two set-based queries.
-func (s contentStore) decorate(ctx context.Context, locale string, items []store.ItemSummary) error {
+func decorate(ctx context.Context, db queryer, locale string, items []store.ItemSummary) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -375,7 +568,7 @@ func (s contentStore) decorate(ctx context.Context, locale string, items []store
 	idList := d.IDs()
 	in := placeholders(len(items))
 
-	rows, err := s.tx.QueryContext(ctx, `SELECT vl.item_id, vl.locale, vl.name FROM item_version_locale vl
+	rows, err := db.QueryContext(ctx, `SELECT vl.item_id, vl.locale, vl.name FROM item_version_locale vl
 		JOIN item ON item.id = vl.item_id AND item.published_version = vl.version
 		WHERE vl.item_id IN (`+in+`)`, idArgs(idList)...)
 	if err != nil {
@@ -399,7 +592,7 @@ func (s contentStore) decorate(ctx context.Context, locale string, items []store
 		return fmt.Errorf("sqlite: query locales: %w", err)
 	}
 
-	rows, err = s.tx.QueryContext(ctx, `SELECT item_id, part, name FROM draft_part WHERE item_id IN (`+in+`)`, idArgs(idList)...)
+	rows, err = db.QueryContext(ctx, `SELECT item_id, part, name FROM draft_part WHERE item_id IN (`+in+`)`, idArgs(idList)...)
 	if err != nil {
 		return fmt.Errorf("sqlite: query drafts: %w", err)
 	}

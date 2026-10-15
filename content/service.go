@@ -157,13 +157,19 @@ type eventPayload struct {
 	Type    string   `json:"type"`
 	Version int      `json:"version"`
 	Locales []string `json:"locales"`
+	// Draft marks writes that changed no published data (autosaves, discards): cache tags ignore them.
+	Draft bool `json:"draft,omitempty"`
 }
 
 func (s *Service) emit(ctx context.Context, tx store.Tx, topic string, it store.Item, version int, locales []string) error {
-	if locales == nil {
-		locales = []string{}
+	return s.emitEvent(ctx, tx, topic, eventPayload{ID: it.ID, Type: it.Type, Version: version, Locales: locales})
+}
+
+func (s *Service) emitEvent(ctx context.Context, tx store.Tx, topic string, p eventPayload) error {
+	if p.Locales == nil {
+		p.Locales = []string{}
 	}
-	_, err := s.o.Outbox.Publish(ctx, tx, topic, eventPayload{ID: it.ID, Type: it.Type, Version: version, Locales: locales})
+	_, err := s.o.Outbox.Publish(ctx, tx, topic, p)
 	if err != nil {
 		return fmt.Errorf("content: outbox %s: %w", topic, err)
 	}
