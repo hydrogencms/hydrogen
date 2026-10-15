@@ -1,6 +1,8 @@
 package pages
 
-type obj = map[string]any
+import "github.com/hydrogencms/hydrogen/openapi"
+
+type obj = openapi.Obj
 
 func strS(desc string) obj {
 	o := obj{"type": "string"}
@@ -21,8 +23,6 @@ func uuidS(desc string) obj {
 func nullableUUID(desc string) obj {
 	return obj{"oneOf": []any{obj{"type": "string", "format": "uuid"}, obj{"type": "null"}}, "description": desc}
 }
-
-func arrayS(items obj) obj { return obj{"type": "array", "items": items} }
 
 func labelS() obj {
 	return obj{"type": "object", "additionalProperties": obj{"type": "string"}, "description": "Label by locale."}
@@ -95,7 +95,7 @@ func resolutionS() obj {
 		"path":     strS("Canonical current path of the resolved item."),
 		"status":   obj{"type": "integer", "description": "What a site should answer: 200, 301, 302, 307, 308 or 404."},
 		"location": strS("Redirects: target path or URL."),
-		"breadcrumbs": arrayS(obj{"type": "object", "required": []any{"node", "name", "path"}, "properties": obj{
+		"breadcrumbs": openapi.ArrayOf(obj{"type": "object", "required": []any{"node", "name", "path"}, "properties": obj{
 			"node": uuidS(""), "item": uuidS(""), "name": strS(""), "path": strS(""),
 		}}),
 	}}
@@ -149,7 +149,7 @@ func jsonBody(s obj) obj {
 func opSites() obj {
 	return obj{"operationId": "listPageSites", "tags": []any{"pages"},
 		"responses": respond(jsonResp("The configured sites.", obj{"type": "object", "required": []any{"items"},
-			"properties": obj{"items": arrayS(strS(""))}}), "200")}
+			"properties": obj{"items": openapi.ArrayOf(strS(""))}}), "200")}
 }
 
 func opTree() obj {
@@ -161,7 +161,7 @@ func opTree() obj {
 			queryParam("depth", "Levels to return, 1 to 10.", obj{"type": "integer", "minimum": 1, "maximum": 10, "default": 1}, false),
 		},
 		"responses": respond(jsonResp("Children ordered by position.", obj{"type": "object", "required": []any{"items"},
-			"properties": obj{"items": arrayS(treeNodeS())}}), "200", "400", "404")}
+			"properties": obj{"items": openapi.ArrayOf(treeNodeS())}}), "200", "400", "404")}
 }
 
 func opCreate() obj {
@@ -229,7 +229,7 @@ func opPaths() obj {
 	return obj{"operationId": "listItemPaths", "tags": []any{"pages"},
 		"parameters": []any{pathParam("id", "Item id.", true)},
 		"responses": respond(jsonResp("Every route row of the item.", obj{"type": "object", "required": []any{"items"},
-			"properties": obj{"items": arrayS(routeS())}}), "200", "400")}
+			"properties": obj{"items": openapi.ArrayOf(routeS())}}), "200", "400")}
 }
 
 func locatedS() obj {
@@ -240,7 +240,7 @@ func locatedS() obj {
 		"locale":     strS("The channel language whose route matched."),
 		"resolution": resolutionS(),
 		"canonical":  strS("Absolute canonical URL of a page or item."),
-		"alternates": arrayS(obj{"type": "object", "required": []any{"channel", "locale", "url"}, "properties": obj{
+		"alternates": openapi.ArrayOf(obj{"type": "object", "required": []any{"channel", "locale", "url"}, "properties": obj{
 			"channel": strS(""), "locale": strS(""), "url": strS("Absolute URL."),
 		}}),
 	}}

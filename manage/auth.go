@@ -20,33 +20,33 @@ var authRoutes = []route{
 	{"POST", "/auth/logout", Authenticated, (*api).logout},
 	{"GET", "/auth/session", Authenticated, (*api).session},
 	{"POST", "/auth/password", Authenticated, (*api).changePassword},
-	{"GET", "/users", access.PolicyUserManage, (*api).listUsers},
-	{"POST", "/users", access.PolicyUserManage, (*api).createUser},
-	{"GET", "/users/{id}", access.PolicyUserManage, (*api).getUser},
-	{"PATCH", "/users/{id}", access.PolicyUserManage, (*api).updateUser},
-	{"DELETE", "/users/{id}", access.PolicyUserManage, (*api).deleteUser},
-	{"GET", "/groups", access.PolicyUserManage, (*api).listGroups},
-	{"POST", "/groups", access.PolicyUserManage, (*api).createGroup},
-	{"GET", "/groups/{id}", access.PolicyUserManage, (*api).getGroup},
-	{"PATCH", "/groups/{id}", access.PolicyUserManage, (*api).updateGroup},
-	{"DELETE", "/groups/{id}", access.PolicyUserManage, (*api).deleteGroup},
+	{"GET", "/users", access.PolicyUserManage, listing((*access.Admin).ListUsers, same)},
+	{"POST", "/users", access.PolicyUserManage, creating("/users", createUser)},
+	{"GET", "/users/{id}", access.PolicyUserManage, byID((*access.Admin).GetUser, same)},
+	{"PATCH", "/users/{id}", access.PolicyUserManage, patching(updateUser, same)},
+	{"DELETE", "/users/{id}", access.PolicyUserManage, deleting((*access.Admin).DeleteUser)},
+	{"GET", "/groups", access.PolicyUserManage, listing((*access.Admin).ListGroups, groupView)},
+	{"POST", "/groups", access.PolicyUserManage, creating("/groups", createGroup)},
+	{"GET", "/groups/{id}", access.PolicyUserManage, byID((*access.Admin).GetGroup, groupView)},
+	{"PATCH", "/groups/{id}", access.PolicyUserManage, patching(updateGroup, groupView)},
+	{"DELETE", "/groups/{id}", access.PolicyUserManage, deleting((*access.Admin).DeleteGroup)},
 	{"GET", "/groups/{id}/members", access.PolicyUserManage, (*api).listMembers},
 	{"PUT", "/groups/{id}/members/{user}", access.PolicyUserManage, (*api).addMember},
 	{"DELETE", "/groups/{id}/members/{user}", access.PolicyUserManage, (*api).removeMember},
-	{"GET", "/roles", access.PolicyRoleManage, (*api).listRoles},
-	{"POST", "/roles", access.PolicyRoleManage, (*api).createRole},
-	{"GET", "/roles/{id}", access.PolicyRoleManage, (*api).getRole},
-	{"PATCH", "/roles/{id}", access.PolicyRoleManage, (*api).updateRole},
-	{"DELETE", "/roles/{id}", access.PolicyRoleManage, (*api).deleteRole},
-	{"GET", "/roles/{id}/assignments", access.PolicyRoleManage, (*api).roleAssignments},
+	{"GET", "/roles", access.PolicyRoleManage, listing((*access.Admin).ListRoles, same)},
+	{"POST", "/roles", access.PolicyRoleManage, creating("/roles", createRole)},
+	{"GET", "/roles/{id}", access.PolicyRoleManage, byID((*access.Admin).GetRole, same)},
+	{"PATCH", "/roles/{id}", access.PolicyRoleManage, patching(updateRole, same)},
+	{"DELETE", "/roles/{id}", access.PolicyRoleManage, deleting((*access.Admin).DeleteRole)},
+	{"GET", "/roles/{id}/assignments", access.PolicyRoleManage, byID((*access.Admin).RoleAssignments, listOf)},
 	{"GET", "/assignments", access.PolicyRoleManage, (*api).listAssignments},
-	{"POST", "/assignments", access.PolicyRoleManage, (*api).createAssignment},
-	{"DELETE", "/assignments/{id}", access.PolicyRoleManage, (*api).deleteAssignment},
+	{"POST", "/assignments", access.PolicyRoleManage, creating("", createAssignment)},
+	{"DELETE", "/assignments/{id}", access.PolicyRoleManage, deleting((*access.Admin).DeleteAssignment)},
 	{"GET", "/policies", access.PolicyRoleManage, (*api).policies},
-	{"GET", "/tokens", access.PolicyTokenManage, (*api).listTokens},
-	{"POST", "/tokens", access.PolicyTokenManage, (*api).createToken},
-	{"GET", "/tokens/{id}", access.PolicyTokenManage, (*api).getToken},
-	{"DELETE", "/tokens/{id}", access.PolicyTokenManage, (*api).revokeToken},
+	{"GET", "/tokens", access.PolicyTokenManage, listing((*access.Admin).ListTokens, same)},
+	{"POST", "/tokens", access.PolicyTokenManage, creating("/tokens", createToken)},
+	{"GET", "/tokens/{id}", access.PolicyTokenManage, byID((*access.Admin).GetToken, same)},
+	{"DELETE", "/tokens/{id}", access.PolicyTokenManage, deleting((*access.Admin).RevokeToken)},
 	{"GET", "/audit", access.PolicyAuditRead, (*api).auditLog},
 }
 
@@ -181,109 +181,149 @@ func (a *api) changePassword(w http.ResponseWriter, r *http.Request) error {
 
 // Users.
 
-func (a *api) listUsers(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
+type handler = func(*api, http.ResponseWriter, *http.Request) error
+
+func same[T any](v T) T { return v }
+
+func listOf[T any](items []T) map[string]any {
+	if items == nil {
+		items = []T{}
 	}
-	p, err := pageOf(r)
-	if err != nil {
-		return err
-	}
-	us, total, err := adm.ListUsers(r.Context(), p)
-	if err != nil {
-		return err
-	}
-	list(w, us, total)
-	return nil
+	return map[string]any{"items": items, "total": len(items)}
 }
 
-func (a *api) createUser(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	var b struct {
-		Login    string `json:"login"`
-		Name     string `json:"name"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-	if err := decodeBody(w, r, &b, false); err != nil {
-		return err
-	}
-	u, err := adm.CreateUser(r.Context(), access.UserInput{Login: b.Login, Name: b.Name, Email: b.Email, Password: b.Password})
-	if err != nil {
-		return err
-	}
-	w.Header().Set("Location", a.prefix+"/users/"+u.ID.String())
-	WriteJSON(w, http.StatusCreated, u)
-	return nil
-}
-
-func (a *api) getUser(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	id, err := pathUUID(r, "id")
-	if err != nil {
-		return err
-	}
-	u, err := adm.GetUser(r.Context(), id)
-	if err != nil {
-		return err
-	}
-	WriteJSON(w, http.StatusOK, u)
-	return nil
-}
-
-func (a *api) updateUser(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	id, err := pathUUID(r, "id")
-	if err != nil {
-		return err
-	}
-	var b struct {
-		Name     *string `json:"name"`
-		Email    *string `json:"email"`
-		Disabled *bool   `json:"disabled"`
-		Password *string `json:"password"`
-	}
-	if err := decodeBody(w, r, &b, false); err != nil {
-		return err
-	}
-	ctx := r.Context()
-	if b.Password != nil {
-		if err := adm.ResetPassword(ctx, id, *b.Password); err != nil {
+func listing[T, V any](fn func(*access.Admin, context.Context, store.Page) ([]T, int, error), view func(T) V) handler {
+	return func(a *api, w http.ResponseWriter, r *http.Request) error {
+		adm, err := a.adminOrNotFound()
+		if err != nil {
 			return err
 		}
+		p, err := pageOf(r)
+		if err != nil {
+			return err
+		}
+		items, total, err := fn(adm, r.Context(), p)
+		if err != nil {
+			return err
+		}
+		out := make([]V, len(items))
+		for i, it := range items {
+			out[i] = view(it)
+		}
+		list(w, out, total)
+		return nil
 	}
-	u, err := adm.UpdateUser(ctx, id, access.UserPatch{Name: b.Name, Email: b.Email, Disabled: b.Disabled})
-	if err != nil {
-		return err
-	}
-	WriteJSON(w, http.StatusOK, u)
-	return nil
 }
 
-func (a *api) deleteUser(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
+func byID[T, V any](fn func(*access.Admin, context.Context, ids.UUID) (T, error), view func(T) V) handler {
+	return func(a *api, w http.ResponseWriter, r *http.Request) error {
+		adm, err := a.adminOrNotFound()
+		if err != nil {
+			return err
+		}
+		id, err := pathUUID(r, "id")
+		if err != nil {
+			return err
+		}
+		v, err := fn(adm, r.Context(), id)
+		if err != nil {
+			return err
+		}
+		WriteJSON(w, http.StatusOK, view(v))
+		return nil
 	}
-	id, err := pathUUID(r, "id")
-	if err != nil {
-		return err
+}
+
+// creating decodes B and answers 201 with fn's result; a non-empty path adds a Location of path/<id>.
+func creating[B any](path string, fn func(*access.Admin, context.Context, B) (ids.UUID, any, error)) handler {
+	return func(a *api, w http.ResponseWriter, r *http.Request) error {
+		adm, err := a.adminOrNotFound()
+		if err != nil {
+			return err
+		}
+		var b B
+		if err := decodeBody(w, r, &b, false); err != nil {
+			return err
+		}
+		id, out, err := fn(adm, r.Context(), b)
+		if err != nil {
+			return err
+		}
+		if path != "" {
+			w.Header().Set("Location", a.prefix+path+"/"+id.String())
+		}
+		WriteJSON(w, http.StatusCreated, out)
+		return nil
 	}
-	if err := adm.DeleteUser(r.Context(), id); err != nil {
-		return err
+}
+
+func patching[B, T, V any](fn func(*access.Admin, context.Context, ids.UUID, B) (T, error), view func(T) V) handler {
+	return func(a *api, w http.ResponseWriter, r *http.Request) error {
+		adm, err := a.adminOrNotFound()
+		if err != nil {
+			return err
+		}
+		id, err := pathUUID(r, "id")
+		if err != nil {
+			return err
+		}
+		var b B
+		if err := decodeBody(w, r, &b, false); err != nil {
+			return err
+		}
+		v, err := fn(adm, r.Context(), id, b)
+		if err != nil {
+			return err
+		}
+		WriteJSON(w, http.StatusOK, view(v))
+		return nil
 	}
-	w.WriteHeader(http.StatusNoContent)
-	return nil
+}
+
+func deleting(fn func(*access.Admin, context.Context, ids.UUID) error) handler {
+	return func(a *api, w http.ResponseWriter, r *http.Request) error {
+		adm, err := a.adminOrNotFound()
+		if err != nil {
+			return err
+		}
+		id, err := pathUUID(r, "id")
+		if err != nil {
+			return err
+		}
+		if err := fn(adm, r.Context(), id); err != nil {
+			return err
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return nil
+	}
+}
+
+type userBody struct {
+	Login    string `json:"login"`
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+func createUser(adm *access.Admin, ctx context.Context, b userBody) (ids.UUID, any, error) {
+	u, err := adm.CreateUser(ctx, access.UserInput{Login: b.Login, Name: b.Name, Email: b.Email, Password: b.Password})
+	return u.ID, u, err
+}
+
+type userPatchBody struct {
+	Name     *string `json:"name"`
+	Email    *string `json:"email"`
+	Disabled *bool   `json:"disabled"`
+	Password *string `json:"password"`
+}
+
+func updateUser(adm *access.Admin, ctx context.Context, id ids.UUID, b userPatchBody) (access.User, error) {
+	if b.Password != nil {
+		if err := adm.ResetPassword(ctx, id, *b.Password); err != nil {
+			return access.User{}, err
+		}
+	}
+	return adm.UpdateUser(ctx, id, access.UserPatch{Name: b.Name, Email: b.Email, Disabled: b.Disabled})
 }
 
 // Groups.
@@ -300,103 +340,23 @@ func groupView(g store.Group) groupJSON {
 	return groupJSON{ID: g.ID, Name: g.Name, Description: g.Description, CreatedAt: g.CreatedAt, UpdatedAt: g.UpdatedAt}
 }
 
-func (a *api) listGroups(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	p, err := pageOf(r)
-	if err != nil {
-		return err
-	}
-	gs, total, err := adm.ListGroups(r.Context(), p)
-	if err != nil {
-		return err
-	}
-	out := make([]groupJSON, len(gs))
-	for i, g := range gs {
-		out[i] = groupView(g)
-	}
-	list(w, out, total)
-	return nil
+type groupBody struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
-func (a *api) createGroup(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	var b struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}
-	if err := decodeBody(w, r, &b, false); err != nil {
-		return err
-	}
-	g, err := adm.CreateGroup(r.Context(), b.Name, b.Description)
-	if err != nil {
-		return err
-	}
-	w.Header().Set("Location", a.prefix+"/groups/"+g.ID.String())
-	WriteJSON(w, http.StatusCreated, groupView(g))
-	return nil
+func createGroup(adm *access.Admin, ctx context.Context, b groupBody) (ids.UUID, any, error) {
+	g, err := adm.CreateGroup(ctx, b.Name, b.Description)
+	return g.ID, groupView(g), err
 }
 
-func (a *api) getGroup(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	id, err := pathUUID(r, "id")
-	if err != nil {
-		return err
-	}
-	g, err := adm.GetGroup(r.Context(), id)
-	if err != nil {
-		return err
-	}
-	WriteJSON(w, http.StatusOK, groupView(g))
-	return nil
+type groupPatchBody struct {
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
 }
 
-func (a *api) updateGroup(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	id, err := pathUUID(r, "id")
-	if err != nil {
-		return err
-	}
-	var b struct {
-		Name        *string `json:"name"`
-		Description *string `json:"description"`
-	}
-	if err := decodeBody(w, r, &b, false); err != nil {
-		return err
-	}
-	g, err := adm.UpdateGroup(r.Context(), id, b.Name, b.Description)
-	if err != nil {
-		return err
-	}
-	WriteJSON(w, http.StatusOK, groupView(g))
-	return nil
-}
-
-func (a *api) deleteGroup(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	id, err := pathUUID(r, "id")
-	if err != nil {
-		return err
-	}
-	if err := adm.DeleteGroup(r.Context(), id); err != nil {
-		return err
-	}
-	w.WriteHeader(http.StatusNoContent)
-	return nil
+func updateGroup(adm *access.Admin, ctx context.Context, id ids.UUID, b groupPatchBody) (store.Group, error) {
+	return adm.UpdateGroup(ctx, id, b.Name, b.Description)
 }
 
 func (a *api) listMembers(w http.ResponseWriter, r *http.Request) error {
@@ -450,120 +410,27 @@ func (a *api) member(w http.ResponseWriter, r *http.Request, fn func(*access.Adm
 
 // Roles and assignments.
 
-func (a *api) listRoles(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	p, err := pageOf(r)
-	if err != nil {
-		return err
-	}
-	rs, total, err := adm.ListRoles(r.Context(), p)
-	if err != nil {
-		return err
-	}
-	list(w, rs, total)
-	return nil
-}
-
 type policiesBody = []access.RolePolicy
 
-func (a *api) createRole(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	var b struct {
-		Name        string       `json:"name"`
-		Description string       `json:"description"`
-		Policies    policiesBody `json:"policies"`
-	}
-	if err := decodeBody(w, r, &b, false); err != nil {
-		return err
-	}
-	role, err := adm.CreateRole(r.Context(), access.RoleInput{Name: b.Name, Description: b.Description, Policies: b.Policies})
-	if err != nil {
-		return err
-	}
-	w.Header().Set("Location", a.prefix+"/roles/"+role.ID.String())
-	WriteJSON(w, http.StatusCreated, role)
-	return nil
+type roleBody struct {
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	Policies    policiesBody `json:"policies"`
 }
 
-func (a *api) getRole(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	id, err := pathUUID(r, "id")
-	if err != nil {
-		return err
-	}
-	role, err := adm.GetRole(r.Context(), id)
-	if err != nil {
-		return err
-	}
-	WriteJSON(w, http.StatusOK, role)
-	return nil
+func createRole(adm *access.Admin, ctx context.Context, b roleBody) (ids.UUID, any, error) {
+	role, err := adm.CreateRole(ctx, access.RoleInput{Name: b.Name, Description: b.Description, Policies: b.Policies})
+	return role.ID, role, err
 }
 
-func (a *api) updateRole(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	id, err := pathUUID(r, "id")
-	if err != nil {
-		return err
-	}
-	var b struct {
-		Name        *string       `json:"name"`
-		Description *string       `json:"description"`
-		Policies    *policiesBody `json:"policies"`
-	}
-	if err := decodeBody(w, r, &b, false); err != nil {
-		return err
-	}
-	role, err := adm.UpdateRole(r.Context(), id, access.RolePatch{Name: b.Name, Description: b.Description, Policies: b.Policies})
-	if err != nil {
-		return err
-	}
-	WriteJSON(w, http.StatusOK, role)
-	return nil
+type rolePatchBody struct {
+	Name        *string       `json:"name"`
+	Description *string       `json:"description"`
+	Policies    *policiesBody `json:"policies"`
 }
 
-func (a *api) deleteRole(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	id, err := pathUUID(r, "id")
-	if err != nil {
-		return err
-	}
-	if err := adm.DeleteRole(r.Context(), id); err != nil {
-		return err
-	}
-	w.WriteHeader(http.StatusNoContent)
-	return nil
-}
-
-func (a *api) roleAssignments(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	id, err := pathUUID(r, "id")
-	if err != nil {
-		return err
-	}
-	as, err := adm.RoleAssignments(r.Context(), id)
-	if err != nil {
-		return err
-	}
-	list(w, as, len(as))
-	return nil
+func updateRole(adm *access.Admin, ctx context.Context, id ids.UUID, b rolePatchBody) (access.Role, error) {
+	return adm.UpdateRole(ctx, id, access.RolePatch{Name: b.Name, Description: b.Description, Policies: b.Policies})
 }
 
 // listAssignments lists the roles of one principal: ?principalKind=user|group|token&principalId=<id>.
@@ -598,48 +465,22 @@ func (a *api) listAssignments(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (a *api) createAssignment(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	var b struct {
-		RoleID        string              `json:"roleId"`
-		PrincipalKind string              `json:"principalKind"`
-		PrincipalID   string              `json:"principalId"`
-		Limitations   map[string][]string `json:"limitations"`
-	}
-	if err := decodeBody(w, r, &b, false); err != nil {
-		return err
-	}
+type assignmentBody struct {
+	RoleID        string              `json:"roleId"`
+	PrincipalKind string              `json:"principalKind"`
+	PrincipalID   string              `json:"principalId"`
+	Limitations   map[string][]string `json:"limitations"`
+}
+
+func createAssignment(adm *access.Admin, ctx context.Context, b assignmentBody) (ids.UUID, any, error) {
 	role, rerr := ids.Parse(b.RoleID)
 	principal, perr := ids.Parse(b.PrincipalID)
 	if rerr != nil || perr != nil {
-		return BadRequest("roleId and principalId must be ids")
+		return ids.Nil, nil, BadRequest("roleId and principalId must be ids")
 	}
-	as, err := adm.CreateAssignment(r.Context(), access.AssignmentInput{RoleID: role,
+	as, err := adm.CreateAssignment(ctx, access.AssignmentInput{RoleID: role,
 		Principal: store.PrincipalRef{Kind: store.PrincipalKind(b.PrincipalKind), ID: principal}, Limitations: b.Limitations})
-	if err != nil {
-		return err
-	}
-	WriteJSON(w, http.StatusCreated, as)
-	return nil
-}
-
-func (a *api) deleteAssignment(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	id, err := pathUUID(r, "id")
-	if err != nil {
-		return err
-	}
-	if err := adm.DeleteAssignment(r.Context(), id); err != nil {
-		return err
-	}
-	w.WriteHeader(http.StatusNoContent)
-	return nil
+	return ids.Nil, as, err
 }
 
 func (a *api) policies(w http.ResponseWriter, r *http.Request) error {
@@ -656,91 +497,29 @@ func (a *api) policies(w http.ResponseWriter, r *http.Request) error {
 
 // Tokens.
 
-func (a *api) listTokens(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	p, err := pageOf(r)
-	if err != nil {
-		return err
-	}
-	ts, total, err := adm.ListTokens(r.Context(), p)
-	if err != nil {
-		return err
-	}
-	list(w, ts, total)
-	return nil
+type tokenBody struct {
+	Name      string     `json:"name"`
+	Kind      string     `json:"kind"`
+	Roles     []string   `json:"roles"`
+	ExpiresAt *time.Time `json:"expiresAt"`
 }
 
 // createToken answers with the secret, the only time it is ever shown. Roles are role ids or names.
-func (a *api) createToken(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	var b struct {
-		Name      string     `json:"name"`
-		Kind      string     `json:"kind"`
-		Roles     []string   `json:"roles"`
-		ExpiresAt *time.Time `json:"expiresAt"`
-	}
-	if err := decodeBody(w, r, &b, false); err != nil {
-		return err
-	}
-	ctx := r.Context()
+func createToken(adm *access.Admin, ctx context.Context, b tokenBody) (ids.UUID, any, error) {
 	in := access.TokenInput{Name: b.Name, Kind: b.Kind, ExpiresAt: b.ExpiresAt}
 	for _, ref := range b.Roles {
 		id, err := ids.Parse(ref)
 		if err != nil {
 			role, rerr := adm.RoleByName(ctx, ref)
 			if rerr != nil {
-				return rerr
+				return ids.Nil, nil, rerr
 			}
 			id = role.ID
 		}
 		in.Roles = append(in.Roles, id)
 	}
 	t, secret, err := adm.CreateToken(ctx, in)
-	if err != nil {
-		return err
-	}
-	w.Header().Set("Location", a.prefix+"/tokens/"+t.ID.String())
-	WriteJSON(w, http.StatusCreated, map[string]any{"token": t, "secret": secret})
-	return nil
-}
-
-func (a *api) getToken(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	id, err := pathUUID(r, "id")
-	if err != nil {
-		return err
-	}
-	t, err := adm.GetToken(r.Context(), id)
-	if err != nil {
-		return err
-	}
-	WriteJSON(w, http.StatusOK, t)
-	return nil
-}
-
-func (a *api) revokeToken(w http.ResponseWriter, r *http.Request) error {
-	adm, err := a.adminOrNotFound()
-	if err != nil {
-		return err
-	}
-	id, err := pathUUID(r, "id")
-	if err != nil {
-		return err
-	}
-	if err := adm.RevokeToken(r.Context(), id); err != nil {
-		return err
-	}
-	w.WriteHeader(http.StatusNoContent)
-	return nil
+	return t.ID, map[string]any{"token": t, "secret": secret}, err
 }
 
 // Audit.

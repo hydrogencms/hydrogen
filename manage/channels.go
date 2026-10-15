@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/hydrogencms/hydrogen/channel"
+	"github.com/hydrogencms/hydrogen/openapi"
 )
 
 // channelJSON is a channel as the API shows it. Tokens are never included. Settings and module options are
@@ -51,16 +52,16 @@ func channelSchemas() obj {
 			"required":    []any{"name", "group", "languages", "collections", "frontend", "preview", "access", "settings", "options"},
 			"description": "A delivery channel from config/channels.yaml. Delivery tokens are never listed.",
 			"properties": obj{
-				"name": str(""), "group": str(""),
-				"languages":   obj{"type": "array", "items": str(""), "description": "Ordered fallback."},
-				"collections": obj{"type": []any{"array", "null"}, "items": str(""), "description": "null: every collection."},
-				"frontend":    str(""),
-				"preview":     obj{"type": "object", "additionalProperties": str(""), "description": "Collection (or *) to URL pattern."},
+				"name": openapi.Str(""), "group": openapi.Str(""),
+				"languages":   obj{"type": "array", "items": openapi.Str(""), "description": "Ordered fallback."},
+				"collections": obj{"type": []any{"array", "null"}, "items": openapi.Str(""), "description": "null: every collection."},
+				"frontend":    openapi.Str(""),
+				"preview":     obj{"type": "object", "additionalProperties": openapi.Str(""), "description": "Collection (or *) to URL pattern."},
 				"access":      obj{"type": "string", "enum": []any{channel.AccessPublic, channel.AccessToken}},
 				"settings":    free,
 				"options":     obj{"type": "object", "additionalProperties": true, "description": "Module options by key."},
 			}},
 		"ChannelList": obj{"type": "object", "required": []any{"items"},
-			"properties": obj{"items": arrayOf(schemaRef("Channel"))}},
+			"properties": obj{"items": openapi.ArrayOf(openapi.SchemaRef("Channel"))}},
 	}
 }
