@@ -46,6 +46,7 @@ type Builder struct {
 	jobs       []job
 	mappers    []cachetag.Mapper
 	rules      []typeRules
+	policies   []access.Policy
 }
 
 type typeRules struct {
@@ -105,6 +106,11 @@ func (b *Builder) AccessRules(typ string, rules access.Rules) {
 	b.rules = append(b.rules, typeRules{typ, rules})
 }
 
+// Policy declares a policy roles can grant ("project.action", lower-case with a dot), for endpoints
+// (kernel.Policy) and admin extension entries to require. Invalid or duplicate policies fail at start-up and
+// config:check.
+func (b *Builder) Policy(p access.Policy) { b.policies = append(b.policies, p) }
+
 // TagMapper maps outbox events to cache tags, for cache purges and webhooks (see kernel.Registry.TagMapper).
 func (b *Builder) TagMapper(m cachetag.Mapper) { b.mappers = append(b.mappers, m) }
 
@@ -150,6 +156,11 @@ func (p project) Register(r *kernel.Registry) error {
 	}
 	for _, m := range p.b.mappers {
 		r.TagMapper(m)
+	}
+	for _, pol := range p.b.policies {
+		if err := r.Policy(pol); err != nil {
+			return err
+		}
 	}
 	for _, tr := range p.b.rules {
 		r.AccessRules(tr.typ, tr.rules)

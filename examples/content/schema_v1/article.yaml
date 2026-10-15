@@ -1,0 +1,4 @@
+types:
+  article:
+    fields:
+      title: { type: string, translatable: true, required: true, max: 120 }

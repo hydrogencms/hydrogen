@@ -2,13 +2,14 @@ types:
   article:
     description: News and stories.
     name: "{title}"
-    admin: { list: [title, kind, publishDate], group: Editorial, icon: newspaper }
+    admin: { list: [title, kind, publishDate, "color:swatch"], group: Editorial, icon: newspaper }
     ai: { instructions: "Neutral tone.", generate: [title, summary] }
     fields:
       title:          { type: string, translatable: true, required: true, max: 120 }
       slug:           { type: slug, from: title, translatable: true, index: true }
       summary:        { type: text, translatable: true, max: 300, description: "Two sentences shown in listings." }
       body:           { type: richtext, translatable: true }
+      color:          { type: string, max: 7, admin: { widget: brand-color }, description: "Brand colour as #rrggbb." }
       kind:           { type: enum, values: [news, video], default: news, index: true }
       video:          { type: url, when: { field: kind, eq: video } }
       publishDate:    { type: datetime, index: true }

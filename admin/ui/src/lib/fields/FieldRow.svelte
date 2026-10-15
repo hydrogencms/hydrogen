@@ -5,6 +5,8 @@
   import ListWidget from './ListWidget.svelte';
   import Scalar from './Scalar.svelte';
   import { useFields } from './context';
+  import { ext } from '../extensions.svelte';
+  import Extension from '../ext/Extension.svelte';
   import { evalWhen, type Doc } from './logic';
 
   let {
@@ -20,11 +22,27 @@
   const base = $derived(field.shape.base);
   const nested = $derived(base === 'list' || (base === 'group' && !!field.fields));
   const readonly = $derived(ctx.readonly || !!field.admin?.readonly);
+  const widget = $derived(ext.widget(field.admin?.widget));
 </script>
 
 {#if shown}
   <div class="h-fieldrow" data-field={path}>
-    {#if base === 'list'}
+    {#if widget}
+      <Field label={field.label} description={field.description} required={field.required}>
+        {#snippet children()}
+          <Extension
+            tag={widget}
+            props={{ value: $state.snapshot(value), field, locale: ctx.locale, readonly, error: ctx.error(path) }}
+            onEvents={{
+              change: (e) => {
+                value = e.detail?.value;
+                ctx.clearError(path);
+              },
+            }}
+          />
+        {/snippet}
+      </Field>
+    {:else if base === 'list'}
       <ListWidget {field} bind:value {path} {readonly} />
     {:else if nested}
       <GroupWidget {field} bind:value {path} {readonly} />

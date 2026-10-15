@@ -8,7 +8,7 @@ export interface Column<R> {
   align?: 'start' | 'end';
   width?: string;
   /** Custom cell; default shows row[key]. */
-  cell?: Snippet<[R]>;
+  cell?: Snippet<[R, Column<R>]>;
 }
 
 export interface Sort {

@@ -7,6 +7,7 @@
   import { router } from '../../lib/router.svelte';
   import { safeNext } from '../../lib/format';
   import { t } from '../../lib/i18n';
+  import Slot from '../../lib/ext/Slot.svelte';
 
   let login = $state('');
   let password = $state('');
@@ -50,6 +51,7 @@
 </script>
 
 <main class="h-login">
+  <Slot at="login.before" />
   <form class="h-login__card" onsubmit={submit}>
     <h1>{t('app.name')}</h1>
     <h2>{t('login.title')}</h2>
@@ -62,4 +64,5 @@
     </Field>
     <Button type="submit" variant="primary" loading={pending} disabled={wait > 0}>{t('login.submit')}</Button>
   </form>
+  <Slot at="login.after" />
 </main>

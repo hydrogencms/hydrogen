@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/hydrogencms/hydrogen"
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/hooks"
 	"github.com/hydrogencms/hydrogen/modules/pages"
@@ -22,6 +23,7 @@ func configure(h *hydrogen.Builder) {
 	h.Use(sqlite.Module(), postgres.Module(), pages.Module(), seo.Module())
 	gen.ArticleType.BeforeSave(h, readingTime)
 	h.Migration(splitName)
+	h.Policy(access.Policy{Name: "import.run", Description: "Use the admin's article import tool."})
 }
 
 // readingTime estimates reading minutes from the summary at 200 words a minute.

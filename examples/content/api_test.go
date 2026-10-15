@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/hydrogencms/hydrogen"
+	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/config"
 	"github.com/hydrogencms/hydrogen/modules/pages"
 	"github.com/hydrogencms/hydrogen/modules/postgres/pgtest"
@@ -224,6 +225,7 @@ func TestLifecyclePostgres(t *testing.T) {
 // configureV1 is the project before the person schema changed: no migration yet.
 func configureV1(h *hydrogen.Builder) {
 	h.Use(sqliteModule(), postgresModule(), pages.Module())
+	h.Policy(access.Policy{Name: "import.run"}) // the admin manifest in config/ names it
 }
 
 func TestContentMigration(t *testing.T) {

@@ -12,12 +12,14 @@ import { theme } from './lib/theme.svelte';
 import { toast } from './lib/ui/toast.svelte';
 import { t } from './lib/i18n';
 import { routes, notFound } from './routes';
+import { ext } from './lib/extensions.svelte';
 
 const target = document.getElementById('app')!;
 
 async function main() {
   theme.init();
   await loadConfig();
+  await ext.boot();
 
   setHandlers({
     csrf: () => session.csrf,
@@ -39,13 +41,19 @@ async function main() {
     },
   });
 
-  router.define(routes, {
-    notFound,
-    guard(route, path) {
-      if (route?.public) return session.principal ? '/' : undefined;
-      if (!session.principal) return path === '/' ? '/login' : `/login?next=${encodeURIComponent(path + location.search)}`;
+  router.define(
+    [
+      ...routes,
+      ...ext.m.views.map((v, i) => ({ path: v.path, title: ext.viewTitleKey(i), load: () => import('./lib/ext/ViewHost.svelte') })),
+    ],
+    {
+      notFound,
+      guard(route, path) {
+        if (route?.public) return session.principal ? '/' : undefined;
+        if (!session.principal) return path === '/' ? '/login' : `/login?next=${encodeURIComponent(path + location.search)}`;
+      },
     },
-  });
+  );
 
   await session.load();
   mount(App, { target });

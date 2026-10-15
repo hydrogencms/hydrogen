@@ -21,6 +21,9 @@
   import Table from '../../lib/ui/Table.svelte';
   import { toast } from '../../lib/ui/toast.svelte';
   import type { Column } from '../../lib/ui/table';
+  import { ext } from '../../lib/extensions.svelte';
+  import Extension from '../../lib/ext/Extension.svelte';
+  import Slot from '../../lib/ext/Slot.svelte';
   import LocaleDots from './LocaleDots.svelte';
   import StatusBadge from './StatusBadge.svelte';
   import FilterBar from './FilterBar.svelte';
@@ -81,9 +84,10 @@
   });
 
   // Columns for fields come from the list response (`fields=a,b`, at most 10 names).
-  const fieldCols = $derived(
-    (type?.admin?.list ?? []).filter((n) => n !== 'name').map((n) => type!.fields.find((f) => f.name === n)).filter((f): f is CompiledField => !!f),
-  );
+  // `admin.list` entries are `field` or `field:cell` (a cell element of the extension manifest).
+  const listed = $derived((type?.admin?.list ?? []).map((n) => n.split(':') as [string, string?]).filter(([n]) => n !== 'name'));
+  const fieldCols = $derived(listed.map(([n]) => type!.fields.find((f) => f.name === n)).filter((f): f is CompiledField => !!f));
+  const cellTags = $derived(new Map(listed.filter(([, c]) => c).map(([n, c]) => [n, ext.cell(c!)])));
 
   // ---- URL state
   function update(patch: Partial<ListQuery>, opts: { push?: boolean } = {}) {
@@ -104,7 +108,7 @@
   );
   const columns = $derived<Column<Row>[]>([
     { key: 'name', label: t('collections.col.name'), sortable: true, cell: nameCell },
-    ...fieldCols.map((f) => ({ key: `f:${f.name}`, label: f.label, sortable: !!f.index }) as Column<Row>),
+    ...fieldCols.map((f) => ({ key: `f:${f.name}`, label: f.label, sortable: !!f.index, cell: cellTags.get(f.name) ? extCell : undefined }) as Column<Row>),
     { key: 'status', label: t('collections.col.status'), cell: statusCell },
     { key: 'locales', label: t('collections.col.languages'), cell: localesCell },
     { key: 'updated', label: t('collections.col.updated'), sortable: true },
@@ -200,6 +204,7 @@
       {#snippet actions()}<Button onclick={clearChannel}>{t('collections.allChannels')}</Button>{/snippet}
     </EmptyState>
   {:else}
+    <Slot at="list.before" props={{ type: typeName }} />
     <div class="h-page__head">
       <div>
         <h1>{type.label}</h1>
@@ -248,12 +253,20 @@
       </Table>
       <Pagination page={q.page} pageSize={q.pageSize} {total} onpage={(p) => update({ page: p }, { push: true })} />
     {/if}
+    <Slot at="list.after" props={{ type: typeName }} />
   {/if}
 </div>
 
 {#snippet nameCell(row: Row)}
   <a class="h-list-name" use:link href={href(`/items/${row.id}`, q.locale ? { locale: q.locale } : undefined)}>{row.name || t('collections.untitled')}</a>
   {#if row.key}<span class="h-muted h-list-key">{row.key}</span>{/if}
+{/snippet}
+{#snippet extCell(row: Row, col: Column<Row>)}
+  {@const f = fieldCols.find((x) => `f:${x.name}` === col.key)}
+  {@const tag = f && cellTags.get(f.name)}
+  {#if f && tag}
+    <Extension {tag} props={{ value: (row.fields as Record<string, unknown> | undefined)?.[f.name], item: row, field: f }} />
+  {/if}
 {/snippet}
 {#snippet statusCell(row: Row)}<StatusBadge status={row.status} />{/snippet}
 {#snippet localesCell(row: Row)}

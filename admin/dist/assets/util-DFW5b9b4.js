@@ -1,1 +1,0 @@
-import{g as i,U as n}from"./index-Cb_1yiNC.js";import{e as c}from"./errors-KDWKvNgD.js";async function m(){return i.get("/policies")}const d=20;async function p(a,o){let t;const s=await a.submit(async e=>{try{return await o(e)}catch(r){throw r instanceof n&&r.status===403&&r.code==="forbidden"&&(t=r),r}});return t&&(a.formError=c(t)),s}export{d as P,m as l,p as s};

@@ -58,6 +58,8 @@ export interface Article {
   /** Two sentences shown in listings. */
   summary?: string;
   body?: RichText;
+  /** Brand colour as #rrggbb. */
+  color?: string;
   kind?: "news" | "video";
   video?: string;
   publishDate?: ISODateTime;

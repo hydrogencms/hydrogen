@@ -1,7 +1,7 @@
 # Go modules in this repository (core first). Every target runs over all of them.
 MODULES := . modules/sqlite modules/postgres tests examples/minimal examples/content examples/headless examples/multisite
 
-.PHONY: build test vet lint tidy tidy-check db-up db-down smoke check sdk next-e2e admin admin-types admin-dist-check admin-e2e
+.PHONY: build test vet lint tidy tidy-check db-up db-down smoke check sdk next-e2e admin admin-types admin-dist-check admin-e2e example-admin example-admin-check
 
 build:
 	@for m in $(MODULES); do (cd $$m && go build ./...) || exit 1; done
@@ -57,4 +57,12 @@ admin-dist-check: admin
 admin-e2e:
 	./scripts/admin-e2e.sh
 
-check: tidy-check vet lint test smoke admin admin-dist-check
+# examples/content/admin: custom elements on the admin SDK, built into the committed dist/elements.js.
+example-admin:
+	cd packages && npm install --no-audit --no-fund && npm run build -w admin-sdk
+	cd examples/content/admin && npm ci --no-audit --no-fund && npm run build
+
+example-admin-check: example-admin
+	@test -z "$$(git status --porcelain -- examples/content/admin/dist)" || (git status --short -- examples/content/admin/dist; echo "examples/content/admin/dist is stale: run make example-admin and commit it"; exit 1)
+
+check: tidy-check vet lint test smoke admin admin-dist-check example-admin-check

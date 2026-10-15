@@ -12,7 +12,7 @@ func TestAdminPrefixRules(t *testing.T) {
 		"/a//b": "must start", "/a\"b": "must start", "/a<b": "must start", "/a%b": "must start", "/a\\b": "must start", "/a/{x}": "must start", "/a.b/c-d_e~f": "",
 		"/api": "collides", "/api/x": "collides", "/healthz": "collides", "/a b": "must start",
 	} {
-		c := AdminConfig{Enabled: true, Prefix: prefix}
+		c := AdminConfig{Enabled: true, Prefix: prefix, ElementsDevEntry: "/src/elements.ts"}
 		err := c.check()
 		if wantErr == "" && err != nil || wantErr != "" && (err == nil || !strings.Contains(err.Error(), wantErr)) {
 			t.Errorf("prefix %q: err = %v, want %q", prefix, err, wantErr)

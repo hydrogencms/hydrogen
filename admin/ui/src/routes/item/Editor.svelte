@@ -18,13 +18,16 @@
   import Menu, { type MenuItem } from '../../lib/ui/Menu.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { toast } from '../../lib/ui/toast.svelte';
+  import { ext, navigateTo } from '../../lib/extensions.svelte';
+  import Extension from '../../lib/ext/Extension.svelte';
+  import Slot from '../../lib/ext/Slot.svelte';
   import StatusBadge from '../collection/StatusBadge.svelte';
   import ActionDialogs from './ActionDialogs.svelte';
   import SidePanels from './SidePanels.svelte';
   import { errorMessage } from '../../lib/errors';
   import { formatDateTime } from '../../lib/format';
   import Dialog from '../../lib/ui/Dialog.svelte';
-  import { isConflict, isNotFound, itemApi, type Concurrency, type ItemData, type Target } from './model';
+  import { confirmDiscard, isConflict, isNotFound, itemApi, type Concurrency, type ItemData, type Target } from './model';
 
   let {
     mode,
@@ -291,6 +294,16 @@
   );
   const canPublish = $derived(!isNew && (data?.actions?.publish ?? true) && (data?.draftParts.length ?? 0) > 0);
   const canDiscard = $derived(!isNew && canEdit && (data?.draftParts.length ?? 0) > 0);
+  const extActions = $derived(data && type ? ext.actions(type.name) : []);
+  // An extension asked for a reload: unsaved edits are only dropped after a confirmation.
+  function extRefresh() {
+    if (confirmDiscard(form.dirty, (m) => confirm(m))) reloadTick++;
+  }
+  const extEvents = {
+    refresh: extRefresh,
+    navigate: (e: CustomEvent) => navigateTo(e.detail?.path),
+  };
+  const slotProps = $derived({ item: data ?? undefined, type: type?.name });
   const canDelete = $derived(!isNew && mode !== 'singleton' && (data?.actions?.delete ?? true));
 </script>
 
@@ -314,6 +327,7 @@
   </div>
 {:else}
   <div class="h-page h-item">
+    <Slot at="editor.before" props={slotProps} />
     {#if !embedded}<Breadcrumbs items={crumbs} />{/if}
     <div class="h-page__head">
       <div class="h-item__title">
@@ -341,6 +355,11 @@
         {#if canDelete}<Button variant="danger" icon="trash" onclick={() => dialogs?.remove()}>{t('common.delete')}</Button>{/if}
         <Button variant="primary" loading={form.pending} disabled={!canEdit || (!form.dirty && !isNew)} onclick={() => void save()}>{t('common.save')}</Button>
         <Button variant="primary" disabled={isNew || (!canPublish && !form.dirty)} onclick={() => void openPublish()}>{t('collections.publish')}</Button>
+        {#each extActions as a, i (a.tag + i)}
+          <span class="h-item__ext" data-action={a.tag} title={a.title}>
+            <Extension tag={a.tag} props={{ item: data, type: type.name, locale }} onEvents={extEvents} />
+          </span>
+        {/each}
       </div>
     </div>
 
@@ -381,9 +400,10 @@
         {#if type.fields.length === 0}<p class="h-muted">{t('collections.noFields')}</p>{/if}
       </form>
       <aside class="h-item__side" aria-label={t('collections.details')}>
-        <SidePanels {data} {item} {type} {locale} {locales} {form} {mode} />
+        <SidePanels {data} {item} {type} {locale} {locales} {form} {mode} onrefresh={extRefresh} />
       </aside>
     </div>
+    <Slot at="editor.after" props={slotProps} />
   </div>
 
   <ActionDialogs
@@ -457,6 +477,9 @@
     display: flex;
     flex-direction: column;
     gap: var(--h-space-4);
+  }
+  .h-item__ext {
+    display: inline-flex;
   }
   .h-item__side {
     min-width: 0;

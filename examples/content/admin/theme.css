@@ -1,0 +1,6 @@
+/* Appended after the admin's stylesheet: override its CSS custom properties here. The elements style themselves
+   inside their shadow roots and inherit these tokens. */
+:root {
+  --h-accent: #7c3aed;
+  --h-radius: 8px;
+}

@@ -1,0 +1,1 @@
+import{O as o,a2 as p,t as r,a as d,f as l,$ as c,c as f}from"./index-C_AGL804.js";var h=l("<span><!></span>");function m(t,e){let s=o(e,"tone",3,"neutral");var a=h(),n=f(a);p(n,()=>e.children),r(()=>c(a,1,`h-badge h-badge--${s()??""}`)),d(t,a)}export{m as B};

@@ -49,6 +49,11 @@ never commit it, quote it in commit messages or public docs, or move its content
   strict CSP, `admin.prefix` default `/admin`, `admin.enabled`). The app is an API client only (`/api/manage/v1`);
   it reads `<prefix>/config.json` at start. Foundation docs: `admin/ui/src/lib/README.md`. Contract:
   `planning/design/admin-h5b.md`.
+- Admin extensions (H5c): custom elements declared in the project's `admin:` manifest (`elements`, `theme`,
+  `strings`, `widgets`, `cells`, `panels`, `actions`, `dashboard`, `views`, `slots`; validated by `config:check`,
+  served under `<prefix>/x/`) or by modules (`Registry.AdminExtension`); contracts and helpers in
+  `packages/admin-sdk`; loader in `admin/ui/src/lib/extensions.svelte.ts` + `lib/ext/`. `examples/content/admin`
+  uses every kind; `hydrogen new` ships an `admin/` starter. Contract: `planning/design/admin-h5c.md`.
 - TypeScript SDK (H4b): `packages/` (npm workspaces: `client`, `router`, `next`; zero runtime dependencies,
   gzip budgets in `packages/scripts/size.mjs`). `examples/next-site`: Next.js sample against `examples/multisite`
   (one deployment, every web channel; the proxy answers CMS redirects and 404s; `"use cache"` entries tagged from
@@ -70,6 +75,7 @@ make next-e2e                   # examples/next-site against examples/multisite 
 make admin                      # admin/ui: npm ci, typecheck, vitest, build into admin/dist, gzip budgets
 make admin-e2e                  # Playwright exit scenario + axe against examples/multisite (SQLite)
 make admin-types                # regenerate admin/ui/src/lib/api/schema.d.ts from a running build's OpenAPI
+make example-admin              # rebuild examples/content/admin/dist (example-admin-check verifies it in make check)
 make check                      # tidy-check vet lint test smoke admin admin-dist-check (dist must be rebuilt)
 ```
 
@@ -105,7 +111,12 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - Scratch projects inside the repo (`.work/`) need `GOWORK=off`, or the repo's `go.work` claims them.
 - After any change under `admin/ui`, run `make admin` and commit `admin/dist` with it (`admin-dist-check` fails
   otherwise); rebuild the Go binary too, because dist is embedded. `hydrogen dev` with `ADMIN_DEV_URL` proxies the
-  admin to a Vite dev server. The CSP forbids inline `style="…"` attributes: use Svelte's `style:` directive.
+  admin to a Vite dev server. The CSP keeps `script-src 'self'`; inline styles are allowed only because Svelte
+  custom elements inject their styles as `<style>` elements. Admin code still uses Svelte's `style:` directive.
+- Extension elements run with the signed-in user's rights and get `ctx` as a property (never attributes);
+  data in through properties, out through composed `CustomEvent`s. With `ADMIN_ELEMENTS_DEV_URL` (dev only)
+  `<prefix>/x/dev/*` is proxied to Vite for HMR. Schema `admin.widget`/`admin.list` `field:cell` names must be
+  declared in the manifest, or startup fails.
 - Item and singleton writes take `If-Match` (the `ETag` from the read, `updatedAt` at millisecond resolution) and
   answer 412 `precondition_failed` with `current.updatedAt/updatedBy`; the admin shows a conflict dialog.
 - Authorization lives in the service layer, never only in handlers: `content.Service` checks `Options.Access` for

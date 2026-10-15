@@ -1,0 +1,4 @@
+/* Appended after the admin's stylesheet: override its CSS custom properties here. */
+:root {
+  --h-accent: #0b6;
+}

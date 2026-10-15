@@ -122,7 +122,11 @@ func (c *compiler) compileType(def *typeDef) *Type {
 	t.Fields = c.compileFields(&scope{c: c, top: true, defs: def.fields})
 	for _, l := range def.adminList {
 		t.Admin.List = append(t.Admin.List, l.s)
-		c.requireField(def, t, l, "admin.list")
+		field, cell, _ := strings.Cut(l.s, ":") // "field:cell" names a list cell renderer of the admin extensions
+		if strings.Contains(cell, ":") {
+			c.errs.add(l.pos, "type %q: admin.list entry %q has more than one \":\" (want field or field:cell)", def.name, l.s)
+		}
+		c.requireField(def, t, located{s: field, pos: l.pos}, "admin.list")
 	}
 	for _, l := range def.aiGenerate {
 		t.AI.Generate = append(t.AI.Generate, l.s)

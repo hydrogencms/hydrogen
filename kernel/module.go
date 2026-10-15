@@ -96,6 +96,7 @@ type Registry struct {
 	previewURLs []delivery.PreviewURLer
 	exporters   []exportfmt.NamedExporter
 	catalog     *access.Catalog
+	adminExts   []registered[AdminExtension]
 }
 
 type registered[T any] struct {

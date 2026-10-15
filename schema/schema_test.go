@@ -196,6 +196,7 @@ func TestCompileErrors(t *testing.T) {
 		{"group both", "types:\n  a:\n    fields:\n      g: { type: group, use: x, fields: {} }\ngroups:\n  x: { fields: {} }\n", []string{"mutually exclusive"}},
 		{"group unknown", "types:\n  a:\n    fields:\n      g: { type: group, use: nope }\n", []string{`unknown group "nope"`}},
 		{"group cycle", "groups:\n  x:\n    fields:\n      y: { type: group, use: x }\n", []string{`group "x" is invalid or uses itself`}},
+		{"admin list two colons", "types:\n  a:\n    admin: { list: [\"t:a:b\"] }\n    fields:\n      t: { type: string }\n", []string{`more than one ":"`}},
 		{"admin list unknown", "types:\n  a:\n    admin: { list: [nope] }\n    fields:\n      t: { type: string }\n", []string{`admin.list names "nope"`}},
 		{"ai generate unknown", "types:\n  a:\n    ai: { generate: [nope] }\n    fields:\n      t: { type: string }\n", []string{`ai.generate names "nope"`}},
 		{"name pattern unknown", "types:\n  a:\n    name: \"{nope}\"\n    fields:\n      t: { type: string }\n", []string{`name pattern uses "nope"`}},

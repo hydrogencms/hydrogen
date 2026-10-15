@@ -2,6 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
+  // E2E_PROJECT=content runs only the extensions spec (against examples/content); the default run skips it.
+  ...(process.env.E2E_PROJECT === 'content' ? { testMatch: 'extensions.spec.ts' } : { testIgnore: 'extensions.spec.ts' }),
   outputDir: '../../.work/e2e',
   timeout: 30_000,
   fullyParallel: false,

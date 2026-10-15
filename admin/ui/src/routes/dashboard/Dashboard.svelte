@@ -10,6 +10,9 @@
   import Icon from '../../lib/ui/Icon.svelte';
   import Badge from '../../lib/ui/Badge.svelte';
   import Button from '../../lib/ui/Button.svelte';
+  import { ext } from '../../lib/extensions.svelte';
+  import Extension from '../../lib/ext/Extension.svelte';
+  import Slot from '../../lib/ext/Slot.svelte';
 
   let entries = $state<Schemas['AuditEntry'][] | null>(null);
   let failed = $state(false);
@@ -37,6 +40,7 @@
 </script>
 
 <div class="h-page">
+  <Slot at="dashboard.before" />
   <h1>{t('dashboard.welcome', { name: session.principal?.name ?? '' })}</h1>
   <div class="h-grid">
     {#if session.can('audit.read')}
@@ -75,5 +79,12 @@
         </ul>
       {/if}
     </section>
+    {#each ext.dashboard() as w, i (w.tag + i)}
+      <section class="h-card" aria-labelledby="d-x{i}" data-dashboard-widget={w.tag}>
+        {#if w.title}<h2 class="h-card__title" id="d-x{i}">{w.title}</h2>{/if}
+        <Extension tag={w.tag} />
+      </section>
+    {/each}
   </div>
+  <Slot at="dashboard.after" />
 </div>

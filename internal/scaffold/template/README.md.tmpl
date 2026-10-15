@@ -8,4 +8,18 @@ hydrogen migrate        # apply database migrations
 hydrogen config:check   # validate configuration
 ```
 
+Admin extensions live in `admin/` (Svelte custom elements on `@hydrogencms/admin-sdk`; Node is only needed
+here, not for the Go server). `cd admin && npm install && npm run build` writes `admin/dist/elements.js`; then
+uncomment the `admin:` block in `config/app.yaml` to load it. The example `x-hello` is a field widget: give a
+string field `admin: { widget: hello }` in the schema. For hot reload, run `npm run dev` in `admin/` and start
+`ADMIN_ELEMENTS_DEV_URL=http://localhost:5174 hydrogen dev` (Vite's `base` in `vite.config.ts` must be
+`<admin.prefix>/x/dev/`). The CSP allows inline styles but no scripts. `npm run dev` assumes the admin prefix `/admin`; set `ADMIN_PREFIX`
+if you changed `admin.prefix`.
+{{if .Core}}
+`@hydrogencms/admin-sdk` is installed from your hydrogen checkout (`file:` dependency in `admin/package.json`).
+{{else}}
+`@hydrogencms/admin-sdk` is not published yet: until it is, install it from a hydrogen checkout with
+`npm install <path>/packages/admin-sdk` (or create the project with `hydrogen new -core <path>`).
+{{end}}
+
 Configuration lives in `config/`; set `DATABASE_URL` to use Postgres.

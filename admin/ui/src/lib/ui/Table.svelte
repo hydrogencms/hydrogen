@@ -98,7 +98,7 @@
               </td>
             {/if}
             {#each columns as c (c.key)}
-              <td class:h-table__end={c.align === 'end'}>{#if c.cell}{@render c.cell(r)}{:else}{cell(r, c)}{/if}</td>
+              <td class:h-table__end={c.align === 'end'}>{#if c.cell}{@render c.cell(r, c)}{:else}{cell(r, c)}{/if}</td>
             {/each}
           </tr>
         {/each}

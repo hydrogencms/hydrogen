@@ -15,6 +15,7 @@
   import IconButton from './lib/ui/IconButton.svelte';
   import Skeleton from './lib/ui/Skeleton.svelte';
   import Button from './lib/ui/Button.svelte';
+  import { ext } from './lib/extensions.svelte';
 
   let { children }: { children: Snippet } = $props();
 
@@ -87,7 +88,9 @@
   <a class="h-skip" href="#main">{t('app.skip')}</a>
 
   <nav class="h-nav" class:h-nav--open={navOpen} aria-label={t('nav.main')}>
-    <a use:link class="h-nav__brand" href={href('/')}><Icon name="star" size={20} />{t('app.name')}</a>
+    <a use:link class="h-nav__brand" href={href('/')}>
+      {#if ext.logo}<img class="h-nav__logo" src={ext.logo} alt="" />{:else}<Icon name="star" size={20} />{/if}{t('app.name')}
+    </a>
 
     <a use:link class="h-nav__link" href={href('/')} aria-current={current('/') && router.path === '/' ? 'page' : undefined}>
       <Icon name="home" size={16} />{t('nav.dashboard')}
@@ -133,6 +136,13 @@
         <a use:link class="h-nav__link" href={href(s.to)} aria-current={current(s.to)}><Icon name={s.icon} size={16} />{s.label}</a>
       {/each}
     {/if}
+
+    {#each ext.menu() as g (g.menu)}
+      <div class="h-nav__group">{g.menu}</div>
+      {#each g.views as v (v.path)}
+        <a use:link class="h-nav__link" href={href(v.path)} aria-current={current(v.path)}><Icon name="link" size={16} />{v.title}</a>
+      {/each}
+    {/each}
 
     <div class="h-nav__group">{t('nav.account')}</div>
     <a use:link class="h-nav__link" href={href('/account')} aria-current={current('/account')}><Icon name="user" size={16} />{t('nav.account')}</a>

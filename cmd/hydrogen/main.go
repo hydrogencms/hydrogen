@@ -30,6 +30,10 @@ const usage = `Usage:
 Environment for hydrogen dev:
   ADMIN_DEV_URL   e.g. http://localhost:5173: proxy the admin prefix to a Vite dev server (hot reload for
                   the admin app itself) instead of serving the embedded build
+  ADMIN_ELEMENTS_DEV_URL
+                  e.g. http://localhost:5174: proxy <admin.prefix>/x/dev/* to the Vite dev server of your admin
+                  extensions (admin/) and list its entry (admin.elements_dev_entry, default /src/elements.ts)
+                  in place of the built files; Vite's base must be <admin.prefix>/x/dev/ (the scaffold's is)
 `
 
 func main() {

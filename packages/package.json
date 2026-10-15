@@ -1,13 +1,13 @@
 {
   "name": "hydrogen-sdk",
   "private": true,
-  "workspaces": ["client", "router", "next"],
+  "workspaces": ["client", "router", "next", "admin-sdk"],
   "engines": { "node": ">=20" },
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "test": "npm test --workspaces --if-present",
     "size": "node scripts/size.mjs",
-    "clean": "rm -rf client/dist router/dist next/dist"
+    "clean": "rm -rf client/dist router/dist next/dist admin-sdk/dist"
   },
   "devDependencies": { "typescript": "~5.9.3", "@types/node": "^22.0.0" }
 }

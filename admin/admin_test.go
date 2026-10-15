@@ -68,13 +68,16 @@ func TestSecurityHeaders(t *testing.T) {
 		}
 	}
 	c := w.Header().Get("Content-Security-Policy")
-	for _, want := range []string{"default-src 'self'", "script-src 'self'", "style-src 'self'", "frame-ancestors 'none'", "base-uri 'none'", "connect-src 'self'"} {
+	for _, want := range []string{"default-src 'self'", "script-src 'self';", "style-src 'self' 'unsafe-inline'", "frame-ancestors 'none'", "base-uri 'none'", "connect-src 'self'"} {
 		if !strings.Contains(c, want) {
 			t.Errorf("CSP lacks %q: %s", want, c)
 		}
 	}
-	if strings.Contains(c, "unsafe") {
-		t.Errorf("CSP allows unsafe: %s", c)
+	for _, d := range strings.Split(c, ";") {
+		d = strings.TrimSpace(d)
+		if strings.HasPrefix(d, "script-src") && strings.Contains(d, "unsafe") {
+			t.Errorf("scripts must stay 'self': %s", d)
+		}
 	}
 }
 
@@ -87,7 +90,8 @@ func TestIndexLinksUnderPrefix(t *testing.T) {
 
 func TestConfigJSON(t *testing.T) {
 	w := get(Handler("/admin", dist(), Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: "/api/deliver/v1", Pages: true}), "GET", "/admin/config.json")
-	want := `{"apiPrefix":"/api/manage/v1","prefix":"/admin","pages":true,"deliveryPrefix":"/api/deliver/v1"}`
+	want := `{"apiPrefix":"/api/manage/v1","prefix":"/admin","pages":true,"deliveryPrefix":"/api/deliver/v1","extensions":` +
+		`{"elements":[],"theme":{"name":""},"strings":[],"widgets":{},"cells":{},"panels":[],"actions":[],"dashboard":[],"views":[],"slots":[]}}`
 	if w.Body.String() != want || w.Header().Get("Cache-Control") != "no-store" || !strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") {
 		t.Fatalf("config.json: %s %v", w.Body, w.Header())
 	}

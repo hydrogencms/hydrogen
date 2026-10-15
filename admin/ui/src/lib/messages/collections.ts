@@ -92,6 +92,7 @@ export const collections: Record<string, string> = {
   'collections.discarded': 'Draft discarded',
   'collections.deleted': 'Deleted',
   'collections.unsavedBadge': 'Unsaved changes',
+  'collections.reloadDiscard': 'Reload and discard your changes?',
   'collections.readOnly': 'You can read this item but not change it.',
   'collections.formLabel': '{type} fields',
   'collections.details': 'Item details',

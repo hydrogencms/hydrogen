@@ -17,6 +17,8 @@
   import LocaleDots from '../collection/LocaleDots.svelte';
   import { hydrate, type Doc } from '../../lib/fields/logic';
   import Button from '../../lib/ui/Button.svelte';
+  import { ext } from '../../lib/extensions.svelte';
+  import Extension from '../../lib/ext/Extension.svelte';
   import { toast } from '../../lib/ui/toast.svelte';
   import type { ItemData, Referrer } from './model';
 
@@ -28,6 +30,7 @@
     locales,
     form,
     mode,
+    onrefresh,
   }: {
     data: ItemData | null;
     /** `data` with `locales` limited to the published ones. */
@@ -37,6 +40,7 @@
     locales: string[];
     form: Form<{ fields: Doc; key: string; alwaysAvailable: boolean }>;
     mode: 'item' | 'new' | 'singleton';
+    onrefresh?: () => void;
   } = $props();
 
   let tab = $state('appears');
@@ -45,7 +49,9 @@
     { id: 'usedBy', label: t('collections.panel.usedBy'), disabled: !data },
     { id: 'versions', label: t('collections.panel.versions'), disabled: !data },
     { id: 'info', label: t('collections.panel.info') },
+    ...ext.panels(type.name).map((p, i) => ({ id: `x:${i}`, label: p.title ?? p.tag, disabled: !data })),
   ]);
+  const extPanels = $derived(ext.panels(type.name));
 
   // ---- where this appears
   const serving = $derived(channels.items.filter((c) => c.collections == null || c.collections.includes(type.name)));
@@ -183,7 +189,16 @@
 <div class="h-card h-panels">
   <Tabs {tabs} bind:value={tab} label={t('collections.panels')}>
     {#snippet children(active)}
-      {#if active === 'appears'}
+      {#if active.startsWith('x:')}
+        {@const p = extPanels[Number(active.slice(2))]}
+        {#if p && data}
+          <Extension
+            tag={p.tag}
+            props={{ item: data, type: type.name, locale, draft: data.status !== 'published' }}
+            onEvents={{ refresh: () => onrefresh?.() }}
+          />
+        {/if}
+      {:else if active === 'appears'}
         <div class="h-stack">
           <h2 class="h-panels__h">{t('collections.appears.channels')}</h2>
           {#if serving.length === 0}

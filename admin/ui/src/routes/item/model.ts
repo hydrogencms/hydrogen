@@ -1,4 +1,6 @@
 import { api, type ApiError } from '../../lib/api/client';
+import '../../lib/messages/collections';
+import { t } from '../../lib/i18n';
 
 /** An item as the management API returns it (the generated union is per type; the editor is generic). */
 export interface ItemData {
@@ -75,3 +77,8 @@ export const itemApi = {
 export const isConflict = (e: unknown): boolean => (e as ApiError)?.status === 412;
 
 export const isNotFound = (e: unknown) => (e as ApiError)?.status === 404;
+
+/** True when it is fine to replace the form with a fresh load: nothing unsaved, or the user agreed to discard it. */
+export function confirmDiscard(dirty: boolean, ask: (message: string) => boolean): boolean {
+  return !dirty || ask(t('collections.reloadDiscard'));
+}

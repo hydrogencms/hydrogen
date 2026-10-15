@@ -34,9 +34,16 @@ type Options struct {
 	Pages          bool   // the pages module is on
 	// DevURL, when set, proxies everything except config.json to a dev server (Vite) instead of serving dist.
 	DevURL string
+	// Extensions are the project's and modules' admin extensions (nil: none), listed in config.json and served
+	// under <prefix>/x/.
+	Extensions *Extensions
+	// ElementsDevURL, when set, proxies <prefix>/x/dev/* to a dev server (Vite) for extension elements.
+	ElementsDevURL string
 }
 
-const csp = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; " +
+// Scripts are 'self' only. Styles allow inline: extension elements written with Svelte inject their component
+// styles as <style> elements, which 'self' alone would drop; inline styles cannot run code.
+const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; " +
 	"connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 type handler struct {
@@ -45,6 +52,8 @@ type handler struct {
 	index  []byte
 	config []byte
 	proxy  http.Handler
+	files  map[string]*xfile
+	xdev   http.Handler
 }
 
 // Handler serves the app under prefix ("/admin": leading slash, no trailing one). Mount it at prefix+"/"
@@ -52,17 +61,19 @@ type handler struct {
 // relative asset links ("./assets/…") made absolute under prefix.
 func Handler(prefix string, dist fs.FS, o Options) http.Handler {
 	h := &handler{prefix: prefix, dist: dist}
-	h.config, _ = json.Marshal(struct {
-		APIPrefix      string `json:"apiPrefix"`
-		Prefix         string `json:"prefix"`
-		Pages          bool   `json:"pages"`
-		DeliveryPrefix string `json:"deliveryPrefix"`
-	}{o.APIPrefix, prefix, o.Pages, o.DeliveryPrefix})
-	if o.DevURL != "" {
-		if u, err := url.Parse(o.DevURL); err == nil {
-			h.proxy = &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) { r.SetURL(u) }}
-		}
+	if o.Extensions == nil {
+		o.Extensions, _ = Compose(prefix, nil, "")
 	}
+	h.files = o.Extensions.files
+	h.config, _ = json.Marshal(struct {
+		APIPrefix      string      `json:"apiPrefix"`
+		Prefix         string      `json:"prefix"`
+		Pages          bool        `json:"pages"`
+		DeliveryPrefix string      `json:"deliveryPrefix"`
+		Extensions     *Extensions `json:"extensions"`
+	}{o.APIPrefix, prefix, o.Pages, o.DeliveryPrefix, o.Extensions})
+	h.proxy = devProxy(o.DevURL)
+	h.xdev = devProxy(o.ElementsDevURL)
 	if b, err := fs.ReadFile(dist, "index.html"); err == nil {
 		h.index = bytes.ReplaceAll(b, []byte(`="./`), []byte(`="`+prefix+`/`))
 	}
@@ -87,6 +98,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(h.config)
 		return
 	}
+	if rel, ok := strings.CutPrefix(rel, "x/"); ok {
+		h.extension(w, r, rel)
+		return
+	}
 	if h.proxy != nil {
 		h.proxy.ServeHTTP(w, r)
 		return
@@ -105,6 +120,40 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		h.file(w, r, rel)
 	}
+}
+
+func devProxy(raw string) http.Handler {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil
+	}
+	return &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) { r.SetURL(u) }}
+}
+
+// extension serves a declared extension file, or proxies the elements dev server. Anything else under x/ is 404.
+func (h *handler) extension(w http.ResponseWriter, r *http.Request, rel string) {
+	if strings.HasPrefix(rel, "dev/") && h.xdev != nil {
+		h.xdev.ServeHTTP(w, r)
+		return
+	}
+	f := h.files[rel]
+	if f == nil {
+		http.NotFound(w, r)
+		return
+	}
+	b, etag, err := f.read()
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.secure(w)
+	w.Header().Set("Content-Type", f.typ)
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("ETag", etag)
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(b))
 }
 
 func (h *handler) exists(name string) bool {

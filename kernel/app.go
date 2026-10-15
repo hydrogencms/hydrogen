@@ -96,6 +96,27 @@ type AdminConfig struct {
 	Enabled bool `yaml:"enabled"`
 	// Prefix is where the admin app is mounted: a leading slash, no trailing one. Default "/admin".
 	Prefix string `yaml:"prefix"`
+	// Extensions: custom elements the admin loads into its slots. File paths are relative to the working
+	// directory (the project). Contract: admin.Manifest.
+	Elements []string          `yaml:"elements"`
+	Theme    admin.Theme       `yaml:"theme"`
+	Strings  string            `yaml:"strings"`
+	Widgets  map[string]string `yaml:"widgets"`
+	Cells    map[string]string `yaml:"cells"`
+	Panels   []admin.Panel     `yaml:"panels"`
+	Actions  []admin.Panel     `yaml:"actions"`
+	// Dashboard lists dashboard widgets (tag, title, optional policy).
+	Dashboard []admin.Panel `yaml:"dashboard"`
+	Views     []admin.View  `yaml:"views"`
+	Slots     []admin.Slot  `yaml:"slots"`
+	// ElementsDevEntry is the Vite entry listed instead of the built files when ADMIN_ELEMENTS_DEV_URL is set
+	// in dev. Default "/src/elements.ts".
+	ElementsDevEntry string `yaml:"elements_dev_entry"`
+}
+
+func (c *AdminConfig) manifest() admin.Manifest {
+	return admin.Manifest{Elements: c.Elements, Theme: c.Theme, Strings: c.Strings, Widgets: c.Widgets, Cells: c.Cells,
+		Panels: c.Panels, Actions: c.Actions, Dashboard: c.Dashboard, Views: c.Views, Slots: c.Slots}
 }
 
 func (c *AdminConfig) check() error {
@@ -105,8 +126,13 @@ func (c *AdminConfig) check() error {
 	if c.Prefix == "/api" || strings.HasPrefix(c.Prefix, "/api/") || c.Prefix == "/healthz" || c.Prefix == "/readyz" {
 		return fmt.Errorf("admin.prefix %q collides with a core route", c.Prefix)
 	}
+	if !devEntry.MatchString(c.ElementsDevEntry) {
+		return fmt.Errorf("admin.elements_dev_entry %q must start with / and use only letters, digits and . _ ~ @ - / (default /src/elements.ts)", c.ElementsDevEntry)
+	}
 	return nil
 }
+
+var devEntry = regexp.MustCompile(`^/[A-Za-z0-9._~@/-]+$`)
 
 var adminPrefix = regexp.MustCompile(`^/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$`)
 
@@ -320,7 +346,7 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 		Content:  ContentConfig{SchemaDir: "schema", DefaultLocale: "en"},
 		Delivery: DeliveryConfig{CacheBytes: delivery.DefaultCacheBytes},
 		Jobs:     JobsConfig{Enabled: true},
-		Admin:    AdminConfig{Enabled: true, Prefix: "/admin"},
+		Admin:    AdminConfig{Enabled: true, Prefix: "/admin", ElementsDevEntry: "/src/elements.ts"},
 	}
 	sections := []struct {
 		path   string
@@ -384,6 +410,11 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 		}
 		if err := p.checkRuntime(cfg); err != nil {
 			return nil, err
+		}
+		if p.core.Admin.Enabled {
+			if _, err := composeAdmin(&p.core.Admin, reg, s, cfg.Env()); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return p, nil
@@ -596,7 +627,13 @@ func (a *App) mountAdmin(mux *http.ServeMux) error {
 	o := admin.Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: delivery.Prefix, Pages: slices.Contains(a.Modules(), "pages")}
 	if s.Env == config.DevEnv {
 		o.DevURL = os.Getenv("ADMIN_DEV_URL")
+		o.ElementsDevURL = os.Getenv("ADMIN_ELEMENTS_DEV_URL")
 	}
+	ext, err := composeAdmin(&s.Core.Admin, a.reg, s.Schema, s.Env)
+	if err != nil {
+		return err
+	}
+	o.Extensions = ext
 	if err := handle(mux, s.Core.Admin.Prefix+"/", admin.Handler(s.Core.Admin.Prefix, admin.Dist(), o)); err != nil {
 		return fmt.Errorf("admin.prefix %q: %w", s.Core.Admin.Prefix, err)
 	}

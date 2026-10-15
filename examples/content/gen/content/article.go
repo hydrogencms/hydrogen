@@ -15,8 +15,10 @@ type Article struct {
 	Title string  `json:"title,omitempty"`
 	Slug  *string `json:"slug,omitempty"`
 	// Two sentences shown in listings.
-	Summary     *string           `json:"summary,omitempty"`
-	Body        content.RichText  `json:"body,omitempty"`
+	Summary *string          `json:"summary,omitempty"`
+	Body    content.RichText `json:"body,omitempty"`
+	// Brand colour as #rrggbb.
+	Color       *string           `json:"color,omitempty"`
 	Kind        *ArticleKind      `json:"kind,omitempty"`
 	Video       *string           `json:"video,omitempty"`
 	PublishDate *content.DateTime `json:"publishDate,omitempty"`

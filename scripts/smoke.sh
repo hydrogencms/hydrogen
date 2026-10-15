@@ -18,6 +18,9 @@ rm -rf "$work"
 "$hydrogen" new -module example.com/smoke -core "$root" "$work" >/dev/null
 cd "$work"
 
+for f in admin/package.json admin/vite.config.ts admin/src/elements.ts admin/src/Hello.svelte admin/logo.svg admin/theme.css admin/strings.json; do
+  [ -f "$f" ] || { echo "FAIL: scaffold lacks $f"; exit 1; }
+done
 "$hydrogen" config:check
 "$hydrogen" migrate
 "$hydrogen" migrate | grep -q "up to date"

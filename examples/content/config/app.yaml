@@ -17,3 +17,21 @@ modules:
 delivery:
   # Signs preview tokens: at least 32 characters; required outside dev (dev derives it from manage.token).
   preview_secret: ${env:PREVIEW_SECRET:-}
+
+admin:
+  # Custom elements built from ./admin (make example-admin); every kind of extension point is used once.
+  elements: [./admin/dist/elements.js]
+  theme: { name: Studio CMS, logo: ./admin/logo.svg, accent: "#7c3aed", css: ./admin/theme.css }
+  strings: ./admin/strings.json
+  widgets: { brand-color: x-brand-color }
+  cells: { swatch: x-color-swatch }
+  panels:
+    - { tag: x-seo-panel, title: SEO, types: [article] }
+  actions:
+    - { tag: x-translate-action, title: Send to translation, types: [article], policy: content.edit }
+  dashboard:
+    - { tag: x-recent-widget, title: Recently edited }
+  views:
+    - { path: /tools/import, tag: x-import-tool, menu: Tools, title: Import, policy: import.run }
+  slots:
+    - { tag: x-banner, at: editor.before }

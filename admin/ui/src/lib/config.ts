@@ -3,6 +3,8 @@ export interface AdminConfig {
   prefix: string;
   pages: boolean;
   deliveryPrefix: string;
+  /** Raw `extensions` manifest; parsed by lib/extensions.svelte.ts. */
+  extensions?: unknown;
 }
 
 let current: AdminConfig = {

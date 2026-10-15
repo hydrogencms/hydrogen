@@ -27,6 +27,7 @@ type Options struct {
 
 type data struct {
 	Name, Module, Core, Version string
+	SDK                         string // version or file: spec of @hydrogencms/admin-sdk
 }
 
 var modulePath = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~/-]*$`)
@@ -42,7 +43,7 @@ func Write(o Options) error {
 	if entries, err := os.ReadDir(abs); err == nil && len(entries) > 0 {
 		return fmt.Errorf("scaffold: %s is not empty", o.Dir)
 	}
-	d := data{Name: filepath.Base(abs), Module: o.Module, Version: o.Version}
+	d := data{Name: filepath.Base(abs), Module: o.Module, Version: o.Version, SDK: "^0.1.0"}
 	if d.Module == "" {
 		d.Module = d.Name
 	}
@@ -57,6 +58,7 @@ func Write(o Options) error {
 		if err != nil {
 			return err
 		}
+		coreAbs := core
 		if _, err := os.Stat(filepath.Join(core, "hydrogen.go")); err != nil {
 			return fmt.Errorf("scaffold: %s is not a hydrogen checkout", o.Core)
 		}
@@ -64,6 +66,11 @@ func Write(o Options) error {
 			core = rel
 		}
 		d.Core = filepath.ToSlash(core)
+		sdk := filepath.Join(coreAbs, "packages", "admin-sdk")
+		if rel, err := filepath.Rel(filepath.Join(abs, "admin"), sdk); err == nil {
+			sdk = rel
+		}
+		d.SDK = "file:" + filepath.ToSlash(sdk)
 	}
 
 	return fs.WalkDir(files, "template", func(p string, e fs.DirEntry, err error) error {

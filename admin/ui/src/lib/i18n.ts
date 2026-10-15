@@ -9,7 +9,7 @@ export function register(extra: Record<string, string>) {
 }
 
 export function t(key: string, vars?: Record<string, string | number>): string {
-  const s = table[key];
+  const s = Object.hasOwn(table, key) ? table[key] : undefined;
   if (s === undefined) return key;
   return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s;
 }

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Admin end to end: builds admin/dist, starts examples/multisite on a scratch SQLite database with a seeded
-# administrator, runs the Playwright tests in admin/ui against it and stops the server. E2E_KEEP=1 leaves the
-# server running afterwards. Run from the repo root: make admin-e2e.
+# administrator, runs the Playwright tests in admin/ui against it and stops the server. Then does the same with
+# examples/content (its extensions spec only, on another port and database). E2E_KEEP=1 leaves the content server
+# running afterwards. Run from the repo root: make admin-e2e.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -16,6 +17,23 @@ fail() {
   echo "FAIL: $*" >&2
   [ -s "$work/server.log" ] && { echo "--- server.log (tail)"; tail -n 20 "$work/server.log"; } || true
   exit 1
+}
+# start_server BIN PORT: migrate, seed the administrator and serve from the current directory (env already set);
+# refuses to run when something already answers on the port (a leftover E2E_KEEP server would take the run).
+start_server() {
+  local bin=$1 p=$2
+  if curl -fsS -o /dev/null "http://127.0.0.1:$p/healthz" 2>/dev/null; then fail "port $p already answers /healthz (a leftover server?)"; fi
+  "$bin" migrate >"$work/server.log" 2>&1 || fail "migrate"
+  HYDROGEN_ADMIN_PASSWORD="$password" "$bin" users:create-admin "$login" >>"$work/server.log" 2>&1 || fail "users:create-admin"
+  "$bin" serve >>"$work/server.log" 2>&1 & pid=$!
+  for _ in $(seq 200); do curl -fsS -o /dev/null "http://127.0.0.1:$p/healthz" 2>/dev/null && return 0; sleep 0.1; done
+  fail "server on port $p did not come up"
+}
+
+# run_playwright PORT [ENV=VALUE...]
+run_playwright() {
+  local p=$1; shift
+  (cd "$root/admin/ui" && env "$@" BASE_URL="http://127.0.0.1:$p" MANAGE_TOKEN="$MANAGE_TOKEN" ADMIN_LOGIN="$login" ADMIN_PASSWORD="$password" npx playwright test)
 }
 trap cleanup EXIT
 
@@ -63,17 +81,44 @@ export SCHEMA_DIR="$work/schema" CONFIG_DIR="$work/config"
 export DATABASE_URL="sqlite:$work/h.db" LISTEN_ADDR="127.0.0.1:$port" PREVIEW_SECRET=e2e-preview-secret-0123456789abcdef
 export MANAGE_TOKEN=e2e-manage-token
 cd "$root/examples/multisite"
-"$work/multisite" migrate >"$work/server.log" 2>&1
-HYDROGEN_ADMIN_PASSWORD="$password" "$work/multisite" users:create-admin "$login" >>"$work/server.log" 2>&1 || fail "users:create-admin"
-"$work/multisite" serve >>"$work/server.log" 2>&1 & pid=$!
-for _ in $(seq 200); do curl -fsS -o /dev/null "http://127.0.0.1:$port/healthz" 2>/dev/null && break; sleep 0.1; done
-curl -fsS -o /dev/null "http://127.0.0.1:$port/healthz" || fail "server did not come up"
+start_server "$work/multisite" "$port"
 
-echo "== playwright"
+echo "== playwright (multisite)"
 status=0
-(cd "$root/admin/ui" && BASE_URL="http://127.0.0.1:$port" MANAGE_TOKEN="$MANAGE_TOKEN" ADMIN_LOGIN="$login" ADMIN_PASSWORD="$password" npx playwright test) || status=$?
+run_playwright "$port" E2E_PROJECT= || status=$?
+kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; pid=
+[ "$status" -eq 0 ] || exit "$status"
+
+echo "== build examples/content"
+(cd "$root/examples/content/admin" && test -d node_modules || { (cd "$root/packages" && npm install --no-audit --no-fund >/dev/null && npm run build -w admin-sdk >/dev/null) && npm ci --no-audit --no-fund >/dev/null; })
+(cd "$root/examples/content" && go build -o "$work/content" .)
+cport=${ADMIN_E2E_CONTENT_PORT:-18435}
+cwork="$work/content-run"
+mkdir -p "$cwork/config"
+cp "$root/examples/content/config/"*.yaml "$cwork/config/"
+# A module that throws on import when the test sets localStorage "x-broken": the loader must toast once and
+# leave the built-in UI working.
+cat >"$cwork/broken.js" <<'JS'
+if (localStorage.getItem('x-broken')) throw new Error('broken extension module');
+JS
+python3 - "$cwork/config/app.yaml" "$cwork/broken.js" <<'PY'
+import sys
+p, broken = sys.argv[1:]
+s = open(p).read()
+old = "elements: [./admin/dist/elements.js]"
+assert old in s
+open(p, "w").write(s.replace(old, "elements: [./admin/dist/elements.js, " + broken + "]"))
+PY
+export CONFIG_DIR="$cwork/config" DATABASE_URL="sqlite:$cwork/h.db" LISTEN_ADDR="127.0.0.1:$cport"
+unset SCHEMA_DIR
+cd "$root/examples/content"
+start_server "$work/content" "$cport"
+
+echo "== playwright (content extensions)"
+status=0
+run_playwright "$cport" E2E_PROJECT=content || status=$?
 if [ -n "${E2E_KEEP:-}" ]; then
-  echo "E2E_KEEP: server stays up at http://127.0.0.1:$port/admin/ (login $login; ctrl-c to stop)"
+  echo "E2E_KEEP: server stays up at http://127.0.0.1:$cport/admin/ (login $login; ctrl-c to stop)"
   sleep 86400 || true
 fi
 exit $status

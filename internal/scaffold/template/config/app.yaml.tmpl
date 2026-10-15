@@ -21,6 +21,12 @@ manage:
 # admin:
 #   enabled: true
 #   prefix: /admin
+#   # Admin extensions: custom elements built from ./admin (cd admin && npm install && npm run build).
+#   elements: [./admin/dist/elements.js]
+#   theme: { name: {{.Name}}, logo: ./admin/logo.svg, accent: "#0b6", css: ./admin/theme.css }
+#   strings: ./admin/strings.json          # {"key": "text"} overrides of the admin's texts
+#   widgets: { hello: x-hello }            # a schema field uses `admin: { widget: hello }`
+#   # also: cells, panels, actions, dashboard, views, slots; hydrogen help describes ADMIN_ELEMENTS_DEV_URL
 
 delivery:
   # Signs preview tokens: at least 32 characters; required outside dev (dev derives it from manage.token).

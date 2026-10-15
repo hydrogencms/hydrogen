@@ -1,1 +1,0 @@
-import{K as o,_ as p,t as r,a as d,f as l,X as f,k as c}from"./index-Cb_1yiNC.js";var h=l("<span><!></span>");function m(t,e){let s=o(e,"tone",3,"neutral");var a=h(),n=c(a);p(n,()=>e.children),r(()=>f(a,1,`h-badge h-badge--${s()??""}`)),d(t,a)}export{m as B};

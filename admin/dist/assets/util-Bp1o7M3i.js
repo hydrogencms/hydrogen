@@ -1,0 +1,1 @@
+import{v as i,Y as n}from"./index-C_AGL804.js";import{e as c}from"./errors-FPX9Hb-R.js";async function m(){return i.get("/policies")}const d=20;async function p(a,o){let t;const s=await a.submit(async e=>{try{return await o(e)}catch(r){throw r instanceof n&&r.status===403&&r.code==="forbidden"&&(t=r),r}});return t&&(a.formError=c(t)),s}export{d as P,m as l,p as s};

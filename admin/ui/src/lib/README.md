@@ -287,3 +287,57 @@ Routes render inside `<main class="h-main">`; give them a root `<div class="h-pa
 
 `config()` from `lib/config.ts` returns `{apiPrefix, prefix, pages, deliveryPrefix}` read once from
 `<prefix>/config.json` (located relative to the entry script, so any `admin.prefix` works).
+
+## Extension slots (H5c)
+
+`config().extensions` (from `<prefix>/config.json`, always present, empty lists when unconfigured) is parsed by
+`lib/extensions.svelte.ts` (`ext`). `main.ts` calls `ext.boot()` before the first render: it applies the theme
+(`theme.name` overrides the i18n key `app.name`, so the shell, login and title follow; `theme.logo` replaces the nav
+icon; `theme.accent` sets `--h-accent` on `:root`; `theme.css` is appended as a `<link rel=stylesheet>`), fetches every
+`strings` URL and merges the JSON into i18n (listed order, later wins; a failed or missing file is skipped with one
+console warning), and registers the `views` as routes.
+
+Element modules (`elements`) are ES modules that define custom elements as a side effect of loading. Nothing is
+imported until a slot first renders: `ext.ensureElements()` runs `import(url)` once per URL. A URL that fails shows
+one error toast ("Admin extension failed to load: <url>") and the built-in UI stays; the next slot use retries it
+(no second toast). The mount code (`lib/ext/ExtensionHost.svelte`, `mount.ts`) is itself a dynamic import behind
+`<Extension>`, so it is only fetched when a slot has entries; the initial chunk holds just the manifest parsing,
+theme/strings boot and the menu/policy filters. `<Extension tag props
+onEvents />` (`lib/ext/Extension.svelte`) waits for it, then `mountElement(container, tag, props, {ctx, on})`
+creates the element, assigns `ctx` and then every prop as a **property** (never an attribute) before it is
+connected, and listens for the events on the element. Prop changes call `update(props)` (unchanged values are not
+re-assigned); a new session (principal or grants change) re-assigns `ctx`. `ctx` is the SDK's `AdminContext`: `api`
+(`get(path, init?)`, `post(path, body?, init?)`, `patch`, `del`: paths relative to the API prefix, the admin's client
+with CSRF and error handling), `t`, `navigate`, `toast`, `principal`, `can`, `locale`, `prefix`.
+
+| Slot | Where | Props (besides `ctx`) | Events |
+| --- | --- | --- | --- |
+| widget | `lib/fields/FieldRow`, `admin.widget` = a manifest widget name | `value`, `field`, `locale`, `readonly`, `error?` | `change` `{value}` sets the form value |
+| cell | list column, `admin.list` entry `field:cell` | `value`, `item`, `field` | none |
+| panel | editor tabs after the built-ins (disabled on new items), filtered by `types` | `item`, `type`, `locale`, `draft` | `refresh` reloads the item |
+| action | editor header after Publish, filtered by `types` and `can(policy)` | `item`, `type`, `locale` | `refresh`, `navigate` `{path}` |
+| dashboard | a card per widget, in manifest order, titled with `title` | none | none |
+| view | route from `views` (`ViewHost`), menu entry under its `menu` heading when `can(policy)` | `params`, `query` (plain object) | `navigate` `{path}` |
+| before/after | `login`, `list`, `editor`, `dashboard` | `at`; `type` (list); `item`, `type` (editor) | none |
+
+Rules: only real `CustomEvent`s count (a native `change` bubbling out of an inner input of a light-DOM widget is
+ignored), and `change`/`navigate` need an object `detail`. `navigate` and `ctx.navigate` accept admin-relative paths
+only (a leading `/` is added; absolute and protocol URLs are refused with a warning). `policy` is enforced for
+panels, actions, slots, dashboard widgets and views with `can()`. A `refresh` in the editor asks to confirm when
+the form has unsaved edits. Custom widgets render their own error: the `Field` row around a custom widget shows
+only the label and description, and the widget gets `error`. Manifest maps and lists are sanitised (own string
+entries only; `__proto__`, `constructor`, `prototype` keys and non-string values are dropped).
+
+An unknown widget or cell name falls back to the built-in control with one console warning. Hooks for tests:
+wrappers carry `data-extension="<tag>"`; slots add `data-slot="<at>"`, actions `data-action="<tag>"`, dashboard cards
+`data-dashboard-widget="<tag>"`.
+
+### Dev entry and HMR
+
+When the server is started with `ADMIN_ELEMENTS_DEV_URL` (e.g. `http://localhost:5174`, the project's Vite dev
+server; dev only), `config.json` lists `<prefix>/x/dev/src/elements.ts` instead of the built files and the server
+proxies `<prefix>/x/dev/*` to Vite, so the strict CSP (`'self'`) still holds. The loader needs nothing special: it
+`import()`s that URL like any other. Vite's HMR can replace a custom element's module, but `customElements.define`
+cannot redefine a tag, so a redefined element only updates after the page is reloaded (SDK `defineElement` warns);
+Svelte custom elements that update props reactively refresh in place. Modules are imported on the first slot use,
+so open a screen that renders one to load it.
