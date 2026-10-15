@@ -12,6 +12,7 @@ import { matchSite } from '@hydrogencms/router'
 import type { Metadata as RouteMetadata, Resolved } from '@hydrogencms/router'
 import { adminOriginWarning } from './admin.js'
 import { Live } from './live.js'
+import { previewHash } from './hash.js'
 import { callCached, resolveCached, resolveFresh } from './cache.js'
 import type { Called, Cfg, Method } from './cache.js'
 import { channelInfos, clientOf, matcherHeaders, setToken } from './delivery.js'
@@ -96,7 +97,7 @@ const MAX_BODY = 1 << 20
 
 export function createHydrogen<T extends object = Record<string, unknown>>(o: HydrogenOptions<T>) {
   const names = o.channels ?? (o.channel ? [o.channel] : [])
-  if (!names.length) throw new Error('createHydrogen: set channel or channels')
+  if (!names.length) throw new Error('createHydrogen: no channel')
   setToken(o.baseUrl, o.token)
   const types = Object.keys(o.templates)
   const previewBase = o.previewPath ?? '/preview'
@@ -107,8 +108,8 @@ export function createHydrogen<T extends object = Record<string, unknown>>(o: Hy
   const adminOrigin = new URL(o.adminOrigin ?? o.baseUrl).origin
   let warned = false
   const warnAdmin = () => {
-    const w = adminOriginWarning(adminOrigin)
-    if (w && !warned) console.warn(`@hydrogencms/next: ${w}`)
+    const w = warned ? undefined : adminOriginWarning(adminOrigin)
+    if (w) console.warn(`@hydrogencms/next: ${w}`)
     warned = true
   }
   const urlOf = (h: Headers, path: string) => publicUrl(h, path, o.origin, o.trustForwarded)
@@ -136,19 +137,28 @@ export function createHydrogen<T extends object = Record<string, unknown>>(o: Hy
   }
 
   /** Client templates (`'use client'` modules) get the live wrapper in draft mode; server templates render as they are. */
-  function render(T: ComponentType<any>, p: { item: Item<any>; locale: string; metadata: RouteMetadata; client: Client<T>; draft: boolean }): ReactElement {
-    const { client, draft, ...base } = p
+  type RenderProps = { item: Item<any>; locale: string; metadata: RouteMetadata; client: Client<T>; draft: boolean; token?: string }
+  function render(T: ComponentType<any>, p: RenderProps): ReactElement {
+    const { client, draft, token, ...base } = p
     if (draft) warnAdmin()
-    if ((T as { $$typeof?: symbol }).$$typeof === Symbol.for('react.client.reference'))
-      return draft ? createElement(Live, { Template: T, adminOrigin, ...base }) : createElement(T, { ...base, preview: false })
-    const el = createElement(T, { ...base, preview: draft, blocks: o.blocks, client })
-    return draft ? createElement(Fragment, null, createElement('meta', { name: 'hydrogen-preview', content: '1' }), el) : el
+    const el = (T as { $$typeof?: symbol }).$$typeof === Symbol.for('react.client.reference')
+      ? createElement(draft ? Live : T, draft ? { Template: T, adminOrigin, ...base } : { ...base, preview: false })
+      : createElement(T, { ...base, preview: draft, blocks: o.blocks, client })
+    return draft ? createElement(Fragment, null, createElement('meta', { name: 'hydrogen-preview', content: token ? previewHash(token) : '' }), el) : el
   }
+
+  const draftToken = async () => (await draftMode()).isEnabled ? tokenFromCookie((await cookies()).get(PREVIEW_COOKIE)?.value) : undefined
+
+  /** Server component: reads the draft cookie so routes of your own need not pass the token. */
+  async function Drafted({ T, ...p }: RenderProps & { T: ComponentType<any> }) {
+    return render(T, { ...p, token: await draftToken() })
+  }
+  const show = (T: ComponentType<any>, p: RenderProps) => (p.draft ? createElement(Drafted, { T, ...p }) : render(T, p))
 
   type Loaded = { r: Resolved; client: Client<T>; draft: boolean }
 
   async function load({ params }: Params): Promise<Loaded> {
-    const token = (await draftMode()).isEnabled ? tokenFromCookie((await cookies()).get(PREVIEW_COOKIE)?.value) : undefined
+    const token = await draftToken()
     const { url, path, channel, fwd } = await locate(params)
     const none: Resolved = { kind: 'notFound', tags: [] }
     if (!token) {
@@ -199,7 +209,7 @@ export function createHydrogen<T extends object = Record<string, unknown>>(o: Hy
           case 'page': {
             const T = r.template === '*' ? o.fallback : o.templates[r.template]
             if (!T) notFound()
-            return render(T, { item: r.item, locale: r.locale, metadata: r.metadata, client, draft })
+            return show(T, { item: r.item, locale: r.locale, metadata: r.metadata, client, draft })
           }
           case 'redirect':
             return r.status === 301 || r.status === 308 ? permanentRedirect(r.location) : redirect(r.location)
@@ -248,7 +258,7 @@ export function createHydrogen<T extends object = Record<string, unknown>>(o: Hy
       return async function POST(req: Request): Promise<Response> {
         const secret = o.revalidateSecret
         if (!secret || secret.length < MIN_SECRET_LENGTH)
-          return Response.json({ error: `revalidateSecret must be at least ${MIN_SECRET_LENGTH} characters` }, { status: 500 })
+          return Response.json({ error: `revalidateSecret: ${MIN_SECRET_LENGTH}+ characters` }, { status: 500 })
         const body = await readCapped(req, MAX_BODY)
         if (!body) return Response.json({ error: 'body too large' }, { status: 413 })
         if (!(await verifySignature(secret, req.headers.get(SIGNATURE_HEADER), body)))
@@ -295,18 +305,18 @@ export function createHydrogen<T extends object = Record<string, unknown>>(o: Hy
       return (await clientOf(o.baseUrl, channel).tree(a)).data
     },
 
-    /** renders a template like the catch-all does (live wrapper in draft mode), for routes of your own */
-    render: (T: ComponentType<any>, p: { item: Item<any>; locale: string; metadata: RouteMetadata; draft: boolean; client?: Client<T> }) =>
-      render(T, { client: p.client ?? (clientOf(o.baseUrl, undefined) as unknown as Client<T>), ...p }),
+    /** renders a template like the catch-all does (live wrapper in draft mode, proving the preview token from the draft cookie), for routes of your own */
+    render: (T: ComponentType<any>, p: { item: Item<any>; locale: string; metadata: RouteMetadata; draft: boolean; client?: Client<T> }): ReactElement =>
+      show(T, { client: p.client ?? (clientOf(o.baseUrl, undefined) as unknown as Client<T>), ...p }),
 
     /** the preview token in draft mode, for routes of your own */
     async previewToken(): Promise<string | undefined> {
-      return (await draftMode()).isEnabled ? tokenFromCookie((await cookies()).get(PREVIEW_COOKIE)?.value) : undefined
+      return draftToken()
     },
 
     /** a client of a channel for routes of your own: uncached with the preview token in draft mode, else cached and tagged */
     async clientFor(channel: string): Promise<Client<T>> {
-      const token = (await draftMode()).isEnabled ? tokenFromCookie((await cookies()).get(PREVIEW_COOKIE)?.value) : undefined
+      const token = await draftToken()
       return token ? (clientOf(o.baseUrl, channel, token) as unknown as Client<T>) : cachedClient(cfgOf(channel))
     },
 

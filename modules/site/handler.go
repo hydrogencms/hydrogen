@@ -299,9 +299,10 @@ func (s *server) serveAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 // injectPreview adds what the admin's preview pane needs: the preview marker the bridge looks for, a
-// data-h-root element to swap on reload (unless the layout marks one), and the bridge script.
-func injectPreview(page []byte, adminOrigin string) []byte {
-	const marker = `<meta name="hydrogen-preview" content="1">`
+// data-h-root element to swap on reload (unless the layout marks one), and the bridge script. The marker holds
+// the SHA-256 of the preview token, which proves to the admin that this server knows the token.
+func injectPreview(page []byte, adminOrigin, tokenHash string) []byte {
+	marker := `<meta name="hydrogen-preview" content="` + tokenHash + `">`
 	script := `<script src="` + bridgeURL + `" data-auto data-mode="reload" data-admin-origin="` + adminOrigin + `"></script>`
 	out := page
 	if !rootAttr.Match(out) {

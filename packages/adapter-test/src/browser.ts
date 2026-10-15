@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { blockMarkers, pathMarkers } from './html.js'
@@ -17,6 +18,16 @@ export async function loadPlaywright(from?: string): Promise<any | undefined> {
     }
   }
   return undefined
+}
+
+/** The hex SHA-256 of a preview token: what a frontend that knows the token puts in `<meta name="hydrogen-preview">` and `ready.preview`. */
+export const tokenHash = (token: string): string => createHash('sha256').update(token).digest('hex')
+
+/** The admin's gate before it sends `init`: `ready.preview` must be the hash of the token it minted for the preview URL. */
+export function checkPreviewProof(ready: Record<string, any> | undefined, token: string): void {
+  const got = ready?.preview
+  assert(got !== undefined, "frontend doesn't prove the preview token: ready has no `preview` (render <meta name=\"hydrogen-preview\" content=\"<sha256 hex of the token>\"> in preview)")
+  assert(typeof got === 'string' && got.toLowerCase() === tokenHash(token), `frontend doesn't prove the preview token: ready.preview is ${JSON.stringify(got)}, want the SHA-256 hex of the token from the preview URL`)
 }
 
 interface Msg {
@@ -127,6 +138,9 @@ export async function bridgeChecks(c: BridgeContext): Promise<void> {
         assert(typeof ready.url === 'string', 'ready.url missing')
       })
       if (!ok || !ready) return
+      // Like the admin: `init` (the draft) goes only to a frontend that proves it knows the token.
+      const proven = await rec.check(G, 'handshake: ready proves the preview token (ready.preview is the SHA-256 of it)', () => checkPreviewProof(ready, m.token))
+      if (!proven) return
       const mode = ready.mode as string
       let cursor = (await s.msgs()).length
       const next = async <T>(fn: () => Promise<T>): Promise<T> => {

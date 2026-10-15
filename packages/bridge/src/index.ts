@@ -104,6 +104,19 @@ export function isPreview(win: W = window as W): boolean {
   }
 }
 
+const CAP = { capture: true }
+const HASH = /^[0-9a-f]{64}$/i
+
+/** The proof of preview: the SHA-256 hex of the preview token, from `<meta name="hydrogen-preview">` (the old content `1` has none). */
+export function previewProof(win: W = window as W): string | undefined {
+  try {
+    const c = win.document.querySelector('meta[name="hydrogen-preview"]')?.getAttribute('content') ?? ''
+    return HASH.test(c) ? c : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export interface BridgeOptions {
   adminOrigin: string
   mode: Mode
@@ -134,7 +147,25 @@ export function createBridge(o: BridgeOptions): Bridge {
   let on = false
   const now = () => (w.performance ?? Date).now()
   const post = (m: Obj) => w.parent.postMessage({ h: 1, ...m }, origin)
-  const ready = () => post({ type: 'ready', mode: o.mode, sdk: SDK, url: w.location.href })
+  const ready = () => {
+    const preview = previewProof(w)
+    post({ type: 'ready', mode: o.mode, sdk: SDK, url: w.location.href, ...(preview ? { preview } : {}) })
+  }
+  const reload = () => w.location.reload()
+  // Same-site links keep `?preview=<token>` (a frame without cookies navigates inside preview).
+  const follow = (e: Event) => {
+    try {
+      const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null
+      const token = new URLSearchParams(w.location.search).get('preview')
+      if (!a || !token) return
+      const u = new URL(a.href)
+      if (u.origin !== w.location.origin || u.searchParams.has('preview')) return
+      u.searchParams.set('preview', token)
+      a.href = u.href
+    } catch {
+      // leave the link alone
+    }
+  }
   const resync = () => post({ type: 'resync', rev })
   const error = (message: string) => post({ type: 'error', message })
 
@@ -160,8 +191,9 @@ export function createBridge(o: BridgeOptions): Bridge {
       } else if (m.type === 'reload') {
         const r = m.rev as number
         if (o.onReload) void o.onReload(r)
+        else if (w.origin === 'null') reload()
         else {
-          reloadSwap({ window: w, ready }).then((ms) => bridge.rendered(r, ms), (x) => error(String(x?.message ?? x)))
+          reloadSwap({ window: w, ready }).then((ms) => bridge.rendered(r, ms), (x) => (x?.fetch ? reload() : error(String(x?.message ?? x))))
         }
       }
     } catch (x) {
@@ -174,10 +206,14 @@ export function createBridge(o: BridgeOptions): Bridge {
       if (on || w.parent === w || !(o.preview ?? isPreview(w))) return
       on = true
       w.addEventListener('message', onMessage)
+      for (const t of ['click', 'auxclick']) w.addEventListener(t, follow, CAP)
       ready()
     },
     disconnect() {
-      if (on) w.removeEventListener('message', onMessage)
+      if (on) {
+        w.removeEventListener('message', onMessage)
+        for (const t of ['click', 'auxclick']) w.removeEventListener(t, follow, CAP)
+      }
       on = false
     },
     rendered(r, ms) {
@@ -203,7 +239,9 @@ export interface SwapOptions {
 export async function reloadSwap(o: SwapOptions = {}): Promise<number> {
   const w = o.window ?? (window as W)
   const t = w.performance.now()
-  const res = await (o.fetch ?? w.fetch.bind(w))(w.location.href, { credentials: 'include', headers: { accept: 'text/html' } })
+  const res = await (o.fetch ?? w.fetch.bind(w))(w.location.href, { credentials: 'include', headers: { accept: 'text/html' } }).catch((e) => {
+    throw Object.assign(new Error(`reload: ${e?.message ?? e}`), { fetch: true })
+  })
   if (!res.ok) throw new Error(`reload: ${res.status} ${res.statusText}`)
   const gone = new Error('reload: preview expired or lost')
   if (res.redirected) throw gone

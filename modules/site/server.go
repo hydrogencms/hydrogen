@@ -185,8 +185,9 @@ func (s *server) warnSameOrigin() {
 			continue
 		}
 		if s.cfg.AdminURL == "" || fe == s.cfg.AdminURL {
-			s.log.Warn("site: previews are served from the admin's origin, so a previewed page can reach the admin; "+
-				"serve the website from a separate host in production and set modules.site.admin_url", "channel", ch.Name)
+			s.log.Warn("site: the website shares the admin's origin; its scripts are trusted like project code and the "+
+				"admin locks its preview frame. For production, serve the website from a separate host or port and set "+
+				"modules.site.admin_url", "channel", ch.Name)
 			return
 		}
 	}

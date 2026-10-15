@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -397,7 +399,9 @@ func TestPreview(t *testing.T) {
 		if r.status != 200 {
 			t.Fatalf("%d %s", r.status, r.body)
 		}
-		for _, want := range []string{"Home (draft)", `<meta name="hydrogen-preview" content="1">`, `data-h-root`, `data-h-path="fields/body/0"`,
+		prevTok := strings.TrimPrefix(u[strings.Index(u, "preview="):], "preview=")
+		sum := sha256.Sum256([]byte(prevTok))
+		for _, want := range []string{"Home (draft)", `<meta name="hydrogen-preview" content="` + hex.EncodeToString(sum[:]) + `">`, `data-h-root`, `data-h-path="fields/body/0"`,
 			`<script src="/__hydrogen/bridge.js" data-auto data-mode="reload" data-admin-origin="` + adminURL + `"></script>`} {
 			if !strings.Contains(r.body, want) {
 				t.Errorf("preview lacks %q", want)
@@ -409,6 +413,9 @@ func TestPreview(t *testing.T) {
 		// no read-only paths inside shared blocks
 		if i := strings.Index(r.body, `data-h-block="shared"`); i < 0 || strings.Contains(r.body[i:], `data-h-path="fields/body/5/slots/blocks`) {
 			t.Error("shared content is editable")
+		}
+		if strings.Contains(r.body, prevTok) {
+			t.Error("the raw preview token is rendered")
 		}
 		if csp := r.header.Get("Content-Security-Policy"); csp != "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors "+adminURL || r.header.Get("Referrer-Policy") != "no-referrer" {
 			t.Errorf("preview headers: CSP %q, Referrer-Policy %q", csp, r.header.Get("Referrer-Policy"))
@@ -437,6 +444,17 @@ func TestPreview(t *testing.T) {
 		if about.status != 200 || !strings.Contains(about.body, `hydrogen-preview`) {
 			t.Errorf("/en/about with the cookie: %d", about.status)
 		}
+		// a locked frame has no cookies: ?preview= alone previews every page, also next to another channel's cookie,
+		// and a reload of the tokenized URL renders the current draft uncached
+		for _, hdr := range []map[string]string{nil, {"Cookie": "hydrogen-preview-de=whatever"}} {
+			if r := s.do("GET", "/en/about?"+u[strings.Index(u, "preview="):], hdr, nil); r.status != 200 || !strings.Contains(r.body, `content="`+hex.EncodeToString(sum[:])+`"`) || r.header.Get("Cache-Control") != "no-store" {
+				t.Errorf("token-only page with headers %v: %d %q", hdr, r.status, r.header.Get("Cache-Control"))
+			}
+		}
+		s.manage("PATCH", "/items/"+home, map[string]any{"locale": "en", "fields": map[string]any{"title": "Home (draft 2)"}})
+		if r := s.get(u); r.status != 200 || !strings.Contains(r.body, "Home (draft 2)") || r.header.Get("Cache-Control") != "no-store" {
+			t.Errorf("reload of the tokenized URL: %d %q", r.status, r.header.Get("Cache-Control"))
+		}
 		// a token for another channel does not preview here; a bad cookie is dropped, a bad query token refused
 		other := s.previewURL(home, "de", "de")
 		tok := strings.TrimPrefix(other[strings.Index(other, "preview="):], "preview=")
@@ -454,6 +472,11 @@ func TestPreview(t *testing.T) {
 		// an item that was never published has no route: the preview pattern URL renders it
 		soon := s.itemID("landing", "Coming soon")
 		pu := s.previewURL(soon, "en", "en")
+		defer func() {
+			if r := s.do("GET", pu, map[string]string{"Cookie": "hydrogen-preview-de=whatever"}, nil); r.status != 200 {
+				t.Errorf("token-only preview route next to another channel's cookie: %d", r.status)
+			}
+		}()
 		if !strings.HasPrefix(pu, "/en/preview/en/landing/"+soon+"?preview=") {
 			t.Fatalf("preview url = %q", pu)
 		}
@@ -494,6 +517,9 @@ func TestAssetsAndBridge(t *testing.T) {
 		b := s.get("/__hydrogen/bridge.js")
 		if b.status != 200 || !strings.Contains(b.body, "HydrogenBridge") || !strings.Contains(b.header.Get("Content-Type"), "javascript") {
 			t.Errorf("bridge: %d %v", b.status, b.header)
+		}
+		if r.header.Get("Access-Control-Allow-Origin") != "*" {
+			t.Errorf("asset CORS header: %q", r.header.Get("Access-Control-Allow-Origin"))
 		}
 		if r := s.get("/__hydrogen/assets/nothing.css"); r.status != 404 {
 			t.Errorf("unknown asset: %d", r.status)

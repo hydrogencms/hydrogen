@@ -9,7 +9,7 @@ Every message is a JSON object with `h: 1` (the protocol version) and a string `
 
 | From | `type` | Fields | When |
 |---|---|---|---|
-| frontend | `ready` | `mode` (`"live"` or `"reload"`), `sdk` (`name@version`), `url` | the bridge connected, and again after every reload swap |
+| frontend | `ready` | `mode` (`"live"` or `"reload"`), `sdk` (`name@version`), `url`, `preview` (optional, see [Proof of the preview token](#proof-of-the-preview-token)) | the bridge connected, and again after every reload swap or reload |
 | admin | `init` | `item`, `itemType` (the content type), `locale`, `rev`, `doc` | answer to `ready` or `resync`: the full working document of the item in `locale` |
 | admin | `patch` | `rev`, `base`, `ops` | a change: JSON Patch operations to apply to the document at revision `base`, producing `rev` |
 | frontend | `resync` | `rev` | the frontend cannot apply a patch (wrong base, no document yet, or a failing operation); `rev` is the revision it holds, or `-1` |
@@ -29,6 +29,35 @@ Every message is a JSON object with `h: 1` (the protocol version) and a string `
   from its own iframe.
 - A message failing a check is dropped without an answer.
 
+### Locked frames
+
+When the preview URL is on the admin's own origin, the admin locks the frame: its sandbox omits `allow-same-origin`,
+so the page runs with an opaque origin (`window.origin` is `"null"`) and has no handle on the admin, no cookies and no
+storage. Two things change on the admin side:
+
+- it accepts a message when `e.source` is the frame's `contentWindow` (the origin of a locked frame reads `"null"`,
+  so it cannot be compared);
+- it posts to a locked frame with target `*`. Only `init` and `patch` carry the draft, and the admin sends `init`
+  only after the proof below.
+
+The frontend side is unchanged: it still checks the admin origin and posts to it. Cross-origin frontends are not
+locked; the browser already isolates them, and the admin posts to the preview origin.
+
+## Proof of the preview token
+
+A frame can navigate away (a link in content) to a page that carries a bridge or a look-alike. So `ready` carries
+`preview`: the SHA-256 of the preview token, as 64 hex digits. The bridge reads it from
+
+```html
+<meta name="hydrogen-preview" content="<sha256 hex of the preview token>">
+```
+
+A server that knows the token (it came in `?preview=` or a cookie) renders the hash, never the token. `preview` is
+omitted when the meta is missing, holds the old value `1`, or is not 64 hex digits. The admin sends `init` only when
+`ready.preview` equals the hash of the token it minted for the URL; otherwise it ignores the `ready` and shows "not
+the previewed page". An adapter whose `ready` has no matching hash fails the conformance check "frontend doesn't
+prove the preview token".
+
 ## Activation
 
 The bridge is inert (no listener, no `ready`) unless the page is inside a frame **and** was opened for preview.
@@ -36,7 +65,9 @@ Preview is detected by any of:
 
 - a non-empty `preview` query parameter (the token the CMS adds to the preview URL);
 - a cookie named `hydrogen-preview` that JavaScript can read (a server that keeps it HttpOnly cannot use this one);
-- `<meta name="hydrogen-preview" content="1">`, which a server renders when it knows the request is a preview.
+- `<meta name="hydrogen-preview" content="…">`, which a server renders when it knows the request is a preview. The
+  content is the token's hash (see above); the old `content="1"` still activates the bridge but cannot pass the
+  admin's proof.
 
 Code that knows better can pass `preview: true` or `false` to `createBridge`. Nothing changes for visitors: outside
 preview the bridge does nothing.
@@ -60,6 +91,19 @@ For server-rendered pages. The admin saves the draft, then sends `reload`. The f
 `data-h-root` with the new one; without such an element it replaces the children of `<body>`. It restores the scroll
 position, updates `document.title`, sends `ready` again and then `rendered` with the time taken.
 Scripts in swapped markup do not run; keep long-lived scripts (including the bridge) outside `data-h-root`.
+
+The bridge falls back to `location.reload()` when the swap cannot work: the window has an opaque origin (a locked
+frame: `window.origin === "null"`, where the fetch would be cross-origin), or the fetch itself fails (network or CORS).
+Browsers restore the scroll position. There is no `rendered` afterwards; the reloaded page starts a new bridge that
+sends `ready`, and the admin answers as for any `ready`. An HTTP error or an expired preview is still reported with
+`error`, not reloaded.
+
+## Links in a frame
+
+In a frame, in preview, when the current URL carries `?preview=<token>`, the bridge appends that parameter to a
+same-origin `<a href>` when it is clicked (capturing `click` and `auxclick` listeners; the DOM is not rewritten on
+load). A frame without cookies (a locked frame) so keeps preview while navigating. Links that already have a
+`preview` parameter, other origins and other schemes are left alone, and so is everything when the URL has no token.
 
 ## Documents and paths
 

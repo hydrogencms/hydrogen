@@ -1,15 +1,22 @@
 // The admin (parent) side of the preview bridge protocol v1: see docs/bridge-protocol.md.
 import { equal, patchOps, plain } from './patch';
 
-export type Phase = 'connecting' | 'disconnected' | 'live' | 'reload' | 'error';
+export type Phase = 'connecting' | 'disconnected' | 'unverified' | 'live' | 'reload' | 'error';
 export interface HostStatus {
   phase: Phase;
   message?: string;
 }
 
 export interface HostOptions {
-  /** `scheme://host[:port]` of the preview URL: the only origin messages are sent to and accepted from. */
+  /** `scheme://host[:port]` of the preview URL: the only origin messages are sent to and accepted from (unlocked frames). */
   origin: string;
+  /**
+   * The frame is sandboxed without `allow-same-origin` (the preview shares the admin's origin): its origin reads
+   * "null", so messages are accepted by source window alone and sent with target `*`.
+   */
+  locked?: boolean;
+  /** The preview token the pane minted; a `ready` is answered only when it carries this token's SHA-256 hex. */
+  token: string;
   frame(): Window | null;
   item: string;
   itemType: string;
@@ -40,9 +47,13 @@ export class PreviewHost {
   #dead = false;
   #pending = false;
   #readySince = false;
+  #expect: Promise<string>;
+  /** Locked reload mode: when the `reload` was sent, and whether the frame's load event has been seen since. */
+  #reloading: { t0: number; loaded: boolean; ready: boolean } | null = null;
 
   constructor(o: HostOptions) {
     this.#o = o;
+    this.#expect = sha256Hex(o.token).catch(() => '');
   }
 
   /**
@@ -53,8 +64,15 @@ export class PreviewHost {
   frameLoaded() {
     if (this.#readySince) {
       this.#readySince = false;
+      this.#reloadStep('loaded');
       return;
     }
+    if (this.#reloading && !this.#reloading.ready) {
+      // A locked frame reloads itself: its bridge may connect after the load event.
+      this.#reloading.loaded = true;
+      return;
+    }
+    this.#reloading = null;
     this.mode = null;
     this.#sent = null;
     this.#pending = false;
@@ -68,22 +86,22 @@ export class PreviewHost {
   }
 
   #post(msg: Record<string, unknown>) {
-    this.#o.frame()?.postMessage({ h: 1, ...msg }, this.#o.origin);
+    this.#o.frame()?.postMessage({ h: 1, ...msg }, this.#o.locked ? '*' : this.#o.origin);
   }
 
   handle(e: { origin: string; source: unknown; data: unknown }) {
     const w = this.#o.frame();
-    if (this.#dead || !w || e.source !== w || e.origin !== this.#o.origin) return;
+    if (this.#dead || !w || e.source !== w || (!this.#o.locked && e.origin !== this.#o.origin)) return;
     const m = e.data as Record<string, unknown> | null;
     if (!m || typeof m !== 'object' || m.h !== 1 || typeof m.type !== 'string') return;
+    if (m.type === 'ready') {
+      this.#readySince = true;
+      void this.#ready(m);
+      return;
+    }
+    // Only a page that proved it is the previewed one (a verified `ready`) is listened to further.
+    if (!this.mode) return;
     switch (m.type) {
-      case 'ready':
-        this.#readySince = true;
-        this.mode = m.mode === 'reload' ? 'reload' : 'live';
-        this.#o.onStatus?.({ phase: this.mode });
-        if (this.mode === 'live') this.#init();
-        else this.#sent ??= this.#doc;
-        break;
       case 'resync':
         if (this.mode !== 'reload') this.#init();
         break;
@@ -95,6 +113,35 @@ export class PreviewHost {
         this.#o.onStatus?.({ phase: 'error', message: String(m.message ?? '') });
         break;
     }
+  }
+
+  async #ready(m: Record<string, unknown>) {
+    const want = await this.#expect;
+    if (this.#dead) return;
+    if (!want || typeof m.preview !== 'string' || m.preview.toLowerCase() !== want) {
+      this.mode = null;
+      this.#sent = null;
+      this.#pending = false;
+      this.#reloading = null;
+      clearTimeout(this.#timer);
+      this.#o.onStatus?.({ phase: 'unverified' });
+      return;
+    }
+    this.mode = m.mode === 'reload' ? 'reload' : 'live';
+    this.#o.onStatus?.({ phase: this.mode });
+    if (this.mode === 'live') this.#init();
+    else this.#sent ??= this.#doc;
+    this.#reloadStep('ready');
+  }
+
+  #reloadStep(what: 'loaded' | 'ready') {
+    const r = this.#reloading;
+    if (!r) return;
+    if (what === 'loaded') r.loaded = true;
+    else r.ready = true;
+    if (!(r.loaded && r.ready)) return;
+    this.#reloading = null;
+    this.#o.onRendered?.(Math.round(performance.now() - r.t0), this.rev);
   }
 
   #init() {
@@ -161,6 +208,13 @@ export class PreviewHost {
   /** Reload mode: ask the page to fetch itself again. */
   reload() {
     this.rev++;
+    if (this.#o.locked) this.#reloading = { t0: performance.now(), loaded: false, ready: false };
     this.#post({ type: 'reload', rev: this.rev });
   }
+}
+
+/** SHA-256 of `text` as lower-case hex. */
+export async function sha256Hex(text: string): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }

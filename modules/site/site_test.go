@@ -118,9 +118,9 @@ func TestPageCache(t *testing.T) {
 
 func TestInjectPreview(t *testing.T) {
 	page := []byte("<!doctype html><html><head><title>x</title></head><body class=\"a\"><main>hi</main></body></html>")
-	got := string(injectPreview(page, "http://localhost:8080"))
+	got := string(injectPreview(page, "http://localhost:8080", "abc"))
 	for _, want := range []string{
-		`<meta name="hydrogen-preview" content="1">` + "\n</head>",
+		`<meta name="hydrogen-preview" content="abc">` + "\n</head>",
 		`<body class="a"><div data-h-root><main>hi</main></div><script src="/__hydrogen/bridge.js" data-auto data-mode="reload" data-admin-origin="http://localhost:8080"></script>`,
 	} {
 		if !strings.Contains(got, want) {
@@ -128,7 +128,7 @@ func TestInjectPreview(t *testing.T) {
 		}
 	}
 	marked := []byte("<html><head></head><body><div data-h-root>x</div></body></html>")
-	if got := string(injectPreview(marked, "o")); strings.Count(got, "data-h-root") != 1 || !strings.Contains(got, "</div>\n<script") && !strings.Contains(got, "</div><script") {
+	if got := string(injectPreview(marked, "o", "abc")); strings.Count(got, "data-h-root") != 1 || !strings.Contains(got, "</div>\n<script") && !strings.Contains(got, "</div><script") {
 		t.Errorf("a marked root is wrapped again: %s", got)
 	}
 }
@@ -173,17 +173,17 @@ func TestNormalizeOrigin(t *testing.T) {
 
 func TestInjectPreviewRobustness(t *testing.T) {
 	// the text "data-h-root" is not a root; no </head>; upper-case tags
-	got := string(injectPreview([]byte(`<HTML><BODY><p>mentions data-h-root in text</p></BODY></HTML>`), "o"))
-	for _, want := range []string{`<BODY><meta name="hydrogen-preview" content="1"><div data-h-root><p>`, `</div><script src=`} {
+	got := string(injectPreview([]byte(`<HTML><BODY><p>mentions data-h-root in text</p></BODY></HTML>`), "o", "abc"))
+	for _, want := range []string{`<BODY><meta name="hydrogen-preview" content="abc"><div data-h-root><p>`, `</div><script src=`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("lacks %q in %s", want, got)
 		}
 	}
-	got = string(injectPreview([]byte(`<html><head><title>x</title><body><div data-h-root class="a">x</div></body></html>`), "o"))
-	if strings.Count(got, "data-h-root") != 1 || !strings.Contains(got, `<head><meta name="hydrogen-preview" content="1"><title>`) {
+	got = string(injectPreview([]byte(`<html><head><title>x</title><body><div data-h-root class="a">x</div></body></html>`), "o", "abc"))
+	if strings.Count(got, "data-h-root") != 1 || !strings.Contains(got, `<head><meta name="hydrogen-preview" content="abc"><title>`) {
 		t.Errorf("got %s", got)
 	}
-	if got := string(injectPreview([]byte(`<header>x</header>`), "o")); !strings.HasPrefix(got, `<meta name="hydrogen-preview"`) {
+	if got := string(injectPreview([]byte(`<header>x</header>`), "o", "abc")); !strings.HasPrefix(got, `<meta name="hydrogen-preview"`) {
 		t.Errorf("a fragment: %s", got)
 	}
 }

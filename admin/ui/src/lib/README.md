@@ -317,10 +317,13 @@ breakpoint it is the same slide-over as the inspector, so the pages split view g
 
 - The pane mints a token (`POST /preview-tokens {channel, item, locale, ttl: 3600}`), renews it at 50 minutes, and
   loads the returned `url` in `<iframe sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-  referrerpolicy="no-referrer">`. The admin's CSP needs the frontend origin in `frame-src` (the server adds each
+  referrerpolicy="no-referrer">`. When the preview URL has the admin's own origin the frame is locked: the sandbox
+  drops `allow-same-origin` (opaque origin; messages are accepted by source window alone and posted with target
+  `*`). The admin's CSP needs the frontend origin in `frame-src` (the server adds each
   channel's `frontend` origin).
 - `host.ts` (`PreviewHost`) is the admin side of the bridge protocol (`docs/bridge-protocol.md`): it accepts messages
-  only from the frame window and the preview URL's origin, answers `ready` (live) with `init` `{item, itemType,
+  only from the frame window and the preview URL's origin, verifies each `ready` (`ready.preview` must be the SHA-256
+  hex of the minted token, else status "Not the previewed page" and the message is ignored), answers `ready` (live) with `init` `{item, itemType,
   locale, rev, doc: {fields}}`, sends a debounced (50 ms) `patch` per change (`patch.ts` diffs plain JSON into
   add/remove/replace operations: key by key for objects, per index for same-length arrays, adds or removes at the
   position of a pure insertion or removal, otherwise a whole replace), answers `resync` with `init`, and in reload

@@ -87,8 +87,17 @@ The admin shows your page in an iframe and talks to it with `postMessage`. The w
   (`@hydrogencms/bridge/iife`, a `<script data-auto data-admin-origin data-mode="reload">`) needs no JavaScript
   framework.
 - The bridge is inert unless the page is in a frame **and** in preview: a `?preview=` parameter, a readable
-  `hydrogen-preview` cookie, or `<meta name="hydrogen-preview" content="1">`. Servers that keep the token in an
-  HttpOnly cookie render the meta tag in preview.
+  `hydrogen-preview` cookie, or the meta tag below. Servers that keep the token in an HttpOnly cookie render it in
+  preview.
+- **Prove the token.** A server that knows the preview token renders
+  `<meta name="hydrogen-preview" content="<sha256 hex of the token>">` (never the token), and the bridge sends the
+  hash as `ready.preview`. The admin sends `init` (the draft) only when it equals the hash of the token it minted, so
+  a page the frame navigated to cannot receive the draft. The conformance suite plays the admin the same way: a
+  `ready` with a missing or wrong hash fails the check "frontend doesn't prove the preview token", and no `init` is
+  sent after it. `content="1"` still turns the bridge on but no longer passes. In Next, `@hydrogencms/next` renders
+  the hash in draft mode from its preview cookie.
+- In a locked frame (preview on the admin's origin) the bridge reloads with `location.reload()` instead of swapping
+  and keeps `?preview=<token>` on same-site links; see the protocol document.
 - It talks only to the configured **admin origin** (default: the CMS's origin); everything else is ignored.
 
 ### Markers in the markup
@@ -127,7 +136,7 @@ suite edits and publishes one page and one post and puts them back, so run it ag
 | `reserved` | the CMS reports `/blog/*` and `/api/*` as reserved |
 | `blog` | every post renders at `<prefix>/blog/<slug>` with its blocks |
 | `preview` | a never-published page renders with the token and is a 404 without it; a draft edit of a page and of a post (through the `/blog/{slug}` pattern) shows with the token only; `data-h-path` is present |
-| `bridge` | `--browser`: with the suite playing the admin in a frame, a page outside preview stays silent; `ready` arrives from the frontend origin; live mode (on a page and on a post's preview URL): `init`, a replace, a whole-document replace (path `""`), add at an index and with `-` (with `data-h-path`) and remove patches update the DOM and answer `rendered`, a stale `base` is answered with `resync`; reload mode: `reload` after a saved draft re-renders and answers `ready` and `rendered` |
+| `bridge` | `--browser`: with the suite playing the admin in a frame, a page outside preview stays silent; `ready` arrives from the frontend origin and proves the preview token (`ready.preview` is the SHA-256 hex of the token in the preview URL; no `init` is sent otherwise); live mode (on a page and on a post's preview URL): `init`, a replace, a whole-document replace (path `""`), add at an index and with `-` (with `data-h-path`) and remove patches update the DOM and answer `rendered`, a stale `base` is answered with `resync`; reload mode: `reload` after a saved draft re-renders and answers `ready` and `rendered` |
 | `revalidate` | a published change shows on the frontend within the timeout, and so does the revert |
 
 The browser checks use **your** Playwright (`npm i -D playwright && npx playwright install chromium`; or

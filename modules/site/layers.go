@@ -117,6 +117,7 @@ func (a *assetSet) serve(w http.ResponseWriter, r *http.Request, name string) {
 	}
 	h := w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Access-Control-Allow-Origin", "*")
 	if immutable {
 		h.Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {

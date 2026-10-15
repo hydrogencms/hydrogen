@@ -15,6 +15,10 @@ test('typing in the admin autosaves the draft and the website frame shows it', a
   await page.goto(`/admin/items/${home.id}`);
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
   const frame = frameOf(page);
+  // The website is on the admin's origin, so the frame is locked: no allow-same-origin.
+  const sandbox = await page.locator('iframe[title^="Preview of"]').getAttribute('sandbox');
+  expect(sandbox).toContain('allow-scripts');
+  expect(sandbox).not.toContain('allow-same-origin');
   await expect(frame.locator('[data-h-block="hero"]').first()).toBeVisible();
   await expect(page.getByRole('status').filter({ hasText: 'Reload mode' })).toBeVisible();
   await expect(page.getByText(/saves your changes to the draft/)).toBeVisible();

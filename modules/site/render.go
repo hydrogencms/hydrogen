@@ -2,6 +2,8 @@ package site
 
 import (
 	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"html"
@@ -105,7 +107,8 @@ func (s *server) finish(rc *reqCtx, body []byte) []byte {
 	if !rc.preview() {
 		return body
 	}
-	return injectPreview(body, html.EscapeString(s.adminOrigin(rc.r)))
+	sum := sha256.Sum256([]byte(rc.token))
+	return injectPreview(body, html.EscapeString(s.adminOrigin(rc.r)), hex.EncodeToString(sum[:]))
 }
 
 // newPage builds the render state of a request: helpers, settings and the view.

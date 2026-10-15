@@ -19,10 +19,10 @@ export type PreviewRequest = { exit: true; path: string } | { exit?: false; toke
 /** Reads the preview route's query: `token` and `path`, or `exit=1` to leave preview. */
 export function parsePreviewRequest(url: URL): PreviewRequest {
   const path = safePath(url.searchParams.get('path'))
-  if (path === undefined) return { error: 'path must be a path on this site' }
+  if (path === undefined) return { error: 'path must be a site path' }
   if (url.searchParams.get('exit')) return { exit: true, path }
   const token = url.searchParams.get(PREVIEW_PARAM)
-  if (!validToken(token)) return { error: 'token is missing or malformed' }
+  if (!validToken(token)) return { error: 'bad token' }
   return { token, path }
 }
 

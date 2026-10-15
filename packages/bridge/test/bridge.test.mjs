@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { Window } from 'happy-dom'
-import { createBridge, isPreview, reloadSwap, autoStart, SDK } from '../dist/index.js'
+import { createBridge, isPreview, previewProof, reloadSwap, autoStart, SDK } from '../dist/index.js'
 
 const ADMIN = 'https://admin.test'
 
@@ -245,4 +245,80 @@ test('IIFE build exposes HydrogenBridge and auto-starts', async () => {
   assert.equal(typeof w.HydrogenBridge.createBridge, 'function')
   assert.equal(typeof w.HydrogenBridge.applyPatch, 'function')
   assert.equal(sent[0][0].mode, 'live')
+})
+
+const HASH = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+const metaDoc = (content) => ({ cookie: '', querySelector: (q) => (q === 'meta[name="hydrogen-preview"]' ? { getAttribute: () => content } : null) })
+
+test('ready carries preview only for a 64-hex meta; the old "1" still counts as preview', () => {
+  for (const [content, want] of [[HASH, HASH], [HASH.toUpperCase(), HASH.toUpperCase()], ['1', undefined], ['', undefined], [HASH + '0', undefined], ['zz' + HASH.slice(2), undefined]]) {
+    const { w, sent } = fake({ url: 'https://site.test/p' })
+    w.document = metaDoc(content)
+    assert.equal(previewProof(w), want)
+    assert.equal(isPreview(w), true)
+    createBridge({ adminOrigin: ADMIN, mode: 'live', window: w }).connect()
+    assert.equal(sent.length, 1)
+    assert.equal('preview' in sent[0][0], want !== undefined)
+    assert.equal(sent[0][0].preview, want)
+  }
+  const { w } = fake()
+  assert.equal(previewProof(w), undefined)
+})
+
+test('reload: an opaque origin or a failed fetch falls back to location.reload(), without rendered', async () => {
+  for (const kind of ['opaque', 'fetch']) {
+    const { w, sent } = fake({ url: 'https://site.test/p?preview=tok' })
+    let reloads = 0
+    w.location.reload = () => reloads++
+    w.origin = kind === 'opaque' ? 'null' : 'https://site.test'
+    w.fetch = kind === 'opaque' ? () => assert.fail('no fetch from an opaque origin') : () => Promise.reject(new TypeError('Failed to fetch'))
+    createBridge({ adminOrigin: ADMIN, mode: 'reload', window: w }).connect()
+    w.send({ h: 1, type: 'reload', rev: 3 })
+    await tick()
+    assert.equal(reloads, 1, kind)
+    assert.deepEqual(sent.map(([m]) => m.type), ['ready'], kind)
+  }
+})
+
+test('reload: an HTTP error is still reported, not reloaded', async () => {
+  const win = dom(page('Old', '<main data-h-root>old</main>'))
+  const sent = []
+  const parent = { postMessage: (m) => sent.push(m) }
+  Object.defineProperty(win, 'parent', { value: parent })
+  let reloads = 0
+  win.location.reload = () => reloads++
+  win.fetch = resp('boom', false)
+  createBridge({ adminOrigin: ADMIN, mode: 'reload', window: win }).connect()
+  win.dispatchEvent(Object.assign(new win.Event('message'), { data: { h: 1, type: 'reload', rev: 2 }, origin: ADMIN, source: parent }))
+  await new Promise((r) => setTimeout(r, 40))
+  assert.equal(reloads, 0)
+  assert.equal(sent.at(-1).type, 'error')
+})
+
+test('links: same-site navigations get ?preview=<token> on click, nothing on load, nothing without a token or a frame', () => {
+  const click = (w, href) => {
+    const a = { href, closest: () => a }
+    const ev = new Event('click')
+    Object.defineProperty(ev, 'target', { value: a })
+    w.dispatchEvent(ev)
+    return a.href
+  }
+  const { w } = fake({ url: 'https://site.test/p?preview=tok&x=1' })
+  const b = createBridge({ adminOrigin: ADMIN, mode: 'live', window: w })
+  b.connect()
+  assert.equal(click(w, 'https://site.test/about?a=b#h'), 'https://site.test/about?a=b&preview=tok#h')
+  assert.equal(click(w, 'https://site.test/about?preview=other'), 'https://site.test/about?preview=other')
+  assert.equal(click(w, 'https://other.test/x'), 'https://other.test/x')
+  assert.equal(click(w, 'mailto:a@b.c'), 'mailto:a@b.c')
+  b.disconnect()
+  assert.equal(click(w, 'https://site.test/z'), 'https://site.test/z')
+
+  const meta = fake({ url: 'https://site.test/p' })
+  meta.w.document = metaDoc(HASH)
+  createBridge({ adminOrigin: ADMIN, mode: 'live', window: meta.w }).connect()
+  assert.equal(click(meta.w, 'https://site.test/z'), 'https://site.test/z', 'no token in the URL')
+
+  const top = fake({ framed: false })
+  createBridge({ adminOrigin: ADMIN, mode: 'live', window: top.w }).connect()
+  assert.equal(click(top.w, 'https://site.test/z'), 'https://site.test/z', 'not in a frame')
 })

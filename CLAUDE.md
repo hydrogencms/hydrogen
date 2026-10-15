@@ -73,8 +73,10 @@ never commit it, quote it in commit messages or public docs, or move its content
   over the embedded `themes/starter` by file name (`layout.html`, `pages/<type>.html` or `pages/default.html`,
   `collections/<template>.html`, `blocks/<type>.html`, `404.html`; block roots carry `{{.Attrs}}`). Config
   `modules.site` (`dir`, `admin_url` (required outside dev), `preview_csp`, `cache_bytes`, `root`, `routes`).
-  Preview pages send a strict CSP and `Referrer-Policy: no-referrer`; serve the website from a different host than
-  the admin in production (on one origin a previewed page can reach the admin; startup warns). `hydrogen site:check
+  Preview pages send a strict CSP and `Referrer-Policy: no-referrer`, and carry `<meta name="hydrogen-preview">`
+  with the SHA-256 of the token. Same-origin hosting is trusted by default (project code and theme scripts run with
+  the site's origin; editor content never can); the admin locks its preview frame when same-origin; a separate
+  host or port is recommended for production (startup warns). `hydrogen site:check
   [-db]` renders everything against schema-generated data. `examples/fullstack` (schema and fixture of
   `examples/starter`); `make site-e2e` runs the conformance suite against it.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.

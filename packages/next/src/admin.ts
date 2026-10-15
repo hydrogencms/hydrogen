@@ -6,8 +6,8 @@ export function adminOriginWarning(origin: string): string | undefined {
   const internal = !h.includes('.') || /\.(internal|local|lan|localdomain|home\.arpa)$/.test(h) ||
     /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(h)
   if (u.protocol !== 'https:' && !internal)
-    return `adminOrigin ${origin} is not https: a preview frame on an https site will not connect. Set adminOrigin to the admin's public https origin.`
+    return `adminOrigin ${origin} is not https: an https site's frame will not connect.`
   if (internal)
-    return `adminOrigin ${origin} looks like an internal host: the live preview connects only if the editor's browser reaches the admin at exactly this origin. Set adminOrigin to the admin's public origin.`
+    return `adminOrigin ${origin} is an internal host: the editor's browser must reach exactly this origin.`
   return undefined
 }

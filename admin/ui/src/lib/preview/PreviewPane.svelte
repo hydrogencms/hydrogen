@@ -112,6 +112,15 @@
     }
   });
   const src = $derived(url ? new URL(url, location.href).href : '');
+  // A preview on the admin's own origin runs sandboxed without allow-same-origin (opaque origin, no handle on the admin).
+  const locked = $derived(!!origin && origin === location.origin);
+  const token = $derived.by(() => {
+    try {
+      return src ? (new URL(src).searchParams.get('preview') ?? '') : '';
+    } catch {
+      return '';
+    }
+  });
 
   // ---- the protocol
   let frame = $state<HTMLIFrameElement>();
@@ -123,6 +132,8 @@
     if (!origin) return;
     const h = new PreviewHost({
       origin,
+      locked,
+      token,
       frame: () => frame?.contentWindow ?? null,
       item,
       itemType,
@@ -225,6 +236,8 @@
           ? { tone: 'danger' as const, text: t('preview.status.error') }
           : status.phase === 'disconnected'
             ? { tone: 'warning' as const, text: t('preview.status.disconnected') }
+            : status.phase === 'unverified'
+              ? { tone: 'warning' as const, text: t('preview.status.unverified') }
           : { tone: 'neutral' as const, text: t('preview.status.connecting') },
   );
 </script>
@@ -243,7 +256,8 @@
   </div>
   <div class="h-preview__status" role="status" aria-live="polite">
     {#if phase === 'ready'}
-      <Badge tone={chip.tone} dot>{chip.text}</Badge>
+      <span title={status.phase === 'unverified' ? t('preview.unverifiedHint') : locked ? t('preview.lockedHint') : undefined}><Badge tone={chip.tone} dot>{chip.text}</Badge></span>
+      {#if status.phase === 'unverified'}<span class="h-muted">{t('preview.unverifiedHint')}</span>{/if}
       {#if ms !== null}<span class="h-preview__ms h-num" title={t('preview.latencyLabel', { ms })}>{t('preview.latency', { ms })}</span>{/if}
       {#if status.phase === 'reload'}
         <span class="h-muted h-preview__save" title={t('preview.saveHint')}>
@@ -288,7 +302,7 @@
             class="h-preview__frame"
             title={t('preview.frame', { title })}
             {src}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            sandbox={locked ? 'allow-scripts allow-forms allow-popups' : 'allow-scripts allow-same-origin allow-forms allow-popups'}
             referrerpolicy="no-referrer"
             style:width="{width}px"
             style:height="{scale ? box.h / scale : box.h}px"

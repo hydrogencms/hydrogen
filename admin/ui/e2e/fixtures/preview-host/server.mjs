@@ -3,6 +3,7 @@
 //   PORT, CMS_URL (delivery API base), ADMIN_ORIGIN, BRIDGE_JS (packages/bridge/dist/bridge.iife.js)
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -21,6 +22,9 @@ const server = createServer(async (req, res) => {
   if (u.pathname === '/bridge.js') return void res.writeHead(200, { 'content-type': 'text/javascript' }).end(bridge)
   if (u.pathname === '/render.js') return void res.writeHead(200, { 'content-type': 'text/javascript' }).end(renderSrc)
   res.setHeader('content-type', 'text/html; charset=utf-8')
+  // The proof the admin waits for: the hash of the token in the URL (the bridge sends it as ready.preview).
+  const token = u.searchParams.get('preview') || ''
+  const proof = token ? `<meta name="hydrogen-preview" content="${createHash('sha256').update(token).digest('hex')}">` : ''
   let claims = {}
   try {
     claims = JSON.parse(Buffer.from((u.searchParams.get('preview') || '').split('.')[0], 'base64url').toString())
@@ -36,6 +40,7 @@ const server = createServer(async (req, res) => {
       page(
         `<main data-h-root data-mode="reload">${globalThis.renderDoc({ fields })}</main>` +
           `<script src="/bridge.js" data-auto data-admin-origin="${admin}" data-mode="reload"></script>`,
+        proof,
       ),
     )
   }
@@ -51,6 +56,7 @@ const b = HydrogenBridge.createBridge({
 })
 b.connect()
 </script>`,
+      proof,
     ),
   )
 })

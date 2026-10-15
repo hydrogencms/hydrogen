@@ -21,8 +21,8 @@ modules:
     sites: [main]
   site:
     root: en
-    # The origin of the admin that previews the site (required outside dev). Serve the website from a separate
-    # host in production: on a shared origin a previewed page can reach the admin.
+    # The origin of the admin that previews the site (required outside dev). On a shared origin the website's
+    # scripts are trusted like project code; for production, serve the website from a separate host or port.
     admin_url: ${env:ADMIN_URL:-}
     routes:
       - { path: /blog, type: post, template: posts }

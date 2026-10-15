@@ -1,5 +1,5 @@
 'use client'
-import { createElement, Fragment, useMemo } from 'react'
+import { createElement, useMemo } from 'react'
 import type { ComponentType, ReactElement } from 'react'
 import { useLivePreview } from '@hydrogencms/react/live'
 
@@ -38,7 +38,5 @@ export interface LiveProps {
 export function Live({ Template, item, adminOrigin, ...rest }: LiveProps): ReactElement {
   const live = useLivePreview(item, { adminOrigin })
   const shown = useMemo(() => (live === item ? item : keepShared(item, live)), [live, item])
-  return createElement(Fragment, null,
-    createElement('meta', { name: 'hydrogen-preview', content: '1' }),
-    createElement(Template, { ...rest, item: shown, preview: true }))
+  return createElement(Template, { ...rest, item: shown, preview: true })
 }

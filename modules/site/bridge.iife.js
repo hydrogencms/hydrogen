@@ -101,6 +101,17 @@ function isPreview(win = window) {
         return false;
     }
 }
+const CAP = { capture: true };
+const HASH = /^[0-9a-f]{64}$/i;
+function previewProof(win = window) {
+    try {
+        const c = win.document.querySelector('meta[name="hydrogen-preview"]')?.getAttribute('content') ?? '';
+        return HASH.test(c) ? c : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
 function createBridge(o) {
     const w = o.window ?? window;
     const origin = o.adminOrigin;
@@ -112,7 +123,26 @@ function createBridge(o) {
     let on = false;
     const now = () => (w.performance ?? Date).now();
     const post = (m) => w.parent.postMessage({ h: 1, ...m }, origin);
-    const ready = () => post({ type: 'ready', mode: o.mode, sdk: SDK, url: w.location.href });
+    const ready = () => {
+        const preview = previewProof(w);
+        post({ type: 'ready', mode: o.mode, sdk: SDK, url: w.location.href, ...(preview ? { preview } : {}) });
+    };
+    const reload = () => w.location.reload();
+    const follow = (e) => {
+        try {
+            const a = e.target?.closest?.('a[href]');
+            const token = new URLSearchParams(w.location.search).get('preview');
+            if (!a || !token)
+                return;
+            const u = new URL(a.href);
+            if (u.origin !== w.location.origin || u.searchParams.has('preview'))
+                return;
+            u.searchParams.set('preview', token);
+            a.href = u.href;
+        }
+        catch {
+        }
+    };
     const resync = () => post({ type: 'resync', rev });
     const error = (message) => post({ type: 'error', message });
     const onMessage = (e) => {
@@ -143,8 +173,10 @@ function createBridge(o) {
                 const r = m.rev;
                 if (o.onReload)
                     void o.onReload(r);
+                else if (w.origin === 'null')
+                    reload();
                 else {
-                    reloadSwap({ window: w, ready }).then((ms) => bridge.rendered(r, ms), (x) => error(String(x?.message ?? x)));
+                    reloadSwap({ window: w, ready }).then((ms) => bridge.rendered(r, ms), (x) => (x?.fetch ? reload() : error(String(x?.message ?? x))));
                 }
             }
         }
@@ -158,11 +190,16 @@ function createBridge(o) {
                 return;
             on = true;
             w.addEventListener('message', onMessage);
+            for (const t of ['click', 'auxclick'])
+                w.addEventListener(t, follow, CAP);
             ready();
         },
         disconnect() {
-            if (on)
+            if (on) {
                 w.removeEventListener('message', onMessage);
+                for (const t of ['click', 'auxclick'])
+                    w.removeEventListener(t, follow, CAP);
+            }
             on = false;
         },
         rendered(r, ms) {
@@ -178,7 +215,9 @@ function createBridge(o) {
 async function reloadSwap(o = {}) {
     const w = o.window ?? window;
     const t = w.performance.now();
-    const res = await (o.fetch ?? w.fetch.bind(w))(w.location.href, { credentials: 'include', headers: { accept: 'text/html' } });
+    const res = await (o.fetch ?? w.fetch.bind(w))(w.location.href, { credentials: 'include', headers: { accept: 'text/html' } }).catch((e) => {
+        throw Object.assign(new Error(`reload: ${e?.message ?? e}`), { fetch: true });
+    });
     if (!res.ok)
         throw new Error(`reload: ${res.status} ${res.statusText}`);
     const gone = new Error('reload: preview expired or lost');
@@ -210,4 +249,4 @@ function autoStart(s, win) {
     return b;
 }
 
-var B={SDK,PREVIEW_COOKIE,PatchError,applyPatch,isPreview,createBridge,reloadSwap,autoStart};window.HydrogenBridge=B;autoStart(document.currentScript)})();
+var B={SDK,PREVIEW_COOKIE,PatchError,applyPatch,isPreview,previewProof,createBridge,reloadSwap,autoStart};window.HydrogenBridge=B;autoStart(document.currentScript)})();

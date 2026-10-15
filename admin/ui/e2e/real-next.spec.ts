@@ -22,6 +22,8 @@ test('a fixture page: heading and a new block appear in the Next.js frame while 
   await page.goto(`/admin/items/${home.id}`);
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
   const frame = frameOf(page);
+  // Next runs on another origin than the admin: the browser isolates it, the frame keeps allow-same-origin.
+  expect(await page.locator('iframe[title^="Preview of"]').getAttribute('sandbox')).toContain('allow-same-origin');
   await expect(frame.locator('[data-h-block="hero"]').first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('status').filter({ hasText: 'Live' })).toBeVisible({ timeout: 30_000 });
 
