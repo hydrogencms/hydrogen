@@ -1,0 +1,27 @@
+{
+  "name": "hydrogen-next-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "postbuild": "node scripts/write-templates.mjs",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hydrogencms/client": "file:../../packages/client",
+    "@hydrogencms/next": "file:../../packages/next",
+    "@hydrogencms/router": "file:../../packages/router",
+    "next": "^16.4.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "~5.9.3"
+  }
+}

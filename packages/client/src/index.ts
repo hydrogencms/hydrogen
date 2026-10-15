@@ -1,0 +1,256 @@
+export interface RequestMeta {
+  url: string
+  path: string
+  headers: Record<string, string>
+}
+
+export interface ClientOptions {
+  /** e.g. "https://cms.acme.com"; the delivery API is at /api/deliver/v1 */
+  baseUrl: string
+  /** public channel name; omit for token channels or single-channel sites */
+  channel?: string
+  /** channel token (Authorization: Bearer) */
+  token?: string
+  /** preview token (X-Hydrogen-Preview) */
+  preview?: string
+  fetch?: typeof fetch
+  headers?: Record<string, string>
+  /**
+   * Per-client hook for adapters: extra RequestInit for every request (cache options of a framework's fetch).
+   * `GetOptions.init` is the per-call counterpart for application code; per-call values win.
+   */
+  init?: (req: RequestMeta) => RequestInit | undefined
+}
+
+export interface GetOptions {
+  locale?: string
+  /** resolve referenced items to this depth (0..3) into `included` */
+  include?: number
+  /** overrides the client's preview token for this call */
+  preview?: string
+  /** extra request headers (e.g. the visitor's headers that header matchers look at) */
+  headers?: Record<string, string>
+  signal?: AbortSignal
+  init?: RequestInit
+}
+
+export type Op = 'eq' | 'ne' | 'lt' | 'lte' | 'gt' | 'gte' | 'in' | 'contains' | 'exists' | 'prefix'
+type Scalar = string | number | boolean
+export type Condition = Scalar | { [K in Op]?: K extends 'in' ? Scalar[] | string : K extends 'exists' ? boolean : Scalar }
+export type Where<F> = { [K in keyof F & string]?: Condition } & Record<string, Condition | undefined>
+
+export interface ListOptions<F = Record<string, unknown>> extends GetOptions {
+  where?: Where<F>
+  /** "-publishedAt,title", or fields in order; a leading "-" sorts descending */
+  sort?: string | string[]
+  limit?: number
+  offset?: number
+  q?: string
+  /** ask for the exact `total` (sent as total=true only when true) */
+  total?: boolean
+}
+
+export interface Item<F> {
+  id: string
+  type: string
+  key?: string
+  locale: string
+  version: number
+  publishedAt: string
+  name: string
+  fields: F
+  fallback?: boolean
+  url?: string
+  links?: Record<string, string>
+}
+
+export interface List<F> {
+  items: Item<F>[]
+  hasMore: boolean
+  total?: number
+  included?: Record<string, Item<unknown>>
+}
+
+export interface Response<D> {
+  data: D
+  /** cache tags from Surrogate-Key */
+  tags: string[]
+  etag?: string
+  status: number
+  /** referenced items of single-item calls, by id (when `include` was given) */
+  included?: Record<string, Item<unknown>>
+}
+
+export interface ChannelOptions {
+  site?: string
+  match?: { host?: string; prefix?: string; header?: { name: string; value: string } }
+  reserved?: string[]
+  [k: string]: unknown
+}
+
+export interface ChannelInfo {
+  name: string
+  languages: string[]
+  collections: string[]
+  options: ChannelOptions
+}
+
+export interface Crumb { node: string; item?: string; name: string; path: string }
+export interface Resolution {
+  kind: string
+  item?: string
+  node?: string
+  path?: string
+  status: number
+  location?: string
+  breadcrumbs?: Crumb[]
+}
+export interface Alternate { channel: string; locale: string; url: string }
+export type LocatedKind = 'page' | 'item' | 'redirect' | 'not_found' | 'reserved' | 'no_channel'
+export interface Located {
+  channel?: string
+  kind: LocatedKind
+  locale?: string
+  resolution?: Resolution
+  canonical?: string
+  alternates?: Alternate[]
+}
+export interface RouteResult { located: Located; item?: Item<unknown> }
+
+export interface TreeNode {
+  id: string
+  kind: 'page' | 'mount' | 'link'
+  item?: string
+  type?: string
+  name: string
+  path?: string
+  url?: string
+  nodes?: TreeNode[]
+}
+
+export interface FieldError { path: string; code: string; message: string }
+
+export class HydrogenError extends Error {
+  status: number
+  code: string
+  fields?: FieldError[]
+  constructor(status: number, code: string, message: string, fields?: FieldError[]) {
+    super(message)
+    this.name = 'HydrogenError'
+    this.status = status
+    this.code = code
+    this.fields = fields
+  }
+}
+
+export interface Client<T> {
+  item<K extends keyof T & string>(id: string, o?: GetOptions): Promise<Response<Item<T[K]>>>
+  itemByKey(key: string, o?: GetOptions): Promise<Response<Item<unknown>>>
+  singleton<K extends keyof T & string>(type: K, o?: GetOptions): Promise<Response<Item<T[K]>>>
+  list<K extends keyof T & string>(type: K, o?: ListOptions<T[K]>): Promise<Response<List<T[K]>>>
+  route(url: string, o?: GetOptions): Promise<Response<RouteResult>>
+  /** the nodes of /tree; site and locale of the answer are not part of `data` */
+  tree(o?: { site?: string; locale?: string; depth?: number } & GetOptions): Promise<Response<TreeNode[]>>
+  channel(name?: string, o?: GetOptions): Promise<Response<ChannelInfo>>
+  withPreview(token: string | undefined): Client<T>
+}
+
+export const API_PATH = '/api/deliver/v1'
+
+const enc = encodeURIComponent
+
+/** Public so adapters and tests can build delivery URLs the same way; applications use the client. Builds a query string: parameters ordered by encoded name (where[...] included), values percent-encoded, empty values dropped. */
+export function buildQuery(p: Record<string, string | number | undefined>, where?: Record<string, Condition | undefined>): string {
+  const out: [string, string][] = []
+  const add = (k: string, v: string) => out.push([k.replace(/[^\w[\]-]+/g, enc), enc(v)])
+  for (const k in p) {
+    const v = p[k]
+    if (v !== undefined && v !== '') add(k, String(v))
+  }
+  for (const f in where) {
+    const c = where[f]
+    if (c === undefined) continue
+    if (typeof c === 'object') {
+      for (const op in c) {
+        const v = (c as Record<string, Scalar | Scalar[] | undefined>)[op]
+        if (v !== undefined) add(`where[${f}][${op}]`, Array.isArray(v) ? v.join(',') : String(v))
+      }
+    } else add(`where[${f}][eq]`, String(c))
+  }
+  out.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+  return out.map(([k, v]) => `${k}=${v}`).join('&')
+}
+
+export function parseTags(h: string | null | undefined): string[] {
+  return h ? h.split(/\s+/).filter(Boolean) : []
+}
+
+export function linkTo(
+  item: { links?: Record<string, string> },
+  id: string,
+  fallback?: (id: string) => string | undefined,
+): string | undefined {
+  return item.links?.[id] ?? fallback?.(id)
+}
+
+export function createClient<T extends object = Record<string, unknown>>(o: ClientOptions): Client<T> {
+  const base = o.baseUrl.replace(/\/+$/, '') + API_PATH
+  const doFetch = (u: string, i: RequestInit) => (o.fetch ?? fetch)(u, i)
+
+  async function get<D>(path: string, query: string, g: GetOptions = {}, pick?: (b: any) => D): Promise<Response<D>> {
+    const headers: Record<string, string> = { Accept: 'application/json', ...o.headers, ...g.headers }
+    if (o.token) headers.Authorization = `Bearer ${o.token}`
+    const pv = g.preview ?? o.preview
+    if (pv) headers['X-Hydrogen-Preview'] = pv
+    const url = base + path + (query ? '?' + query : '')
+    const extra = o.init?.({ url, path, headers })
+    const res = await doFetch(url, { ...extra, ...g.init, method: 'GET', headers: { ...extra?.headers as Record<string, string>, ...headers }, signal: g.signal ?? g.init?.signal ?? extra?.signal })
+    let body: any
+    const text = await res.text()
+    try { body = text ? JSON.parse(text) : undefined } catch { body = undefined }
+    if (!res.ok) {
+      const e = body?.error
+      throw new HydrogenError(res.status, e?.code ?? (res.status === 404 ? 'not_found' : 'error'), e?.message ?? res.statusText ?? 'request failed', e?.fields)
+    }
+    const r: Response<D> = {
+      data: pick ? pick(body) : body,
+      tags: parseTags(res.headers.get('Surrogate-Key')),
+      etag: res.headers.get('ETag') ?? undefined,
+      status: res.status,
+    }
+    return r
+  }
+
+  const common = (g?: GetOptions) => ({ channel: o.channel, locale: g?.locale, include: g?.include })
+
+  async function one<D>(path: string, g?: GetOptions): Promise<Response<Item<D>>> {
+    const r = await get<any>(path, buildQuery(common(g)), g)
+    const res: Response<Item<D>> = { ...r, data: r.data.item }
+    if (r.data.included) res.included = r.data.included
+    return res
+  }
+
+  const c: Client<T> = {
+    item: (id, g) => one(`/items/${enc(id)}`, g),
+    itemByKey: (key, g) => one(`/items/by-key/${enc(key)}`, g),
+    singleton: (type, g) => one(`/singletons/${enc(type)}`, g),
+    list: (type, l) =>
+      get(`/collections/${enc(type)}/items`, buildQuery({
+        ...common(l),
+        q: l?.q,
+        limit: l?.limit,
+        offset: l?.offset,
+        total: l?.total ? 'true' : undefined,
+        sort: Array.isArray(l?.sort) ? l.sort.join(',') : l?.sort,
+      }, l?.where as Record<string, Condition | undefined>), l),
+    route: (url, g) => get('/route', buildQuery({ channel: o.channel, locale: g?.locale, url }), g),
+    tree: (t) => get('/tree', buildQuery({ channel: o.channel, locale: t?.locale, site: t?.site, depth: t?.depth }), t, (b) => b.nodes ?? []),
+    channel: (name, g) => {
+      const n = name ?? o.channel
+      if (!n) return Promise.reject(new HydrogenError(400, 'bad_request', 'channel name is required'))
+      return get(`/channels/${enc(n)}`, '', g)
+    },
+    withPreview: (token) => createClient<T>({ ...o, preview: token }),
+  }
+  return c
+}

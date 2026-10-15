@@ -38,6 +38,10 @@ never commit it, quote it in commit messages or public docs, or move its content
   (cron jobs under a lock), `kernel/endpoints.go` (`/api/x`), export/import (`exportfmt/`, `store/export.go`,
   `hydrogen_export.go`), `client/` (Go client), `hydrogen_frontend.go` (`check-frontend`). Pages adds `/route`
   and `/tree`. Contract: `planning/design/delivery-h4.md`.
+- TypeScript SDK (H4b): `packages/` (npm workspaces: `client`, `router`, `next`; zero runtime dependencies,
+  gzip budgets in `packages/scripts/size.mjs`). `examples/next-site`: Next.js sample against `examples/multisite`
+  (one deployment, every web channel; the proxy answers CMS redirects and 404s; `"use cache"` entries tagged from
+  `Surrogate-Key`, revalidated by the signed webhook). Contract: `planning/design/sdk-h4b.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/content`: every field type, a module schema transform, a typed hook and a content migration, tested
   through the management API on SQLite and Postgres.
@@ -48,6 +52,8 @@ never commit it, quote it in commit messages or public docs, or move its content
 make build test vet lint tidy   # all modules
 make db-up                      # Postgres 17 on localhost:5436 (hydrogen/hydrogen) for adapter tests
 make smoke                      # hydrogen new → config:check → migrate → serve + D0 budget checks
+make sdk                        # packages/: install, build, test, size budgets
+make next-e2e                   # examples/next-site against examples/multisite (SQLite), curl assertions
 ```
 
 In a project: `hydrogen dev` (live reload; regenerates `gen/` on schema changes), `hydrogen generate`,
@@ -70,6 +76,8 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
   adapter, and a check in `storetest`.
 - Delivery reads published snapshots only. A change that alters a published document's shape (schema change
   without a content migration) needs `RebuildProjections`, or the API serves stale snapshots.
+- Frontend webhooks should subscribe to `*`: `item.*` alone misses `page.changed`, which carries the route and
+  navigation tags.
 - Delivery listings return `{items, hasMore}`; `total` costs a count and is only computed with `?total=true`.
 - macOS scans a newly built binary on first launch (~300 ms); measure start-up from the second run.
 - Scratch projects inside the repo (`.work/`) need `GOWORK=off`, or the repo's `go.work` claims them.
