@@ -79,6 +79,12 @@ never commit it, quote it in commit messages or public docs, or move its content
   host or port is recommended for production (startup warns). `hydrogen site:check
   [-db]` renders everything against schema-generated data. `examples/fullstack` (schema and fixture of
   `examples/starter`); `make site-e2e` runs the conformance suite against it.
+- Visual editing (H7): the admin draws the canvas (`admin/ui/src/lib/canvas`: outlines, block toolbar, drag, palette
+  insert, keyboard reorder) over the preview iframe from the `layout` the bridge reports; the bridge only measures,
+  reports `hover`/`select` and edits plain text inline (`editText` → `inlineEdit`, committed on Enter/blur). Plain
+  text is found by the admin sending `overlay.texts` (string/text fields and block props) and the bridge matching
+  them in the DOM; explicit `data-h-path` markers win. `ready.edit: true` advertises support. Protocol:
+  `docs/bridge-protocol.md`. Contract: `planning/design/visual-h7.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
@@ -97,7 +103,8 @@ make starter-next-e2e           # starters/next on examples/starter (SQLite) + c
 make conformance                # the conformance suite against every frontend (Next starter; site module)
 make admin                      # admin/ui: npm ci, typecheck, vitest, build into admin/dist, gzip budgets
 make admin-e2e                  # Playwright: admin exit scenarios + axe; page builder live preview on the real
-                                # Next starter and the fullstack site module (ADMIN_E2E_ONLY=next|fullstack)
+                                # Next starter and the fullstack site module (ADMIN_E2E_ONLY=starter|next|fullstack
+                                # runs one phase on the admin/dist already built; E2E_GREP=… filters tests)
 make admin-types                # regenerate admin/ui/src/lib/api/schema.d.ts from a running build's OpenAPI
 make example-admin              # rebuild examples/content/admin/dist (example-admin-check verifies it in make check)
 make check                      # tidy-check vet lint test smoke admin admin-dist-check (dist must be rebuilt)
@@ -158,6 +165,15 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
   open transaction on the context (`store.WithTx`) before calling the checker; limitations query through
   `store.TxFrom(ctx)`. A pooled connection that waits for another while holding one can deadlock.
 
+- The bridge budget is 5 KB gzip and nearly used: it loads only in preview. Anything added to `packages/bridge`
+  must pay for itself (run `npm run size` in `packages/`), then `make site-bridge`.
+- Canvas: the frame commits inline edits on Enter or blur, so the admin must not move the focus out of the frame while
+  an edit is open (`focusToolbar` checks `editing` and where the focus is); canvas model actions run through
+  `BlocksModel.quietly` so they don't focus the form. Overlay texts go to a live frame when it reports `rendered`
+  (never before the patch, or the mapping misses the new text) and to a reload frame with its next `ready`.
+- Svelte 5 props passed as expressions (`item={data.id}`) are getters on the parent's whole object: an effect that
+  reads one reruns whenever the object is replaced (each autosave). Wrap them in `$derived` before keying effects
+  on them (the preview pane does, or every autosave minted a new token and reloaded the frame).
 - Channel `links:` (collection → pattern, like `preview:`) gives items without a page route a URL: delivery fills
   `links[id]` and `url` from it, and the pages module prefixes pattern URLs (links and previews) for its web
   channels (`/en/blog/<slug>`). Without `links:`, references to plain-collection items have no URL in frontends.

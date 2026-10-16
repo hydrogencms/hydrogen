@@ -10,6 +10,7 @@
   import BlockList from './BlockList.svelte';
   import { blocksCatalog } from './catalog.svelte';
   import { BlocksModel } from './model.svelte';
+  import { registerBlocksModel } from './registry';
   import MoveDialog from './MoveDialog.svelte';
   import SaveSharedDialog from './SaveSharedDialog.svelte';
   import { ruleOfField, type Block } from './tree';
@@ -41,7 +42,9 @@
 
   let failed = $state(false);
   onMount(() => {
+    const unregister = registerBlocksModel(path, model);
     blocksCatalog.load().catch(() => (failed = true));
+    return unregister;
   });
 
   // Blocks with problems open themselves, so the message is visible.

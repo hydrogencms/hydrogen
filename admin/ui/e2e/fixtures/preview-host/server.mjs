@@ -15,7 +15,7 @@ const bridge = readFileSync(process.env.BRIDGE_JS || join(here, '../../../../../
 const renderSrc = readFileSync(join(here, 'render.js'))
 await import('./render.js')
 
-const page = (body, head = '') => `<!doctype html><html><head><meta charset="utf-8"><title>host</title>${head}</head><body>${body}</body></html>`
+const page = (body, head = '') => `<!doctype html><html><head><meta charset="utf-8"><title>host</title><style>[data-h-block]{padding:6px 8px;margin:4px 0;border:1px solid #ccc}</style>${head}</head><body>${body}</body></html>`
 
 const server = createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x')
@@ -49,10 +49,17 @@ const server = createServer(async (req, res) => {
       `<main data-h-root data-mode="live"><p id="wait">waiting</p></main><script src="/bridge.js"></script><script src="/render.js"></script>` +
         `<script>
 const root = document.querySelector('main')
+let seq = 0
+const paint = (html, n = ++seq) => {
+  if (n !== seq) return
+  if (root.querySelector('[contenteditable]')) return void setTimeout(() => paint(html, n), 50)
+  if (root.innerHTML !== html) root.innerHTML = html
+}
 const b = HydrogenBridge.createBridge({
   adminOrigin: ${JSON.stringify(admin)}, mode: 'live',
-  onInit: (m) => { root.innerHTML = renderDoc(m.doc); b.rendered(m.rev) },
-  onPatch: (doc, m) => { root.innerHTML = renderDoc(doc); b.rendered(m.rev) },
+  // Like a framework's diff: unchanged markup is left alone, and an element being edited inline is never replaced.
+  onInit: (m) => { paint(renderDoc(m.doc)); b.rendered(m.rev) },
+  onPatch: (doc, m) => { paint(renderDoc(doc)); b.rendered(m.rev) },
 })
 b.connect()
 </script>`,

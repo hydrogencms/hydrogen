@@ -9,13 +9,20 @@ Every message is a JSON object with `h: 1` (the protocol version) and a string `
 
 | From | `type` | Fields | When |
 |---|---|---|---|
-| frontend | `ready` | `mode` (`"live"` or `"reload"`), `sdk` (`name@version`), `url`, `preview` (optional, see [Proof of the preview token](#proof-of-the-preview-token)) | the bridge connected, and again after every reload swap or reload |
+| frontend | `ready` | `mode` (`"live"` or `"reload"`), `sdk` (`name@version`), `url`, `preview` (optional, see [Proof of the preview token](#proof-of-the-preview-token)), `edit` (`true` when the bridge supports [canvas editing](#canvas-editing)) | the bridge connected, and again after every reload swap or reload |
 | admin | `init` | `item`, `itemType` (the content type), `locale`, `rev`, `doc` | answer to `ready` or `resync`: the full working document of the item in `locale` |
 | admin | `patch` | `rev`, `base`, `ops` | a change: JSON Patch operations to apply to the document at revision `base`, producing `rev` |
 | frontend | `resync` | `rev` | the frontend cannot apply a patch (wrong base, no document yet, or a failing operation); `rev` is the revision it holds, or `-1` |
 | admin | `reload` | `rev` | reload mode: the draft was saved, fetch the page again |
 | frontend | `rendered` | `rev`, `ms` | the DOM shows revision `rev`; `ms` is the time since the message that caused it |
 | frontend | `error` | `message` | a render, patch or reload failure to display in the admin |
+| admin | `overlay` | `on` (bool), `texts` (`[{path, text, scope}]`) | canvas editing: switch the overlay on or off and say which plain-text values can be edited; sent after every verified `ready` and whenever `on` or `texts` change |
+| frontend | `layout` | `nodes` (`[{path, rect: [x, y, w, h], block?, text?}]`), `vw`, `vh` | while the overlay is on: the measured nodes, after `overlay`, each render or swap, and on scroll, resize and DOM changes (at most one per animation frame) |
+| frontend | `hover` | `path` (string or `null`) | while on: the node under the pointer changed |
+| frontend | `select` | `path` (string or `null`), `edit` (bool) | while on: a click (`edit: false`) or double click (`edit: true`) on a node; `null` on empty space |
+| admin | `scrollTo` | `path` or `by` (px) | bring a node into view / scroll the page by a delta |
+| admin | `editText` | `path`, `multiline` (bool) | start editing a text node in place |
+| frontend | `inlineEdit` | `path`, `value` (string) or `cancel: true` | inline editing ended: the committed value, or cancelled or refused |
 
 `rev` is an integer owned by the admin. The frontend never invents revisions.
 
@@ -105,6 +112,94 @@ same-origin `<a href>` when it is clicked (capturing `click` and `auxclick` list
 load). A frame without cookies (a locked frame) so keeps preview while navigating. Links that already have a
 `preview` parameter, other origins and other schemes are left alone, and so is everything when the URL has no token.
 
+## Canvas editing
+
+A bridge that sends `ready` with `edit: true` supports the messages below, which let the admin draw an overlay over
+the frame and edit text on the page itself. They are additive: the protocol stays version 1, and a bridge without
+`edit` simply does not answer them. The origin rules above apply unchanged, in locked frames too.
+
+The admin draws everything (outlines, labels, toolbars, drag indicators). The frame only measures, reports pointer
+events and edits text.
+
+### Overlay and layout
+
+`overlay {on: true, texts}` switches the overlay on; `on: false` (or `disconnect`) switches it off. Off, the bridge
+holds no listeners or observers and sends no `layout`, `hover` or `select`; the page is fully interactive. The
+preview-link rewriting described above does not depend on the overlay. After a `location.reload()` the new bridge
+sends `ready` and the admin sends `overlay` again; after a reload swap the overlay stays on and the bridge measures
+again.
+
+While on, the bridge sends `layout` after `overlay`, after `rendered` and each reload swap, and when the page
+scrolls, resizes or changes (a `MutationObserver`, and a `ResizeObserver` where available). Measurements are
+coalesced to at most one `layout` per animation frame. A `layout` identical to the last one sent is skipped, except
+that `overlay`, `rendered` and each reload swap always get one. The observer watches child lists, text and the
+attributes `data-h-path`, `data-h-block`, `class`, `style` and `hidden`.
+
+- A node is `{path, rect, block?, text?}`. `rect` is `[x, y, width, height]` in CSS pixels of the frame's viewport
+  (`getBoundingClientRect`, rounded). Nodes with zero width or height are left out. Nodes come in document order.
+- `block` is the element's `data-h-block`. `text` is `true` when the element's only child is one non-empty text node
+  (a candidate for inline editing).
+- `vw` and `vh` are the viewport size.
+
+Nodes are every `[data-h-path]` element inside `<body>` plus the elements found by text mapping.
+
+### Text mapping
+
+`texts` lists plain-text values the admin could edit: `{path, text, scope}`, where `scope` is the `data-h-path` of
+the block that holds the value, or `""` for a top-level field. For each entry the bridge finds the element whose only
+content is that text:
+
+1. The scope element is the one with `data-h-path` equal to `scope`; for `""` it is `[data-h-root]`, else `<body>`.
+2. It walks the scope's text nodes (skipping `script`, `style`, `noscript` and `template`). A text node qualifies
+   when its closest `data-h-path` ancestor is the scope element itself (for `""`: it has none, so text inside blocks
+   never matches a top-level field) and its data, with whitespace runs collapsed and trimmed, equals the entry's
+   `text` collapsed and trimmed.
+3. The parent element of the first qualifying text node becomes the node for `path`, unless that element already
+   carries `data-h-path`. An element is mapped to one entry only.
+
+The mapping is recomputed on `overlay`, after renders and swaps, and on DOM changes. No markers are needed for it, but
+a frontend that wants exact results can mark an element with `data-h-path` itself.
+
+### Pointer events
+
+While on, `click`, `dblclick`, `auxclick` and form `submit` are captured and prevented (links, buttons and submits do
+nothing), except inside the element being edited inline. A `submit` sends no `select`. The node for an event is the
+nearest ancestor of the target (or the target) that is a node in the layout: elements with zero width or height
+(`display: contents`, say) are skipped.
+
+- `click` and `dblclick` send `select` with that node's `path`, or `null` on empty space; `edit` is `true` for the
+  double click.
+- Pointer movement (listened to in the capture phase, so pages that stop propagation do not silence it) sends `hover` only when the node under the pointer changes; leaving the document sends
+  `hover` with `null`.
+
+The bridge changes no styles on the page. The only attribute it sets is `contenteditable`, during inline editing.
+
+### Scrolling
+
+`scrollTo {path}` scrolls the node into view (`block: "nearest"`, smooth unless the user prefers reduced motion).
+`scrollTo {by}` scrolls the page by `by` pixels with `behavior: "instant"`, whatever the page's CSS (the admin uses it to
+scroll while dragging).
+
+### Inline editing
+
+`editText {path, multiline}` starts editing the node for `path`. The bridge refuses with `inlineEdit {path, cancel:
+true}` unless the node exists and its only child is one text node. Otherwise it sets `contenteditable` on the element
+(`plaintext-only`, or `true` with pasted text inserted as plain text where that value is unsupported), focuses it, and
+puts the caret at the end unless a selection already lies inside it.
+
+- Single line: Enter (and Shift+Enter) commits. Multiline: Enter inserts a newline and Ctrl or Cmd+Enter commits.
+- Leaving the element (blur) commits. Escape cancels. Turning the overlay off (or `disconnect`), also when it was
+  already off, cancels. So does the element leaving the document (a reload swap or a framework re-render replaced it).
+  The Escape or Enter that ends an edit does not propagate, so page hotkeys never see it.
+- The committed value of a single line is the element's `textContent` (CSS `text-transform` never leaks into it):
+  whitespace runs (newlines included) become one space and the ends are trimmed. A multiline value is its `innerText`. An unchanged value is still sent.
+- When editing ends the bridge removes `contenteditable`, puts back the element's original child node (the
+  framework's own text node) and sets its data to the committed value, or to the original on cancel. This keeps
+  frameworks that own that node working. Then it sends `inlineEdit {path, value}` or `{path, cancel: true}`.
+
+Nothing is sent while the user types: the admin updates the document from the committed value, and the page
+re-renders from it as for any other change.
+
 ## Documents and paths
 
 `doc` has the shape of the item's delivery representation: the item's `fields` in the stored form, so a block tree is
@@ -128,9 +223,14 @@ admin does not send (for example `links`) stay.
 - `data-h-path="fields/body/2"` is added in preview only: the document path of the block (or field) without the leading
   slash. Blocks in a slot use `<block path>/slots/<slot>/<index>`. Blocks inlined from a shared block are read-only and
   carry no path.
-- `data-h-root` marks the element reload mode swaps.
+- `data-h-root` marks the element reload mode swaps. It is also the scope for top-level text mapping.
 
-The admin can use `data-h-path` to map clicks in the preview back to the form.
+Explicit markers and mapped text differ in who decides. `data-h-path` is the frontend saying "this element is that
+path" and always wins; use it for blocks, and for text that appears more than once or is not the only content of its
+element. Text that is the only content of an element needs no marker: the bridge matches it by value (see
+[Text mapping](#text-mapping)). Rich text is not mapped and not edited inline.
+
+The admin uses these nodes to map clicks in the preview back to the form.
 
 ## Using the packages
 

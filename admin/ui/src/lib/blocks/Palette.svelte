@@ -17,14 +17,19 @@
     index,
     variant = 'end',
     label,
+    open = $bindable(false),
+    anchor = false,
   }: {
     model: BlocksModel;
     container: Container;
     index: number;
     /** `end`: the labelled button after the last block; `between`: the small plus between blocks. */
-    variant?: 'end' | 'between';
+    variant?: 'end' | 'between' | 'canvas' | 'canvas-text';
     /** What the button is about (names the block it sits before, or the slot). */
     label: string;
+    /** Canvas variants: opened from outside (the trigger is then an invisible anchor for the popover). */
+    open?: boolean;
+    anchor?: boolean;
   } = $props();
 
   const refusal = $derived(model.addable(container));
@@ -32,7 +37,6 @@
   const entries = $derived(
     (rule ? blocksCatalog.allowed(rule) : []).map((b) => ({ name: b.name, label: b.label, description: b.description ?? '', icon: b.icon || (b.name === SHARED ? 'link' : 'square') })),
   );
-  let open = $state(false);
   let q = $state('');
   let active = $state(0);
   let step = $state<'pick' | 'shared'>('pick');
@@ -61,7 +65,8 @@
       return;
     }
     close();
-    model.add(container, index, name);
+    if (variant.startsWith('canvas')) model.quietly(() => model.add(container, index, name));
+    else model.add(container, index, name);
   }
   function key(e: KeyboardEvent, close: () => void) {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -88,12 +93,15 @@
   function pickShared(o: ComboOption | null, close: () => void) {
     if (!o) return;
     close();
-    model.addShared(container, index, o.value);
+    if (variant.startsWith('canvas')) model.quietly(() => model.addShared(container, index, o.value));
+    else model.addShared(container, index, o.value);
   }
 </script>
 
 {#if !refusal.ok && refusal.reason === 'max'}
-  {#if variant === 'end'}
+  {#if variant === 'canvas' && !anchor}
+    <button type="button" class="h-iconbutton h-iconbutton--ghost h-iconbutton--sm" disabled title={model.reason(refusal)} aria-label={label}><Icon name="plus" size={16} /></button>
+  {:else if variant === 'end'}
     <span title={model.reason(refusal)}>
       <Button size="sm" icon="plus" disabled>{t('blocks.add')}</Button>
       <span class="h-sr">{model.reason(refusal)}</span>
@@ -101,12 +109,26 @@
   {/if}
 {:else if refusal.ok}
   <Popover
-    label={variant === 'end' ? t('blocks.add') : t('blocks.addBefore', { label })}
-    triggerClass={variant === 'end' ? 'h-pill h-addblock h-addblock--end' : 'h-addblock h-addblock--between'}
+    label={variant === 'end' ? t('blocks.add') : variant === 'between' ? t('blocks.addBefore', { label }) : label}
+    triggerClass={anchor
+      ? 'h-canvas__anchor'
+      : variant === 'canvas'
+        ? 'h-iconbutton h-iconbutton--ghost h-iconbutton--sm'
+        : variant === 'canvas-text'
+          ? 'h-pill h-canvas__empty'
+          : variant === 'end'
+            ? 'h-pill h-addblock h-addblock--end'
+            : 'h-addblock h-addblock--between'}
     bind:open
   >
     {#snippet trigger()}
-      {#if variant === 'end'}
+      {#if anchor}
+        <span class="h-sr">{label}</span>
+      {:else if variant === 'canvas'}
+        <Icon name="plus" size={16} /><span class="h-sr">{label}</span>
+      {:else if variant === 'canvas-text'}
+        <Icon name="plus" size={16} />{label}
+      {:else if variant === 'end'}
         <Icon name="plus" size={16} />{t('blocks.add')}
       {:else}
         <Icon name="plus" size={14} /><span class="h-sr">{t('blocks.addBefore', { label })}</span>

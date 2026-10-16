@@ -614,6 +614,9 @@
                 }}
                 onkeep={() => (kept = true)}
                 principal={session.principalKey}
+                fields={type?.fields ?? []}
+                setField={(name: string, v: unknown) => ((form.values.fields as Record<string, unknown>)[name] = v)}
+                readonly={!canEdit}
               />
             {:else}
               <Skeleton shape="block" height="20rem" />

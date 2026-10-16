@@ -5,7 +5,8 @@
 # running afterwards. A third run uses examples/starter with its fixture imported and a tiny preview host standing
 # in for the frontend (admin/ui/e2e/fixtures/preview-host): the block editor and the live and reload previews.
 # Then the H6 exit scenarios on the real frontends: examples/starter with starters/next (live preview of a page and a
-# post) and examples/fullstack (the site module, reload mode). ADMIN_E2E_ONLY=next|fullstack runs just that one.
+# post) and examples/fullstack (the site module, reload mode). ADMIN_E2E_ONLY=starter|next|fullstack runs just that one
+# (starter uses the admin/dist already built); E2E_GREP passes --grep to Playwright.
 # Run from the repo root: make admin-e2e.
 set -euo pipefail
 
@@ -44,7 +45,7 @@ start_server() {
 # run_playwright PORT [ENV=VALUE...]
 run_playwright() {
   local p=$1; shift
-  (cd "$root/admin/ui" && env "$@" BASE_URL="http://127.0.0.1:$p" MANAGE_TOKEN="$MANAGE_TOKEN" ADMIN_LOGIN="$login" ADMIN_PASSWORD="$password" npx playwright test)
+  (cd "$root/admin/ui" && env "$@" BASE_URL="http://127.0.0.1:$p" MANAGE_TOKEN="$MANAGE_TOKEN" ADMIN_LOGIN="$login" ADMIN_PASSWORD="$password" npx playwright test ${E2E_GREP:+--grep "$E2E_GREP"})
 }
 trap cleanup EXIT
 
@@ -140,14 +141,16 @@ status=0
 run_playwright "$cport" E2E_PROJECT=content || status=$?
 kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; pid=
 [ "$status" -eq 0 ] || exit "$status"
+fi
 
+if [ -z "$only" ] || [ "$only" = starter ]; then
 echo "== build examples/starter and the preview host"
 test -f "$root/packages/bridge/dist/bridge.iife.js" || (cd "$root/packages" && npm install --no-audit --no-fund >/dev/null && npm run build -w bridge >/dev/null)
 (cd "$root/examples/starter" && go build -o "$work/starter" .)
 sport=${ADMIN_E2E_STARTER_PORT:-18436}
 hport=${ADMIN_E2E_HOST_PORT:-18601}
 swork="$work/starter-run"
-mkdir -p "$swork"
+rm -rf "$swork" && mkdir -p "$swork"
 if curl -fsS -o /dev/null "http://127.0.0.1:$hport/bridge.js" 2>/dev/null; then fail "port $hport already answers (a leftover preview host?)"; fi
 CMS_URL="http://127.0.0.1:$sport" ADMIN_ORIGIN="http://127.0.0.1:$sport" PORT="$hport" node "$root/admin/ui/e2e/fixtures/preview-host/server.mjs" >"$work/host.log" 2>&1 & hpid=$!
 export DATABASE_URL="sqlite:$swork/h.db" LISTEN_ADDR="127.0.0.1:$sport" STARTER_FRONTEND="http://127.0.0.1:$hport"

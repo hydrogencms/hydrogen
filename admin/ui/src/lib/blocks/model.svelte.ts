@@ -2,6 +2,7 @@ import { tick } from 'svelte';
 import { t } from '../i18n';
 import { toast } from '../ui/toast.svelte';
 import type { FieldCtx } from '../fields/context';
+import { chainOf, formPath } from '../canvas/paths';
 import { blocksCatalog } from './catalog.svelte';
 import { readShared } from './shared';
 import {
@@ -131,9 +132,48 @@ export class BlocksModel {
     if (open) walk(this.root, (b) => b.id && (next[b.id] = true));
     this.open = next;
   }
+  #quiet = false;
+  /** Runs an operation without moving the focus into the form (canvas actions keep it on the canvas). */
+  quietly<T>(fn: () => T): T {
+    this.#quiet = true;
+    try {
+      return fn();
+    } finally {
+      this.#quiet = false;
+    }
+  }
   async focusBlock(id: string, sel = '.h-block__toggle') {
+    if (this.#quiet) return;
     await tick();
     document.querySelector<HTMLElement>(`[data-block-id="${id}"] > .h-block__head ${sel}`)?.focus();
+  }
+
+  /** Opens the card and its ancestors, selects it and scrolls it (or the prop's row) into view. Focus stays put. */
+  async reveal(id: string, prop?: string): Promise<void> {
+    const f = find(this.root, id);
+    if (!f) return;
+    this.open[id] = true;
+    for (let c = f.container; c.id; c = find(this.root, c.id)?.container ?? {}) this.open[c.id] = true;
+    this.selected = id;
+    await tick();
+    const card = document.querySelector<HTMLElement>(`[data-block-id="${id}"]`);
+    let el: HTMLElement | null | undefined = card;
+    const chain = prop ? chainOf(this.root, id) : undefined;
+    if (prop && chain) {
+      const fp = formPath({ field: this.path, chain, prop }).replace(/(["\\])/g, '\\$1');
+      el = card?.querySelector<HTMLElement>(`[data-field="${fp}"]`) ?? card;
+    }
+    el?.scrollIntoView?.({ block: 'nearest' });
+  }
+
+  /** Reveals the block and focuses the first control of the prop's row. */
+  async focusProp(id: string, prop: string): Promise<void> {
+    await this.reveal(id, prop);
+    const chain = chainOf(this.root, id);
+    if (!chain) return;
+    const fp = formPath({ field: this.path, chain, prop }).replace(/(["\\])/g, '\\$1');
+    const row = document.querySelector<HTMLElement>(`[data-block-id="${id}"] [data-field="${fp}"]`);
+    row?.querySelector<HTMLElement>('input:not([type=hidden]):not(:disabled), textarea:not(:disabled), select:not(:disabled), [contenteditable=""], [contenteditable="true"], button:not(:disabled), [tabindex]:not([tabindex="-1"])')?.focus();
   }
 
   // ---- insert / delete / copy

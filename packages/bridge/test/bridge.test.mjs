@@ -28,7 +28,7 @@ test('connect posts ready to the admin origin only', () => {
   createBridge({ adminOrigin: ADMIN, mode: 'live', window: w }).connect()
   assert.equal(sent.length, 1)
   assert.equal(sent[0][1], ADMIN)
-  assert.deepEqual({ ...sent[0][0], url: 0 }, { h: 1, type: 'ready', mode: 'live', sdk: SDK, url: 0 })
+  assert.deepEqual({ ...sent[0][0], url: 0 }, { h: 1, type: 'ready', mode: 'live', edit: true, sdk: SDK, url: 0 })
   assert.match(SDK, new RegExp('@' + JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version.replace(/\./g, '\\.') + '$'))
 })
 

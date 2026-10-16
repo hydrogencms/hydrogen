@@ -10,7 +10,7 @@ beforeAll(async () => {
 // Lets the host's SHA-256 comparison settle.
 const realTimeout = setTimeout;
 const settle = async () => {
-  await new Promise<void>((r) => realTimeout(r, 3));
+  await new Promise<void>((r) => realTimeout(r, 10));
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
 const doc = (title: string, body: unknown[] = []) => ({ fields: { title, body } });
@@ -261,5 +261,150 @@ describe('PreviewHost locked reload', () => {
     await from({ h: 1, type: 'ready', mode: 'reload', preview: 'x' });
     expect(rendered).toHaveLength(0);
     vi.useRealTimers();
+  });
+});
+
+describe('PreviewHost canvas editing', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const texts = [{ path: 'fields/title', text: 'Home', scope: '' }];
+  const overlays = (sent: { msg: any }[]) => sent.filter((s) => s.msg.type === 'overlay');
+
+  it('sends overlay after a verified ready, after init, and again after each ready', async () => {
+    let on = true;
+    const { host, sent, from } = setup({ overlay: () => ({ on, texts }) });
+    host.setDoc(doc('A'));
+    await from({ h: 1, type: 'ready', mode: 'live', edit: true });
+    expect(sent.map((s) => s.msg.type)).toEqual(['init', 'overlay']);
+    expect(sent[1]!.msg).toEqual({ h: 1, type: 'overlay', on: true, texts });
+    await from({ h: 1, type: 'ready', mode: 'live', edit: true });
+    expect(overlays(sent)).toHaveLength(2);
+    on = false;
+    await from({ h: 1, type: 'ready', mode: 'live' });
+    expect(overlays(sent)[2]!.msg.on).toBe(false);
+  });
+
+  it('does not send overlay before verification; setOverlay before ready is sent after it', async () => {
+    const { host, sent, from } = setup();
+    host.setOverlay(true, texts);
+    expect(sent).toHaveLength(0);
+    await from({ h: 1, type: 'ready', mode: 'live', preview: 'bad' });
+    expect(sent).toHaveLength(0);
+    host.setDoc(doc('A'));
+    await from({ h: 1, type: 'ready', mode: 'reload', edit: true });
+    expect(overlays(sent)).toHaveLength(1);
+  });
+
+  it('setOverlay dedupes by deep comparison', async () => {
+    const { host, sent, from } = setup();
+    host.setDoc(doc('A'));
+    await from({ h: 1, type: 'ready', mode: 'live', edit: true });
+    host.setOverlay(true, texts);
+    host.setOverlay(true, [{ ...texts[0]! }]);
+    expect(overlays(sent)).toHaveLength(1);
+    host.setOverlay(true, [{ path: 'fields/title', text: 'Other', scope: '' }]);
+    host.setOverlay(false, []);
+    expect(overlays(sent)).toHaveLength(3);
+  });
+
+  it('tracks editCapable from each verified ready', async () => {
+    const caps: boolean[] = [];
+    const { host, from } = setup({ onCapabilities: (e) => caps.push(e) });
+    expect(host.editCapable).toBe(false);
+    await from({ h: 1, type: 'ready', mode: 'live', edit: true });
+    expect(host.editCapable).toBe(true);
+    await from({ h: 1, type: 'ready', mode: 'live' });
+    expect(host.editCapable).toBe(false);
+    await from({ h: 1, type: 'ready', mode: 'live', edit: true });
+    await from({ h: 1, type: 'ready', mode: 'live', edit: true, preview: 'bad' });
+    expect(host.editCapable).toBe(false);
+    expect(caps).toEqual([true, false, true, false]);
+  });
+
+  it('routes layout, hover, select and inlineEdit only from the verified frame', async () => {
+    const layouts: any[] = [];
+    const hovers: any[] = [];
+    const selects: any[] = [];
+    const edits: any[] = [];
+    const o = { onLayout: (n: any, v: any) => layouts.push([n, v]), onHover: (p: any) => hovers.push(p), onSelect: (p: any, e: any) => selects.push([p, e]), onInlineEdit: (p: any, v: any) => edits.push([p, v]) };
+    const { host, from, win } = setup(o);
+    host.setDoc(doc('A'));
+    const nodes = [{ path: 'fields/body/0', rect: [1, 2, 3, 4], block: 'hero', text: true }];
+    const all = async (origin?: string, source?: unknown) => {
+      const opt = origin ? { origin, source: source ?? win } : undefined;
+      await from({ h: 1, type: 'layout', nodes, vw: 800, vh: 600 }, opt);
+      await from({ h: 1, type: 'hover', path: 'fields/body/0' }, opt);
+      await from({ h: 1, type: 'select', path: 'fields/body/0', edit: true }, opt);
+      await from({ h: 1, type: 'inlineEdit', path: 'fields/title', value: 'X' }, opt);
+    };
+    await all(); // not verified yet
+    expect(layouts.length + hovers.length + selects.length + edits.length).toBe(0);
+    await from({ h: 1, type: 'ready', mode: 'live', edit: true });
+    layouts.length = 0;
+    await all('https://evil.example');
+    await all(ORIGIN, {});
+    expect(layouts.length + hovers.length + selects.length + edits.length).toBe(0);
+    await all();
+    expect(layouts).toEqual([[nodes, { w: 800, h: 600 }]]);
+    expect(hovers).toEqual(['fields/body/0']);
+    expect(selects).toEqual([['fields/body/0', true]]);
+    expect(edits).toEqual([['fields/title', 'X']]);
+    await from({ h: 1, type: 'hover', path: null });
+    await from({ h: 1, type: 'select', path: null, edit: false });
+    await from({ h: 1, type: 'inlineEdit', path: 'fields/title', cancel: true });
+    expect(hovers.at(-1)).toBeNull();
+    expect(selects.at(-1)).toEqual([null, false]);
+    expect(edits.at(-1)).toEqual(['fields/title', null]);
+  });
+
+  it('drops malformed canvas messages', async () => {
+    const calls: unknown[] = [];
+    const { host, from } = setup({ onLayout: (n) => calls.push(n), onHover: (p) => calls.push(p), onSelect: (p) => calls.push(p), onInlineEdit: (p) => calls.push(p) });
+    host.setDoc(doc('A'));
+    await from({ h: 1, type: 'ready', mode: 'live', edit: true });
+    calls.length = 0;
+    await from({ h: 1, type: 'layout', nodes: 'x', vw: 1, vh: 1 });
+    await from({ h: 1, type: 'layout', nodes: [{ path: 'a', rect: [1, 2, 3] }], vw: 1, vh: 1 });
+    await from({ h: 1, type: 'layout', nodes: [], vw: 'x', vh: 1 });
+    await from({ h: 1, type: 'hover', path: 4 });
+    await from({ h: 1, type: 'select', path: 4, edit: false });
+    await from({ h: 1, type: 'inlineEdit', path: 'a' });
+    await from({ h: 1, type: 'inlineEdit', value: 'a' });
+    expect(calls).toEqual([]);
+  });
+
+  it('clears the layout when unverified or disconnected', async () => {
+    const layouts: any[] = [];
+    const { host, from } = setup({ onLayout: (n, v) => layouts.push([n, v]) });
+    host.setDoc(doc('A'));
+    await from({ h: 1, type: 'ready', mode: 'live', edit: true });
+    await from({ h: 1, type: 'ready', mode: 'live', preview: 'bad' });
+    expect(layouts).toEqual([[[], { w: 0, h: 0 }]]);
+    await from({ h: 1, type: 'ready', mode: 'live', edit: true });
+    host.frameLoaded(); // consumes the ready
+    host.frameLoaded(); // no ready since: no bridge
+    expect(layouts).toHaveLength(2);
+    expect(host.editCapable).toBe(false);
+  });
+
+  it('posts scrollTo and editText to the frame origin, or * when locked', async () => {
+    for (const locked of [false, true]) {
+      const { host, sent, from } = setup({ locked });
+      host.scrollTo('fields/title');
+      host.editText('fields/title', false);
+      expect(sent).toHaveLength(0);
+      host.setDoc(doc('A'));
+      await from({ h: 1, type: 'ready', mode: 'live', edit: true });
+      sent.length = 0;
+      host.scrollTo('fields/body/1');
+      host.scrollTo({ by: -16 });
+      host.editText('fields/title', true);
+      expect(sent.map((s) => s.msg)).toEqual([
+        { h: 1, type: 'scrollTo', path: 'fields/body/1' },
+        { h: 1, type: 'scrollTo', by: -16 },
+        { h: 1, type: 'editText', path: 'fields/title', multiline: true },
+      ]);
+      expect(new Set(sent.map((s) => s.origin))).toEqual(new Set([locked ? '*' : ORIGIN]));
+    }
   });
 });

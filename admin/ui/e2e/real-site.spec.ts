@@ -34,3 +34,30 @@ test('typing in the admin autosaves the draft and the website frame shows it', a
   expect(draft.status).toBe('changed');
   expect(draft.version).toBe(1);
 });
+
+test('canvas: inline edit of the title in the locked site frame commits and the reloaded frame shows it', async ({ page }) => {
+  const r = await manage('GET', '/collections/page/items?limit=20');
+  const about = r.items.find((i: any) => i.name === 'About');
+  await signIn(page, adminLogin, adminPassword);
+  await page.goto(`/admin/items/${about.id}`);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  const frame = frameOf(page);
+  const sandbox = await page.locator('iframe[title^="Preview of"]').getAttribute('sandbox');
+  expect(sandbox).not.toContain('allow-same-origin');
+  await expect(page.getByRole('status').filter({ hasText: 'Reload mode' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit on canvas' })).toHaveAttribute('aria-pressed', 'true');
+  const title = frame.locator('h1.page-title');
+  await expect(title).toBeVisible();
+
+  await title.dblclick();
+  await expect(frame.locator('[contenteditable]')).toBeVisible();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type(`About ${t}`);
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue(`About ${t}`);
+  // Autosave, then the site module renders the saved draft in a reloaded frame.
+  await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
+  await expect(frame.locator('h1.page-title')).toHaveText(`About ${t}`);
+  await expect(frame.locator('[contenteditable]')).toHaveCount(0);
+  expect((await draftOf(about.id)).fields.title).toBe(`About ${t}`);
+});

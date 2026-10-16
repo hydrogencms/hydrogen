@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { add, card, expand, frameOf, rootAdd } from './blocks-helpers';
+import { add, card, clickBlock, expand, frameOf, rootAdd } from './blocks-helpers';
 import { adminLogin, adminPassword, draftOf, manage, signIn, tag } from './helpers';
 
 // The H6 exit scenario on the real Next.js starter (starters/next) against examples/starter: the editor types in the
@@ -51,4 +51,19 @@ test('a post: the title appears in the Next.js frame while typing', async ({ pag
   await expect(frame.locator('h1').first()).toContainText(post.name, { timeout: 30_000 });
   await page.getByRole('textbox', { name: 'Title' }).fill(`Post ${t}`);
   await expect(frame.locator('h1').first()).toContainText(`Post ${t}`);
+});
+
+test('canvas: clicking a block in the Next.js frame selects it and opens its card', async ({ page }) => {
+  const home = await first('landing', 'Home');
+  await signIn(page, adminLogin, adminPassword);
+  await page.goto(`/admin/items/${home.id}`);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  const frame = frameOf(page);
+  await expect(frame.locator('[data-h-block="hero"]').first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('status').filter({ hasText: 'Live' })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('button', { name: 'Edit on canvas' })).toHaveAttribute('aria-pressed', 'true');
+  await clickBlock(frame.locator('[data-h-block="hero"]').first());
+  await expect(page.locator('.h-canvas__sel')).toBeVisible();
+  await expect(card(page, 'hero').first().getByLabel(/^Heading/)).toBeVisible();
+  await expect(card(page, 'hero').first().getByLabel(/^Heading/)).toBeInViewport();
 });

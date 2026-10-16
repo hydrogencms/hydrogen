@@ -1,4 +1,6 @@
 // The admin (parent) side of the preview bridge protocol v1: see docs/bridge-protocol.md.
+import type { LayoutNode } from '../canvas/drop';
+import type { TextRef } from '../canvas/texts';
 import { equal, patchOps, plain } from './patch';
 
 export type Phase = 'connecting' | 'disconnected' | 'unverified' | 'live' | 'reload' | 'error';
@@ -25,6 +27,16 @@ export interface HostOptions {
   save?(): Promise<boolean>;
   onStatus?(s: HostStatus): void;
   onRendered?(ms: number, rev: number): void;
+  /** Canvas editing (bridge `edit: true`). Messages below are routed only from a verified frame. */
+  onLayout?(nodes: LayoutNode[], view: { w: number; h: number }): void;
+  onHover?(path: string | null): void;
+  onSelect?(path: string | null, edit: boolean): void;
+  /** `null` = cancelled or refused. */
+  onInlineEdit?(path: string, value: string | null): void;
+  /** Read after each verified `ready`. */
+  overlay?(): { on: boolean; texts: TextRef[] };
+  /** From each verified `ready`. */
+  onCapabilities?(edit: boolean): void;
   patchDelay?: number;
   saveDelay?: number;
 }
@@ -37,6 +49,8 @@ type Mode = 'live' | 'reload';
  */
 export class PreviewHost {
   rev = 0;
+  /** The last verified `ready` had `edit: true`. */
+  editCapable = false;
   mode: Mode | null = null;
   #o: HostOptions;
   #doc: unknown = null;
@@ -47,6 +61,8 @@ export class PreviewHost {
   #dead = false;
   #pending = false;
   #readySince = false;
+  #overlay: { on: boolean; texts: TextRef[] } | null = null;
+  #overlaySent = '';
   #expect: Promise<string>;
   /** Locked reload mode: when the `reload` was sent, and whether the frame's load event has been seen since. */
   #reloading: { t0: number; loaded: boolean; ready: boolean } | null = null;
@@ -77,6 +93,7 @@ export class PreviewHost {
     this.#sent = null;
     this.#pending = false;
     clearTimeout(this.#timer);
+    this.#unverify();
     this.#o.onStatus?.({ phase: 'disconnected' });
   }
 
@@ -112,6 +129,22 @@ export class PreviewHost {
       case 'error':
         this.#o.onStatus?.({ phase: 'error', message: String(m.message ?? '') });
         break;
+      case 'layout': {
+        const nodes = parseNodes(m.nodes);
+        if (nodes && isNum(m.vw) && isNum(m.vh)) this.#o.onLayout?.(nodes, { w: m.vw, h: m.vh });
+        break;
+      }
+      case 'hover':
+        if (m.path === null || typeof m.path === 'string') this.#o.onHover?.(m.path);
+        break;
+      case 'select':
+        if (m.path === null || typeof m.path === 'string') this.#o.onSelect?.(m.path, m.edit === true);
+        break;
+      case 'inlineEdit':
+        if (typeof m.path !== 'string') break;
+        if (typeof m.value === 'string') this.#o.onInlineEdit?.(m.path, m.value);
+        else if (m.cancel === true) this.#o.onInlineEdit?.(m.path, null);
+        break;
     }
   }
 
@@ -124,14 +157,56 @@ export class PreviewHost {
       this.#pending = false;
       this.#reloading = null;
       clearTimeout(this.#timer);
+      this.#unverify();
       this.#o.onStatus?.({ phase: 'unverified' });
       return;
     }
     this.mode = m.mode === 'reload' ? 'reload' : 'live';
+    this.editCapable = m.edit === true;
+    this.#o.onCapabilities?.(this.editCapable);
     this.#o.onStatus?.({ phase: this.mode });
     if (this.mode === 'live') this.#init();
     else this.#sent ??= this.#doc;
     this.#reloadStep('ready');
+    // A new page has no overlay: send it again (after `init`, so the first layout shows the document).
+    this.#overlaySent = '';
+    const ov = this.#o.overlay?.();
+    if (ov) this.#overlay = { on: ov.on, texts: ov.texts };
+    this.#sendOverlay();
+  }
+
+  /** Nothing the frame reports can be trusted or placed any more. */
+  #unverify() {
+    this.editCapable = false;
+    this.#overlaySent = '';
+    this.#o.onCapabilities?.(false);
+    this.#o.onLayout?.([], { w: 0, h: 0 });
+  }
+
+  #sendOverlay() {
+    if (!this.mode || !this.#overlay) return;
+    const key = JSON.stringify(this.#overlay);
+    if (key === this.#overlaySent) return;
+    this.#overlaySent = key;
+    this.#post({ type: 'overlay', on: this.#overlay.on, texts: this.#overlay.texts });
+  }
+
+  /** Canvas editing on/off and the texts the frame may map; posted when verified and changed. */
+  setOverlay(on: boolean, texts: TextRef[]) {
+    this.#overlay = { on, texts: texts.map((t) => ({ path: t.path, text: t.text, scope: t.scope })) };
+    this.#sendOverlay();
+  }
+
+  scrollTo(target: string | { by: number }) {
+    if (!this.mode) return;
+    this.#post(typeof target === 'string' ? { type: 'scrollTo', path: target } : { type: 'scrollTo', by: target.by });
+  }
+
+  editText(path: string, multiline: boolean) {
+    if (!this.mode) return;
+    // The caret goes into the frame: give it the focus (a click may have moved it to the admin meanwhile).
+    this.#o.frame()?.focus?.();
+    this.#post({ type: 'editText', path, multiline });
   }
 
   #reloadStep(what: 'loaded' | 'ready') {
@@ -211,6 +286,24 @@ export class PreviewHost {
     if (this.#o.locked) this.#reloading = { t0: performance.now(), loaded: false, ready: false };
     this.#post({ type: 'reload', rev: this.rev });
   }
+}
+
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+function parseNodes(v: unknown): LayoutNode[] | null {
+  if (!Array.isArray(v) || v.length > 5000) return null;
+  const out: LayoutNode[] = [];
+  for (const n of v as Record<string, unknown>[]) {
+    if (!n || typeof n !== 'object' || typeof n.path !== 'string' || n.path.length > 512) return null;
+    const r = n.rect;
+    if (!Array.isArray(r) || r.length !== 4 || !r.every(isNum)) return null;
+    if (n.block !== undefined && typeof n.block !== 'string') return null;
+    const node: LayoutNode = { path: n.path, rect: [r[0], r[1], r[2], r[3]] };
+    if (n.block !== undefined) node.block = n.block;
+    if (n.text === true) node.text = true;
+    out.push(node);
+  }
+  return out;
 }
 
 /** SHA-256 of `text` as lower-case hex. */

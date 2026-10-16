@@ -1,10 +1,7 @@
-(function(){"use strict";const SDK = '@hydrogencms/bridge@0.1.0';
+(function(){"use strict";const SDK = '@hydrogencms/bridge@0.2.0';
 const PREVIEW_COOKIE = 'hydrogen-preview';
 class PatchError extends Error {
-    constructor(m) {
-        super(m);
-        this.name = 'PatchError';
-    }
+    name = 'PatchError';
 }
 const isArr = Array.isArray;
 const isObj = (v) => typeof v === 'object' && v !== null && !isArr(v);
@@ -12,54 +9,35 @@ function pointer(path) {
     if (path === '')
         return [];
     if (path[0] !== '/')
-        throw new PatchError(`invalid pointer "${path}": must be empty or start with "/"`);
+        throw new PatchError(`invalid pointer "${path}"`);
     return path.slice(1).split('/').map((t) => t.replace(/~1/g, '/').replace(/~0/g, '~'));
-}
-function index(arr, t, path, max) {
-    if (!/^(0|[1-9]\d*)$/.test(t) || +t > max)
-        throw new PatchError(`${path}: bad array index "${t}" (length ${arr.length})`);
-    return +t;
-}
-function child(node, t, path) {
-    if (isArr(node))
-        return node[index(node, t, path, node.length - 1)];
-    if (isObj(node) && Object.hasOwn(node, t))
-        return node[t];
-    throw new PatchError(`${path}: no such path "${t}"`);
-}
-function put(node, t, v, path) {
-    if (isArr(node)) {
-        const c = node.slice();
-        c[index(node, t, path, node.length - 1)] = v;
-        return c;
-    }
-    return { ...node, [t]: v };
 }
 function apply(node, t, i, o) {
     const k = t[i];
-    if (i < t.length - 1)
-        return put(node, k, apply(child(node, k, o.path), t, i + 1, o), o.path);
-    const { op, path } = o;
-    if (isArr(node)) {
-        if (op === 'add') {
-            const at = k === '-' ? node.length : index(node, k, path, node.length);
-            return [...node.slice(0, at), o.value, ...node.slice(at)];
-        }
-        const at = index(node, k, path, node.length - 1);
-        if (op === 'remove')
-            return [...node.slice(0, at), ...node.slice(at + 1)];
-        return put(node, k, o.value, path);
+    const arr = isArr(node);
+    if (!arr && !isObj(node))
+        throw new PatchError(`${o.path}: parent is not a container`);
+    const last = i === t.length - 1;
+    const add = last && o.op === 'add';
+    const dash = add && k === '-';
+    let at = k;
+    if (arr) {
+        at = dash ? node.length : +k;
+        if (!dash && (!/^(0|[1-9]\d*)$/.test(k) || at > node.length - (add ? 0 : 1)))
+            throw new PatchError(`${o.path}: bad array index "${k}"`);
     }
-    if (!isObj(node))
-        throw new PatchError(`${path}: parent is not an object or array`);
-    if (op === 'add')
-        return { ...node, [k]: o.value };
-    if (!Object.hasOwn(node, k))
-        throw new PatchError(`${path}: no such path "${k}"`);
-    if (op === 'replace')
-        return { ...node, [k]: o.value };
-    const { [k]: _, ...rest } = node;
-    return rest;
+    else if (!add && !Object.hasOwn(node, k))
+        throw new PatchError(`${o.path}: no such path "${k}"`);
+    const c = arr ? node.slice() : { ...node };
+    if (!last)
+        c[at] = apply(c[at], t, i + 1, o);
+    else if (o.op === 'remove')
+        arr ? c.splice(at, 1) : delete c[k];
+    else if (add && arr)
+        c.splice(at, 0, o.value);
+    else
+        c[at] = o.value;
+    return c;
 }
 function applyPatch(doc, ops) {
     let d = doc;
@@ -75,7 +53,7 @@ function applyPatch(doc, ops) {
                 throw new PatchError(`${o.path}: forbidden key`);
             if (!t.length) {
                 if (o.op === 'remove')
-                    throw new PatchError('cannot remove the document root');
+                    throw new PatchError('cannot remove root');
                 d = o.value;
             }
             else
@@ -112,11 +90,202 @@ function previewProof(win = window) {
         return undefined;
     }
 }
+const norm = (s) => s.replace(/\s+/g, ' ').trim();
+const SKIP = /^(script|style|noscript|template)$/i;
+function canvas(w, post, raf) {
+    const d = w.document;
+    let on = false;
+    let texts = [];
+    let map = new Map();
+    let pend = false;
+    let last = '';
+    let hover = null;
+    let ab = new AbortController();
+    let mo;
+    let ro;
+    let ed = null;
+    const collect = () => {
+        if (ed && !ed.el.isConnected)
+            end(false);
+        const els = Array.from(d.body.querySelectorAll('[data-h-path]'), (e) => [e, e.getAttribute('data-h-path')]);
+        const n = els.length;
+        const lists = new Map();
+        const used = new Set(els.map((x) => x[1]));
+        for (const t of texts) {
+            if (used.has(t.path))
+                continue;
+            let l = lists.get(t.scope);
+            if (!l) {
+                lists.set(t.scope, (l = []));
+                const sc = t.scope ? d.querySelector(`[data-h-path="${t.scope.replace(/["\\]/g, '\\$&')}"]`) : d.querySelector('[data-h-root]') ?? d.body;
+                const walk = (p) => p.childNodes.forEach((c) => {
+                    if (c.nodeType === 3) {
+                        const e = c.parentElement;
+                        if (e.closest('[data-h-path]') === (t.scope ? sc : null))
+                            l.push([norm(c.data), e]);
+                    }
+                    else if (c.nodeType === 1 && !SKIP.test(c.nodeName))
+                        walk(c);
+                });
+                if (sc)
+                    walk(sc);
+            }
+            const want = norm(t.text);
+            const hit = l.find(([s, e]) => s === want && !used.has(e));
+            if (hit && !hit[1].hasAttribute('data-h-path')) {
+                used.add(hit[1]);
+                els.push([hit[1], t.path]);
+            }
+        }
+        if (els.length > n)
+            els.sort((a, b) => (a[0] === b[0] ? 0 : a[0].compareDocumentPosition(b[0]) & 4 ? -1 : 1));
+        map = new Map(els);
+        return els;
+    };
+    const layout = () => {
+        const nodes = [];
+        for (const [e, path] of collect()) {
+            const r = e.getBoundingClientRect();
+            const rect = [r.left, r.top, r.width, r.height].map(Math.round);
+            const block = e.getAttribute('data-h-block');
+            const c = e.firstChild;
+            if (rect[2] && rect[3])
+                nodes.push({ path, rect, ...(block ? { block } : {}), ...(e.childNodes.length === 1 && c?.nodeType === 3 && c.data ? { text: true } : {}) });
+        }
+        return nodes;
+    };
+    const sched = () => {
+        if (pend)
+            return;
+        pend = true;
+        raf(() => {
+            pend = false;
+            if (!on)
+                return;
+            const m = { type: 'layout', nodes: layout(), vw: w.innerWidth, vh: w.innerHeight };
+            const j = JSON.stringify(m);
+            if (j !== last)
+                (last = j), post(m);
+        });
+    };
+    const find = (path) => (collect(), [...map].find(([, p]) => p === path)?.[0]);
+    const nodeOf = (t) => {
+        for (let e = t; e; e = e.parentElement) {
+            const p = map.get(e);
+            const r = p !== undefined && e.getBoundingClientRect();
+            if (r && r.width && r.height)
+                return p;
+        }
+        return null;
+    };
+    const hov = (p) => p !== hover && post({ type: 'hover', path: (hover = p) });
+    const stop = (e) => {
+        if (ed?.el.contains(e.target))
+            return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (e.type !== 'auxclick' && e.type !== 'submit')
+            post({ type: 'select', path: (collect(), nodeOf(e.target)), edit: e.type === 'dblclick' });
+    };
+    const end = (commit) => {
+        const e = ed;
+        if (!e)
+            return;
+        ed = null;
+        const t = (e.multi ? e.el.innerText : null) ?? e.el.textContent ?? '';
+        const v = commit ? (e.multi ? t : norm(t)) : e.orig;
+        e.ac.abort();
+        e.el.removeAttribute('contenteditable');
+        e.el.replaceChildren(...e.kids);
+        e.text.data = v;
+        post({ type: 'inlineEdit', path: e.path, ...(commit ? { value: v } : { cancel: true }) });
+    };
+    const off = () => {
+        end(false);
+        if (!on)
+            return;
+        on = false;
+        ab.abort();
+        mo?.disconnect();
+        ro?.disconnect();
+        hover = null;
+        map = new Map();
+    };
+    const on_ = () => {
+        on = true;
+        ab = new AbortController();
+        const signal = ab.signal;
+        const on2 = (t, type, f, o) => t.addEventListener(type, f, { ...o, signal });
+        for (const t of ['click', 'dblclick', 'auxclick', 'submit'])
+            on2(w, t, stop, CAP);
+        on2(w, 'pointermove', (e) => hov(nodeOf(e.target)), { capture: true, passive: true });
+        on2(d.documentElement, 'pointerleave', () => hov(null));
+        on2(w, 'scroll', sched, { capture: true, passive: true });
+        on2(w, 'resize', sched);
+        mo = w.MutationObserver && new w.MutationObserver(sched);
+        mo?.observe(d.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-h-path', 'data-h-block', 'class', 'style', 'hidden'] });
+        ro = w.ResizeObserver && new w.ResizeObserver(sched);
+        ro?.observe(d.documentElement);
+    };
+    return {
+        sched: () => on && ((last = ''), sched()),
+        off,
+        overlay(m) {
+            texts = (isArr(m.texts) ? m.texts : []).filter((t) => isObj(t) && ['path', 'text', 'scope'].every((k) => typeof t[k] === 'string'));
+            if (m.on !== true)
+                return off();
+            if (!on)
+                on_();
+            last = '';
+            sched();
+        },
+        scroll(m) {
+            if (typeof m.by === 'number')
+                return w.scrollBy({ top: m.by, behavior: 'instant' });
+            find(m.path)?.scrollIntoView({ block: 'nearest', behavior: w.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+        },
+        edit(path, multi) {
+            end(true);
+            const el = find(path);
+            const text = el?.firstChild;
+            if (!el || el.childNodes.length !== 1 || text?.nodeType !== 3)
+                return post({ type: 'inlineEdit', path, cancel: true });
+            el.setAttribute('contenteditable', 'plaintext-only');
+            const plain = el.contentEditable === 'plaintext-only';
+            if (!plain)
+                el.setAttribute('contenteditable', 'true');
+            const ac = new AbortController();
+            const h = (e) => {
+                if (e.type === 'blur')
+                    end(true);
+                else if (e.type === 'paste')
+                    (e.preventDefault(), d.execCommand('insertText', false, e.clipboardData?.getData('text/plain') ?? ''));
+                else if (e.isComposing)
+                    return;
+                else if (e.key === 'Escape')
+                    (e.preventDefault(), e.stopPropagation(), end(false));
+                else if (e.key === 'Enter' && (!multi || e.metaKey || e.ctrlKey))
+                    (e.preventDefault(), e.stopPropagation(), end(true));
+            };
+            for (const t of plain ? ['keydown', 'blur'] : ['keydown', 'blur', 'paste'])
+                el.addEventListener(t, h, { signal: ac.signal });
+            ed = { el, path, multi, kids: Array.from(el.childNodes), text: text, orig: text.data, ac };
+            try {
+                const s = w.getSelection();
+                const k = el.contains(s.anchorNode);
+                el.focus();
+                k || (s.selectAllChildren(el), s.collapseToEnd());
+            }
+            catch {
+            }
+        },
+    };
+}
 function createBridge(o) {
     const w = o.window ?? window;
     const origin = o.adminOrigin;
     if (!/^https?:\/\/[^/*]+$/.test(origin))
-        throw new Error(`bridge: adminOrigin must be an origin like https://admin.example.com, got "${origin}"`);
+        throw new Error(`bridge: bad adminOrigin "${origin}"`);
     let rev = -1;
     let doc;
     let t0 = 0;
@@ -125,7 +294,7 @@ function createBridge(o) {
     const post = (m) => w.parent.postMessage({ h: 1, ...m }, origin);
     const ready = () => {
         const preview = previewProof(w);
-        post({ type: 'ready', mode: o.mode, sdk: SDK, url: w.location.href, ...(preview ? { preview } : {}) });
+        post({ type: 'ready', mode: o.mode, edit: true, sdk: SDK, url: w.location.href, ...(preview ? { preview } : {}) });
     };
     const reload = () => w.location.reload();
     const follow = (e) => {
@@ -143,6 +312,8 @@ function createBridge(o) {
         catch {
         }
     };
+    const raf = (f) => (w.requestAnimationFrame ? w.requestAnimationFrame(f) : setTimeout(f, 0));
+    const cv = canvas(w, post, raf);
     const resync = () => post({ type: 'resync', rev });
     const error = (message) => post({ type: 'error', message });
     const onMessage = (e) => {
@@ -169,6 +340,12 @@ function createBridge(o) {
                 rev = m.rev;
                 o.onPatch?.(doc, m);
             }
+            else if (m.type === 'overlay')
+                cv.overlay(m);
+            else if (m.type === 'scrollTo')
+                cv.scroll(m);
+            else if (m.type === 'editText')
+                typeof m.path === 'string' && cv.edit(m.path, m.multiline === true);
             else if (m.type === 'reload') {
                 const r = m.rev;
                 if (o.onReload)
@@ -176,7 +353,7 @@ function createBridge(o) {
                 else if (w.origin === 'null')
                     reload();
                 else {
-                    reloadSwap({ window: w, ready }).then((ms) => bridge.rendered(r, ms), (x) => (x?.fetch ? reload() : error(String(x?.message ?? x))));
+                    reloadSwap({ window: w, ready: () => (ready(), cv.sched()) }).then((ms) => bridge.rendered(r, ms), (x) => (x?.fetch ? reload() : error(String(x?.message ?? x))));
                 }
             }
         }
@@ -199,14 +376,14 @@ function createBridge(o) {
                 w.removeEventListener('message', onMessage);
                 for (const t of ['click', 'auxclick'])
                     w.removeEventListener(t, follow, CAP);
+                cv.off();
             }
             on = false;
         },
         rendered(r, ms) {
             if (!on)
                 return;
-            const raf = w.requestAnimationFrame?.bind(w) ?? ((f) => setTimeout(f, 0));
-            raf(() => raf(() => post({ type: 'rendered', rev: r, ms: ms ?? Math.max(0, Math.round(now() - t0)) })));
+            raf(() => raf(() => (post({ type: 'rendered', rev: r, ms: ms ?? Math.max(0, Math.round(now() - t0)) }), cv.sched())));
         },
         error,
     };

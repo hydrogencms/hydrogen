@@ -14,19 +14,20 @@
     })
     return out.trim()
   }
-  var block = function (b) {
+  // Blocks carry data-h-path (this host only renders previews); headings and the title stay unmarked: the bridge maps them by text.
+  var block = function (b, path) {
     var p = b.props || {}
     var inner = '<span class="t">' + esc(b.type) + '</span> <span class="h">' + esc(p.heading || p.title || p.text || '') + '</span>'
     if (b.type === 'richText') inner += ' <span class="rt">' + esc(plain(p.body)) + '</span>'
     if (b.type === 'hero' && p.tone) inner += ' <span class="tone">' + esc(p.tone) + '</span>'
     Object.keys(b.slots || {}).forEach(function (k) {
-      inner += '<div class="slot" data-slot="' + esc(k) + '">' + b.slots[k].map(block).join('') + '</div>'
+      inner += '<div class="slot" data-slot="' + esc(k) + '">' + b.slots[k].map(function (c, i) { return block(c, path + '/slots/' + k + '/' + i) }).join('') + '</div>'
     })
-    if (b.blocks) inner += '<div class="slot" data-slot="shared">' + b.blocks.map(block).join('') + '</div>'
-    return '<div data-h-block="' + esc(b.type) + '">' + inner + '</div>'
+    if (b.blocks) inner += '<div class="slot" data-slot="shared">' + b.blocks.map(function (c) { return block(c, '') }).join('') + '</div>'
+    return '<div data-h-block="' + esc(b.type) + '"' + (path ? ' data-h-path="' + esc(path) + '"' : '') + '>' + inner + '</div>'
   }
   g.renderDoc = function (doc) {
     var f = (doc && doc.fields) || {}
-    return '<h1 id="title">' + esc(f.title) + '</h1><div id="blocks">' + (f.body || []).map(block).join('') + '</div>'
+    return '<h1 id="title">' + esc(f.title) + '</h1><div id="blocks">' + (f.body || []).map(function (b, i) { return block(b, 'fields/body/' + i) }).join('') + '</div>'
   }
 })(globalThis)

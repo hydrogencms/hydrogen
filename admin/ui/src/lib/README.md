@@ -336,6 +336,28 @@ breakpoint it is the same slide-over as the inspector, so the pages split view g
 - Status: connecting, live, reload mode (with "Saving...", "Saved" or "Not saved"), error with the frontend's message;
   a render time badge shows `rendered.ms`. No preview address, no channel, or a missing right each explain themselves.
 
+## Canvas (`lib/canvas`)
+
+Visual editing over the preview frame (H7). It lives in the lazy `PreviewPane` chunk and is mounted only when the
+toggle "Edit on canvas" is on (remembered in `h.preview.canvas.<principal>`, default on) and the last verified
+`ready` said `edit: true`; an older bridge disables the toggle with an explanation. The frame only measures and
+reports (`layout`, `hover`, `select`, `inlineEdit`); everything drawn is admin DOM.
+
+- `PreviewPane` sends `overlay {on, texts}` (`texts.ts` `textRefs` of the working document) and passes
+  `fields`, `setField` and `readonly` from the editor. `Canvas.svelte` sits in `.h-preview__deviceframe` and
+  multiplies the frame's CSS-pixel rects by `scale`.
+- Selection is `{field, id?, prop?}` (block id, so it survives reorders); the frame path is derived with
+  `paths.ts`. Frame click -> `BlocksModel.reveal` and toolbar focus; focus inside `.h-item__form` ->
+  selection and `scrollTo`; double click on text -> `editText`, and the committed `inlineEdit` value goes through
+  `model.commit` or `setField`.
+- `Toolbar.svelte` is `role="toolbar"` with a roving tabindex (Left/Right/Home/End). Keys: Alt+arrows move, Up/Down
+  select the previous/next block, Enter shows the form, Delete removes (undo toast), Mod+D duplicates, Escape clears.
+  Every action reuses the `BlocksModel` operations, so rules, refusals (as `title`), live announcements and undo
+  are the form's own. Insert uses `Palette` with `variant="canvas"` (`anchor` for a menu-opened palette).
+- Drag: the grip starts a pointer drag over `.h-canvas__glass`; `drop.ts` `dropAt` picks the target from the
+  reported rects, restricted to the same blocks field and `canMove`; the edges autoscroll the frame.
+- Empty blocks fields get an "Add block to {field}" button (`EmptyAdd.svelte`); strings are in `messages/canvas.ts`.
+
 ## Accessibility rules
 
 - Every interactive element is a real `<button>`/`<a>`/input, reachable by keyboard, with the visible focus ring
