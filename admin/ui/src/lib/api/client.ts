@@ -52,6 +52,10 @@ export interface Options<Q = never, B = never> {
   onHeaders?: (h: Headers) => void;
   /** fetch `keepalive`: the request outlives the page (a `pagehide` cleanup). */
   keepalive?: boolean;
+  /** Extra request headers (e.g. the collaboration client id of a draft write). */
+  headers?: Record<string, string>;
+  /** Background call: no global error handling (no server-error toast, no sign-in redirect on 401). */
+  quiet?: boolean;
 }
 
 export interface Handlers {
@@ -89,6 +93,7 @@ async function request(method: string, path: string, o: Options<any, any> = {}):
     if (token) headers['X-CSRF-Token'] = token;
   }
   if (o.ifMatch) headers['If-Match'] = o.ifMatch;
+  if (o.headers) Object.assign(headers, o.headers);
   let body: string | undefined;
   if (o.body !== undefined) {
     headers['Content-Type'] = 'application/json';
@@ -107,7 +112,7 @@ async function request(method: string, path: string, o: Options<any, any> = {}):
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
     const err = new ApiError(0, 'network', 'network error');
-    handlers.serverError?.(err);
+    if (!o.quiet) handlers.serverError?.(err);
     throw err;
   }
   if (res.ok) {
@@ -129,6 +134,7 @@ async function request(method: string, path: string, o: Options<any, any> = {}):
     etag: res.headers.get('ETag') ?? undefined,
     body: env,
   });
+  if (o.quiet) throw err;
   if (res.status === 401 && !o.noRedirect) handlers.unauthorized?.();
   else if (res.status >= 500) handlers.serverError?.(err);
   throw err;

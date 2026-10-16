@@ -172,15 +172,32 @@ type eventPayload struct {
 	Locales []string `json:"locales"`
 	// Draft marks writes that changed no published data (autosaves, discards): cache tags ignore them.
 	Draft bool `json:"draft,omitempty"`
+	// CollabClient is the collaboration client that made the write (WithCollabClient), when it came from one.
+	CollabClient string `json:"collabClient,omitempty"`
+	// CollabActor is the actor string of the principal that made a write with a CollabClient: the collaboration
+	// service only trusts the client id when the client belongs to this actor.
+	CollabActor string `json:"collabActor,omitempty"`
+	// CollabSeq is the highest update seq the saving collaboration client had applied (WithCollabSeq).
+	CollabSeq int64 `json:"collabSeq,omitempty"`
+	// Discard marks the item.updated of a draft discard.
+	Discard bool `json:"discard,omitempty"`
+	// State is the item's working state (the ETag value) right after the write; empty when unknown.
+	State string `json:"state,omitempty"`
 }
 
 func (s *Service) emit(ctx context.Context, tx store.Tx, topic string, it store.Item, version int, locales []string) error {
-	return s.emitEvent(ctx, tx, topic, eventPayload{ID: it.ID, Type: it.Type, Version: version, Locales: locales})
+	return s.emitEvent(ctx, tx, topic, eventPayload{ID: it.ID, Type: it.Type, Version: version, Locales: locales, State: StateOf(it.UpdatedAt)})
 }
 
 func (s *Service) emitEvent(ctx context.Context, tx store.Tx, topic string, p eventPayload) error {
 	if p.Locales == nil {
 		p.Locales = []string{}
+	}
+	if p.CollabClient == "" {
+		if p.CollabClient = CollabClientFrom(ctx); p.CollabClient != "" {
+			p.CollabActor = audit.ActorFrom(ctx).String()
+			p.CollabSeq = CollabSeqFrom(ctx)
+		}
 	}
 	_, err := s.o.Outbox.Publish(ctx, tx, topic, p)
 	if err != nil {

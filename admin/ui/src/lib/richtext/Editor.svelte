@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { getContext, untrack } from 'svelte';
+  import type { Plugin } from 'prosemirror-state';
+  import type * as Y from 'yjs';
+  import { COLLAB_CTX, type CollabCtx } from '../collab/context';
   import { toggleMark } from 'prosemirror-commands';
   import { redo, undo } from 'prosemirror-history';
   import type { Command } from 'prosemirror-state';
@@ -33,6 +36,7 @@
     onchange,
     rows = 8,
     json = true,
+    path,
   }: RichTextProps = $props();
 
   const uid = $props.id();
@@ -55,6 +59,23 @@
     }
   });
   const linkApi = $derived(schema ? linkCommands(schema) : null);
+
+  // With a collaboration session the field's Y fragment is the document: y-prosemirror syncs the editor with it
+  // (and brings the undo stack), and `value` is only written, never read. The Yjs code loads when a fragment shows up.
+  const collab = getContext<CollabCtx | undefined>(COLLAB_CTX);
+  const frag = $derived(path ? (collab?.binding?.fragment(path) as Y.XmlFragment | undefined) : undefined);
+  let yp = $state.raw<typeof import('y-prosemirror')>();
+  $effect(() => {
+    if (frag && !yp) import('y-prosemirror').then((m) => (yp = m), () => undefined);
+  });
+  let boundTo: Y.XmlFragment | undefined;
+  const undoCmd: Command = (st, d, v) => (boundTo && yp ? yp.undo(st) : undo(st, d, v));
+  const redoCmd: Command = (st, d, v) => (boundTo && yp ? yp.redo(st) : redo(st, d, v));
+  // yjs commands act when called, so "can" looks at the stacks instead.
+  function stack(st: EditorState, which: 'undo' | 'redo') {
+    const um = yp?.yUndoPluginKey.getState(st)?.undoManager;
+    return !!um && (which === 'undo' ? um.undoStack : um.redoStack).length > 0;
+  }
 
   let host = $state<HTMLElement>();
   let bar = $state<HTMLElement>();
@@ -88,6 +109,17 @@
     return EditorState.create({ doc: doc!, plugins: plugins({ schema: schema!, openLink: () => linkBtn?.querySelector('button')?.click() }) });
   }
 
+  function createBound(sc: NonNullable<typeof schema>, fr: Y.XmlFragment, y: NonNullable<typeof yp>) {
+    return EditorState.create({
+      schema: sc,
+      plugins: plugins({
+        schema: sc,
+        openLink: () => linkBtn?.querySelector('button')?.click(),
+        history: { plugins: [y.ySyncPlugin(fr) as Plugin, y.yUndoPlugin() as Plugin], undo: y.undo as never, redo: y.redo as never },
+      }),
+    });
+  }
+
   function emit(state: EditorState) {
     const next = isEmptyDoc(state.doc.toJSON()) ? undefined : toStored(state.doc);
     lastJSON = stamp(next);
@@ -99,6 +131,34 @@
     const el = host;
     const sc = schema;
     if (!el || !sc) return;
+    const fr = frag;
+    const y = yp;
+    if (fr && y) {
+      if (view && boundTo === fr && view.state.schema === sc) return;
+      view?.destroy();
+      boundTo = fr;
+      broken = false;
+      view = new EditorView(el, {
+        state: createBound(sc, fr, y),
+        editable: () => !readonly,
+        attributes,
+        // y-prosemirror dispatches while the view is being built, before `view` is assigned: use `this`.
+        dispatchTransaction(this: EditorView, tr) {
+          const state = this.state.apply(tr);
+          this.updateState(state);
+          tick++;
+          // Changes that came from the shared document reach the form through the binding.
+          if (tr.docChanged && !tr.getMeta(y.ySyncPluginKey)?.isChangeOrigin) emit(state);
+        },
+      });
+      untrack(() => tick++);
+      return;
+    }
+    if (boundTo) {
+      view?.destroy();
+      view = undefined;
+      boundTo = undefined;
+    }
     const incoming = value;
     const same = view && stamp(incoming) === lastJSON && view.state.schema === sc;
     if (same) return;
@@ -146,8 +206,8 @@
     const can = (c: Command) => c(st);
     const b = blockOf(st);
     return {
-      undo: can(undo),
-      redo: can(redo),
+      undo: boundTo ? stack(st, 'undo') : can(undo),
+      redo: boundTo ? stack(st, 'redo') : can(redo),
       block: b.type === 'heading' ? `h${b.level}` : b.type === 'codeBlock' ? 'code' : 'p',
       bold: markActive(st, m.bold),
       italic: markActive(st, m.italic),
@@ -255,7 +315,10 @@
     }
     jsonOpen = false;
     const doc = schema ? fromStored(schema, v) : null;
-    if (view && doc) {
+    if (view && doc && boundTo) {
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content));
+      broken = false;
+    } else if (view && doc) {
       view.updateState(create(doc));
       broken = false;
       tick++;
@@ -284,8 +347,8 @@
     <!-- svelte-ignore a11y_interactive_supports_focus (roving tabindex is set on the buttons) -->
     <div class="h-rte__bar" role="toolbar" aria-label={t('richtext.toolbar')} aria-orientation="horizontal" bind:this={bar} onkeydown={barKey} onfocusin={barFocus}>
       {#if !broken}
-        <button type="button" class="h-rte__btn" aria-label={t('richtext.undo')} title={hint(t('richtext.undo'), `${mod}Z`)} disabled={!s?.undo} onmousedown={(e) => e.preventDefault()} onclick={() => run(undo)}>{@render ico('undo')}</button>
-        <button type="button" class="h-rte__btn" aria-label={t('richtext.redo')} title={hint(t('richtext.redo'), `${shift}${mod}Z`)} disabled={!s?.redo} onmousedown={(e) => e.preventDefault()} onclick={() => run(redo)}>{@render ico('redo')}</button>
+        <button type="button" class="h-rte__btn" aria-label={t('richtext.undo')} title={hint(t('richtext.undo'), `${mod}Z`)} disabled={!s?.undo} onmousedown={(e) => e.preventDefault()} onclick={() => run(undoCmd)}>{@render ico('undo')}</button>
+        <button type="button" class="h-rte__btn" aria-label={t('richtext.redo')} title={hint(t('richtext.redo'), `${shift}${mod}Z`)} disabled={!s?.redo} onmousedown={(e) => e.preventDefault()} onclick={() => run(redoCmd)}>{@render ico('redo')}</button>
         {#if styleItems.length > 1}
           <span class="h-rte__sep" role="separator" aria-orientation="vertical"></span>
           <Menu items={styleItems} label={t('richtext.style')} align="start" triggerClass="h-rte__style">

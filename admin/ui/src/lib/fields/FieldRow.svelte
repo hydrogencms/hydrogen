@@ -9,6 +9,7 @@
   import { ext } from '../extensions.svelte';
   import Extension from '../ext/Extension.svelte';
   import { evalWhen, type Doc } from './logic';
+  import { t } from '../i18n';
 
   let {
     field,
@@ -28,11 +29,14 @@
   const short = $derived(
     !widget && !isBlocks && (base === 'number' || base === 'boolean' || base === 'ref' || (base === 'string' && ['enum', 'date', 'datetime'].includes(field.shape.format ?? ''))),
   );
-  const readonly = $derived(ctx.readonly || !!field.admin?.readonly);
+  // A part another editor is still seeding: the fields wait, read-only, until its first state arrives.
+  const loading = $derived(!!ctx.loading?.(/^[^.[]+/.exec(path)?.[0] ?? path));
+  const readonly = $derived(ctx.readonly || !!field.admin?.readonly || loading);
 </script>
 
 {#if shown}
-  <div class="h-fieldrow" class:h-fieldrow--wide={!short} data-field={path}>
+  <div class="h-fieldrow" class:h-fieldrow--wide={!short} class:h-fieldrow--loading={loading} data-field={path} aria-busy={loading || undefined}>
+    {#if loading && path === (/^[^.[]+/.exec(path)?.[0] ?? path)}<span class="h-fieldrow__loading h-muted" role="status">{t('collab.loading')}</span>{/if}
     {#if widget}
       <Field label={field.label} description={field.description} required={field.required}>
         {#snippet children()}

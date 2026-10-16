@@ -79,7 +79,7 @@ func (s *Service) UnpublishTx(ctx context.Context, tx store.Tx, id ids.UUID) err
 	if err := s.record(ctx, tx, actor, "item.unpublish", id, map[string]any{"type": it.Type, "version": it.PublishedVersion}); err != nil {
 		return err
 	}
-	return s.emit(ctx, tx, "item.unpublished", it, it.PublishedVersion, locales)
+	return s.emit(ctx, tx, "item.unpublished", st.item, it.PublishedVersion, locales)
 }
 
 // takeOffline runs the unpublish hooks and withdraws the published version of a loaded item (published or

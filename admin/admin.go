@@ -33,6 +33,7 @@ type Options struct {
 	APIPrefix      string // management API, for config.json
 	DeliveryPrefix string // delivery API, for config.json
 	Pages          bool   // the pages module is on
+	Collab         bool   // co-editing is on (collab.enabled)
 	// DevURL, when set, proxies everything except config.json to a dev server (Vite) instead of serving dist.
 	DevURL string
 	// Extensions are the project's and modules' admin extensions (nil: none), listed in config.json and served
@@ -89,9 +90,10 @@ func Handler(prefix string, dist fs.FS, o Options) http.Handler {
 		APIPrefix      string      `json:"apiPrefix"`
 		Prefix         string      `json:"prefix"`
 		Pages          bool        `json:"pages"`
+		Collab         bool        `json:"collab"`
 		DeliveryPrefix string      `json:"deliveryPrefix"`
 		Extensions     *Extensions `json:"extensions"`
-	}{o.APIPrefix, prefix, o.Pages, o.DeliveryPrefix, o.Extensions})
+	}{o.APIPrefix, prefix, o.Pages, o.Collab, o.DeliveryPrefix, o.Extensions})
 	h.proxy = devProxy(o.DevURL)
 	h.xdev = devProxy(o.ElementsDevURL)
 	if b, err := fs.ReadFile(dist, "index.html"); err == nil {

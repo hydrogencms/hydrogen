@@ -5,7 +5,7 @@
 # running afterwards. A third run uses examples/starter with its fixture imported and a tiny preview host standing
 # in for the frontend (admin/ui/e2e/fixtures/preview-host): the block editor and the live and reload previews.
 # Then the H6 exit scenarios on the real frontends: examples/starter with starters/next (live preview of a page and a
-# post) and examples/fullstack (the site module, reload mode). ADMIN_E2E_ONLY=starter|next|fullstack runs just that one
+# post) and examples/fullstack (the site module, reload mode). ADMIN_E2E_ONLY=multisite|starter|next|fullstack runs just that one
 # (starter uses the admin/dist already built); E2E_GREP passes --grep to Playwright.
 # Run from the repo root: make admin-e2e.
 set -euo pipefail
@@ -59,7 +59,7 @@ stop_servers() {
 [ -n "$only" ] || rm -rf "$work"
 mkdir -p "$work"
 export MANAGE_TOKEN=e2e-manage-token PREVIEW_SECRET=e2e-preview-secret-0123456789abcdef
-if [ -z "$only" ]; then
+if [ -z "$only" ] || [ "$only" = multisite ]; then
 echo "== build"
 "$root/scripts/npm-ci.sh" "$root/admin/ui" >/dev/null && (cd "$root/admin/ui" && npm run build >/dev/null)
 (cd "$root/examples/multisite" && go build -o "$work/multisite" .)
@@ -119,9 +119,16 @@ start_server "$work/multisite" "$port"
 echo "== playwright (multisite)"
 status=0
 run_playwright "$port" E2E_PROJECT= || status=$?
+if [ -n "${E2E_KEEP:-}" ] && [ "$only" = multisite ]; then
+  echo "E2E_KEEP: server stays up at http://127.0.0.1:$port/admin/ (login $login; ctrl-c to stop)"
+  sleep 86400 || true
+fi
 kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; pid=
 [ "$status" -eq 0 ] || exit "$status"
 
+fi
+
+if [ -z "$only" ]; then
 echo "== build examples/content"
 (cd "$root/examples/content/admin" && test -d node_modules || { (cd "$root/packages" && npm install --no-audit --no-fund >/dev/null && npm run build -w admin-sdk >/dev/null) && "$root/scripts/npm-ci.sh" . >/dev/null; })
 (cd "$root/examples/content" && go build -o "$work/content" .)

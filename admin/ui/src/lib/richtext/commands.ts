@@ -146,15 +146,17 @@ export interface PluginOptions {
   schema: Schema;
   /** Opens the link popover (Mod-K). */
   openLink?: () => void;
+  /** Replaces prosemirror-history (collaborative editing brings its own undo stack). */
+  history?: { plugins: Plugin[]; undo: Command; redo: Command };
 }
 
 /** Keymaps, input rules and history for a schema; only what the schema allows is bound. */
-export function plugins({ schema, openLink }: PluginOptions): Plugin[] {
+export function plugins({ schema, openLink, history: h }: PluginOptions): Plugin[] {
   const { marks: m, nodes: n } = schema;
   const keys: Record<string, Command> = {
-    'Mod-z': undo,
-    'Shift-Mod-z': redo,
-    'Mod-y': redo,
+    'Mod-z': h?.undo ?? undo,
+    'Shift-Mod-z': h?.redo ?? redo,
+    'Mod-y': h?.redo ?? redo,
     Backspace: undoInputRule,
   };
   if (m.bold) keys['Mod-b'] = toggleMark(m.bold);
@@ -188,5 +190,5 @@ export function plugins({ schema, openLink }: PluginOptions): Plugin[] {
   if (n.blockquote) rules.push(wrappingInputRule(/^\s*>\s$/, n.blockquote));
   if (n.codeBlock) rules.push(textblockTypeInputRule(/^```$/, n.codeBlock));
 
-  return [inputRules({ rules }), keymap(keys), keymap(baseKeymap), history()];
+  return [inputRules({ rules }), keymap(keys), keymap(baseKeymap), ...(h?.plugins ?? [history()])];
 }

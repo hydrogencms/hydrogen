@@ -46,6 +46,8 @@ const base = (t: Target) => (t.kind === 'item' ? { path: '/items/{id}', params: 
 export interface Concurrency {
   ifMatch?: string;
   onHeaders?: (h: Headers) => void;
+  /** Extra request headers (the collaboration client id). */
+  headers?: Record<string, string>;
 }
 
 export const itemApi = {

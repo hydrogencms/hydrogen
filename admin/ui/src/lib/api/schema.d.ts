@@ -161,6 +161,150 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/collab/items/{id}/compact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replace the log up to a seq by one state
+         * @description Sent in answer to a compact event, by the client it named, with upto at most the event's. data must be a state that includes every update up to upto. At most 2.5 MB. 409 compact_not_requested otherwise.
+         */
+        post: operations["compactItemCollab"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/collab/items/{id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The event stream of a joined client
+         * @description Server-Sent Events: update (an update object; id is its seq), presence {clients}, saved {etag, client, name, seq}, reset {reason: external|expired|trashed} (the stream ends: reload the draft and join again), compact {upto} and a ping comment every 25 seconds. Updates after the Last-Event-ID header, else since, else the log's head are replayed first. One stream per client (a new one closes the older). 429 too_many_streams beyond 20 streams per item, 6 per principal and item, or 2000 per server.
+         */
+        get: operations["streamItemCollab"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/collab/items/{id}/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Join the co-editing session of an item
+         * @description Needs read access to the item; edit true needs content.edit on the item and locale (403). The answer carries the log to apply, the parts to seed (claimed for this client alone, for 15 s) and those another client seeds, the presence list and the item's etag now. client may name a client that re-joins. A long log is paged: with more true, fetch the rest with GET updates. A session seeded from an older draft is dropped first (its clients get reset external). 429 session_full beyond 20 clients.
+         */
+        post: operations["joinItemCollab"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/collab/items/{id}/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave the session
+         * @description Idempotent.
+         */
+        post: operations["leaveItemCollab"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/collab/items/{id}/presence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Heartbeat and presence
+         * @description Every 15 s and on focus change; a client without a heartbeat for 45 s is dropped (404 unknown_client afterwards: join again). A new locale must be one the client may read (and edit, for an editing client): 403 otherwise. The call re-checks the client's access to the item.
+         */
+        post: operations["presenceItemCollab"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/collab/items/{id}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Drop the session
+         * @description For an editing client that cannot apply the log: drops the log, the claims and every client, and sends reset external to all streams. Join again afterwards.
+         */
+        post: operations["resetItemCollab"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/collab/items/{id}/updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a page of the log
+         * @description The updates after since (at most 200 and about 2 MB), the seq to continue from and whether more follow. For a client that joined with more true.
+         */
+        get: operations["pageItemCollabUpdates"];
+        put?: never;
+        /**
+         * Post an update
+         * @description At most 512 KB. Editing clients only (403 read_only; a client that lost edit access becomes a viewer). init lists the parts this update seeds: 409 claim_lost when the claim expired or went to another client (join again). 409 compact_required when the log is at its hard cap (2000 updates or 32 MB): a compact event was sent, retry after it. 429 rate_limited beyond 50 updates at once / 20 a second per client (see Retry-After). 404 unknown_client when the client was dropped, also when it lost read access to the item.
+         */
+        post: operations["postItemCollabUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/collections/article/items": {
         parameters: {
             query?: never;
@@ -2453,6 +2597,327 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    compactItemCollab: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    client: string;
+                    /** Format: byte */
+                    data: string;
+                    /** Format: int64 */
+                    upto: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Compacted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
+    streamItemCollab: {
+        parameters: {
+            query: {
+                client: string;
+                since?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Too many open streams. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    joinItemCollab: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    client?: string;
+                    edit?: boolean;
+                    locale: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The session. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        client: string;
+                        etag: string;
+                        /** @description Parts this client must seed and post with init. */
+                        init: string[];
+                        /** @description Parts another client is seeding. */
+                        pending: string[];
+                        presence: {
+                            client: string;
+                            color: string;
+                            edit: boolean;
+                            focus: string;
+                            idle: boolean;
+                            locale: string;
+                            name: string;
+                            principal: string;
+                        }[];
+                        /** Format: int64 */
+                        seq: number;
+                        session: string;
+                        updates: {
+                            client: string;
+                            /** Format: byte */
+                            data: string;
+                            /** @description Parts this update seeded. */
+                            init?: string[];
+                            /** Format: int64 */
+                            seq: number;
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+            429: components["responses"]["Throttled"];
+        };
+    };
+    leaveItemCollab: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    client: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Left. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
+    presenceItemCollab: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    client: string;
+                    focus?: string;
+                    idle?: boolean;
+                    locale: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Recorded. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
+    resetItemCollab: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    client: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Dropped. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
+    pageItemCollabUpdates: {
+        parameters: {
+            query: {
+                client: string;
+                since: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        more: boolean;
+                        /** Format: int64 */
+                        seq: number;
+                        updates: {
+                            client: string;
+                            /** Format: byte */
+                            data: string;
+                            /** @description Parts this update seeded. */
+                            init?: string[];
+                            /** Format: int64 */
+                            seq: number;
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    postItemCollabUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    client: string;
+                    /** Format: byte */
+                    data: string;
+                    init?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Stored. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: int64 */
+                        seq: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+            429: components["responses"]["Throttled"];
         };
     };
     listArticle: {

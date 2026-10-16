@@ -22,8 +22,11 @@ async function target() {
   }
   const r = await manage('GET', '/collections/page/items?limit=20');
   const about = r.items.find((i: any) => i.name === 'About');
-  // Earlier specs edit About unsaved; a page closed by the test runner may leave its relayed draft behind.
+  // Earlier specs edit About unsaved; a page closed by the test runner may leave its relayed draft and its
+  // collaboration session (unsaved edits) behind until they time out: drop both.
   await manage('DELETE', `/preview-relay/${about.id}?locale=en`);
+  const j = await manage('POST', `/collab/items/${about.id}/join`, { locale: 'en', edit: true });
+  await manage('POST', `/collab/items/${about.id}/reset`, { client: j.client });
   return { id: about.id as string, title: (await draftOf(about.id)).fields.title as string };
 }
 

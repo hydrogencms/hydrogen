@@ -54,6 +54,7 @@ func Run(t *testing.T, open Opener) {
 	tests = append(tests, editorialTests...)
 	tests = append(tests, releaseTests...)
 	tests = append(tests, reviewTests...)
+	tests = append(tests, collabTests...)
 	tests = append(tests, sqlTests...)
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

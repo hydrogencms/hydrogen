@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/content"
@@ -31,6 +32,8 @@ type Error struct {
 	Code    string
 	Message string
 	Fields  []schema.FieldError
+	// RetryAfter, when positive, is sent as the Retry-After header (seconds, rounded up).
+	RetryAfter time.Duration
 }
 
 func (e *Error) Error() string { return e.Message }
@@ -112,6 +115,9 @@ func Fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.As(err, &me):
 		if me.Status >= http.StatusInternalServerError {
 			requestLog(r).Error("manage: request failed", "method", r.Method, "path", r.URL.Path, "err", err)
+		}
+		if me.RetryAfter > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(me.RetryAfter.Seconds()))))
 		}
 		writeErrorBody(w, me.Status, errorBody{Code: me.Code, Message: me.Message, Fields: me.Fields})
 	case errors.As(err, &ve):

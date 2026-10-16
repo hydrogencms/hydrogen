@@ -66,13 +66,17 @@
       }
       if (next === last) return;
       const cur = typeof value === 'string' ? value : '';
-      if (cur === '' || ctx.isNew) {
+      // In a shared session only the person typing the title moves the slug, not their collaborators' copies.
+      const mine = !ctx.collab?.() || focused(path.replace(/[^.[\]]+$/, source!));
+      if (mine && (cur === '' || ctx.isNew)) {
         const n = autoSlug(cur, last, next);
         if (n !== cur) value = n;
       }
       last = next;
     });
   });
+
+  const focused = (p: string) => (document.activeElement as HTMLElement | null)?.closest?.('[data-field]')?.getAttribute('data-field') === p;
 
   function num(e: Event) {
     const raw = (e.currentTarget as HTMLInputElement).value;
@@ -94,6 +98,7 @@
     aria-describedby={control?.['aria-describedby']}
     placeholder={field.admin?.placeholder}
     onchange={set}
+    {path}
   />
 {:else if base === 'json' || base === 'group' || base === 'list' || (base !== 'string' && base !== 'number' && base !== 'boolean')}
   <JsonBox {field} bind:value {path} {readonly} {invalid} {attrs} />

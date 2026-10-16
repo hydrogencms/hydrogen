@@ -104,6 +104,11 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   policies `review.submit|approve|bypass`; four eyes (`content.review_four_eyes`). Versions: `POST
   /items/{id}/versions/{n}/restore`; the admin compares versions client-side (`admin/ui/src/lib/diff`). Docs:
   `docs/reviews.md`. Contract: `planning/design/editorial-h8b.md`.
+- Collaboration (H8c): `collab/` relays and stores opaque Yjs updates per item (join with per-part seeding claims,
+  SSE stream, presence heartbeats, compaction, cleanup job `collab.cleanup`; config `collab.enabled`, exposed in the
+  admin's config.json). Content events carry the saving collab client, so sessions get `saved` or `reset`. The admin
+  binds the form to Yjs in `admin/ui/src/lib/collab` (lazy chunk; rich text through y-prosemirror) with a convergence
+  fuzz test. Docs: `docs/collaboration.md`. Contract: `planning/design/collab-h8c.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
@@ -195,6 +200,10 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - Anything that changes a draft (or item metadata) must go through the content service's write path or call the
   review hook's `DraftChanged` itself, and anything that publishes must go through `publish()`; otherwise review
   approvals go stale or get bypassed. The approval stores a hash of the draft (incl. key and availability).
+- Collab sessions trust the item's editors with each other's updates (the server can't read Yjs); saving applies
+  the saver's rights. A draft write tells the session it was a session save only through the
+  `X-Hydrogen-Collab-Client`/`-Seq` headers, honoured when the client belongs to the writer; anything else resets
+  the session. Collab ordering on Postgres relies on the per-item advisory lock (`LockSession` first, always).
 - Release publishing goes through `content.Service.PublishTx/UnpublishTx` inside one `store.Tx`: call the service's
   grant preparation before opening the transaction (small pools deadlock otherwise), and change release status only
   through the store's conditional transition, never a blind update (several nodes run the `releases` job and the API).

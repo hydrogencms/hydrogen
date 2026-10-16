@@ -13,6 +13,10 @@ export interface FieldCtx {
   /** A new item: slugs follow their source field. */
   isNew: boolean;
   namePattern?: string;
+  /** The top-level field `name` waits for its shared content (a collaboration session is still seeding it). */
+  loading?(name: string): boolean;
+  /** A collaboration session is bound: values may change under the editor from other people's edits. */
+  collab?(): boolean;
 }
 
 const KEY = Symbol('h.fields');

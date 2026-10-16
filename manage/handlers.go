@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -138,7 +139,7 @@ func (a *api) updateItem(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeBody(w, r, &b, false); err != nil {
 		return err
 	}
-	v, err := a.c.Update(preconditionCtx(r), id, b.input())
+	v, err := a.c.Update(collabCtx(r), id, b.input())
 	if err != nil {
 		return err
 	}
@@ -155,7 +156,7 @@ func (a *api) publishItem(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeBody(w, r, &b, true); err != nil {
 		return err
 	}
-	v, err := a.c.Publish(preconditionCtx(r), id, content.PublishOptions{Locales: b.Locales, Force: b.Force})
+	v, err := a.c.Publish(collabCtx(r), id, content.PublishOptions{Locales: b.Locales, Force: b.Force})
 	if err != nil {
 		return err
 	}
@@ -182,7 +183,7 @@ func (a *api) discardDraft(w http.ResponseWriter, r *http.Request) error {
 			parts = append(parts, p)
 		}
 	}
-	if err := a.c.Discard(preconditionCtx(r), id, parts); err != nil {
+	if err := a.c.Discard(collabCtx(r), id, parts); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -394,7 +395,7 @@ func (a *api) updateSingleton(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeBody(w, r, &b, false); err != nil {
 		return err
 	}
-	v, err := a.c.UpdateSingleton(preconditionCtx(r), t.Name, b.input())
+	v, err := a.c.UpdateSingleton(collabCtx(r), t.Name, b.input())
 	if err != nil {
 		return err
 	}
@@ -411,7 +412,7 @@ func (a *api) publishSingleton(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeBody(w, r, &b, true); err != nil {
 		return err
 	}
-	v, err := a.c.PublishSingleton(preconditionCtx(r), t.Name, content.PublishOptions{Locales: b.Locales, Force: b.Force})
+	v, err := a.c.PublishSingleton(collabCtx(r), t.Name, content.PublishOptions{Locales: b.Locales, Force: b.Force})
 	if err != nil {
 		return err
 	}
@@ -429,6 +430,30 @@ func preconditionCtx(r *http.Request) context.Context {
 	v = strings.TrimPrefix(v, "W/")
 	return content.WithExpectedState(r.Context(), strings.Trim(v, `"`))
 }
+
+// CollabClientHeader names the request header with which the admin's editor identifies its co-editing session
+// on draft saves, publishes and discards; the content events then carry it (content.WithCollabClient).
+const CollabClientHeader = "X-Hydrogen-Collab-Client"
+
+// CollabSeqHeader names the request header with which a collaboration client tells, on a draft save, the
+// highest update seq it has applied (its own acknowledged updates included); the "saved" notification carries it.
+const CollabSeqHeader = "X-Hydrogen-Collab-Seq"
+
+// collabCtx is preconditionCtx for the draft writes of a collaboration participant.
+func collabCtx(r *http.Request) context.Context {
+	ctx := preconditionCtx(r)
+	if c := r.Header.Get(CollabClientHeader); validCollabClient(c) {
+		ctx = content.WithCollabClient(ctx, c)
+		if n, err := strconv.ParseInt(r.Header.Get(CollabSeqHeader), 10, 64); err == nil && n > 0 {
+			ctx = content.WithCollabSeq(ctx, n)
+		}
+	}
+	return ctx
+}
+
+var collabClientRE = regexp.MustCompile(`^[A-Za-z0-9_-]{8,64}$`)
+
+func validCollabClient(c string) bool { return collabClientRE.MatchString(c) }
 
 func writeView(w http.ResponseWriter, status int, v *content.View) {
 	w.Header().Set("ETag", `"`+content.StateOf(v.UpdatedAt)+`"`)

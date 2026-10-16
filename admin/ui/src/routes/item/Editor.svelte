@@ -1,14 +1,24 @@
 <script lang="ts">
   import '../../lib/messages/collections';
   import '../../lib/messages/editor';
+  import '../../lib/messages/collab';
+  import { config } from '../../lib/config';
+  import { connect, type CollabConnection } from '../../lib/collab/transport';
+  import { Presence, focusPath } from '../../lib/collab/presence.svelte';
+  import { COLLAB_CTX, type CollabCtx } from '../../lib/collab/context';
+  import type { BindingInfo } from '../../lib/collab/bind.svelte';
+  import PresenceAvatars from '../../lib/collab/PresenceAvatars.svelte';
+  import PresenceBanner from '../../lib/collab/PresenceBanner.svelte';
+  import PresenceLive from '../../lib/collab/PresenceLive.svelte';
+  import PresenceMarks from '../../lib/collab/PresenceMarks.svelte';
   import { api, ApiError } from '../../lib/api/client';
   import { session } from '../../lib/auth/session.svelte';
   import { channels } from '../../lib/channels.svelte';
   import { provideFields } from '../../lib/fields/context';
   import Fields from '../../lib/fields/Fields.svelte';
-  import { untrack, type Component } from 'svelte';
+  import { setContext, untrack, type Component } from 'svelte';
   import '../../lib/messages/preview';
-  import { copyTranslatable, fieldsPatch, hydrate, initialValues, cleanDoc, unroutedErrors, type Doc } from '../../lib/fields/logic';
+  import { copyTranslatable, fieldsPatch, hydrate, initialValues, cleanDoc, jsonEqual, unroutedErrors, type Doc } from '../../lib/fields/logic';
   import { itemLocales, knownLocales, localeState } from '../../lib/fields/locales';
   import { Form } from '../../lib/form.svelte';
   import { t } from '../../lib/i18n';
@@ -71,8 +81,15 @@
   // Optimistic concurrency: the ETag of the version this form was loaded from, sent as If-Match on writes.
   let etag = '';
   let gotTag = false;
-  const cc = (noMatch = false): Concurrency => ({
+  // Tells the server this write is the collaboration session's own: the others get `saved`, not `reset`. `seq` is
+  // the highest update this client applied (its own acknowledged ones included); the others compare it with theirs.
+  const collabHeaders = (seq?: number): Record<string, string> | undefined => {
+    const c = collab?.tr.client;
+    return c ? { 'X-Hydrogen-Collab-Client': c, 'X-Hydrogen-Collab-Seq': String(seq ?? collabBinding?.applied() ?? 0) } : undefined;
+  };
+  const cc = (noMatch = false, seq?: number): Concurrency => ({
     ifMatch: noMatch ? undefined : etag || undefined,
+    headers: collabHeaders(seq),
     onHeaders: (h) => {
       const e = h.get('ETag');
       if (e) {
@@ -94,6 +111,174 @@
     await itemApi.read(target, locale, undefined, cc()).catch(() => undefined);
   }
   let saved = $state.raw<Values>({ fields: {}, key: '', alwaysAvailable: false });
+
+  // ---- collaboration (presence, soft locks, co-editing): one session per loaded item, re-joined on every load
+  const presence = new Presence();
+  let collab = $state.raw<{ tr: CollabConnection } | null>(null);
+  let collabBinding = $state.raw<BindingInfo>();
+  // The session was given up on this page (a declined reset, a chunk that did not load): the banner stays.
+  let collabLost = $state(false);
+  let collabGen = 0;
+  let joinReloads = 0;
+  let claimRestarts = 0;
+  // After a reset the reload re-joins with the same client id (and keeps its header); the stream ended, nothing to leave.
+  let resumeClient = '';
+  // The page went into the back/forward cache with a session: it joins again when shown.
+  let suspended = false;
+  // After a lost seeding claim: the parts whose form edits the new session must merge.
+  let restartMerge: string[] | undefined;
+  let restartResume: { parts: string[]; base: Record<string, unknown> } | undefined;
+  setContext<CollabCtx>(COLLAB_CTX, {
+    get binding() {
+      return collabBinding;
+    },
+  });
+  // `collab` in the admin's config.json turns the feature off; absent counts as on (a failed join shows the banner).
+  const collabWanted = () => (config() as { collab?: boolean }).collab !== false;
+  const sessionRO = $derived(!!collabBinding?.readOnly);
+
+  function stopCollab(opts: { discard?: boolean } = {}) {
+    collabGen++;
+    lateSaved = undefined;
+    const b = collabBinding;
+    const c = collab;
+    const keep = !!resumeClient;
+    collabBinding = undefined;
+    collab = null;
+    // Unsent edits go out first; the leave waits for them.
+    b?.destroy(opts);
+    c?.tr.leave(keep ? { keep: true } : undefined);
+    presence.detach();
+  }
+  async function startCollab(d: ItemData) {
+    stopCollab();
+    const resume = resumeClient;
+    resumeClient = '';
+    const merge = restartMerge;
+    const resumeFrom = restartResume;
+    restartMerge = restartResume = undefined;
+    collabLost = false;
+    const g = collabGen;
+    const ty = types.get(d.type);
+    if (mode === 'new' || !d.id || !ty || !collabWanted()) return;
+    // The Yjs chunk loads before the join: nothing the session sends meanwhile has nobody to receive it.
+    const chunk = import('../../lib/collab/bind.svelte');
+    const tr = connect(d.id, undefined, resume);
+    collab = { tr };
+    const loc = d.locale || locale;
+    presence.attach(tr, () => locale);
+    tr.onSaved((s) => void onCollabSaved(g, tr, s));
+    tr.onReset((r) => onCollabReset(g, r));
+    try {
+      const m = await chunk;
+      if (g !== collabGen) return;
+      const join = await tr.join(loc, canEdit);
+      if (g !== collabGen) return;
+      // The draft changed between our read and the join: seeding from it would be stale.
+      if (join.init.length && join.etag && etag && join.etag !== etag && joinReloads < 1) {
+        joinReloads++;
+        stopCollab();
+        reloadTick++;
+        return;
+      }
+      joinReloads = 0;
+      collabBinding = m.bindForm({ form, transport: tr, join, type: ty, locale: loc, draft: d, merge, resume: resumeFrom, onFatal: (r) => onCollabFatal(g, r) });
+    } catch {
+      // The transport reports `unavailable` (the banner) and retries what may pass; a chunk that failed to load
+      // never reports anything, so say so here.
+      if (g === collabGen && tr.state !== 'unavailable') collabLost = true;
+    }
+  }
+  const sameValues = (a: Values, b: Values) => jsonEqual(JSON.parse(JSON.stringify(a)), JSON.parse(JSON.stringify(b)));
+  async function onCollabSaved(g: number, tr: CollabConnection, s: { etag: string; client: string; name: string; seq: number }) {
+    if (g !== collabGen || s.client === tr.client) return;
+    etag = s.etag;
+    gotTag = true;
+    toast.info(t('collab.saved', { name: s.name || t('collections.conflict.someone') }));
+    if (!target || !type) return;
+    const fresh = await itemApi.read(target, locale, undefined, cc()).catch(() => null);
+    if (!fresh || g !== collabGen) return;
+    data = fresh;
+    const fv: Values = { fields: hydrate(type.fields, fresh.fields), key: fresh.key ?? '', alwaysAvailable: fresh.alwaysAvailable };
+    // What the draft holds now is what a later save must be measured against.
+    saved = structuredClone(fv);
+    // Clean only when nothing local is missing from the save, and the saved draft is what the form shows.
+    lateSaved = { fv, seq: s.seq };
+    settleSaved();
+  }
+  // A save of another participant that did not make the form clean at once: an unsent or unacknowledged edit of
+  // ours, or an update of theirs still on its way. It is looked at again whenever the binding or the form changes.
+  let lateSaved = $state.raw<{ fv: Values; seq: number } | undefined>();
+  function settleSaved() {
+    const r = lateSaved;
+    const b = collabBinding;
+    if (!r || !b) return;
+    // The save lacks an update we hold: this form stays dirty (with the new ETag) until the next save.
+    if (b.applied() > r.seq) {
+      lateSaved = undefined;
+      return;
+    }
+    if (b.unsynced() || form.pending) return;
+    if (sameValues(r.fv, $state.snapshot(form.values) as Values)) {
+      lateSaved = undefined;
+      form.markSaved();
+    }
+  }
+  $effect(() => {
+    // Tracked: the binding's state (reactive) and the form values, while a save waits to be settled.
+    if (!lateSaved || !collabBinding) return;
+    void collabBinding.unsynced();
+    void collabBinding.applied();
+    void $state.snapshot(form.values);
+    untrack(settleSaved);
+  });
+  function onCollabReset(g: number, reason: string) {
+    if (g !== collabGen) return;
+    if (reason !== 'trashed' && collabBinding?.unsynced() && !confirm(t('collab.resetConfirm'))) {
+      stopCollab();
+      collabLost = true;
+      return;
+    }
+    toast.info(t(`collab.reset.${reason}`));
+    resumeClient = collab?.tr.client ?? '';
+    reloadTick++;
+  }
+  // The session cannot go on as it is.
+  function onCollabFatal(g: number, reason: 'claim_lost' | 'poison' | 'reset-failed') {
+    if (g !== collabGen) return;
+    if (reason === 'poison') return; // the server's `reset` follows and reloads
+    if (reason === 'claim_lost' && data && claimRestarts < 3) {
+      // The part this client seeded went to someone else: join again from the draft; edits made meanwhile stay.
+      claimRestarts++;
+      resumeClient = collab?.tr.client ?? '';
+      const d = data;
+      restartMerge = collabBinding?.lostParts();
+      restartResume = collabBinding?.ackedValues();
+      stopCollab({ discard: true });
+      void startCollab(d);
+      return;
+    }
+    if (collabBinding?.unsynced() && !confirm(t('collab.resetConfirm'))) {
+      stopCollab();
+      collabLost = true;
+      return;
+    }
+    resumeClient = '';
+    reloadTick++;
+  }
+  function onPageShow(e: PageTransitionEvent) {
+    if (e.persisted && suspended && data) {
+      suspended = false;
+      resumeClient = '';
+      void startCollab(data);
+    }
+  }
+  function onPageHide(e: PageTransitionEvent) {
+    // The transport leaves by itself (and flushes); a restored page joins again in onPageShow.
+    if (e.persisted && collab) suspended = true;
+  }
+  $effect(() => () => stopCollab());
+  let formEl = $state<HTMLElement>();
 
   const form = new Form<Values>({ fields: {}, key: '', alwaysAvailable: false }, { prefix: 'fields.' });
   form.guard();
@@ -134,8 +319,14 @@
     clearError: (p) => form.clearError(p),
     errors: () => form.errors,
     get readonly() {
-      return !canEdit;
+      return !canEdit || sessionRO;
     },
+    loading(name) {
+      const b = collabBinding;
+      const f = type?.fields.find((x) => x.name === name);
+      return !!b && !!f && b.pending().includes(f.translatable ? `l:${data?.locale || locale}` : 'shared');
+    },
+    collab: () => !!collabBinding,
     get locale() {
       return locale;
     },
@@ -178,14 +369,18 @@
     if (!untrack(() => data)) loading = true;
     loadError = null;
     itemApi
-      .read(tgt, loc, ctl.signal, cc())
+      // Untracked: the options read the etag and the collab connection, which loading and joining change.
+      .read(tgt, loc, ctl.signal, untrack(() => cc()))
       .then((d) => {
         apply(d);
         loading = false;
+        void startCollab(d);
       })
       .catch((e) => {
         if (ctl.signal.aborted) return;
         loading = false;
+        stopCollab();
+        resumeClient = '';
         if (mode === 'singleton' && isNotFound(e)) startNew();
         else loadError = e;
       });
@@ -197,8 +392,12 @@
     if (!type || !canEdit) return false;
     let result: ItemData | undefined;
     let clash: ApiError | undefined;
+    let sent: Values | undefined;
     gotTag = false;
+    // Read before the snapshot is taken: a claim of less than the snapshot holds is the safe side for the others.
+    const seq = collabBinding?.applied();
     const ok = await form.submit(async (v) => {
+      sent = structuredClone(v);
       const body: Record<string, unknown> = {};
       if (locale) body.locale = locale;
       if (data) {
@@ -212,7 +411,7 @@
         }
         body.fields = patch;
         try {
-          result = await itemApi.update(target!, body, cc(force));
+          result = await itemApi.update(target!, body, cc(force, seq));
         } catch (e) {
           if (isConflict(e)) clash = e as ApiError;
           throw e;
@@ -230,7 +429,14 @@
     }
     if (result) {
       const created = mode === 'new';
-      apply(result);
+      // With a live binding the form already holds the merged document: replacing its values would fight the
+      // session (and the others' carets), so only the item's metadata and the saved baseline move.
+      if (collabBinding && !created) {
+        data = result;
+        // What was sent is what was saved; edits and remote changes that came in during the request stay dirty.
+        saved = structuredClone(sent!);
+        form.markSavedAs(sent!);
+      } else apply(result);
       await ensureTag();
       toast.success(t(created ? 'collections.created' : 'collections.saved'));
       if (created) void router.navigate(`/items/${result.id}${result.locale ? `?locale=${encodeURIComponent(result.locale)}` : ''}`, { replace: true, force: true });
@@ -590,6 +796,8 @@
   const saveLabel = $derived(!isNew && !form.dirty && !form.pending ? t('editor.saved') : t('common.save'));
 </script>
 
+<svelte:window onpageshow={onPageShow} onpagehide={onPageHide} />
+
 {#if loadError}
   <div class="h-page">
     {#if isNotFound(loadError)}
@@ -635,6 +843,15 @@
       {/if}
     </div>
 
+    <div class="h-collab-status" role="status" aria-live="polite" aria-atomic="true">
+      {#if collabLost || presence.unavailable}
+        <PresenceBanner kind="unavailable" />
+      {:else if collabBinding?.failed()}
+        <PresenceBanner kind="failed" />
+      {:else if sessionRO && canEdit}
+        <PresenceBanner kind="readOnly" />
+      {/if}
+    </div>
     {#if form.formError}<p class="h-alert" role="alert">{form.formError}</p>{/if}
     {#if Object.keys(unrouted).length}
       <div class="h-alert h-item__unrouted" role="alert">
@@ -655,6 +872,10 @@
         {/if}
         <form
           class="h-item__form"
+          data-collab={collabBinding ? 'live' : presence.state}
+          bind:this={formEl}
+          onfocusin={(e) => presence.focus(focusPath(e.target))}
+          onfocusout={(e) => !formEl?.contains(e.relatedTarget as Node | null) && presence.focus(undefined)}
           novalidate
           aria-label={t('collections.formLabel', { type: type.label })}
           onsubmit={(e) => {
@@ -673,6 +894,8 @@
           {/each}
           {#if type.fields.length === 0}<p class="h-muted">{t('collections.noFields')}</p>{/if}
         </form>
+        <PresenceMarks root={formEl} others={presence.others} />
+        <PresenceLive root={formEl} others={presence.others} />
       </div>
       {#if panelOpen && !inline}<button type="button" class="h-item__scrim" tabindex="-1" aria-label={t('editor.inspectorClose')} onclick={() => (panelOpen = false)}></button>{/if}
       <aside
@@ -731,7 +954,7 @@
                 principal={session.principalKey}
                 fields={type?.fields ?? []}
                 setField={(name: string, v: unknown) => ((form.values.fields as Record<string, unknown>)[name] = v)}
-                readonly={!canEdit}
+                readonly={!canEdit || sessionRO}
               />
             {:else}
               <Skeleton shape="block" height="20rem" />
@@ -798,6 +1021,7 @@
 {/snippet}
 
 {#snippet actions()}
+  <PresenceAvatars others={presence.others} />
   {#if locales.length > 5}
     <Select
       aria-label={t('collections.languages')}

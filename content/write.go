@@ -403,7 +403,7 @@ func (s *Service) finishWrite(ctx context.Context, tx store.Tx, st *itemState, r
 	// Only a key or availability change of a published item alters what delivery serves.
 	draft := !req.meta || st.item.PublishedVersion == 0
 	return s.emitEvent(ctx, tx, topic, eventPayload{ID: st.item.ID, Type: st.item.Type, Version: st.item.PublishedVersion,
-		Locales: []string{req.locale}, Draft: draft})
+		Locales: []string{req.locale}, Draft: draft, State: StateOf(st.item.UpdatedAt)})
 }
 
 // Discard drops draft parts ("shared" or locale codes); nil drops all.
@@ -458,7 +458,7 @@ func (s *Service) Discard(ctx context.Context, id ids.UUID, parts []string) erro
 		if err := s.record(ctx, tx, actor, "item.discard", id, map[string]any{"parts": partNames(drop)}); err != nil {
 			return err
 		}
-		return s.emitEvent(ctx, tx, "item.updated", eventPayload{ID: id, Type: it.Type, Version: it.PublishedVersion, Draft: true})
+		return s.emitEvent(ctx, tx, "item.updated", eventPayload{ID: id, Type: it.Type, Version: it.PublishedVersion, Draft: true, Discard: true, State: StateOf(st.item.UpdatedAt)})
 	})
 }
 

@@ -19,6 +19,8 @@ export interface RichTextProps {
   placeholder?: string;
   /** Called with the stored document after each edit, or `undefined` when the editor is empty. */
   onchange?: (value: unknown) => void;
+  /** The field's form path (`body`, `blocks[2].props.text`): with a collaboration session it finds the field's shared document. */
+  path?: string;
   /** Rows of minimum height (default 8). */
   rows?: number;
   /** Show "Edit as JSON" in the toolbar's menu (default true). */

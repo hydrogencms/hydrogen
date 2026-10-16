@@ -23,6 +23,7 @@ import (
 	"github.com/hydrogencms/hydrogen/cachetag"
 	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/clock"
+	"github.com/hydrogencms/hydrogen/collab"
 	"github.com/hydrogencms/hydrogen/config"
 	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/delivery"
@@ -161,6 +162,7 @@ type CoreConfig struct {
 	Auth     AuthConfig
 	Delivery DeliveryConfig
 	Admin    AdminConfig
+	Collab   CollabConfig
 	// Webhooks deliver outbox events to HTTP endpoints, by name.
 	Webhooks map[string]webhook.Config
 }
@@ -183,6 +185,8 @@ type Services struct {
 	Releases *release.Service
 	// Review is the review workflow of types with `review: true`.
 	Review *review.Service
+	// Collab is the co-editing session service; nil when collab.enabled is false.
+	Collab *collab.Service
 	// Channels are the compiled delivery channels (config/channels.yaml); one implicit "default" channel when
 	// none are configured.
 	Channels *channel.Set
@@ -260,6 +264,10 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 	var svc *content.Service
 	consumers := append(slices.Clone(reg.consumers), content.AsyncHookConsumers(reg.hooks.Async(), func() *content.Service { return svc })...)
 	mappers := tagMappers(p.schema, reg.mappers)
+	var colSvc *collab.Service
+	if core.Collab.Enabled {
+		consumers = append(consumers, collabConsumer(func() *collab.Service { return colSvc }))
+	}
 	consumers = append(consumers, purgeConsumer(db, mappers))
 	consumers = append(consumers, webhookConsumers(core.Webhooks, o.Clock,
 		func(topic string, payload json.RawMessage) []string { return cachetag.Tags(mappers, topic, payload) })...)
@@ -307,6 +315,11 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 		a.closeDB(db)
 		return nil, err
 	}
+	if err = a.services.wireCollab(); err != nil {
+		a.closeDB(db)
+		return nil, err
+	}
+	colSvc = a.services.Collab
 	if a.runner, err = newRunner(a.services, reg, o.JobHold); err != nil {
 		a.closeDB(db)
 		return nil, err
@@ -372,8 +385,9 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 		Content: ContentConfig{SchemaDir: "schema", DefaultLocale: "en", TrashRetention: DefaultTrashRetention, ReviewFourEyes: true},
 		Delivery: DeliveryConfig{CacheBytes: delivery.DefaultCacheBytes, ShareLinks: true,
 			ShareDefaultTTL: delivery.DefaultShareTTL, ShareMaxTTL: delivery.MaxShareTTL},
-		Jobs:  JobsConfig{Enabled: true},
-		Admin: AdminConfig{Enabled: true, Prefix: "/admin", ElementsDevEntry: "/src/elements.ts"},
+		Jobs:   JobsConfig{Enabled: true},
+		Collab: CollabConfig{Enabled: true},
+		Admin:  AdminConfig{Enabled: true, Prefix: "/admin", ElementsDevEntry: "/src/elements.ts"},
 	}
 	sections := []struct {
 		path   string
@@ -384,7 +398,7 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 			path   string
 			target any
 		}{{"http", &core.HTTP}, {"database", &core.Database}, {"log", &core.Log}, {"outbox", &core.Outbox}, {"jobs", &core.Jobs},
-			{"manage", &core.Manage}, {"auth", &core.Auth}, {"delivery", &core.Delivery}, {"admin", &core.Admin}, {"webhooks", &core.Webhooks}}...)
+			{"manage", &core.Manage}, {"auth", &core.Auth}, {"delivery", &core.Delivery}, {"admin", &core.Admin}, {"collab", &core.Collab}, {"webhooks", &core.Webhooks}}...)
 	}
 	for _, d := range sections {
 		if err := cfg.Decode(d.path, d.target); err != nil {
@@ -629,7 +643,7 @@ func (a *App) Handler() (http.Handler, error) {
 		api, err := manage.New(manage.Options{Content: a.services.Content, Auth: a.services.Auth, Gate: a.services.Access,
 			Admin: a.services.Admin, Catalog: a.services.Catalog,
 			Channels: a.services.Channels, Log: a.services.Log, Prefix: prefix,
-			Routes: slices.Concat(a.reg.manageRts, a.services.Delivery.ManageRoutes(), a.services.Releases.ManageRoutes(), a.services.Review.ManageRoutes())})
+			Routes: slices.Concat(a.reg.manageRts, a.services.Delivery.ManageRoutes(), a.services.Releases.ManageRoutes(), a.services.Review.ManageRoutes(), a.services.Collab.ManageRoutes())})
 		if err != nil {
 			return nil, err
 		}
@@ -658,7 +672,7 @@ func (a *App) mountAdmin(mux *http.ServeMux) error {
 	if !s.Core.Admin.Enabled {
 		return nil
 	}
-	o := admin.Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: delivery.Prefix, Pages: slices.Contains(a.Modules(), "pages")}
+	o := admin.Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: delivery.Prefix, Pages: slices.Contains(a.Modules(), "pages"), Collab: s.Collab != nil}
 	o.FrameOrigins = frameOrigins(s, a.reg)
 	if s.Env == config.DevEnv {
 		o.DevURL = os.Getenv("ADMIN_DEV_URL")
@@ -792,6 +806,12 @@ func (a *App) Run(ctx context.Context, listening func(addr string)) error {
 		cancel()
 		return fmt.Errorf("delivery: %w", err)
 	}
+	if s.Collab != nil {
+		if err := s.Collab.Start(ctx); err != nil {
+			cancel()
+			return fmt.Errorf("collab: %w", err)
+		}
+	}
 	if s.Core.Jobs.Enabled {
 		wg.Go(func() {
 			if err := a.runner.Run(ctx); err != nil {
@@ -869,5 +889,8 @@ func newRunner(s *Services, reg *Registry, hold time.Duration) (*jobs.Runner, er
 	list = append(list, releaseJob(s))
 	list = append(list, jobs.Job{Name: "preview.cleanup", Schedule: "@every 10m",
 		Run: func(ctx context.Context) error { return s.Delivery.CleanupPreview(ctx) }})
+	if s.Collab != nil {
+		list = append(list, jobs.Job{Name: collab.JobName, Schedule: collab.CleanupSchedule, Run: s.Collab.Cleanup})
+	}
 	return jobs.NewRunner(jobs.Options{Clock: s.Clock, Locker: s.DB.Locker(), Log: s.Log, Hold: hold}, list)
 }
