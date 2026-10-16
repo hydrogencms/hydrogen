@@ -214,6 +214,36 @@ func TestManageRequests(t *testing.T) {
 		got.body != `{"channel":"web","item":"i1","ttl":"600s"}` {
 		t.Errorf("preview token %+v %s %v", tok, got.body, err)
 	}
+
+	mk := func(status int, body string) (*client.Manage, *seen) {
+		srv, got := stub(t, status, body, nil)
+		return client.NewManage(srv.URL, "t"), got
+	}
+	mg, got := mk(201, `{"id":"s1","token":"hps_x","url":"https://x/y?preview=hps_x","channel":"web","locale":"en","expiresAt":"2026-10-15T10:15:00Z"}`)
+	sh, err := mg.CreateShare(ctx, client.ShareInput{Item: "i1", Channel: "web", TTL: time.Hour})
+	if err != nil || sh.Token != "hps_x" || sh.ID != "s1" || got.path != "/api/manage/v1/preview-shares" || got.method != "POST" ||
+		got.body != `{"channel":"web","item":"i1","ttl":"3600s"}` {
+		t.Errorf("create share %+v %s %v", sh, got.body, err)
+	}
+	mg, got = mk(200, `{"shares":[{"id":"s1","channel":"web","locale":"en","createdBy":"user:1","createdByName":"Ada","expiresAt":"2026-10-15T10:15:00Z","viewers":2}]}`)
+	list, err := mg.Shares(ctx, "i1")
+	if err != nil || len(list) != 1 || list[0].Viewers != 2 || list[0].CreatedByName != "Ada" || got.rawQuery != "item=i1" {
+		t.Errorf("shares %+v %s %v", list, got.rawQuery, err)
+	}
+	mg, got = mk(204, "")
+	if err = mg.RevokeShare(ctx, "s1"); err != nil || got.method != "DELETE" || got.path != "/api/manage/v1/preview-shares/s1" {
+		t.Errorf("revoke %s %s %v", got.method, got.path, err)
+	}
+	mg, got = mk(200, `{"rev":3}`)
+	rev, err := mg.RelayDraft(ctx, "i1", "de", map[string]any{"title": "T"})
+	if err != nil || rev != 3 || got.method != "PUT" || got.path != "/api/manage/v1/preview-relay/i1" || got.rawQuery != "locale=de" ||
+		got.body != `{"fields":{"title":"T"}}` {
+		t.Errorf("relay %d %s %s %v", rev, got.rawQuery, got.body, err)
+	}
+	mg, got = mk(204, "")
+	if err = mg.DropRelay(ctx, "i1", ""); err != nil || got.method != "DELETE" || got.path != "/api/manage/v1/preview-relay/i1" || got.rawQuery != "" {
+		t.Errorf("drop %s %s %v", got.method, got.path, err)
+	}
 }
 
 func TestWithCopiesAndChannel(t *testing.T) {

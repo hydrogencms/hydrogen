@@ -79,6 +79,29 @@ Preview is detected by any of:
 Code that knows better can pass `preview: true` or `false` to `createBridge`. Nothing changes for visitors: outside
 preview the bridge does nothing.
 
+## Viewer mode (share links)
+
+A share link opens a preview page **outside a frame**: no admin, no `postMessage`. The bridge then follows the
+editor's relayed (unsaved) draft over Server-Sent Events. It starts when the page is in preview (see Activation), is
+not framed, carries a proof (`<meta name="hydrogen-preview" content="<sha256 hex>">`) and the browser has `EventSource`.
+The `ready`/`init`/`patch` messages and the canvas are not used.
+
+The bridge opens `${adminOrigin}/api/deliver/v1/preview/events?proof=<proof>` (the CMS serves the admin and delivery
+on one origin; the `relay` option replaces the URL up to the query, and `relay: false` turns viewer mode off). The
+proof is the SHA-256 of the share token; the token itself never leaves the page's server. The stream sends:
+
+| Event | Data | The bridge |
+|---|---|---|
+| `draft` | `{"rev": n, "item": <the item as delivery returns it for this link>}` | live mode: `onInit({item: item.id, itemType: item.type, locale: item.locale, rev, doc: item})`, so the page renders the new document (`rendered` is a no-op without a parent). Reload mode: `reloadSwap()`, falling back to `location.reload()`; the first `draft` after connecting, and a repeat of the same `v` (the content hash; `rev` when the event has none: a reconnect), are skipped because the page already shows it. Swaps run one at a time with at most one queued, so the latest draft always wins. |
+| `end` | `{"reason": "expired" \| "revoked"}` | closes the stream (no reconnect), then `location.reload()`; the server then answers 401 |
+
+Known race: the page cannot tell which draft it rendered, so the first `draft` is always skipped. If the relay
+changes between the server rendering the page and the stream connecting, that change is not shown until the next
+one (the stream does not replay). Reloading the page fixes it.
+
+`disconnect()` closes the stream. `error()` posts nothing outside a frame. An unknown, expired or revoked proof is refused before streaming (401) and
+`EventSource` gives up; the page is not changed.
+
 ## Live mode
 
 For frontends that can render from data in the browser. After `ready` the admin sends `init`; the frontend renders

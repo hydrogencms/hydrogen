@@ -422,7 +422,7 @@ func (s *server) servePreviewItem(w http.ResponseWriter, r *http.Request, eng *e
 	if done {
 		return
 	}
-	name, scope, _ := s.svc.Delivery.VerifyPreviewToken(token)
+	name, scope, _, _ := s.svc.Delivery.PreviewTokenInfo(token)
 	ch, ok := s.svc.Channels.Get(name)
 	parts := strings.Split(rest, "/")
 	if token == "" || !ok || !renders(ch) || len(parts) < 2 || len(parts) > 3 {

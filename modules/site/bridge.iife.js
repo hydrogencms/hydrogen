@@ -290,6 +290,7 @@ function createBridge(o) {
     let doc;
     let t0 = 0;
     let on = false;
+    let es;
     const now = () => (w.performance ?? Date).now();
     const post = (m) => w.parent.postMessage({ h: 1, ...m }, origin);
     const ready = () => {
@@ -315,7 +316,7 @@ function createBridge(o) {
     const raf = (f) => (w.requestAnimationFrame ? w.requestAnimationFrame(f) : setTimeout(f, 0));
     const cv = canvas(w, post, raf);
     const resync = () => post({ type: 'resync', rev });
-    const error = (message) => post({ type: 'error', message });
+    const error = (message) => on && post({ type: 'error', message });
     const onMessage = (e) => {
         const m = e.data;
         if (e.origin !== origin || e.source !== w.parent || !isObj(m) || m.h !== 1)
@@ -361,10 +362,55 @@ function createBridge(o) {
             error(String(x?.message ?? x));
         }
     };
+    const view = () => {
+        const proof = previewProof(w);
+        if (es || o.relay === false || !proof || !w.EventSource)
+            return;
+        const u = new URL(o.relay || `${origin}/api/deliver/v1/preview/events`);
+        u.searchParams.set('proof', proof);
+        let last;
+        let busy = false;
+        let queued = false;
+        const swap = () => {
+            if (busy)
+                return void (queued = true);
+            busy = true;
+            reloadSwap({ window: w })
+                .catch(reload)
+                .finally(() => {
+                busy = false;
+                if (queued)
+                    (queued = false), swap();
+            });
+        };
+        es = new w.EventSource(u.href);
+        es.addEventListener('draft', (e) => {
+            try {
+                const m = JSON.parse(e.data);
+                if (o.mode === 'live')
+                    return o.onInit?.({ item: m.item.id, itemType: m.item.type, locale: m.item.locale, rev: m.rev, doc: m.item });
+                const key = m.v ?? m.rev;
+                if (last === undefined || key !== last) {
+                    const first = last === undefined;
+                    last = key;
+                    if (!first)
+                        swap();
+                }
+            }
+            catch (x) {
+                error(String(x?.message ?? x));
+            }
+        });
+        es.addEventListener('end', () => (es?.close(), reload()));
+    };
     const bridge = {
         connect() {
-            if (on || w.parent === w || !(o.preview ?? isPreview(w)))
+            if (on || es)
                 return;
+            if (!(o.preview ?? isPreview(w)))
+                return;
+            if (w.parent === w)
+                return view();
             on = true;
             w.addEventListener('message', onMessage);
             for (const t of ['click', 'auxclick'])
@@ -372,6 +418,8 @@ function createBridge(o) {
             ready();
         },
         disconnect() {
+            es?.close();
+            es = undefined;
             if (on) {
                 w.removeEventListener('message', onMessage);
                 for (const t of ['click', 'auxclick'])

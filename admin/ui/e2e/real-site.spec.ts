@@ -3,12 +3,12 @@ import { card, expand, frameOf } from './blocks-helpers';
 import { adminLogin, adminPassword, draftOf, manage, signIn, tag } from './helpers';
 
 // The H6 exit scenario on the site module (examples/fullstack): one binary serves the admin and the website; the
-// frontend renders on the server, so the admin saves the draft and the frame reloads (reload mode).
+// frontend renders on the server, so the admin relays the unsaved document and the frame reloads (reload mode).
 const t = tag();
 test.setTimeout(90_000);
 test.use({ actionTimeout: 15_000 });
 
-test('typing in the admin autosaves the draft and the website frame shows it', async ({ page }) => {
+test('typing in the admin shows in the website frame without saving the draft', async ({ page }) => {
   const r = await manage('GET', '/collections/landing/items?limit=20');
   const home = r.items.find((i: any) => i.name === 'Home');
   await signIn(page, adminLogin, adminPassword);
@@ -21,18 +21,21 @@ test('typing in the admin autosaves the draft and the website frame shows it', a
   expect(sandbox).not.toContain('allow-same-origin');
   await expect(frame.locator('[data-h-block="hero"]').first()).toBeVisible();
   await expect(page.getByRole('status').filter({ hasText: 'Reload mode' })).toBeVisible();
-  await expect(page.getByText(/saves your changes to the draft/)).toBeVisible();
+  await expect(page.getByText(/saves your changes to the draft/)).toHaveCount(0);
 
   const hero = card(page, 'hero').first();
   await expand(hero);
   await hero.getByLabel(/^Heading/).fill(`Server ${t}`);
   await expect(frame.locator('[data-h-block="hero"]').first()).toContainText(`Server ${t}`);
-  await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Unsaved changes shown')).toBeVisible();
 
+  const before = await draftOf(home.id);
+  expect(JSON.stringify(before.fields.body)).not.toContain(`Server ${t}`);
+  await page.getByRole('button', { name: 'Save', exact: true }).first().click();
+  await expect(page.getByRole('button', { name: 'Saved', exact: true }).first()).toBeVisible();
   const draft = await draftOf(home.id);
   expect(JSON.stringify(draft.fields.body)).toContain(`Server ${t}`);
   expect(draft.status).toBe('changed');
-  expect(draft.version).toBe(1);
 });
 
 test('canvas: inline edit of the title in the locked site frame commits and the reloaded frame shows it', async ({ page }) => {
@@ -55,9 +58,8 @@ test('canvas: inline edit of the title in the locked site frame commits and the 
   await page.keyboard.type(`About ${t}`);
   await page.keyboard.press('Enter');
   await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue(`About ${t}`);
-  // Autosave, then the site module renders the saved draft in a reloaded frame.
-  await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
+  // The relayed document, rendered by the site module in a reloaded frame; the draft is untouched.
   await expect(frame.locator('h1.page-title')).toHaveText(`About ${t}`);
   await expect(frame.locator('[contenteditable]')).toHaveCount(0);
-  expect((await draftOf(about.id)).fields.title).toBe(`About ${t}`);
+  expect((await draftOf(about.id)).fields.title).not.toBe(`About ${t}`);
 });

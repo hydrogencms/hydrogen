@@ -85,6 +85,13 @@ never commit it, quote it in commit messages or public docs, or move its content
   text is found by the admin sending `overlay.texts` (string/text fields and block props) and the bridge matching
   them in the DOM; explicit `data-h-path` markers win. `ready.edit: true` advertises support. Protocol:
   `docs/bridge-protocol.md`. Contract: `planning/design/visual-h7.md`.
+- Share links and relayed previews: `store.PreviewStore` (`preview_share`, `preview_relay`; both adapters),
+  `delivery` share tokens (`hps_…`, stored as SHA-256(SHA-256(token)), looked up with a short cache), the relay
+  overlay on draft views, the SSE stream `GET /api/deliver/v1/preview/events?proof=` (the proof is the page's
+  `hydrogen-preview` meta), manage routes `/preview-shares` and `/preview-relay/{item}`, policy
+  `content.preview.share`, config `delivery.share_links|share_default_ttl|share_max_ttl`, cleanup job
+  `preview.cleanup`. The bridge's viewer mode follows the stream outside a frame. Public doc:
+  `docs/share-links.md`. Contract: `planning/design/share-h7s.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
@@ -171,6 +178,10 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
   an edit is open (`focusToolbar` checks `editing` and where the focus is); canvas model actions run through
   `BlocksModel.quietly` so they don't focus the form. Overlay texts go to a live frame when it reports `rendered`
   (never before the patch, or the mapping misses the new text) and to a reload frame with its next `ready`.
+- Reload-mode preview never autosaves: the admin relays the unsaved fields (`lib/preview/relay.ts`, `PUT
+  /preview-relay`) and delivery overlays them on draft views for any preview token covering the item, until the item
+  is saved (the overlay loses to a newer item update) or the relay is an hour old. A share token is a bearer secret:
+  never log it or keep it client-side after the dialog closes; frontends treat preview tokens as opaque.
 - Svelte 5 props passed as expressions (`item={data.id}`) are getters on the parent's whole object: an effect that
   reads one reruns whenever the object is replaced (each autosave). Wrap them in `$derived` before keying effects
   on them (the preview pane does, or every autosave minted a new token and reloaded the frame).

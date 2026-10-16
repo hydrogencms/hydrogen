@@ -25,6 +25,7 @@ func (a *API) coreRoutes() []route {
 		{Route: Route{Method: "GET", Path: "/collections/{type}/items", Handler: a.listItems}},
 		{Route: Route{Method: "GET", Path: "/channels/{name}", Handler: a.getChannel}, byName: true},
 		{Route: Route{Method: "GET", Path: "/openapi.json"}, raw: http.HandlerFunc(a.serveOpenAPI)},
+		{Route: Route{Method: "GET", Path: "/preview/events"}, raw: http.HandlerFunc(a.serveEvents)},
 	}
 }
 
@@ -325,7 +326,7 @@ func (st *state) previewed(ctx context.Context, typ string, sq store.Query) (*re
 		return nil, nil
 	}
 	st.look(id, typ)
-	return st.resolveDraft(v)
+	return st.resolveDraft(ctx, v)
 }
 
 // maxPage is the largest page a store returns; a page that size cannot be probed with one more row.

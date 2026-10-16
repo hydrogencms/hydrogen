@@ -22,6 +22,9 @@
   import Menu, { type MenuItem } from '../../lib/ui/Menu.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
   import Segmented from '../../lib/ui/Segmented.svelte';
+  import { Relay, type RelayState } from '../../lib/preview/relay';
+  import { relayApi } from '../../lib/preview/share';
+  import { ShareList } from '../../lib/preview/shares.svelte';
   import type { PreviewChannel } from '../../lib/preview/PreviewPane.svelte';
   import Select from '../../lib/ui/Select.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
@@ -136,7 +139,6 @@
 
   function apply(d: ItemData) {
     data = d;
-    paused = false;
     const t0 = types.get(d.type);
     const v: Values = { fields: hydrate(t0?.fields ?? [], d.fields), key: d.key ?? '', alwaysAvailable: d.alwaysAvailable };
     form.reset(v);
@@ -276,74 +278,67 @@
   let previewOpen = $state(false);
   let paneTab = $state<'preview' | 'details'>('preview');
   let PreviewPane = $state.raw<Component<any> | null>(null);
-  let saveState = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  let paneMode = $state<'live' | 'reload' | null>(null);
   function togglePreview() {
     previewOpen = !previewOpen;
     paneTab = 'preview';
-    if (!previewOpen) saveState = 'idle';
+    if (!previewOpen) paneMode = null;
   }
   $effect(() => {
     if (previewOpen && !PreviewPane) void import('../../lib/preview/PreviewPane.svelte').then((m) => (PreviewPane = m.default));
   });
   const previewChans = $derived<PreviewChannel[]>(previewChannels.map((c) => ({ name: c.name, languages: c.languages })));
-  const previewDoc = $derived(previewOpen && type ? { fields: cleanDoc(type.fields, $state.snapshot(form.values.fields) as Doc) } : null);
+  // The working document, as the pane and the relay see it.
+  const shares = new ShareList();
+  const relayItem = $derived(mode === 'new' ? '' : (data?.id ?? ''));
+  const relayWanted = $derived(!!relayItem && canEdit && ((previewOpen && paneMode === 'reload') || shares.active > 0));
+  const workingFields = $derived(type && (previewOpen || relayWanted) ? cleanDoc(type.fields, $state.snapshot(form.values.fields) as Doc) : null);
+  const previewDoc = $derived(previewOpen && workingFields ? { fields: workingFields } : null);
 
-  // Reload-mode frontends render from the saved draft, so the pane asks for a save after each pause in typing.
-  // A draft save replaces the draft in place: it records an audit event, never a version.
-  // It pauses on a conflict (never overwrites), skips while fields have errors and leaves 1.5 s between saves.
-  let autosaving: Promise<boolean> | undefined;
-  let paused = $state(false);
-  let kept = $state(false);
-  let saveMessage = $state('');
-  let lastAutosave = 0;
-  function autosave(): Promise<boolean> {
-    return (autosaving ??= (async () => {
-      if (!type || !data || !canEdit || !target || paused) return false;
-      if (!form.dirty) return true;
-      if (Object.keys(form.errors).length) {
-        saveState = 'error';
-        saveMessage = t('preview.saveErrors');
-        return false;
-      }
-      const wait = lastAutosave + 1500 - Date.now();
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-      saveMessage = '';
-      saveState = 'saving';
-      const v = $state.snapshot(form.values) as Values;
-      const patch = fieldsPatch(type.fields, saved.fields, v.fields);
-      const body: Record<string, unknown> = { fields: patch };
-      if (locale) body.locale = locale;
-      if (v.key !== saved.key) body.key = v.key;
-      if (v.alwaysAvailable !== saved.alwaysAvailable) body.alwaysAvailable = v.alwaysAvailable;
-      if (!Object.keys(patch).length && !('key' in body) && !('alwaysAvailable' in body)) {
-        saved = structuredClone(v);
-        form.markSavedAs(v);
-        saveState = 'saved';
-        return true;
-      }
-      try {
-        const result = await itemApi.update(target, body, cc());
-        data = result;
-        saved = structuredClone(v);
-        form.markSavedAs(v);
-        saveState = 'saved';
-        return true;
-      } catch (e) {
-        saveState = 'error';
-        if (isConflict(e) || (e instanceof ApiError && e.status === 409)) {
-          paused = true;
-          kept = false;
-        } else if (e instanceof ApiError && e.status >= 400 && e.status < 500) {
-          form.setErrors(e.fields);
-          form.formError = e.fields?.length ? t('form.invalid') : e.message;
-        }
-        return false;
-      } finally {
-        lastAutosave = Date.now();
-        autosaving = undefined;
-      }
-    })());
-  }
+  $effect(() => {
+    const itemId = relayItem;
+    if (!itemId || !session.can('content.preview')) return;
+    void shares.load(itemId).catch(() => {});
+    return () => shares.reset();
+  });
+
+  // Unsaved edits go to the server's relay (not to the draft) while a reload-mode frame or a share link shows them.
+  // The relayed draft is dropped when the item is left, after a save (the draft is the truth again) and on pagehide.
+  let relay = $state.raw<Relay>();
+  let relayState = $state<RelayState>('idle');
+  $effect(() => {
+    const itemId = relayItem;
+    const loc = locale;
+    if (!itemId) return;
+    const r = new Relay({
+      put: (f) => relayApi.put(itemId, loc, f),
+      del: (keepalive) => relayApi.del(itemId, loc, keepalive),
+      onState: (st) => (relayState = st),
+    });
+    relay = r;
+    const hide = () => void r.clear(true);
+    addEventListener('pagehide', hide);
+    return () => {
+      removeEventListener('pagehide', hide);
+      relay = undefined;
+      relayState = 'idle';
+      void r.clear();
+    };
+  });
+  $effect(() => {
+    const r = relay;
+    if (!r) return;
+    if (relayWanted && form.dirty && workingFields) {
+      // Just wanted (a frame went to reload mode, a link was made): show the unsaved state at once.
+      r.push(workingFields, wantedBy !== r);
+      wantedBy = r;
+    } else {
+      wantedBy = undefined;
+      void r.clear();
+    }
+  });
+  let wantedBy: Relay | undefined;
+  const flushRelay = () => relay?.flush() ?? Promise.resolve(true);
 
   // ---- dialogs
   let dialogs = $state<ActionDialogs>();
@@ -605,14 +600,11 @@
                 {locale}
                 channels={previewChans}
                 doc={previewDoc}
-                save={autosave}
-                {saveState}
-                {saveMessage}
-                paused={paused && !kept}
-                onreload={() => {
-                  if (confirmDiscard(form.dirty, (m) => confirm(m))) reloadTick++;
-                }}
-                onkeep={() => (kept = true)}
+                flush={flushRelay}
+                {relayState}
+                dirty={form.dirty}
+                {shares}
+                onmode={(m: 'live' | 'reload' | null) => m && (paneMode = m)}
                 principal={session.principalKey}
                 fields={type?.fields ?? []}
                 setField={(name: string, v: unknown) => ((form.values.fields as Record<string, unknown>)[name] = v)}

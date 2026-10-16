@@ -14,7 +14,7 @@ under test as its channels' frontend. The suite publishes and edits one page and
   --browser                run the bridge checks in a browser (Playwright from your install)
   --playwright-from <dir>  directory to resolve Playwright from (default: the working directory)
   --channels <a,b>         web channels to test (default en,de)
-  --only <groups>          comma-separated groups: pages links seo notfound redirects reserved blog preview bridge revalidate
+  --only <groups>          comma-separated groups: pages links seo notfound redirects reserved blog preview share bridge revalidate
   --revalidate-timeout <s> seconds to wait for a published change to show (default 20)
   --json                   print the report as JSON
 `

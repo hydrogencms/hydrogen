@@ -28,6 +28,7 @@ func CorePolicies() []Policy {
 		{Name: PolicyContentPublish, Description: "Publish and unpublish", Limitations: write},
 		{Name: PolicyContentDelete, Description: "Delete items", Limitations: read},
 		{Name: PolicyContentPreview, Description: "Create preview tokens", Limitations: read},
+		{Name: PolicyContentPreviewShare, Description: "Create and revoke share links to previews", Limitations: read},
 		{Name: PolicyUserManage, Description: "Manage users, groups and memberships"},
 		{Name: PolicyRoleManage, Description: "Manage roles and assignments"},
 		{Name: PolicyTokenManage, Description: "Manage API tokens"},
@@ -56,7 +57,8 @@ func baseTemplates() []Template {
 	return []Template{
 		{Name: "administrator", Description: "Everything", Policies: templatePolicies(PolicyAll)},
 		{Name: "editor", Description: "Full control of content", Policies: templatePolicies(PolicyContentRead,
-			PolicyContentCreate, PolicyContentEdit, PolicyContentPublish, PolicyContentDelete, PolicyContentPreview)},
+			PolicyContentCreate, PolicyContentEdit, PolicyContentPublish, PolicyContentDelete, PolicyContentPreview,
+			PolicyContentPreviewShare)},
 		{Name: "contributor", Description: "Writes drafts for others to publish", Policies: templatePolicies(
 			PolicyContentRead, PolicyContentCreate, PolicyContentEdit, PolicyContentPreview)},
 		{Name: "ai-contributor", Description: "For agent tokens: reads and writes drafts, never publishes or deletes",

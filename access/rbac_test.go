@@ -273,7 +273,7 @@ func TestCatalogRegistration(t *testing.T) {
 	for _, p := range e.cat.Policies() {
 		names = append(names, p.Name)
 	}
-	if !reflect.DeepEqual(names, []string{"audit.read", "content.create", "content.delete", "content.edit", "content.preview",
+	if !reflect.DeepEqual(names, []string{"audit.read", "content.create", "content.delete", "content.edit", "content.preview", "content.preview.share",
 		"content.publish", "content.read", "role.manage", "token.manage", "user.manage"}) {
 		t.Errorf("%v", names)
 	}
@@ -804,7 +804,7 @@ func TestTemplates(t *testing.T) {
 	}
 	want := map[string][]string{
 		"administrator":  {"*"},
-		"editor":         {"content.read", "content.create", "content.edit", "content.publish", "content.delete", "content.preview"},
+		"editor":         {"content.read", "content.create", "content.edit", "content.publish", "content.delete", "content.preview", "content.preview.share"},
 		"contributor":    {"content.read", "content.create", "content.edit", "content.preview"},
 		"ai-contributor": {"content.read", "content.create", "content.edit"},
 		"viewer":         {"content.read"},

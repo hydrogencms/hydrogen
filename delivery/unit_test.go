@@ -298,13 +298,13 @@ func TestPreviewTokenSources(t *testing.T) {
 
 func TestParseTTL(t *testing.T) {
 	for in, want := range map[string]time.Duration{``: 0, `null`: 0, `60`: time.Minute, `"15m"`: 15 * time.Minute, `3600`: time.Hour} {
-		got, err := parseTTL([]byte(in))
+		got, err := parseTTL([]byte(in), MaxPreviewTTL)
 		if err != nil || got != want {
 			t.Errorf("%q = %v, %v", in, got, err)
 		}
 	}
 	for _, in := range []string{`0`, `3601`, `"2h"`, `"x"`, `true`, `-5`} {
-		if _, err := parseTTL([]byte(in)); err == nil {
+		if _, err := parseTTL([]byte(in), MaxPreviewTTL); err == nil {
 			t.Errorf("%q accepted", in)
 		}
 	}
@@ -668,5 +668,73 @@ func TestMatchesWhere(t *testing.T) {
 		storeutil.MatchWhere([]store.Cond{{Field: "slug", Op: store.OpExists, Value: true}}, vals) ||
 		!storeutil.MatchWhere([]store.Cond{{Field: "author", Op: store.OpExists, Value: false}}, vals) {
 		t.Error("empty strings must count as absent")
+	}
+}
+
+func TestShareCacheNegativeFloodKeepsPositives(t *testing.T) {
+	var c shareCache
+	now := time.Unix(1000, 0)
+	pos := [32]byte{1}
+	c.put(pos, shareEntry{ok: true, at: now})
+	for i := range 5 * shareCacheNegMax {
+		var k [32]byte
+		k[0], k[1], k[2] = 2, byte(i), byte(i>>8)
+		c.put(k, shareEntry{at: now})
+	}
+	if _, ok := c.get(pos, now); !ok {
+		t.Fatal("a flood of unknown tokens evicted a known one")
+	}
+	if n := len(c.neg.m); n > shareCacheNegMax {
+		t.Errorf("negative entries = %d, want at most %d", n, shareCacheNegMax)
+	}
+	for i := range shareCacheMax + 10 {
+		var k [32]byte
+		k[0], k[1], k[2] = 3, byte(i), byte(i>>8)
+		c.put(k, shareEntry{ok: true, at: now})
+	}
+	if n := len(c.pos.m); n != shareCacheMax {
+		t.Errorf("positive entries = %d, want %d", n, shareCacheMax)
+	}
+	if _, ok := c.get(pos, now.Add(shareCacheTTL)); ok {
+		t.Error("an expired entry was served")
+	}
+}
+
+func TestHubCaps(t *testing.T) {
+	h := newHub(2, 3)
+	mk := func(share ids.UUID) *stream { return &stream{share: store.ShareSession{ID: share}} }
+	a, b := ids.UUID{1}, ids.UUID{2}
+	s1, s2 := mk(a), mk(a)
+	for _, s := range []*stream{s1, s2} {
+		if err := h.add(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.add(mk(a)); err == nil {
+		t.Error("third stream of one share accepted")
+	}
+	if err := h.add(mk(b)); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.add(mk(ids.UUID{3})); err == nil {
+		t.Error("stream beyond the server cap accepted")
+	}
+	h.remove(s1)
+	if err := h.add(mk(a)); err != nil {
+		t.Errorf("slot not freed: %v", err)
+	}
+	if h.viewersOf(a) != 2 {
+		t.Errorf("viewers = %d", h.viewersOf(a))
+	}
+}
+
+func TestNormOrigin(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://WWW.Acme.com/": "https://www.acme.com", "https://acme.com:443/x": "https://acme.com", "http://acme.com:80": "http://acme.com",
+		"http://acme.com:8080": "http://acme.com:8080", "ftp://acme.com": "", "acme.com": "", "null": "", "http://[::1]:3000": "http://[::1]:3000",
+	} {
+		if got, _ := normOrigin(in); got != want {
+			t.Errorf("normOrigin(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

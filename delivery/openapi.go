@@ -64,6 +64,16 @@ func openAPI(s *schema.Schema, extra []Route) obj {
 		"responses":  responses(openapi.OKResp("The channel.", openapi.SchemaRef("ChannelInfo")), "401", "404")}}
 	paths["/openapi.json"] = obj{"get": obj{"operationId": "getOpenAPI", "summary": "This document", "security": []any{},
 		"responses": obj{"200": openapi.OKResp("The OpenAPI document.", obj{"type": "object"})}}}
+	paths["/preview/events"] = obj{"get": obj{"operationId": "getPreviewEvents", "summary": "Live preview of a share link", "security": []any{},
+		"description": "Server-Sent Events for a share link, identified by the proof (the hex SHA-256 of its token, which frontends " +
+			"publish as the hydrogen-preview meta). Event draft: {rev, item}, the item as GET /items/{id} returns it for the " +
+			"link's token, sent on connect and after every change of the item's relayed working document. Event end: " +
+			"{reason: expired|revoked}, then the stream closes. A \": ping\" comment comes every 25 seconds. Answers 401 for an " +
+			"unknown, expired or revoked link. Cross-origin reads are allowed for the channels' frontends only.",
+		"parameters": []any{obj{"name": "proof", "in": "query", "required": true, "schema": obj{"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+		"responses": obj{
+			"200": obj{"description": "The event stream.", "content": obj{"text/event-stream": obj{"schema": obj{"type": "string"}}}},
+			"401": openapi.Ref("responses", "Unauthorized")}}}
 	for _, rt := range extra {
 		addRoute(paths, rt)
 	}

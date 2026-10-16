@@ -96,6 +96,11 @@ The admin shows your page in an iframe and talks to it with `postMessage`. The w
   `ready` with a missing or wrong hash fails the check "frontend doesn't prove the preview token", and no `init` is
   sent after it. `content="1"` still turns the bridge on but no longer passes. In Next, `@hydrogencms/next` renders
   the hash in draft mode from its preview cookie.
+- **Share links** (`hps_…` tokens, valid up to 7 days) open the preview outside a frame. Treat tokens as opaque
+  (no `.` or claims assumed) and keep the preview cookie as long as the token lives. The bridge follows the editor's
+  unsaved draft by itself in this case ("viewer mode" in the protocol document): nothing to do beyond including it
+  (live frontends re-render from `onInit`, reload frontends are swapped). Add `<meta name="robots" content="noindex">`
+  to preview pages.
 - In a locked frame (preview on the admin's origin) the bridge reloads with `location.reload()` instead of swapping
   and keeps `?preview=<token>` on same-site links; see the protocol document.
 - It talks only to the configured **admin origin** (default: the CMS's origin); everything else is ignored.
@@ -130,7 +135,7 @@ npx hydrogen-adapter-test --cms http://127.0.0.1:8080 --token <management token>
 ```
 
 The CMS needs a webhook to your frontend's revalidation endpoint (or whatever purges your cache). Options: `--admin-origin`
-(the origin your frontend accepts bridge messages from, default the CMS's), `--channels en,de`, `--only pages,preview` (groups: pages links seo notfound redirects reserved blog preview bridge revalidate),
+(the origin your frontend accepts bridge messages from, default the CMS's), `--channels en,de`, `--only pages,preview` (groups: pages links seo notfound redirects reserved blog preview share bridge revalidate),
 `--revalidate-timeout 20`, `--json`; `HYDROGEN_URL` and `HYDROGEN_TOKEN` can stand in for `--cms` and `--token`. The
 suite edits and publishes one page and one post and puts them back, so run it against a scratch database.
 
@@ -144,6 +149,7 @@ suite edits and publishes one page and one post and puts them back, so run it ag
 | `reserved` | the CMS reports `/blog/*` and `/api/*` as reserved |
 | `blog` | every post renders at `<prefix>/blog/<slug>` with its blocks |
 | `preview` | a never-published page renders with the token and is a 404 without it; a draft edit of a page and of a post (through the `/blog/{slug}` pattern) shows with the token only; `data-h-path` is present |
+| `share` | a share link (`POST /preview-shares`, an opaque `hps_` token) opens outside a frame and shows the draft; `--browser`: a relayed draft (`PUT /preview-relay/{item}`, nothing saved) appears on the open page within 5 s (live: the DOM updates; reload: the page reloads), the saved draft stays untouched; after `DELETE /preview-shares/{id}` the next load answers 401 and the open page reloads into it |
 | `bridge` | `--browser`: with the suite playing the admin in a frame, a page outside preview stays silent; `ready` arrives from the frontend origin and proves the preview token (`ready.preview` is the SHA-256 hex of the token in the preview URL; no `init` is sent otherwise); live mode (on a page and on a post's preview URL): `init`, a replace, a whole-document replace (path `""`), add at an index and with `-` (with `data-h-path`) and remove patches update the DOM and answer `rendered`, a stale `base` is answered with `resync`; reload mode: `reload` after a saved draft re-renders and answers `ready` and `rendered` |
 | `bridge` (visual editing) | `--browser`, after the checks above, on the same page and post: `ready.edit` is `true` (else "frontend's bridge doesn't support canvas editing"); after `overlay {on: true, texts}` a `layout` arrives within 3 s with a rectangle for every block path the page renders (slots included) and for `fields/title`; a real mouse click on a point of the first block that no other node's rectangle covers answers `select {path: "fields/body/0", edit: false}` and leaves the frame's URL alone; `editText` on a heading (with the frame's selection cleared, so the caret goes to the end), a typed suffix and Enter answer `inlineEdit` with the new value; while on, a scroll produces a `layout`; after `overlay {on: false}` no more `layout`, `hover` or `select` messages come, however the page scrolls, and a click's default action is no longer prevented. A reload-mode frontend is first reloaded once more, so the frame shows the fixture again rather than the last edited draft. Works for live and reload frontends alike |
 | `revalidate` | a published change shows on the frontend within the timeout, and so does the revert |

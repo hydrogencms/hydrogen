@@ -199,12 +199,11 @@ test.describe.serial('canvas editing, reload mode', () => {
 
     await inlineEdit(page, frame.locator('[data-h-block="hero"] .h').nth(1), `Zwei ${t}`);
     await expect(card(page, 'hero').nth(1).getByLabel(/^Heading/)).toHaveValue(`Zwei ${t}`);
-    // Autosave, then the frame reloads with the new text.
+    // The relay, then the frame reloads with the new text; nothing is saved.
     await expect(frame.locator('[data-h-block="hero"] .h').nth(1)).toHaveText(`Zwei ${t}`);
-    await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
     // The double click selected the heading itself; after the reload it is mapped again.
     await expect(page.locator('.h-canvas__sel')).toHaveAttribute('data-path', 'fields/body/1/props/heading');
     const draft = await draftOf(id, 'de');
-    expect(draft.fields.body[1].props.heading).toBe(`Zwei ${t}`);
+    expect(draft.fields.body[1].props.heading).toBe('Zwei');
   });
 });

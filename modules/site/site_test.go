@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hydrogencms/hydrogen/cachetag"
 )
@@ -120,7 +121,7 @@ func TestInjectPreview(t *testing.T) {
 	page := []byte("<!doctype html><html><head><title>x</title></head><body class=\"a\"><main>hi</main></body></html>")
 	got := string(injectPreview(page, "http://localhost:8080", "abc"))
 	for _, want := range []string{
-		`<meta name="hydrogen-preview" content="abc">` + "\n</head>",
+		`<meta name="robots" content="noindex"><meta name="hydrogen-preview" content="abc">` + "\n</head>",
 		`<body class="a"><div data-h-root><main>hi</main></div><script src="/__hydrogen/bridge.js" data-auto data-mode="reload" data-admin-origin="http://localhost:8080"></script>`,
 	} {
 		if !strings.Contains(got, want) {
@@ -174,16 +175,16 @@ func TestNormalizeOrigin(t *testing.T) {
 func TestInjectPreviewRobustness(t *testing.T) {
 	// the text "data-h-root" is not a root; no </head>; upper-case tags
 	got := string(injectPreview([]byte(`<HTML><BODY><p>mentions data-h-root in text</p></BODY></HTML>`), "o", "abc"))
-	for _, want := range []string{`<BODY><meta name="hydrogen-preview" content="abc"><div data-h-root><p>`, `</div><script src=`} {
+	for _, want := range []string{`<BODY><meta name="robots" content="noindex"><meta name="hydrogen-preview" content="abc"><div data-h-root><p>`, `</div><script src=`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("lacks %q in %s", want, got)
 		}
 	}
 	got = string(injectPreview([]byte(`<html><head><title>x</title><body><div data-h-root class="a">x</div></body></html>`), "o", "abc"))
-	if strings.Count(got, "data-h-root") != 1 || !strings.Contains(got, `<head><meta name="hydrogen-preview" content="abc"><title>`) {
+	if strings.Count(got, "data-h-root") != 1 || !strings.Contains(got, `<head><meta name="robots" content="noindex"><meta name="hydrogen-preview" content="abc"><title>`) {
 		t.Errorf("got %s", got)
 	}
-	if got := string(injectPreview([]byte(`<header>x</header>`), "o", "abc")); !strings.HasPrefix(got, `<meta name="hydrogen-preview"`) {
+	if got := string(injectPreview([]byte(`<header>x</header>`), "o", "abc")); !strings.HasPrefix(got, `<meta name="robots" content="noindex"><meta name="hydrogen-preview"`) {
 		t.Errorf("a fragment: %s", got)
 	}
 }
@@ -208,5 +209,17 @@ func TestSchemeFollowsOnlyTrustedProxies(t *testing.T) {
 	tls := httptest.NewRequest("GET", "https://x.test/", nil)
 	if s.schemeOf(tls) != "https" {
 		t.Error("TLS is not https")
+	}
+}
+
+func TestCookieMaxAge(t *testing.T) {
+	if got := cookieMaxAge(time.Time{}); got != 3600 {
+		t.Errorf("no expiry: %d", got)
+	}
+	if got := cookieMaxAge(time.Now().Add(7 * 24 * time.Hour)); got < 7*24*3600-5 || got > 7*24*3600 {
+		t.Errorf("a week: %d", got)
+	}
+	if got := cookieMaxAge(time.Now().Add(-time.Minute)); got != 1 {
+		t.Errorf("expired: %d", got)
 	}
 }

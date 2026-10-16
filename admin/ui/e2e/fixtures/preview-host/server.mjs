@@ -25,6 +25,18 @@ const server = createServer(async (req, res) => {
   // The proof the admin waits for: the hash of the token in the URL (the bridge sends it as ready.preview).
   const token = u.searchParams.get('preview') || ''
   const proof = token ? `<meta name="hydrogen-preview" content="${createHash('sha256').update(token).digest('hex')}">` : ''
+  // A share link (hps_ token, opaque) opens outside a frame. Like a real frontend, refuse it when the CMS does:
+  // any delivery request with a revoked or expired token is refused. Live mode then repaints from the relay (the
+  // bridge's viewer mode).
+  if (token.startsWith('hps_')) {
+    const id = u.pathname.match(/\/preview\/[^/]+\/([^/]+)$/)?.[1]
+    let status = 0
+    try {
+      const q = id ? `items/${id}?channel=en&locale=en` : 'items?channel=en&limit=1'
+      status = (await fetch(`${cms}/api/deliver/v1/${q}`, { headers: { 'X-Hydrogen-Preview': token } })).status
+    } catch {}
+    if (status === 401 || status === 403) return void res.writeHead(401).end(page('<main id="refused"><h1>This preview link has expired or was revoked.</h1></main>'))
+  }
   let claims = {}
   try {
     claims = JSON.parse(Buffer.from((u.searchParams.get('preview') || '').split('.')[0], 'base64url').toString())

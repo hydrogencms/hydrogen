@@ -4,6 +4,7 @@ import { Cms, Jar, get } from './http.js'
 import { Recorder, assert, equal, summarize } from './report.js'
 import type { Report, Result } from './report.js'
 import { bridgeChecks } from './browser.js'
+import { shareChecks } from './share.js'
 
 export interface Options {
   /** the CMS, e.g. http://127.0.0.1:8080 */
@@ -28,7 +29,7 @@ export interface Options {
   onResult?: (r: Result) => void
 }
 
-export const GROUPS = ['pages', 'links', 'seo', 'notfound', 'redirects', 'reserved', 'blog', 'preview', 'bridge', 'revalidate'] as const
+export const GROUPS = ['pages', 'links', 'seo', 'notfound', 'redirects', 'reserved', 'blog', 'preview', 'share', 'bridge', 'revalidate'] as const
 
 interface PageInfo {
   channel: string
@@ -255,6 +256,18 @@ export async function runSuite(o: Options): Promise<Report> {
         await discard(post.id, ch)()
       })
     }
+  }
+
+  // -- share links and relayed drafts
+  if (want('share')) {
+    const ch = channels[0]!
+    const target = pages.find((p) => p.channel === ch && p.path !== (prefixes[ch] || '/'))
+    if (!target) rec.skip('share', 'share links', 'no page to share')
+    else
+      await shareChecks({
+        rec, cms, frontend: fe, channel: ch, browser: !!o.browser, playwrightFrom: o.playwrightFrom, cleanups,
+        page: { id: target.item.id, title: titleOf(target.item) }, onFrontend: (u) => onFrontend(u, fe),
+      })
   }
 
   // -- bridge, in a browser

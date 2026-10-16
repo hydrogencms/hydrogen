@@ -20,17 +20,21 @@ package delivery
 import (
 	"bytes"
 	"context"
+	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/hydrogencms/hydrogen/audit"
 	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/clock"
 	"github.com/hydrogencms/hydrogen/content"
@@ -109,8 +113,14 @@ type Options struct {
 	Channels *channel.Set
 	Reader   store.Reader
 	Notifier store.Notifier
-	Clock    clock.Clock
-	Log      *slog.Logger
+	// DB serves share links and relayed drafts (see share.go); nil turns both off.
+	DB    store.DB
+	Audit *audit.Log
+	IDs   *ids.Generator
+	// Rand is the source of share tokens; default crypto/rand.
+	Rand  io.Reader
+	Clock clock.Clock
+	Log   *slog.Logger
 	// CacheBytes bounds the response cache; 0 disables it.
 	CacheBytes int64
 	// PreviewSecret signs preview tokens; required, at least MinPreviewSecret bytes.
@@ -124,6 +134,16 @@ type Options struct {
 	// PublicOptions are the channel options shown by GET /channels/{name}.
 	PublicOptions []string
 	Varies        []Varier
+	// ShareLinks enables share links: creating them, and accepting their tokens.
+	ShareLinks bool
+	// ShareDefaultTTL and ShareMaxTTL bound the lifetime of a new share link (default 24h and 168h).
+	ShareDefaultTTL, ShareMaxTTL time.Duration
+	// CORSOrigins are the origins (scheme://host[:port]) that may read the relay event stream, besides the
+	// request's own origin.
+	CORSOrigins []string
+	// MaxStreamsPerShare and MaxStreams cap the open relay event streams of one share link and of the server
+	// (defaults 20 and 1000).
+	MaxStreamsPerShare, MaxStreams int
 }
 
 // API is the delivery API.
@@ -137,6 +157,10 @@ type API struct {
 	oaETag  []string
 	single  *chanMeta           // the only channel, when there is exactly one
 	shared  map[string][]string // type → blocks fields that can hold shared blocks
+	shares  shareCache
+	hub     *hub
+	// corsOrigins are Options.CORSOrigins normalized (see normOrigin).
+	corsOrigins []string
 }
 
 type chanMeta struct {
@@ -166,7 +190,30 @@ func New(o Options) (*API, error) {
 	if o.Clock == nil {
 		o.Clock = clock.System{}
 	}
-	a := &API{o: o, log: o.Log, meta: map[string]*chanMeta{}}
+	if o.Rand == nil {
+		o.Rand = crand.Reader
+	}
+	if o.IDs == nil {
+		o.IDs = ids.NewGenerator(o.Clock, o.Rand)
+	}
+	if o.ShareDefaultTTL == 0 {
+		o.ShareDefaultTTL = DefaultShareTTL
+	}
+	if o.ShareMaxTTL == 0 {
+		o.ShareMaxTTL = MaxShareTTL
+	}
+	if o.MaxStreamsPerShare <= 0 {
+		o.MaxStreamsPerShare = DefaultMaxStreamsPerShare
+	}
+	if o.MaxStreams <= 0 {
+		o.MaxStreams = DefaultMaxStreams
+	}
+	a := &API{o: o, log: o.Log, meta: map[string]*chanMeta{}, hub: newHub(o.MaxStreamsPerShare, o.MaxStreams)}
+	for _, origin := range o.CORSOrigins {
+		if n, ok := normOrigin(origin); ok {
+			a.corsOrigins = append(a.corsOrigins, n)
+		}
+	}
 	a.shared = a.sharedFields()
 	if a.log == nil {
 		a.log = slog.New(slog.DiscardHandler)

@@ -35,6 +35,8 @@ type claims struct {
 	Channel string `json:"ch"`
 	Item    string `json:"item,omitempty"`
 	Exp     int64  `json:"exp"`
+
+	share string // the id of the share session a share token belongs to
 }
 
 var b64 = base64.RawURLEncoding
@@ -94,9 +96,18 @@ func (a *API) verifyPreview(tok string) (*claims, error) {
 	return &cl, nil
 }
 
+// verifyToken accepts either kind of preview token: a signed one, or a share token (looked up by hash).
+func (a *API) verifyToken(ctx context.Context, tok string) (*claims, error) {
+	if strings.HasPrefix(tok, SharePrefix) {
+		return a.verifyShare(ctx, tok)
+	}
+	return a.verifyPreview(tok)
+}
+
 // VerifyPreviewToken checks a preview token's signature and expiry and returns the channel it belongs to and
-// the item it is limited to ("" for the whole channel). Modules that serve pages themselves use it to accept
-// ?preview=.
+// the item it is limited to ("" for the whole channel). It accepts signed (HMAC) tokens only: share tokens
+// (hps_…) need a store lookup, which [API.PreviewTokenInfo] does, and that accepts both kinds. Modules that serve
+// pages themselves use it to accept ?preview=.
 func (a *API) VerifyPreviewToken(tok string) (chanName, item string, err error) {
 	cl, err := a.verifyPreview(tok)
 	if err != nil {
@@ -182,7 +193,7 @@ func (a *API) mintHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	ttl, err := parseTTL(in.TTL)
+	ttl, err := parseTTL(in.TTL, MaxPreviewTTL)
 	if err != nil {
 		manage.Fail(w, r, err)
 		return
@@ -295,7 +306,7 @@ func withPreview(u, tok string) string {
 	return u
 }
 
-func parseTTL(raw json.RawMessage) (time.Duration, error) {
+func parseTTL(raw json.RawMessage, limit time.Duration) (time.Duration, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return 0, nil
 	}
@@ -316,8 +327,8 @@ func parseTTL(raw json.RawMessage) (time.Duration, error) {
 		}
 		d = time.Duration(secs * float64(time.Second))
 	}
-	if d < time.Second || d > MaxPreviewTTL {
-		return 0, manage.BadRequest("ttl must be between 1s and %s", MaxPreviewTTL)
+	if d < time.Second || d > limit {
+		return 0, manage.BadRequest("ttl must be between 1s and %s", limit)
 	}
 	return d, nil
 }

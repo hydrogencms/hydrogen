@@ -230,6 +230,107 @@ func (m *Manage) PreviewToken(ctx context.Context, in PreviewTokenInput) (*Previ
 	return &out, nil
 }
 
+// ShareInput asks for a share link: a preview of one item that anyone holding the link can open.
+type ShareInput struct {
+	Item    string
+	Channel string
+	Locale  string        // optional; default the item's main locale if the channel serves it
+	TTL     time.Duration // 0: the server's default (24 hours); at most delivery.share_max_ttl
+}
+
+// Share is a created share link. Token and URL are only in the answer to [Manage.CreateShare].
+type Share struct {
+	ID        string `json:"id"`
+	Token     string `json:"token,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Channel   string `json:"channel"`
+	Locale    string `json:"locale"`
+	CreatedBy string `json:"createdBy,omitempty"`
+	// CreatedByName is the creator's display name, empty when unknown (listings only).
+	CreatedByName string     `json:"createdByName,omitempty"`
+	CreatedAt     time.Time  `json:"createdAt,omitempty"`
+	ExpiresAt     time.Time  `json:"expiresAt"`
+	RevokedAt     *time.Time `json:"revokedAt,omitempty"`
+	// Viewers is the number of live event streams of the link on the server that answered (listings only).
+	Viewers int `json:"viewers,omitempty"`
+}
+
+// CreateShare creates a share link to an item's preview (needs content.preview.share).
+func (m *Manage) CreateShare(ctx context.Context, in ShareInput) (*Share, error) {
+	body := map[string]any{"item": in.Item, "channel": in.Channel}
+	if in.Locale != "" {
+		body["locale"] = in.Locale
+	}
+	if in.TTL > 0 {
+		body["ttl"] = strconv.FormatFloat(in.TTL.Seconds(), 'f', -1, 64) + "s"
+	}
+	_, raw, err := m.c.call(ctx, http.MethodPost, "/preview-shares", "", body, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	var out Share
+	if err := decode(raw, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// Shares lists the share links of an item, newest first, including expired and revoked ones. Tokens are not
+// listed.
+func (m *Manage) Shares(ctx context.Context, item string) ([]Share, error) {
+	q := &query{}
+	q.add("item", item)
+	_, raw, err := m.c.call(ctx, http.MethodGet, "/preview-shares", q.String(), nil, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	var out struct {
+		Shares []Share `json:"shares"`
+	}
+	if err := decode(raw, &out); err != nil {
+		return nil, err
+	}
+	return out.Shares, nil
+}
+
+// RevokeShare revokes a share link; it is idempotent.
+func (m *Manage) RevokeShare(ctx context.Context, id string) error {
+	_, _, err := m.c.call(ctx, http.MethodDelete, "/preview-shares/"+url.PathEscape(id), "", nil, nil, false)
+	return err
+}
+
+// RelayDraft relays an editor's unsaved working document of an item (all its fields, as a draft update
+// would carry them) to previews: share-link viewers and the admin's preview frame show it instead of the saved
+// draft until it is dropped, superseded by a save or an hour old. Nothing is saved. It returns the revision.
+// An empty locale means the item's main locale.
+func (m *Manage) RelayDraft(ctx context.Context, item, locale string, fields any) (int64, error) {
+	q := &query{}
+	if locale != "" {
+		q.add("locale", locale)
+	}
+	_, raw, err := m.c.call(ctx, http.MethodPut, "/preview-relay/"+url.PathEscape(item), q.String(), map[string]any{"fields": fields}, nil, false)
+	if err != nil {
+		return 0, err
+	}
+	var out struct {
+		Rev int64 `json:"rev"`
+	}
+	if err := decode(raw, &out); err != nil {
+		return 0, err
+	}
+	return out.Rev, nil
+}
+
+// DropRelay removes the relayed working document of an item and locale: previews show the saved draft again.
+func (m *Manage) DropRelay(ctx context.Context, item, locale string) error {
+	q := &query{}
+	if locale != "" {
+		q.add("locale", locale)
+	}
+	_, _, err := m.c.call(ctx, http.MethodDelete, "/preview-relay/"+url.PathEscape(item), q.String(), nil, nil, false)
+	return err
+}
+
 func (m *Manage) view(ctx context.Context, method, path, query string, body any) (*View, error) {
 	_, raw, err := m.c.call(ctx, method, path, query, body, nil, false)
 	if err != nil {

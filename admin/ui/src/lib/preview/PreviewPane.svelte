@@ -12,12 +12,16 @@
   import Skeleton from '../ui/Skeleton.svelte';
   import { blocksCatalog } from '../blocks/catalog.svelte';
   import { readShared } from '../blocks/shared';
+  import { session } from '../auth/session.svelte';
   import Canvas from '../canvas/Canvas.svelte';
   import type { LayoutNode } from '../canvas/drop';
   import { textRefs } from '../canvas/texts';
   import type { CompiledField } from '../types.svelte';
   import '../messages/canvas';
   import { PreviewHost, type HostStatus } from './host';
+  import type { RelayState } from './relay';
+  import ShareDialog from './ShareDialog.svelte';
+  import type { ShareList } from './shares.svelte';
 
   export interface PreviewChannel {
     name: string;
@@ -31,12 +35,11 @@
     locale,
     channels,
     doc,
-    save,
-    saveState = 'idle',
-    saveMessage = '',
-    paused = false,
-    onreload,
-    onkeep,
+    flush = async () => true,
+    relayState = 'idle',
+    dirty = false,
+    shares,
+    onmode,
     principal = '',
     fields = [],
     setField = () => {},
@@ -49,15 +52,15 @@
     channels: PreviewChannel[];
     /** The working document: `{fields}` for the edited locale (what the form holds right now). */
     doc: unknown;
-    /** Reload mode: saves the draft; true when it is saved. */
-    save: () => Promise<boolean>;
-    saveState?: 'idle' | 'saving' | 'saved' | 'error';
-    /** Why the last autosave did not happen, when it did not. */
-    saveMessage?: string;
-    /** Autosave is paused because the item changed elsewhere: shows the Reload / Keep editing banner. */
-    paused?: boolean;
-    onreload?: () => void;
-    onkeep?: () => void;
+    /** Reload mode: resolves true when the server holds the working document (the relay has sent it). */
+    flush?: () => Promise<boolean>;
+    relayState?: RelayState;
+    /** The form has unsaved changes. */
+    dirty?: boolean;
+    /** The item's share links (the editor keeps the list: it relays drafts while a link is active). */
+    shares?: ShareList;
+    /** The frame's protocol mode, so the editor knows when reload mode needs the relay. */
+    onmode?: (mode: 'live' | 'reload' | null) => void;
     /** Keys the remembered channel and device per person. */
     principal?: string;
     /** The item type's fields, for the canvas (inline text edits, empty blocks fields). */
@@ -67,7 +70,7 @@
     readonly?: boolean;
   } = $props();
 
-  // Props like item={data.id} are getters on the editor's whole item, which every autosave replaces: compare by value,
+  // Props like item={data.id} are getters on the editor's whole item, which every save replaces: compare by value,
   // so the token and the protocol host only start over when the item, its type or the locale really change.
   const itemId = $derived(item);
   const typeName = $derived(itemType);
@@ -193,7 +196,8 @@
       item: itemId,
       itemType: typeName,
       locale: lang,
-      save: () => save(),
+      save: () => flush(),
+      saveDelay: 50,
       onStatus: (s) => (status = s),
       onRendered: (n) => {
         ms = n;
@@ -264,6 +268,14 @@
   $effect(() => {
     host?.setDoc(working);
   });
+  $effect(() => {
+    const p = status.phase;
+    onmode?.(p === 'live' || p === 'reload' ? p : null);
+  });
+
+  // ---- sharing
+  let shareOpen = $state(false);
+  const canShare = $derived(!!shares && session.can('content.preview.share', { type: typeName }));
 
   let noticed = $state(sessionStorage.getItem('h.preview.noticed') === '1');
   function dismissNotice() {
@@ -326,6 +338,9 @@
       onclick={() => (canvasOn = !canvasOn)}
     />
     <span class="h-spacer"></span>
+    {#if canShare}
+      <Button size="sm" icon="link" title={t('preview.shareHint')} disabled={!channel} onclick={() => (shareOpen = true)}>{t('preview.share')}</Button>
+    {/if}
     <IconButton icon="refresh" size="sm" label={t('preview.reload')} onclick={reload} disabled={phase !== 'ready'} />
     {#if src}
       <Button size="sm" icon="external-link" href={src} {...{ target: "_blank", rel: "noopener", "aria-label": t('preview.open'), title: t('preview.open') }} />
@@ -337,22 +352,14 @@
       {#if status.phase === 'unverified'}<span class="h-muted">{t('preview.unverifiedHint')}</span>{/if}
       {#if ms !== null}<span class="h-preview__ms h-num" title={t('preview.latencyLabel', { ms })}>{t('preview.latency', { ms })}</span>{/if}
       {#if status.phase === 'reload'}
-        <span class="h-muted h-preview__save" title={t('preview.saveHint')}>
-          {#if saveState === 'saving'}{t('preview.saving')}{:else if saveState === 'saved'}{t('preview.saved')}{:else if saveState === 'error'}{saveMessage || t('preview.saveFailed')}{/if}
+        <span class="h-muted h-preview__save" class:h-preview__msg={relayState === 'invalid' || relayState === 'error' || relayState === 'stopped'} title={t('preview.relayHint')}>
+          {#if relayState === 'sending'}{t('preview.relaySending')}{:else if relayState === 'invalid'}{t('preview.relayInvalid')}{:else if relayState === 'stopped'}{t('preview.relayStopped')}{:else if relayState === 'error'}{t('preview.relayError')}{:else if dirty}{t('preview.relayShown')}{/if}
         </span>
       {/if}
       {#if status.phase === 'error' && status.message}<span class="h-preview__msg">{status.message}</span>{/if}
     {/if}
   </div>
-  {#if paused}
-    <div class="h-alert h-preview__banner" role="alert">
-      <span>{t('preview.conflict')}</span>
-      <span class="h-row">
-        <Button size="sm" onclick={onreload}>{t('preview.conflictReload')}</Button>
-        <Button size="sm" variant="ghost" onclick={onkeep}>{t('preview.conflictKeep')}</Button>
-      </span>
-    </div>
-  {:else if status.phase === 'reload' && !noticed}
+  {#if status.phase === 'reload' && !noticed}
     <div class="h-preview__notice" role="note">
       <span>{t('preview.notice')}</span>
       <Button size="sm" variant="ghost" onclick={dismissNotice}>{t('preview.noticeOk')}</Button>
@@ -395,6 +402,10 @@
   </div>
 </div>
 
+{#if shares && canShare}
+  <ShareDialog bind:open={shareOpen} item={itemId} channel={channel?.name ?? ''} locale={chLocale} {shares} />
+{/if}
+
 <style>
   .h-preview {
     display: flex;
@@ -425,7 +436,6 @@
     font-size: var(--h-text-xs);
     line-height: 1.5rem;
   }
-  .h-preview__banner,
   .h-preview__notice {
     display: flex;
     align-items: center;

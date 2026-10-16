@@ -37,11 +37,12 @@ test('cookie values and options', () => {
   assert.equal(tokenFromCookie(undefined), undefined)
   assert.equal(tokenFromCookie('a b'), undefined)
   assert.equal(validToken(''), false)
+  assert.equal(tokenFromCookie('hps_Ab-_09'), 'hps_Ab-_09')
   const http = previewCookieOptions(false)
   assert.deepEqual([http.httpOnly, http.sameSite, http.secure, http.path], [true, 'lax', false, '/'])
   const https = previewCookieOptions(true)
   assert.deepEqual([https.httpOnly, https.sameSite, https.secure], [true, 'none', true])
-  assert.ok(https.maxAge <= 3600)
+  assert.equal(https.maxAge, 604800)
 })
 
 test('preview URL of an item without a route', () => {

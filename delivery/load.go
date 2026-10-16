@@ -88,6 +88,7 @@ func (st *state) pickAll(rows []store.Snapshot, into map[ids.UUID]*resolved) {
 func (st *state) load(ctx context.Context, list []ids.UUID) ([]*resolved, error) {
 	got := make(map[ids.UUID]*resolved, len(list))
 	rest := make([]ids.UUID, 0, len(list))
+	st.prefetchRelays(ctx, list)
 	for _, id := range list {
 		st.look(id, "")
 		if _, dup := got[id]; dup {
@@ -167,10 +168,11 @@ func (st *state) draft(ctx context.Context, id ids.UUID) (*resolved, error) {
 		}
 		return nil, err
 	}
-	return st.resolveDraft(v)
+	return st.resolveDraft(ctx, v)
 }
 
-func (st *state) resolveDraft(v *content.View) (*resolved, error) {
+func (st *state) resolveDraft(ctx context.Context, v *content.View) (*resolved, error) {
+	v = st.relayed(ctx, v)
 	payload, refs, err := st.a.o.Content.PreviewPayload(v)
 	if err != nil {
 		return nil, err

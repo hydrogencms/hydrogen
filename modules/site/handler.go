@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/ids"
@@ -166,10 +167,10 @@ func previewTokenOf(r *http.Request, channel string) (tok string, fromCookie boo
 // stored in an HttpOnly cookie so navigation keeps previewing; a bad one from the URL is an error, and a bad
 // cookie is dropped.
 func (s *server) acceptToken(w http.ResponseWriter, r *http.Request, tok string, fromCookie bool, chName string) (token string, done bool) {
-	name, _, err := s.svc.Delivery.VerifyPreviewToken(tok)
+	name, _, exp, err := s.svc.Delivery.PreviewTokenInfo(tok)
 	if err == nil && (chName == "" || name == chName) {
 		if !fromCookie {
-			c := &http.Cookie{Name: previewCookie(name), Value: tok, Path: "/", MaxAge: 3600, HttpOnly: true, SameSite: http.SameSiteLaxMode}
+			c := &http.Cookie{Name: previewCookie(name), Value: tok, Path: "/", MaxAge: cookieMaxAge(exp), HttpOnly: true, SameSite: http.SameSiteLaxMode}
 			if s.schemeOf(r) == "https" {
 				// The admin embeds the page in a frame, which is cross-site when the hosts differ.
 				c.SameSite, c.Secure, c.Partitioned = http.SameSiteNoneMode, true, true
@@ -187,6 +188,15 @@ func (s *server) acceptToken(w http.ResponseWriter, r *http.Request, tok string,
 	w.Header().Set("Cache-Control", "no-store")
 	http.Error(w, "invalid or expired preview token", http.StatusUnauthorized)
 	return "", true
+}
+
+// cookieMaxAge keeps the preview cookie as long as its token lives (share links last days); a token that
+// reports no expiry gets an hour.
+func cookieMaxAge(exp time.Time) int {
+	if exp.IsZero() {
+		return 3600
+	}
+	return max(1, int(time.Until(exp).Seconds()))
 }
 
 func (s *server) cacheControl(ch *channel.Channel) string {
@@ -302,7 +312,7 @@ func (s *server) serveAsset(w http.ResponseWriter, r *http.Request) {
 // data-h-root element to swap on reload (unless the layout marks one), and the bridge script. The marker holds
 // the SHA-256 of the preview token, which proves to the admin that this server knows the token.
 func injectPreview(page []byte, adminOrigin, tokenHash string) []byte {
-	marker := `<meta name="hydrogen-preview" content="` + tokenHash + `">`
+	marker := `<meta name="robots" content="noindex"><meta name="hydrogen-preview" content="` + tokenHash + `">`
 	script := `<script src="` + bridgeURL + `" data-auto data-mode="reload" data-admin-origin="` + adminOrigin + `"></script>`
 	out := page
 	if !rootAttr.Match(out) {

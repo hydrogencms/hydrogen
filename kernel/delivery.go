@@ -92,9 +92,16 @@ func newDelivery(s *Services, reg *Registry) (*delivery.API, error) {
 	if err != nil {
 		return nil, err
 	}
+	if c := s.Core.Delivery; c.ShareDefaultTTL <= 0 || c.ShareMaxTTL <= 0 || c.ShareMaxTTL > delivery.ShareTTLLimit ||
+		c.ShareDefaultTTL > c.ShareMaxTTL {
+		return nil, fmt.Errorf("delivery.share_default_ttl (%s) and delivery.share_max_ttl (%s) must be positive, the default at most the maximum, "+
+			"and the maximum at most %s", c.ShareDefaultTTL, c.ShareMaxTTL, delivery.ShareTTLLimit)
+	}
 	o := delivery.Options{Content: s.Content, Schema: s.Schema, Channels: s.Channels, Reader: s.DB.Reader(),
 		Notifier: s.DB.Notifier(), Clock: s.Clock, Log: s.Log, CacheBytes: s.Core.Delivery.CacheBytes,
-		PreviewSecret: secret, Varies: reg.varies}
+		PreviewSecret: secret, Varies: reg.varies, DB: s.DB, Audit: s.Audit, IDs: s.IDs,
+		ShareLinks: s.Core.Delivery.ShareLinks, ShareDefaultTTL: s.Core.Delivery.ShareDefaultTTL,
+		ShareMaxTTL: s.Core.Delivery.ShareMaxTTL, CORSOrigins: frameOrigins(s, reg)}
 	for _, rt := range reg.deliveryRts {
 		o.Routes = append(o.Routes, rt.value)
 	}

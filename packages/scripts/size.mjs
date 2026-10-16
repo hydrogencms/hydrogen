@@ -1,11 +1,11 @@
-// Fails when a package's dist/*.js (all modules, concatenated; the bridge's IIFE copy is not counted) exceeds its gzip budget (5 KB; the Next adapter 7 KB: proxy, cache and preview plus the live-preview wrapper; the bridge 5 KB with canvas editing).
+// Fails when a package's dist/*.js (all modules, concatenated; the bridge's IIFE copy is not counted) exceeds its gzip budget (5 KB; the Next adapter 7.25 KB (share links: week-long cookie): proxy, cache and preview plus the live-preview wrapper; the bridge 5.5 KB with canvas editing and viewer mode).
 import { readFileSync, readdirSync } from 'node:fs'
 import { gzipSync } from 'node:zlib'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const budgets = { client: 5, router: 5, next: 7, 'admin-sdk': 5, bridge: 5, react: 5 }
+const budgets = { client: 5, router: 5, next: 7.25, 'admin-sdk': 5, bridge: 5.5, react: 5 }
 let failed = false
 for (const pkg of ['client', 'router', 'bridge', 'react', 'next', 'admin-sdk']) {
   const dir = join(root, pkg, 'dist')

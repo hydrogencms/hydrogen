@@ -23,7 +23,7 @@ export interface HostOptions {
   item: string;
   itemType: string;
   locale: string;
-  /** Reload mode: save the draft; resolves true when the server has what the form shows. */
+  /** Reload mode: make the server hold the working document (the relay); resolves true when it does. */
   save?(): Promise<boolean>;
   onStatus?(s: HostStatus): void;
   onRendered?(ms: number, rev: number): void;

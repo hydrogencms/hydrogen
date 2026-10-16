@@ -50,6 +50,8 @@ export interface Options<Q = never, B = never> {
   ifMatch?: string;
   /** Called with the response headers of a successful call (e.g. to keep the item's new ETag). */
   onHeaders?: (h: Headers) => void;
+  /** fetch `keepalive`: the request outlives the page (a `pagehide` cleanup). */
+  keepalive?: boolean;
 }
 
 export interface Handlers {
@@ -100,6 +102,7 @@ async function request(method: string, path: string, o: Options<any, any> = {}):
       body,
       credentials: 'same-origin',
       signal: o.signal,
+      keepalive: o.keepalive,
     });
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;

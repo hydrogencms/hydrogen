@@ -24,6 +24,7 @@ var (
 	hContentType = []string{"application/json; charset=utf-8"}
 	hNoSniff     = []string{"nosniff"}
 	hNoStore     = []string{"no-store"}
+	hNoIndex     = []string{"noindex"}
 )
 
 func errUnavailable() error { return manage.NotFound("%s", unavailable) }
@@ -40,6 +41,9 @@ type state struct {
 	noStore bool
 	looked  map[ids.UUID]string // every item id the response looked up, with its type ("" when unknown)
 	whole   []stored            // payloads that may have been sent unchanged as the whole body
+	// relays holds the relayed drafts of the items prefetchRelays looked up, by item (none: no entry).
+	relays   map[ids.UUID][]store.RelayDraft
+	relaysOf map[ids.UUID]bool
 }
 
 // stored is a snapshot payload with the ETag the store holds for it.
@@ -248,11 +252,11 @@ func (a *API) selectChannel(r *http.Request, cl *claims) (*chanMeta, *manage.Err
 // wrap serves a route: channel and preview selection, the cache lookup, then the handler on a miss.
 func (a *API) wrap(rt route) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var cl *claims
-		if tok := previewToken(r); tok != "" {
+		cl, _ := r.Context().Value(claimsKey{}).(*claims)
+		if tok := previewToken(r); tok != "" && cl == nil {
 			var err error
-			if cl, err = a.verifyPreview(tok); err != nil {
-				a.plainError(w, unauthorized("invalid or expired preview token"))
+			if cl, err = a.verifyToken(r.Context(), tok); err != nil {
+				a.previewFailed(w, r, err)
 				return
 			}
 		}
@@ -444,6 +448,9 @@ func (a *API) finish(w http.ResponseWriter, r *http.Request, st *state, c *captu
 	h["X-Content-Type-Options"] = hNoSniff
 	h["Vary"] = st.m.hVary
 	body := c.body.Bytes()
+	if st.preview != nil && st.preview.share != "" {
+		h["X-Robots-Tag"] = hNoIndex
+	}
 	if status != http.StatusOK || c.noStore || st.noStore || st.preview != nil {
 		h["Cache-Control"] = hNoStore
 		w.WriteHeader(status)

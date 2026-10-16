@@ -191,44 +191,55 @@ test.describe.serial('reload mode preview', () => {
     id = (await manage('POST', '/collections/landing/items', { locale: 'de', fields: { title: `Reload ${t}` } })).id;
   });
 
-  test('autosaves the draft and the frame refreshes', async ({ page }) => {
+  test('the relay shows unsaved edits in the frame without saving the draft', async ({ page }) => {
     await signIn(page, adminLogin, adminPassword);
     await page.goto(`/admin/items/${id}`);
     await page.getByRole('button', { name: 'Preview', exact: true }).click();
     const frame = frameOf(page);
     await expect(frame.locator('#title')).toHaveText(`Reload ${t}`);
     await expect(page.getByRole('status').filter({ hasText: 'Reload mode' })).toBeVisible();
+    await expect(page.getByText(/saves your changes to the draft/)).toHaveCount(0);
 
     await add(rootAdd(page), /^Hero/);
     await card(page, 'hero').getByLabel(/^Heading/).fill('Servergerendert');
     await expect(frame.locator('[data-h-block="hero"] .h')).toHaveText('Servergerendert');
-    await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Unsaved changes shown')).toBeVisible();
 
-    // The draft was saved by the pane: no publish, no version.
+    // Nothing was saved: the draft is as created until Save.
+    const before = await draftOf(id, 'de');
+    expect(before.fields.body).toBeUndefined();
+    expect(before.version).toBe(0);
+
+    await page.getByRole('button', { name: 'Save', exact: true }).first().click();
+    await expect(page.getByRole('button', { name: 'Saved', exact: true }).first()).toBeVisible();
     const draft = await draftOf(id, 'de');
     expect(draft.fields.body[0].props.heading).toBe('Servergerendert');
     expect(draft.status).toBe('draft');
-    expect(draft.version).toBe(0);
-    await expect(page.getByRole('button', { name: 'Saved', exact: true }).first()).toBeVisible();
+    await expect(frame.locator('[data-h-block="hero"] .h')).toHaveText('Servergerendert');
   });
 
-  test('a conflict pauses autosave and never overwrites', async ({ page }) => {
-    const other = (await manage('POST', '/collections/landing/items', { locale: 'de', fields: { title: `Conflict ${t}` } })).id;
-    await signIn(page, adminLogin, adminPassword);
-    await page.goto(`/admin/items/${other}`);
-    await page.getByRole('button', { name: 'Preview', exact: true }).click();
-    await expect(page.getByText(/saves your changes to the draft/)).toBeVisible();
-    await expect(page.getByRole('status').filter({ hasText: 'Reload mode' })).toBeVisible();
-
-    await manage('PATCH', `/items/${other}`, { locale: 'de', fields: { title: `Elsewhere ${t}` } });
-    await add(rootAdd(page), /^Hero/);
-    await card(page, 'hero').getByLabel(/^Heading/).fill('Mine');
-    await expect(page.getByRole('alert').filter({ hasText: 'changed somewhere else' })).toBeVisible();
-    await page.getByRole('button', { name: 'Keep editing' }).click();
-    await expect(page.getByRole('alert').filter({ hasText: 'changed somewhere else' })).toHaveCount(0);
-
-    const draft = await draftOf(other, 'de');
-    expect(draft.fields.title).toBe(`Elsewhere ${t}`);
-    expect(draft.fields.body).toBeUndefined();
+  test('two editors: the last relay wins and neither touches the draft', async ({ browser }) => {
+    const other = (await manage('POST', '/collections/landing/items', { locale: 'de', fields: { title: `Two ${t}` } })).id;
+    const open = async () => {
+      const ctx = await browser.newContext();
+      const page = await ctx.newPage();
+      await signIn(page, adminLogin, adminPassword);
+      await page.goto(`/admin/items/${other}`);
+      await page.getByRole('button', { name: 'Preview', exact: true }).click();
+      await expect(page.getByRole('status').filter({ hasText: 'Reload mode' })).toBeVisible();
+      return { ctx, page };
+    };
+    const a = await open();
+    const b = await open();
+    await a.page.getByRole('textbox', { name: 'Title' }).fill(`First ${t}`);
+    await expect(frameOf(a.page).locator('#title')).toHaveText(`First ${t}`);
+    await b.page.getByRole('textbox', { name: 'Title' }).fill(`Second ${t}`);
+    await expect(frameOf(b.page).locator('#title')).toHaveText(`Second ${t}`);
+    // The relay is one row per item: editor A's next change replaces B's.
+    await a.page.getByRole('textbox', { name: 'Title' }).fill(`Third ${t}`);
+    await expect(frameOf(a.page).locator('#title')).toHaveText(`Third ${t}`);
+    expect((await draftOf(other, 'de')).fields.title).toBe(`Two ${t}`);
+    await a.ctx.close();
+    await b.ctx.close();
   });
 });

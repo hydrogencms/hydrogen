@@ -7,10 +7,13 @@ import (
 	"github.com/hydrogencms/hydrogen/cachetag"
 )
 
-// Start subscribes to cache purges and applies them until ctx ends. It returns once the subscription is
+// Start subscribes to preview (relay) notifications and cache purges and applies them until ctx ends. It returns once the subscription is
 // active, so a purge sent after Start returns is not missed. An empty-payload notification (sent after a
 // listener reconnects, when messages may have been lost) clears the whole cache.
 func (a *API) Start(ctx context.Context) error {
+	if err := a.startEvents(ctx); err != nil {
+		return err
+	}
 	if a.cache == nil || a.o.Notifier == nil {
 		return nil
 	}

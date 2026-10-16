@@ -64,6 +64,7 @@ type Tx interface {
 	Audit() AuditStore
 	Content() ContentStore
 	Auth() AuthStore
+	Preview() PreviewStore
 	// SQL runs a module's own statements in this transaction.
 	SQL() SQL
 	// Notify queues a notification on channel, sent after commit.

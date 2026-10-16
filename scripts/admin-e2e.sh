@@ -160,7 +160,7 @@ cd "$root/examples/starter"
 "$work/starter" import fixture >>"$work/server.log" 2>&1 || fail "starter import"
 start_server "$work/starter" "$sport"
 
-echo "== playwright (starter: block editor and preview)"
+echo "== playwright (starter: block editor, preview and share links)"
 run_playwright "$sport" E2E_PROJECT=starter PREVIEW_HOST="http://127.0.0.1:$hport" || exit $?
 stop_servers
 fi
@@ -213,7 +213,7 @@ if [ -z "$only" ] || [ "$only" = fullstack ]; then
   export SITE_URL="$site" ADMIN_URL="$site"
   cd "$root/examples/fullstack"
   new_cms fullstack "$work/fullstack" "$fport" ../starter/fixture
-  echo "== playwright (the site module: reload mode)"
+  echo "== playwright (the site module: reload mode and share links)"
   status=0
   run_playwright "$fport" E2E_PROJECT=fullstack || status=$?
   if [ -n "${E2E_KEEP:-}" ]; then

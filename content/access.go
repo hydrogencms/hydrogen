@@ -172,6 +172,12 @@ func (s *Service) readable(ctx context.Context, c store.ContentStore, it store.I
 // on it. Without a principal it allows. Tokens are not tied to the principal that minted them; they expire
 // within an hour.
 func (s *Service) CanPreview(ctx context.Context, ch *channel.Channel, id ids.UUID) error {
+	return s.CanPreviewItem(ctx, ch, id, false)
+}
+
+// CanPreviewItem is CanPreview with a nil channel allowed (no collection check), and with share also requiring
+// content.preview.share on the item: the check for creating and revoking share links.
+func (s *Service) CanPreviewItem(ctx context.Context, ch *channel.Channel, id ids.UUID, share bool) error {
 	if !s.guarded(ctx) {
 		return nil
 	}
@@ -187,10 +193,16 @@ func (s *Service) CanPreview(ctx context.Context, ch *channel.Channel, id ids.UU
 		if err := s.authorizeItem(ctx, tx.Content(), it, access.PolicyContentRead, nil); err != nil {
 			return err
 		}
-		if !ch.AllowsCollection(it.Type) {
+		if ch != nil && !ch.AllowsCollection(it.Type) {
 			return fmt.Errorf("%w: %s is not available on channel %s", ErrNotFound, id, ch.Name)
 		}
-		return s.authorizeItem(ctx, tx.Content(), it, access.PolicyContentPreview, nil)
+		if err := s.authorizeItem(ctx, tx.Content(), it, access.PolicyContentPreview, nil); err != nil {
+			return err
+		}
+		if share {
+			return s.authorizeItem(ctx, tx.Content(), it, access.PolicyContentPreviewShare, nil)
+		}
+		return nil
 	})
 }
 

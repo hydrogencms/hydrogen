@@ -285,6 +285,8 @@ export interface BridgeOptions {
   onReload?: (rev: number) => void | Promise<void>
   /** override the preview detection (default isPreview()) */
   preview?: boolean
+  /** viewer mode (outside a frame): the events URL, or `false` to disable (default `${adminOrigin}/api/deliver/v1/preview/events`) */
+  relay?: string | false
   window?: W
 }
 
@@ -304,6 +306,7 @@ export function createBridge(o: BridgeOptions): Bridge {
   let doc: unknown
   let t0 = 0
   let on = false
+  let es: EventSource | undefined
   const now = () => (w.performance ?? Date).now()
   const post = (m: Obj) => w.parent.postMessage({ h: 1, ...m }, origin)
   const ready = () => {
@@ -328,7 +331,7 @@ export function createBridge(o: BridgeOptions): Bridge {
   const raf = (f: () => void) => (w.requestAnimationFrame ? w.requestAnimationFrame(f) : setTimeout(f, 0))
   const cv = canvas(w, post, raf)
   const resync = () => post({ type: 'resync', rev })
-  const error = (message: string) => post({ type: 'error', message })
+  const error = (message: string) => on && post({ type: 'error', message })
 
   const onMessage = (e: MessageEvent) => {
     const m = e.data
@@ -365,15 +368,57 @@ export function createBridge(o: BridgeOptions): Bridge {
     }
   }
 
+  // Viewer mode: a preview page outside a frame (a share link) follows the relayed draft over Server-Sent Events.
+  const view = () => {
+    const proof = previewProof(w)
+    if (es || o.relay === false || !proof || !w.EventSource) return
+    const u = new URL(o.relay || `${origin}/api/deliver/v1/preview/events`)
+    u.searchParams.set('proof', proof)
+    let last: unknown
+    let busy = false
+    let queued = false
+    // one swap in flight and at most one queued (it fetches the latest page), so an older response never lands last
+    const swap = () => {
+      if (busy) return void (queued = true)
+      busy = true
+      reloadSwap({ window: w })
+        .catch(reload)
+        .finally(() => {
+          busy = false
+          if (queued) (queued = false), swap()
+        })
+    }
+    es = new w.EventSource(u.href)
+    es.addEventListener('draft', (e) => {
+      try {
+        const m = JSON.parse((e as MessageEvent).data)
+        if (o.mode === 'live') return o.onInit?.({ item: m.item.id, itemType: m.item.type, locale: m.item.locale, rev: m.rev, doc: m.item })
+        const key = m.v ?? m.rev
+        if (last === undefined || key !== last) {
+          const first = last === undefined
+          last = key
+          if (!first) swap()
+        }
+      } catch (x) {
+        error(String((x as Error)?.message ?? x))
+      }
+    })
+    es.addEventListener('end', () => (es?.close(), reload()))
+  }
+
   const bridge: Bridge = {
     connect() {
-      if (on || w.parent === w || !(o.preview ?? isPreview(w))) return
+      if (on || es) return
+      if (!(o.preview ?? isPreview(w))) return
+      if (w.parent === w) return view()
       on = true
       w.addEventListener('message', onMessage)
       for (const t of ['click', 'auxclick']) w.addEventListener(t, follow, CAP)
       ready()
     },
     disconnect() {
+      es?.close()
+      es = undefined
       if (on) {
         w.removeEventListener('message', onMessage)
         for (const t of ['click', 'auxclick']) w.removeEventListener(t, follow, CAP)

@@ -89,6 +89,13 @@ type DeliveryConfig struct {
 	// PreviewSecret signs preview tokens: at least 32 characters, and required outside dev. In dev, when unset,
 	// it derives from manage.token, so every node sharing that token accepts the same previews.
 	PreviewSecret string `yaml:"preview_secret" config:"secret"`
+	// ShareLinks lets editors create share links to previews (default true); off, creating one is refused and
+	// existing ones stop working.
+	ShareLinks bool `yaml:"share_links"`
+	// ShareDefaultTTL and ShareMaxTTL are the lifetime of a new share link and the longest one allowed
+	// (default 24h and 168h; at most 720h).
+	ShareDefaultTTL time.Duration `yaml:"share_default_ttl"`
+	ShareMaxTTL     time.Duration `yaml:"share_max_ttl"`
 }
 
 type AdminConfig struct {
@@ -341,12 +348,13 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 		return nil, err
 	}
 	core := CoreConfig{
-		HTTP:     HTTPConfig{Addr: ":8080", ReadHeaderTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second},
-		Log:      LogConfig{Level: "info"},
-		Content:  ContentConfig{SchemaDir: "schema", DefaultLocale: "en"},
-		Delivery: DeliveryConfig{CacheBytes: delivery.DefaultCacheBytes},
-		Jobs:     JobsConfig{Enabled: true},
-		Admin:    AdminConfig{Enabled: true, Prefix: "/admin", ElementsDevEntry: "/src/elements.ts"},
+		HTTP:    HTTPConfig{Addr: ":8080", ReadHeaderTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second},
+		Log:     LogConfig{Level: "info"},
+		Content: ContentConfig{SchemaDir: "schema", DefaultLocale: "en"},
+		Delivery: DeliveryConfig{CacheBytes: delivery.DefaultCacheBytes, ShareLinks: true,
+			ShareDefaultTTL: delivery.DefaultShareTTL, ShareMaxTTL: delivery.MaxShareTTL},
+		Jobs:  JobsConfig{Enabled: true},
+		Admin: AdminConfig{Enabled: true, Prefix: "/admin", ElementsDevEntry: "/src/elements.ts"},
 	}
 	sections := []struct {
 		path   string
@@ -596,7 +604,7 @@ func (a *App) Handler() (http.Handler, error) {
 		api, err := manage.New(manage.Options{Content: a.services.Content, Auth: a.services.Auth, Gate: a.services.Access,
 			Admin: a.services.Admin, Catalog: a.services.Catalog,
 			Channels: a.services.Channels, Log: a.services.Log, Prefix: prefix,
-			Routes: append(slices.Clone(a.reg.manageRts), a.services.Delivery.PreviewTokenRoute())})
+			Routes: append(slices.Clone(a.reg.manageRts), a.services.Delivery.ManageRoutes()...)})
 		if err != nil {
 			return nil, err
 		}
@@ -626,18 +634,7 @@ func (a *App) mountAdmin(mux *http.ServeMux) error {
 		return nil
 	}
 	o := admin.Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: delivery.Prefix, Pages: slices.Contains(a.Modules(), "pages")}
-	for _, ch := range s.Channels.All() {
-		origin := ch.Frontend
-		for _, f := range a.reg.frameOrigins {
-			if x := f(ch); x != "" {
-				origin = x
-				break
-			}
-		}
-		if origin != "" {
-			o.FrameOrigins = append(o.FrameOrigins, origin)
-		}
-	}
+	o.FrameOrigins = frameOrigins(s, a.reg)
 	if s.Env == config.DevEnv {
 		o.DevURL = os.Getenv("ADMIN_DEV_URL")
 		o.ElementsDevURL = os.Getenv("ADMIN_ELEMENTS_DEV_URL")
@@ -651,6 +648,25 @@ func (a *App) mountAdmin(mux *http.ServeMux) error {
 		return fmt.Errorf("admin.prefix %q: %w", s.Core.Admin.Prefix, err)
 	}
 	return nil
+}
+
+// frameOrigins are the origins of the channels' frontends: what the admin may frame and what may read the
+// preview event stream.
+func frameOrigins(s *Services, reg *Registry) []string {
+	var out []string
+	for _, ch := range s.Channels.All() {
+		origin := ch.Frontend
+		for _, f := range reg.frameOrigins {
+			if x := f(ch); x != "" {
+				origin = x
+				break
+			}
+		}
+		if origin != "" {
+			out = append(out, origin)
+		}
+	}
+	return out
 }
 
 func handle(mux *http.ServeMux, pattern string, h http.Handler) (err error) {
@@ -825,5 +841,7 @@ func newRunner(s *Services, reg *Registry, hold time.Duration) (*jobs.Runner, er
 		list[i] = jobs.Job{Name: j.value.name, Schedule: j.value.schedule,
 			Run: func(ctx context.Context) error { return j.value.fn(ctx, s) }}
 	}
+	list = append(list, jobs.Job{Name: "preview.cleanup", Schedule: "@every 10m",
+		Run: func(ctx context.Context) error { return s.Delivery.CleanupPreview(ctx) }})
 	return jobs.NewRunner(jobs.Options{Clock: s.Clock, Locker: s.DB.Locker(), Log: s.Log, Hold: hold}, list)
 }

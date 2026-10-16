@@ -127,6 +127,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/blocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List block types and design tokens */
+        get: operations["listBlocks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels": {
         parameters: {
             query?: never;
@@ -610,6 +627,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/preview-relay/{item}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Relay an unsaved working document
+         * @description Stores the editor's unsaved fields of an item and locale, replacing the previous ones. Previews of the item (share links and the admin's frame) show them instead of the saved draft while they are newer than it and less than an hour old; nothing is saved. Needs content.edit on the item; fields are validated like a draft save (required fields may be missing).
+         */
+        put: operations["putPreviewRelay"];
+        post?: never;
+        /**
+         * Drop a relayed working document
+         * @description Previews fall back to the saved draft.
+         */
+        delete: operations["deletePreviewRelay"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/preview-shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List an item's share links
+         * @description Newest first, including expired and revoked links. Tokens are never listed. viewers counts the event streams open on the server that answers.
+         */
+        get: operations["listPreviewShares"];
+        put?: never;
+        /**
+         * Create a share link to an item's preview
+         * @description A share token (hps_…) opens the preview of one item in one channel for anyone who holds it, until it expires or is revoked; it is shown only in this response. url is the item's preview URL with ?preview=token, absent when none resolves. Needs content.preview.share; 403 when delivery.share_links is off.
+         */
+        post: operations["createPreviewShare"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/preview-shares/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke a share link
+         * @description Open event streams of the link end with reason revoked; requests with its token fail within seconds on every server.
+         */
+        delete: operations["revokePreviewShare"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/preview-tokens": {
         parameters: {
             query?: never;
@@ -850,6 +935,30 @@ export interface components {
             /** @description With hasMore: the last id of this page, for before. */
             next?: number;
         };
+        /** @description A block of a blocks field; the schema defines no block types. */
+        Block: Record<string, never>;
+        BlockCatalog: {
+            blocks: {
+                description?: string;
+                icon?: string;
+                label: string;
+                name: string;
+                /** @description Compiled fields, as in GET /types. */
+                props: Record<string, never>[];
+                slots?: {
+                    allow: string[];
+                    description?: string;
+                    label: string;
+                    max?: number;
+                    min?: number;
+                    name: string;
+                }[];
+            }[];
+            tokens: {
+                name: string;
+                values: string[];
+            }[];
+        };
         Catalog: {
             limitations: {
                 /** @description Values to offer; null means free text. */
@@ -876,6 +985,10 @@ export interface components {
             group: string;
             /** @description Ordered fallback. */
             languages: string[];
+            /** @description Collection to URL pattern for items no module routes (links in rich text and references). */
+            links: {
+                [key: string]: string;
+            };
             name: string;
             /** @description Module options by key. */
             options: {
@@ -1815,6 +1928,28 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listBlocks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Compiled block types and token sets. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockCatalog"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listChannels: {
@@ -3724,6 +3859,188 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Catalog"];
                 };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    putPreviewRelay: {
+        parameters: {
+            query?: {
+                /** @description A locale; default the item's main locale. */
+                locale?: string;
+            };
+            header?: never;
+            path: {
+                item: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    fields: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Stored. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: int64 */
+                        rev: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+            422: components["responses"]["Invalid"];
+        };
+    };
+    deletePreviewRelay: {
+        parameters: {
+            query?: {
+                /** @description A locale; default the item's main locale. */
+                locale?: string;
+            };
+            header?: never;
+            path: {
+                item: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dropped. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listPreviewShares: {
+        parameters: {
+            query: {
+                item: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The links. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        shares: {
+                            channel: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            createdBy: string;
+                            /** @description The creator's display name (user name, else login; token name), empty when unknown. */
+                            createdByName: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** Format: uuid */
+                            id: string;
+                            locale: string;
+                            /** Format: date-time */
+                            revokedAt?: string;
+                            viewers: number;
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createPreviewShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    channel: string;
+                    /** Format: uuid */
+                    item: string;
+                    /** @description Default the item's main locale if the channel serves it, else its first language. */
+                    locale?: string;
+                    /** @description Seconds or a duration such as 24h; at most delivery.share_max_ttl, default delivery.share_default_ttl. */
+                    ttl?: number | string;
+                };
+            };
+        };
+        responses: {
+            /** @description The share link. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        channel: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                        /** Format: uuid */
+                        id: string;
+                        locale: string;
+                        token: string;
+                        url?: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
+    revokePreviewShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
