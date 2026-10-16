@@ -187,6 +187,8 @@ type writeReq struct {
 	create bool
 	loaded bool // the item's state is loaded and the edit already authorized
 	meta   bool // item metadata (key, alwaysAvailable) changed
+	// audited: the caller records its own audit action (a version restore), so no item.update entry is written
+	audited bool
 }
 
 // writeDraft is the draft write path shared by create and update: merge, hooks, validate, split, store.
@@ -214,6 +216,14 @@ func (s *Service) writeDraft(ctx context.Context, tx store.Tx, st *itemState, re
 	if err := s.authorizeDraft(ctx, st, req, doc); err != nil {
 		return nil, err
 	}
+	if req.meta && !req.create && st.item.PublishedVersion > 0 {
+		// The key and availability go live at once: that is publishing, so the review gate applies.
+		if h := s.reviewHook(st); h != nil {
+			if st.reviewBypassed, err = h.CheckPublish(ctx, tx, st.item, hashDrafts(st)); err != nil {
+				return nil, err
+			}
+		}
+	}
 	now, actor := s.now(), audit.ActorFrom(ctx)
 	if req.create {
 		if err := c.InsertItem(ctx, st.item); err != nil {
@@ -227,6 +237,11 @@ func (s *Service) writeDraft(ctx context.Context, tx store.Tx, st *itemState, re
 	}
 	if changed || req.create {
 		if err := s.projectWorking(ctx, c, st); err != nil {
+			return nil, err
+		}
+	}
+	if (changed || req.meta) && !req.create {
+		if err := s.draftChanged(ctx, tx, st); err != nil {
 			return nil, err
 		}
 	}
@@ -376,9 +391,14 @@ func (s *Service) finishWrite(ctx context.Context, tx store.Tx, st *itemState, r
 			return itemErr(st.item.ID.String(), err)
 		}
 	}
-	data := map[string]any{"type": st.typ.Name, "locale": req.locale}
-	if err := s.record(ctx, tx, actor, action, st.item.ID, data); err != nil {
-		return err
+	if !req.audited {
+		data := map[string]any{"type": st.typ.Name, "locale": req.locale}
+		if st.reviewBypassed {
+			data["reviewBypassed"] = true
+		}
+		if err := s.record(ctx, tx, actor, action, st.item.ID, data); err != nil {
+			return err
+		}
 	}
 	// Only a key or availability change of a published item alters what delivery serves.
 	draft := !req.meta || st.item.PublishedVersion == 0
@@ -424,6 +444,11 @@ func (s *Service) Discard(ctx context.Context, id ids.UUID, parts []string) erro
 		}
 		if err := s.projectWorking(ctx, c, st); err != nil {
 			return err
+		}
+		if h := s.reviewHook(st); h != nil {
+			if err := h.Closed(ctx, tx, st.item, ReviewClosedDiscarded); err != nil {
+				return err
+			}
 		}
 		actor := audit.ActorFrom(ctx)
 		st.item.UpdatedAt, st.item.UpdatedBy = s.now(), actor.String()

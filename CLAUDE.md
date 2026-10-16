@@ -99,6 +99,11 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   unpublish actions) and publishes them in one transaction, now or scheduled (job `releases`, run as the principal
   who scheduled, re-loaded by `access.Authenticator.PrincipalOf`); one-item schedules are releases of kind `item`.
   Policy `release.manage`. Docs: `docs/releases.md`. Contract: `planning/design/editorial-h8a.md`.
+- Review (H8b): types with `review: true` publish only an approved draft (`review/`, hook `content.ReviewHook`:
+  `CheckPublish` on every publish path, `DraftChanged` on every draft change, `Closed` on publish/discard/trash);
+  policies `review.submit|approve|bypass`; four eyes (`content.review_four_eyes`). Versions: `POST
+  /items/{id}/versions/{n}/restore`; the admin compares versions client-side (`admin/ui/src/lib/diff`). Docs:
+  `docs/reviews.md`. Contract: `planning/design/editorial-h8b.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
@@ -187,6 +192,9 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
   (never before the patch, or the mapping misses the new text) and to a reload frame with its next `ready`.
 - `DELETE /items/{id}` moves an item to the trash; only `?permanent=true` on a trashed item removes it (the old hard
   delete). Async consumers that cleaned up on delete must also handle `item.unpublished` and `item.trashed`.
+- Anything that changes a draft (or item metadata) must go through the content service's write path or call the
+  review hook's `DraftChanged` itself, and anything that publishes must go through `publish()`; otherwise review
+  approvals go stale or get bypassed. The approval stores a hash of the draft (incl. key and availability).
 - Release publishing goes through `content.Service.PublishTx/UnpublishTx` inside one `store.Tx`: call the service's
   grant preparation before opening the transaction (small pools deadlock otherwise), and change release status only
   through the store's conditional transition, never a blind update (several nodes run the `releases` job and the API).

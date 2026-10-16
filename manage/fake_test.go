@@ -149,6 +149,10 @@ func (f *fake) VersionContent(_ context.Context, id ids.UUID, n int) (*content.V
 	return f.ver, f.rec(call{name: "VersionContent", id: id, arg: n})
 }
 
+func (f *fake) RestoreVersion(_ context.Context, id ids.UUID, n int, locales []string) (*content.View, error) {
+	return f.view, f.rec(call{name: "RestoreVersion", id: id, arg: []any{n, locales}})
+}
+
 func (f *fake) ReferencesVisible(_ context.Context, id ids.UUID) ([]content.Referrer, int, error) {
 	return f.refs, 0, f.rec(call{name: "References", id: id})
 }

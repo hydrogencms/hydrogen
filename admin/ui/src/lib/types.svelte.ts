@@ -35,6 +35,8 @@ export interface CompiledType {
   page?: boolean;
   /** Its blocks field can be embedded with a shared block. */
   blockset?: boolean;
+  /** Publishing needs an approved review. */
+  review?: boolean;
   namePattern?: string;
   admin?: { group?: string; icon?: string; list?: string[] };
   options?: Record<string, unknown>;

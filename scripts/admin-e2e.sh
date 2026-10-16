@@ -87,6 +87,17 @@ types:
       title: { type: string, translatable: true, required: true }
 YAML
 
+# Articles need an approved review before they publish (H8b: review.spec.ts, history.spec.ts). The principals the
+# other specs publish with (the management token, the administrator) hold review.bypass.
+python3 - "$work/schema/article.yaml" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = "  article:\n"
+assert old in s
+open(p, "w").write(s.replace(old, old + "    review: true\n", 1))
+PY
+
 # The careers channel also delivers German, so an editor confined to careers_en can translate and publish two
 # languages.
 mkdir -p "$work/config" && cp "$root/examples/multisite/config/"*.yaml "$work/config/"

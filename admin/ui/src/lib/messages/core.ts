@@ -57,6 +57,7 @@ export const core: Record<string, string> = {
   'nav.settings': 'Settings',
   'nav.publishing': 'Publishing',
   'nav.releases': 'Releases',
+  'nav.reviews': 'Reviews',
   'nav.trash': 'Trash',
   'nav.users': 'Users',
   'nav.groups': 'Groups',

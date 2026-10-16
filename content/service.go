@@ -36,6 +36,7 @@ type Service struct {
 	slugs      map[string]map[string]string // type → slug field → source field
 	migrations []Migration                  // sorted by name
 	rev        atomic.Int64                 // schema revision recorded by EnsureSchemaRev
+	review     atomic.Pointer[ReviewHook]   // the review workflow, see SetReview
 }
 
 // New checks the options and returns the service. DB, Schema and Outbox are required; the other options
@@ -73,7 +74,9 @@ func New(o Options) (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("content: encode schema: %w", err)
 	}
-	return &Service{o: o, compiled: compiled, slugs: slugSources(o.Schema), migrations: migrations}, nil
+	s := &Service{o: o, compiled: compiled, slugs: slugSources(o.Schema), migrations: migrations}
+	s.SetReview(o.Review)
+	return s, nil
 }
 
 func (s *Service) Schema() *schema.Schema { return s.o.Schema }

@@ -77,6 +77,11 @@ func (s *Service) trashItem(ctx context.Context, tx store.Tx, it store.Item) err
 	if err := s.takeOffline(ctx, tx, st); err != nil {
 		return err
 	}
+	if h := s.reviewHook(st); h != nil {
+		if err := h.Closed(ctx, tx, st.item, ReviewClosedTrashed); err != nil {
+			return err
+		}
+	}
 	actor, now := audit.ActorFrom(ctx), s.now()
 	st.item.UpdatedAt, st.item.UpdatedBy = now, actor.String()
 	if err := c.UpdateItem(ctx, st.item); err != nil {

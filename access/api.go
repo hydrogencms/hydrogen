@@ -157,6 +157,12 @@ const (
 	// PolicyReleaseManage creates, edits, schedules, cancels and publishes releases; the items in a release still
 	// need content.publish when it runs.
 	PolicyReleaseManage = "release.manage"
+	// Review policies (types with `review: true`): submit a draft for review, approve it or request changes,
+	// and publish without an approval (administrators through "*"). Item rules and limitations apply as for
+	// the content policies: submit like edit, approve and bypass like publish.
+	PolicyReviewSubmit  = "review.submit"
+	PolicyReviewApprove = "review.approve"
+	PolicyReviewBypass  = "review.bypass"
 	PolicyUserManage    = "user.manage"
 	PolicyRoleManage    = "role.manage"
 	PolicyTokenManage   = "token.manage"

@@ -1,5 +1,6 @@
 <script lang="ts">
   import '../../lib/messages/settings';
+  import '../../lib/messages/history';
   import { api, type Schemas } from '../../lib/api/client';
   import { session } from '../../lib/auth/session.svelte';
   import { t } from '../../lib/i18n';
@@ -14,7 +15,7 @@
   import Table from '../../lib/ui/Table.svelte';
   import Time from '../../lib/ui/Time.svelte';
   import {
-    ACTION_GROUPS, SINCE_PRESETS, auditQuery, filtersFromQuery, humanizeAction, shortId, subjectKind, type AuditFilters,
+    ACTION_GROUPS, SINCE_PRESETS, assignmentRole, auditQuery, filtersFromQuery, humanizeAction, itemIdOf, releaseOf, restoredVersion, reviewBypassed, shortId, subjectKind, type AuditFilters,
   } from './audit';
   import SettingsHead from './SettingsHead.svelte';
   import { reportError } from '../../lib/errors';
@@ -87,11 +88,15 @@
       if (e.actorKind === 'token' || e.actorKind === 'agent') kinds.add('token');
       const k = subjectKind(e.action);
       const d = e.data as { principalKind?: string; user?: string } | undefined;
-      if (k === 'assignment' && d?.principalKind && d.principalKind in directory) kinds.add(d.principalKind);
+      if (k === 'assignment') {
+        if (d?.principalKind && d.principalKind in directory) kinds.add(d.principalKind);
+        if (assignmentRole(e).id) kinds.add('role');
+      }
       if (e.action.startsWith('group.member_') && d?.user) kinds.add('user');
+      const itemId = itemIdOf(e);
+      if (itemId) ids.add(itemId);
       if (!e.subject) continue;
-      if (k === 'item') ids.add(e.subject);
-      else if (k in directory) kinds.add(k);
+      if (k in directory) kinds.add(k);
       else if (k === 'auth') kinds.add('user');
     }
     const wait: Promise<unknown>[] = [...kinds].map((k) => dir(k, directory[k]!));
@@ -132,20 +137,34 @@
   type Subject = { text: string; to?: string; tail?: { word?: string; text: string; to?: string } };
   function subjectOf(e: Entry): Subject | undefined {
     const k = subjectKind(e.action);
-    const d = e.data as { role?: string; principalKind?: string; principalId?: string; user?: string } | undefined;
+    const d = e.data as { principalKind?: string; principalId?: string; user?: string } | undefined;
     if (k === 'assignment') {
-      if (!d?.role) return undefined;
-      const who = d.principalKind && d.principalId ? names[`${d.principalKind}:${d.principalId}`] : undefined;
-      const path = { user: 'users', group: 'groups', token: 'tokens' }[d.principalKind ?? ''];
+      const r = assignmentRole(e);
+      const role = r.name ?? (r.id ? names[`role:${r.id}`] : undefined);
+      if (!role) return undefined;
+      const who = d?.principalKind && d.principalId ? names[`${d.principalKind}:${d.principalId}`] : undefined;
+      const path = { user: 'users', group: 'groups', token: 'tokens' }[d?.principalKind ?? ''];
       return {
-        text: d.role,
-        tail: who ? { word: e.action === 'assignment.delete' ? t('settings.audit.from') : t('settings.audit.to'), text: who, to: d.principalKind === 'token' ? '/settings/tokens' : path ? `/settings/${path}/${d.principalId}` : undefined } : undefined,
+        text: role,
+        tail: who ? { word: e.action === 'assignment.delete' ? t('settings.audit.from') : t('settings.audit.to'), text: who, to: d?.principalKind === 'token' ? '/settings/tokens' : path ? `/settings/${path}/${d?.principalId}` : undefined } : undefined,
       };
     }
     if (e.action === 'auth.login' || e.action === 'auth.logout' || e.action === 'auth.login_failed') return undefined;
-    if (!e.subject) return undefined;
+    const rel = releaseOf(e);
+    if (rel) return { text: rel.name || shortId(rel.id), to: `/releases/${rel.id}` };
+    const itemId = itemIdOf(e);
+    if (itemId) {
+      const version = restoredVersion(e);
+      return {
+        text: names[`item:${itemId}`] || shortId(itemId),
+        to: `/items/${itemId}`,
+        tail: version !== undefined ? { word: '·', text: t('settings.audit.version', { n: version }) } : undefined,
+      };
+    }
+    // A page entry that records no item is about a tree node, which has no readable name here.
+    if (k === 'page' || !e.subject) return undefined;
     const text = names[`${k === 'auth' ? 'user' : k}:${e.subject}`] || shortId(e.subject);
-    const to = { item: `/items/${e.subject}`, user: `/settings/users/${e.subject}`, group: `/settings/groups/${e.subject}`, role: `/settings/roles/${e.subject}`, token: '/settings/tokens' }[k];
+    const to = { user: `/settings/users/${e.subject}`, group: `/settings/groups/${e.subject}`, role: `/settings/roles/${e.subject}`, token: '/settings/tokens' }[k];
     const member = e.action.startsWith('group.member_') && d?.user ? names[`user:${d.user}`] : undefined;
     return { text, to, tail: member ? { text: member, to: `/settings/users/${d!.user}` } : undefined };
   }
@@ -198,7 +217,7 @@
             <button type="button" class="h-aud__opt" aria-pressed={applied.action === g.pattern} onclick={() => { set({ action: applied.action === g.pattern ? undefined : g.pattern }); close(); }}>{t(`settings.audit.group.${g.id}`)}{#if applied.action === g.pattern}<Icon name="check" size={14} />{/if}</button>
           {/each}
           <form class="h-aud__custom" onsubmit={(e) => { e.preventDefault(); set({ action: actionText.trim() || undefined }); close(); }}>
-            <Input aria-label={t('settings.audit.actionHint')} placeholder="content.publish, token.*" bind:value={actionText} />
+            <Input aria-label={t('settings.audit.actionHint')} placeholder="item.publish, token.*" bind:value={actionText} />
             <Button type="submit" size="sm">{t('settings.audit.apply')}</Button>
           </form>
         </div>
@@ -279,6 +298,7 @@
     {verb(r.action)}{#if r.action === 'auth.login_failed' && !r.subject}<span class="h-muted"> ({t('settings.audit.unknownLogin')})</span>{/if}
     {#if s}{#if s.to}<a use:link href={href(s.to)}>{s.text}</a>{:else}<strong>{s.text}</strong>{/if}{#if s.tail}
         {s.tail.word ?? '·'} {#if s.tail.to}<a use:link href={href(s.tail.to)}>{s.tail.text}</a>{:else}<strong>{s.tail.text}</strong>{/if}{/if}{/if}
+    {#if reviewBypassed(r)}<span class="h-muted"> ({t('settings.audit.bypassed')})</span>{/if}
   </span>
 {/snippet}
 {#snippet dataCell(r: Entry)}

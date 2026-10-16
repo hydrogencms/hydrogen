@@ -150,6 +150,11 @@ func (s *Service) migrateItem(ctx context.Context, tx store.Tx, m Migration, id 
 	if err := s.writePlans(ctx, c, st, plans, oldVersion); err != nil {
 		return err
 	}
+	if len(plans) > 0 {
+		if err := s.draftChanged(ctx, tx, st); err != nil {
+			return err
+		}
+	}
 	if err := s.projectWorking(ctx, c, st); err != nil {
 		return err
 	}

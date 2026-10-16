@@ -46,6 +46,9 @@ export function auditQuery(f: AuditFilters, page = 0) {
 export const ACTION_GROUPS: { id: string; pattern: string }[] = [
   { id: 'item', pattern: 'item.*' },
   { id: 'page', pattern: 'page.*' },
+  { id: 'release', pattern: 'release.*' },
+  { id: 'review', pattern: 'review.*' },
+  { id: 'preview', pattern: 'preview.*' },
   { id: 'user', pattern: 'user.*' },
   { id: 'group', pattern: 'group.*' },
   { id: 'role', pattern: 'role.*' },
@@ -62,3 +65,45 @@ export const humanizeAction = (action: string): string => action.replace(/[._]+/
 
 /** A shortened id for a subject that cannot be resolved to a name. */
 export const shortId = (id: string): string => (id.length > 12 ? `${id.slice(0, 8)}…` : id);
+
+interface Entry {
+  action: string;
+  subject?: string;
+  data?: unknown;
+}
+
+const dataOf = (e: Entry): Record<string, unknown> => (e.data && typeof e.data === 'object' ? (e.data as Record<string, unknown>) : {});
+
+/** Actions whose subject is an item id: content, review and preview-link entries. */
+const ITEM_KINDS = new Set(['item', 'review', 'preview']);
+
+/** The item an entry is about, whose name is shown: the subject for content, review and preview entries; `data.item` for page placements. */
+export function itemIdOf(e: Entry): string {
+  const k = subjectKind(e.action);
+  if (ITEM_KINDS.has(k)) return e.subject ?? '';
+  if (k === 'page') {
+    const item = dataOf(e).item;
+    return typeof item === 'string' ? item : '';
+  }
+  return '';
+}
+
+/** A release entry's release (its subject) and the name recorded with it. */
+export function releaseOf(e: Entry): { id: string; name: string } | undefined {
+  if (subjectKind(e.action) !== 'release' || !e.subject) return undefined;
+  const name = dataOf(e).name;
+  return { id: e.subject, name: typeof name === 'string' ? name : '' };
+}
+
+/** The role an assignment entry names: recorded as `role` on create and as `roleId` on delete (resolved by the caller). */
+export function assignmentRole(e: Entry): { name?: string; id?: string } {
+  const d = dataOf(e);
+  return { name: typeof d.role === 'string' ? d.role : undefined, id: typeof d.roleId === 'string' ? d.roleId : undefined };
+}
+
+export const reviewBypassed = (e: Entry): boolean => e.action === 'item.publish' && dataOf(e).reviewBypassed === true;
+
+export const restoredVersion = (e: Entry): number | undefined => {
+  const v = dataOf(e).version;
+  return e.action === 'item.restore_version' && typeof v === 'number' ? v : undefined;
+};

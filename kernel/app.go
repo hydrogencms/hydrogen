@@ -32,6 +32,7 @@ import (
 	"github.com/hydrogencms/hydrogen/manage"
 	"github.com/hydrogencms/hydrogen/outbox"
 	"github.com/hydrogencms/hydrogen/release"
+	"github.com/hydrogencms/hydrogen/review"
 	"github.com/hydrogencms/hydrogen/schema"
 	"github.com/hydrogencms/hydrogen/store"
 	"github.com/hydrogencms/hydrogen/webhook"
@@ -76,6 +77,8 @@ type ContentConfig struct {
 	// TrashRetention is how long an item stays in the trash before the content.trash job purges it. Default
 	// 720h (30 days); 0 keeps trashed items until someone purges them.
 	TrashRetention time.Duration `yaml:"trash_retention"`
+	// ReviewFourEyes keeps the principal who submitted or last edited a draft from approving it (default true).
+	ReviewFourEyes bool `yaml:"review_four_eyes"`
 }
 
 type ManageConfig struct {
@@ -178,6 +181,8 @@ type Services struct {
 	Content *content.Service
 	// Releases publish groups of items together, now or scheduled.
 	Releases *release.Service
+	// Review is the review workflow of types with `review: true`.
+	Review *review.Service
 	// Channels are the compiled delivery channels (config/channels.yaml); one implicit "default" channel when
 	// none are configured.
 	Channels *channel.Set
@@ -298,6 +303,10 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 		a.closeDB(db)
 		return nil, err
 	}
+	if err = a.services.wireReview(); err != nil {
+		a.closeDB(db)
+		return nil, err
+	}
 	if a.runner, err = newRunner(a.services, reg, o.JobHold); err != nil {
 		a.closeDB(db)
 		return nil, err
@@ -360,7 +369,7 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 	core := CoreConfig{
 		HTTP:    HTTPConfig{Addr: ":8080", ReadHeaderTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second},
 		Log:     LogConfig{Level: "info"},
-		Content: ContentConfig{SchemaDir: "schema", DefaultLocale: "en", TrashRetention: DefaultTrashRetention},
+		Content: ContentConfig{SchemaDir: "schema", DefaultLocale: "en", TrashRetention: DefaultTrashRetention, ReviewFourEyes: true},
 		Delivery: DeliveryConfig{CacheBytes: delivery.DefaultCacheBytes, ShareLinks: true,
 			ShareDefaultTTL: delivery.DefaultShareTTL, ShareMaxTTL: delivery.MaxShareTTL},
 		Jobs:  JobsConfig{Enabled: true},
@@ -620,7 +629,7 @@ func (a *App) Handler() (http.Handler, error) {
 		api, err := manage.New(manage.Options{Content: a.services.Content, Auth: a.services.Auth, Gate: a.services.Access,
 			Admin: a.services.Admin, Catalog: a.services.Catalog,
 			Channels: a.services.Channels, Log: a.services.Log, Prefix: prefix,
-			Routes: slices.Concat(a.reg.manageRts, a.services.Delivery.ManageRoutes(), a.services.Releases.ManageRoutes())})
+			Routes: slices.Concat(a.reg.manageRts, a.services.Delivery.ManageRoutes(), a.services.Releases.ManageRoutes(), a.services.Review.ManageRoutes())})
 		if err != nil {
 			return nil, err
 		}

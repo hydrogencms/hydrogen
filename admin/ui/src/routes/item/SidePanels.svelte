@@ -4,6 +4,7 @@
   import { channels } from '../../lib/channels.svelte';
   import { config } from '../../lib/config';
   import type { Form } from '../../lib/form.svelte';
+  import type { Doc } from '../../lib/fields/logic';
     import { t } from '../../lib/i18n';
   import { href, link } from '../../lib/router.svelte';
   import { types, type CompiledType } from '../../lib/types.svelte';
@@ -22,12 +23,12 @@
   import { localeState } from '../../lib/fields/locales';
   import { copyText } from '../../lib/errors';
   import StatusBadge from '../collection/StatusBadge.svelte';
-  import { actorName } from './actors';
-  import { hydrate, type Doc } from '../../lib/fields/logic';
-  import Button from '../../lib/ui/Button.svelte';
   import { ext } from '../../lib/extensions.svelte';
   import Extension from '../../lib/ext/Extension.svelte';
   import { toast } from '../../lib/ui/toast.svelte';
+  import '../../lib/messages/history';
+  import HistoryPanel from './HistoryPanel.svelte';
+  import ReviewPanel from './ReviewPanel.svelte';
   import type { ItemData, Referrer } from './model';
 
   let {
@@ -57,6 +58,7 @@
     { id: 'appears', label: t('editor.tab.appears') },
     { id: 'usedBy', label: t('editor.tab.references'), disabled: !data },
     { id: 'versions', label: t('editor.tab.history'), disabled: !data },
+    ...(type.review ? [{ id: 'review', label: t('history.tab.review'), disabled: !data }] : []),
     ...ext.panels(type.name).map((p, i) => ({ id: `x:${i}`, label: p.title ?? p.tag, disabled: !data })),
   ]);
   // More than five panels: the first four stay as segments, the rest move into a menu (the open one stays visible).
@@ -141,78 +143,8 @@
     return () => ctl.abort();
   });
 
-  // ---- versions
-  interface Version {
-    version: number;
-    createdAt: string;
-    createdBy: string;
-    locales: string[];
-  }
-  let versions = $state<Version[]>([]);
-  let versionsLoading = $state(false);
-  let versionsError = $state('');
-  $effect(() => {
-    const id = tab === 'versions' ? data?.id : undefined;
-    void data?.version;
-    if (!id) return;
-    const ctl = new AbortController();
-    versionsLoading = true;
-    versionsError = '';
-    api
-      .get('/items/{id}/versions', { params: { id }, signal: ctl.signal })
-      .then((r) => {
-        versions = r.items as Version[];
-        versionsLoading = false;
-      })
-      .catch((e) => {
-        if (ctl.signal.aborted) return;
-        versionsError = e.message;
-        versionsLoading = false;
-      });
-    return () => ctl.abort();
-  });
-
-  // Who made each version, resolved once per list.
-  let who = $state<Record<string, string>>({});
-  $effect(() => {
-    const list = versions;
-    let live = true;
-    for (const by of new Set(list.map((v) => v.createdBy))) {
-      void actorName(by).then((n) => live && (who = { ...who, [by]: n }));
-    }
-    return () => (live = false);
-  });
-
   async function copyId() {
     if (data && (await copyText(data.id))) toast.success(t('editor.idCopied'));
-  }
-
-  let restoring = $state(0);
-  // Copies a version's shared fields and the current locale's fields into the form as unsaved changes.
-  async function restore(n: number) {
-    if (!data || restoring) return;
-    if (form.dirty && !confirm(t('collections.restore.confirm'))) return;
-    restoring = n;
-    try {
-      const v = await api.get('/items/{id}/versions/{n}', { params: { id: data.id, n } });
-      const shared = ((v.shared as { fields?: Doc } | undefined)?.fields ?? {}) as Doc;
-      const loc = (v.locales as Record<string, { fields?: Doc }> | undefined)?.[locale];
-      // Merge: shared fields always; translatable fields only when the version has this locale.
-      const next: Doc = { ...form.values.fields };
-      for (const f of type.fields) {
-        const src = f.translatable ? (loc ? (loc.fields ?? {}) : undefined) : shared;
-        if (!src) continue;
-        if (src[f.name] !== undefined) next[f.name] = src[f.name];
-        else delete next[f.name];
-      }
-      form.values.fields = hydrate(type.fields, next);
-      const noLocale = !loc && type.fields.some((f) => f.translatable);
-      toast.info(noLocale ? `${t('collections.versions.restored', { n })} ${t('collections.restore.noLocale', { locale })}` : t('collections.versions.restored', { n }));
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      restoring = 0;
-    }
   }
 
   const editLocked = $derived(!!data?.actions && !data.actions.edit);
@@ -313,33 +245,9 @@
           {#if hidden > 0}<p class="h-muted h-panels__note">{t('editor.refs.hidden', { n: hidden })}</p>{/if}
         {/if}
       {:else if active === 'versions'}
-        {#if versionsLoading}
-          <Skeleton lines={3} />
-        {:else if versionsError}
-          <p class="h-alert" role="alert">{versionsError}</p>
-        {:else if versions.length === 0}
-          <p class="h-muted">{t('collections.versions.none')}</p>
-        {:else}
-          <ol class="h-panels__timeline">
-            {#each versions as v (v.version)}
-              {@const current = !!data && v.version === data.version}
-              <li class="h-panels__ver" class:h-panels__ver--current={current}>
-                <span class="h-panels__node" aria-hidden="true"></span>
-                <div class="h-panels__line">
-                  <strong>{t('editor.meta.version', { n: v.version })}</strong>
-                  <span>{t('editor.history.published')}</span>
-                  {#if current}<Badge tone="success">{t('collections.versions.current')}</Badge>{/if}
-                </div>
-                <span class="h-muted"><Time at={v.createdAt} />{#if who[v.createdBy]}{' '}{t('editor.history.by', { who: who[v.createdBy] })}{/if}</span>
-                {#if v.locales.length}<span class="h-muted">{v.locales.join(', ')}</span>{/if}
-                {#if !editLocked && !current}
-                  <div class="h-panels__restore"><Button variant="ghost" size="sm" loading={restoring === v.version} onclick={() => restore(v.version)}>{t('collections.versions.restore')}</Button></div>
-                {/if}
-              </li>
-            {/each}
-          </ol>
-          <p class="h-muted h-panels__note">{t('collections.versions.restoreNote')}</p>
-        {/if}
+        {#if data}<HistoryPanel {data} {type} {form} {editLocked} {onrefresh} />{/if}
+      {:else if active === 'review'}
+        {#if data}<ReviewPanel item={data} />{/if}
       {:else}
         <div class="h-panels__sec">
           <dl class="h-panels__info">
@@ -510,49 +418,6 @@
     font-size: var(--h-text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .h-panels__timeline {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: var(--h-space-4);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    font-size: var(--h-text-sm);
-  }
-  .h-panels__timeline::before {
-    content: '';
-    position: absolute;
-    top: 8px;
-    bottom: 8px;
-    left: 4px;
-    width: 1px;
-    background: var(--h-border-strong);
-  }
-  .h-panels__ver {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding-left: var(--h-space-5);
-  }
-  .h-panels__node {
-    position: absolute;
-    top: 5px;
-    left: 0;
-    width: 9px;
-    height: 9px;
-    border: 2px solid var(--h-border-strong);
-    border-radius: 50%;
-    background: var(--h-surface);
-  }
-  .h-panels__ver--current .h-panels__node {
-    border-color: var(--h-success);
-    background: var(--h-success);
-  }
-  .h-panels__restore {
-    margin-left: calc(var(--h-space-3) * -1);
   }
   .h-panels__note {
     margin-top: var(--h-space-3);

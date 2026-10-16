@@ -11,6 +11,7 @@ export const routes: Route[] = [
 
   { path: '/collections/:type', title: 'nav.content', load: () => import('./routes/collection/List.svelte') },
   { path: '/collections/:type/new', title: 'nav.content', load: () => import('./routes/collection/Create.svelte') },
+  { path: '/items/:id/compare', title: 'nav.content', load: () => import('./routes/item/Compare.svelte') },
   { path: '/items/:id', title: 'nav.content', load: () => import('./routes/item/Item.svelte') },
   { path: '/singletons/:type', title: 'nav.settingsContent', load: () => import('./routes/singleton/Singleton.svelte') },
 
@@ -18,6 +19,7 @@ export const routes: Route[] = [
 
   // One lazy entry for both: the list at `/x`, the detail at `/x/:id` (params.rest).
   { path: '/releases/*', title: 'nav.releases', load: publishing },
+  { path: '/reviews', title: 'nav.reviews', load: () => import('./routes/review/Reviews.svelte') },
   { path: '/trash/*', title: 'nav.trash', load: publishing },
 
   { path: '/settings/users', title: 'nav.users', load: () => import('./routes/settings/Users.svelte') },

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import '../../lib/messages/review';
+  import { reviewApi } from '../review/api';
+  import type { QueueRow } from '../review/logic';
   import { api, type Schemas } from '../../lib/api/client';
   import { session } from '../../lib/auth/session.svelte';
   import { channels } from '../../lib/channels.svelte';
@@ -178,6 +181,20 @@
     return () => (live = false);
   });
 
+  // Reviews waiting for this person: only when some type asks for them and they may approve.
+  const reviewWidget = $derived(types.loaded && types.all.some((x) => x.review) && session.can('review.approve'));
+  let waiting = $state<QueueRow[] | null>(null);
+  $effect(() => {
+    if (!reviewWidget) return;
+    const ctl = new AbortController();
+    waiting = null;
+    reviewApi
+      .queue({ state: 'in_review', reviewer: 'me', limit: 5 }, ctl.signal)
+      .then((r) => (waiting = r.items))
+      .catch(() => !ctl.signal.aborted && (waiting = []));
+    return () => ctl.abort();
+  });
+
   const typeLabel = (n?: string) => (n ? (types.get(n)?.label ?? n) : '');
   const newHref = (type: string) => `/collections/${type}/new${channels.languages?.[0] ? `?locale=${channels.languages[0]}` : ''}`;
 </script>
@@ -273,6 +290,28 @@
         </ul>
       {/if}
     </Card>
+
+    {#if reviewWidget}
+      <Card class="h-lg-span-6" title={t('review.widget')} data-dashboard-widget="reviews">
+        {#snippet action()}<a use:link href={href('/reviews')}>{t('review.widgetAll')}</a>{/snippet}
+        {#if !waiting}
+          <Skeleton lines={3} height="2.25rem" />
+        {:else if waiting.length === 0}
+          <p class="h-muted">{t('review.widgetEmpty')}</p>
+        {:else}
+          <ul class="h-feed">
+            {#each waiting as r (r.id)}
+              <li class="h-feed__item">
+                <div class="h-feed__text">
+                  <a use:link href={href(`/items/${r.id}`)}>{r.name || t('dashboard.anItem')}</a>
+                  <span class="h-feed__sub">{typeLabel(r.type) + ' · '}{r.submittedByName || t('review.someone')}{#if r.submittedAt}{' · '}<Time at={r.submittedAt} />{/if}</span>
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </Card>
+    {/if}
 
     {#each ext.dashboard() as w, i (w.tag + i)}
       <Card class="h-lg-span-6" title={w.title} data-dashboard-widget={w.tag}>

@@ -126,6 +126,11 @@ func (s *Service) nullifyRef(ctx context.Context, tx store.Tx, id, target ids.UU
 	if err := st.removeDraftRefs(ctx, c, sc, tid, oldVersion, s.now()); err != nil {
 		return err
 	}
+	if len(st.drafts) > 0 {
+		if err := s.draftChanged(ctx, tx, st); err != nil {
+			return err
+		}
+	}
 	if err := s.projectWorking(ctx, c, st); err != nil {
 		return err
 	}

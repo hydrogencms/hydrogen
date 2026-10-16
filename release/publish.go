@@ -276,6 +276,13 @@ func classify(err error) (ItemError, bool) {
 		return ItemError{Code: "bad_request", Message: msg}, true
 	case errors.Is(err, content.ErrInvalid):
 		return ItemError{Code: "invalid", Message: err.Error()}, true
+	case errors.Is(err, content.ErrReviewRequired):
+		var rr *content.ReviewRequiredError
+		msg := "the draft needs an approved review"
+		if errors.As(err, &rr) {
+			msg = "review required: " + rr.Reason
+		}
+		return ItemError{Code: "review_required", Message: msg}, true
 	case errors.Is(err, content.ErrConflict):
 		return ItemError{Code: "conflict", Message: err.Error()}, true
 	}

@@ -55,6 +55,7 @@ type Type struct {
 	Description string
 	Singleton   bool
 	Page        bool
+	Review      bool   // publishing needs an approved review (the review workflow)
 	Blockset    bool   // its single blocks field can be embedded with the built-in shared block
 	NamePattern string // e.g. "{title}"; "" means the first string field
 	Admin       TypeAdmin

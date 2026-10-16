@@ -301,4 +301,7 @@ type Options struct {
 	Migrations    []Migration
 	// Access authorizes the principal in a context (access.WithPrincipal); nil allows everything.
 	Access Access
+	// Review plugs the review workflow into types with `review: true`; nil without the workflow. SetReview
+	// installs it later.
+	Review ReviewHook
 }

@@ -329,6 +329,29 @@ func (a *api) version(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (a *api) restoreVersion(w http.ResponseWriter, r *http.Request) error {
+	id, err := pathID(r)
+	if err != nil {
+		return err
+	}
+	n, err := strconv.Atoi(r.PathValue("n"))
+	if err != nil || n < 1 {
+		return NotFound("version not found")
+	}
+	var b struct {
+		Locales []string `json:"locales"`
+	}
+	if err := decodeBody(w, r, &b, true); err != nil {
+		return err
+	}
+	v, err := a.c.RestoreVersion(preconditionCtx(r), id, n, b.Locales)
+	if err != nil {
+		return err
+	}
+	writeView(w, http.StatusOK, v)
+	return nil
+}
+
 func (a *api) references(w http.ResponseWriter, r *http.Request) error {
 	id, err := pathID(r)
 	if err != nil {

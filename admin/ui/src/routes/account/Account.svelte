@@ -65,6 +65,8 @@
         .catch(() => {});
     });
   });
+  // The login is only worth showing when the name is something else.
+  const sub = $derived(me ? [me.login !== session.principal?.name ? me.login : '', me.email].filter(Boolean).join(' · ') : '');
   const themes = $derived([
     { value: 'system', label: t('account.theme.system'), icon: 'monitor' },
     { value: 'light', label: t('account.theme.light'), icon: 'sun' },
@@ -81,7 +83,7 @@
           <Avatar name={session.principal?.name ?? '?'} size={40} />
           <div class="h-acct__text">
             <strong>{session.principal?.name}</strong>
-            {#if me}<span class="h-muted">{me.login}{me.email ? ` · ${me.email}` : ''}</span>{/if}
+            {#if sub}<span class="h-muted">{sub}</span>{/if}
           </div>
           <span class="h-spacer"></span>
           <Badge>{session.principal?.kind}</Badge>

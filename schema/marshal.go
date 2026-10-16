@@ -61,6 +61,7 @@ func (s *Schema) typeJSON(t *Type) map[string]any {
 	put(m, "singleton", t.Singleton)
 	put(m, "page", t.Page)
 	put(m, "blockset", t.Blockset)
+	put(m, "review", t.Review)
 	put(m, "namePattern", t.NamePattern)
 	if len(t.Options) > 0 {
 		m["options"] = t.Options

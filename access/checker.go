@@ -295,9 +295,9 @@ func ruleFor(r Rules, policy string) func(context.Context, *Principal) Result {
 		return r.Read
 	case PolicyContentCreate:
 		return r.Create
-	case PolicyContentEdit:
+	case PolicyContentEdit, PolicyReviewSubmit:
 		return r.Update
-	case PolicyContentPublish:
+	case PolicyContentPublish, PolicyReviewApprove, PolicyReviewBypass:
 		return r.Publish
 	case PolicyContentDelete:
 		return r.Delete

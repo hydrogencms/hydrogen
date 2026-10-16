@@ -49,7 +49,8 @@ becomes `failed` with one error per problem item:
 ```
 
 Codes: `invalid` (validation; `path` is the first field), `conflict` (published since the draft started; use
-`force`), `nothing_to_publish`, `forbidden`, `trashed`, `not_found`, `referenced`, `bad_request` and `internal`
+`force`), `nothing_to_publish`, `review_required` (the item's type uses [reviews](reviews.md) and the draft is
+not approved), `forbidden`, `trashed`, `not_found`, `referenced`, `bad_request` and `internal`
 (an unexpected error; details are in the server log). An error without `item` concerns the release (for example
 a scheduler who is gone). Fix the problems and publish again: a failed release can be published directly, and any
 edit turns it back into `open`.

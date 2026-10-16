@@ -68,7 +68,7 @@ var SlotPositions = []string{"login.before", "login.after", "list.before", "list
 	"editor.before", "editor.after", "dashboard.before", "dashboard.after"}
 
 // BuiltinRoutes are the admin's own screens; a view path may not equal or sit under one.
-var BuiltinRoutes = []string{"/", "/login", "/search", "/account", "/collections", "/items", "/singletons", "/pages", "/settings", "/releases", "/trash"}
+var BuiltinRoutes = []string{"/", "/login", "/search", "/account", "/collections", "/items", "/singletons", "/pages", "/settings", "/releases", "/trash", "/reviews"}
 
 var (
 	tagName    = regexp.MustCompile(`^[a-z][a-z0-9_.]*-[a-z0-9_.-]*$`)

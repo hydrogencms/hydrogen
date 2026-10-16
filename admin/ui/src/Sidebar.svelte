@@ -43,6 +43,8 @@
   const contentGroups = $derived(groupTypes(types.listable.filter((x) => typeVisible(x.name))));
   const singletons = $derived(types.singletons.filter((x) => typeVisible(x.name)));
   const visibleSites = $derived(channels.site ? sites.filter((s) => s === channels.site) : sites);
+  // Reviews only appear when some type asks for them and the principal takes part.
+  const reviewNav = $derived(types.all.some((x) => x.review) && (session.can('review.approve') || session.can('review.submit')));
   const settings = $derived(
     [
       { to: '/settings/users', label: t('nav.users'), icon: 'users', ok: session.can('user.manage') },
@@ -178,6 +180,7 @@
       <div class="h-nav__group">{t('nav.publishing')}</div>
       {@render links([
         { to: '/releases', label: t('nav.releases'), icon: 'send' },
+        ...(reviewNav ? [{ to: '/reviews', label: t('nav.reviews'), icon: 'check' }] : []),
         { to: '/trash', label: t('nav.trash'), icon: 'trash' },
       ])}
     {/if}

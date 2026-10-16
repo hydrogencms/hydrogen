@@ -131,6 +131,8 @@ func baseSchemas() obj {
 		"CreateRequest": createRequest(obj{"type": "object", "additionalProperties": true}),
 		"UpdateRequest": updateRequest(obj{"type": "object", "additionalProperties": true,
 			"description": "JSON merge patch: null removes a field."}),
+		"RestoreVersionRequest": obj{"type": "object", "additionalProperties": false, "properties": obj{
+			"locales": obj{"type": "array", "items": openapi.Str(""), "description": "Locales of the version to restore; default all of them. The shared part is always restored."}}},
 		"PublishRequest": obj{"type": "object", "additionalProperties": false, "properties": obj{
 			"locales": obj{"type": "array", "items": openapi.Str(""), "description": "Locale parts to publish; default every draft locale part."},
 			"force":   obj{"type": "boolean", "description": "Publish over conflicts."}}},
@@ -318,10 +320,10 @@ var listParams = []string{"Locale", "Status", "Q", "Sort", "Limit", "Offset", "W
 func genericPaths(paths obj, collections, singletons []*schema.Type) {
 	view := withETag(openapi.OKResp("The item.", openapi.SchemaRef("ItemView")))
 	paths["/types"] = obj{"get": operation("listTypes", "List content types", nil, nil,
-		responses(obj{"200": openapi.OKResp("Compiled types: name, label, description, singleton, page, fields, and when set admin (group, icon, list), namePattern and options.", openapi.ArrayOf(obj{"type": "object",
+		responses(obj{"200": openapi.OKResp("Compiled types: name, label, description, singleton, page, review (publishing needs an approved review), fields, and when set admin (group, icon, list), namePattern and options.", openapi.ArrayOf(obj{"type": "object",
 			"required": []any{"name", "label", "fields"},
 			"properties": obj{"name": openapi.Str(""), "label": openapi.Str(""), "description": openapi.Str(""),
-				"singleton": obj{"type": "boolean"}, "page": obj{"type": "boolean"}, "namePattern": openapi.Str(""),
+				"singleton": obj{"type": "boolean"}, "page": obj{"type": "boolean"}, "review": obj{"type": "boolean"}, "namePattern": openapi.Str(""),
 				"fields":  obj{"type": "array", "items": obj{"type": "object"}},
 				"options": obj{"type": "object"},
 				"admin": obj{"type": "object", "properties": obj{"group": openapi.Str(""), "icon": openapi.Str(""),
@@ -364,6 +366,8 @@ func genericPaths(paths obj, collections, singletons []*schema.Type) {
 		responses(obj{"200": openapi.OKResp("Versions, newest first.", openapi.SchemaRef("VersionList"))}, "401", "403", "404"))}
 	paths["/items/{id}/versions/{n}"] = obj{"get": operation("getVersion", "The documents of one version (read-only)", openapi.Params("ItemId", "VersionNumber"), nil,
 		responses(obj{"200": openapi.OKResp("The version.", openapi.SchemaRef("VersionView"))}, "400", "401", "403", "404"))}
+	paths["/items/{id}/versions/{n}/restore"] = obj{"post": operation("restoreVersion", "Write a version's content into the draft", openapi.Params("ItemId", "VersionNumber", "IfMatch"),
+		optionalBody(openapi.SchemaRef("RestoreVersionRequest")), responses(obj{"200": view}, "400", "401", "403", "404", "412", "413", "415", "422"))}
 	paths["/items/{id}/references"] = obj{"get": operation("listReferences", "Items pointing at this one", openapi.Params("ItemId"), nil,
 		responses(obj{"200": openapi.OKResp("Referrers.", openapi.SchemaRef("ReferrerList"))}, "401", "403", "404"))}
 	if len(singletons) > 0 {

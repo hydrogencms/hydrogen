@@ -88,7 +88,7 @@ func JSONSchemaFile(reg *Registry) map[string]any {
 			"type": map[string]any{
 				"type": "object", "additionalProperties": false,
 				"properties": map[string]any{
-					"label": str, "description": str, "singleton": boolean, "page": boolean, "blockset": boolean, "name": str,
+					"label": str, "description": str, "singleton": boolean, "page": boolean, "blockset": boolean, "review": boolean, "name": str,
 					"admin": map[string]any{
 						"type": "object", "additionalProperties": false,
 						"properties": map[string]any{"list": strings, "group": str, "icon": str},

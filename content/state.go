@@ -91,12 +91,13 @@ func decodeOrEmpty(data []byte) (map[string]any, error) {
 
 // itemState is an item with what an operation loaded of it: its draft parts and published version.
 type itemState struct {
-	item   store.Item
-	typ    *schema.Type
-	drafts map[string]*draft
-	pub    *pubVersion
-	latest *pubVersion // newest version of an unpublished item with history; set by loadLatest for publish
-	prev   *prevRows   // rows the projections held before the operation, see rememberRows
+	item           store.Item
+	typ            *schema.Type
+	drafts         map[string]*draft
+	pub            *pubVersion
+	latest         *pubVersion // newest version of an unpublished item with history; set by loadLatest for publish
+	reviewBypassed bool        // published without the approval the type's review needs
+	prev           *prevRows   // rows the projections held before the operation, see rememberRows
 }
 
 // prevRows are the remembered rows; published is nil for a never-published item.

@@ -463,6 +463,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/items/{id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The review of an item
+         * @description State, who submitted and decided, what the caller can do, and the thread. An item whose type does not use reviews answers state none with required false. Needs read access to the item.
+         */
+        get: operations["getItemReview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/items/{id}/review/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve the draft
+         * @description in_review to approved. Publishing the approved draft needs no further right. The principal who submitted or edited any part of the draft, or whose token did (a token is its creator), gets 403 four_eyes (unless they hold review.bypass or content.review_four_eyes is off). Needs review.approve on the item.
+         */
+        post: operations["approveItemReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/items/{id}/review/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Comment on the review
+         * @description Adds a comment to the thread; the state stays. Needs review.submit or review.approve on the item.
+         */
+        post: operations["commentItemReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/items/{id}/review/request-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request changes on the draft
+         * @description in_review to changes_requested; the comment is required. Needs review.approve on the item.
+         */
+        post: operations["requestItemReviewChanges"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/items/{id}/review/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a draft for review
+         * @description Moves none or changes_requested to in_review (a resubmission when changes were requested), and an approved review whose draft changed since the approval. The item needs a draft. Needs review.submit on the item. 409 review_state when the draft is already in review or approved.
+         */
+        post: operations["submitItemReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/items/{id}/review/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw the draft from review
+         * @description in_review, approved or changes_requested to none. The principal who submitted it can, and anyone with review.approve.
+         */
+        post: operations["withdrawItemReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/items/{id}/unpublish": {
         parameters: {
             query?: never;
@@ -508,6 +628,23 @@ export interface paths {
         get: operations["getVersion"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/items/{id}/versions/{n}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Write a version's content into the draft */
+        post: operations["restoreVersion"];
         delete?: never;
         options?: never;
         head?: never;
@@ -919,6 +1056,46 @@ export interface paths {
          * @description Turns a scheduled release back into an open one.
          */
         post: operations["unscheduleRelease"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The review queue
+         * @description Reviews of items the caller can read, newest submission first. Without state: in_review, changes_requested and approved. The scan stops one readable row past the page: hasMore is exact, total is exact only when hasMore is false (else a lower bound).
+         */
+        get: operations["listReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reviews/approvers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Who can approve an item
+         * @description The users and groups that hold review.approve (and read access) on the item through their roles, with the item's limitations applied, sorted by name. The caller is left out. Needs review.submit on the item.
+         */
+        get: operations["listReviewApprovers"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1657,6 +1834,10 @@ export interface components {
             hidden?: number;
             items: components["schemas"]["Referrer"][];
             total: number;
+        };
+        RestoreVersionRequest: {
+            /** @description Locales of the version to restore; default all of them. The shared part is always restored. */
+            locales?: string[];
         };
         Role: {
             /** Format: date-time */
@@ -3234,6 +3415,443 @@ export interface operations {
             412: components["responses"]["PreconditionFailed"];
         };
     };
+    getItemReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The review. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The caller may approve or request changes now (four eyes applied). */
+                        canApprove: boolean;
+                        /** @description The caller may submit the draft now. */
+                        canSubmit: boolean;
+                        canWithdraw: boolean;
+                        /** Format: date-time */
+                        decidedAt: string | null;
+                        decidedBy: string;
+                        decidedByName: string;
+                        /** @description Identifies the draft as it is now (parts, key, availability); send it with approve to approve what you reviewed. Empty without a draft. */
+                        draftHash: string;
+                        /** @description The thread, oldest first (the latest 200). */
+                        events: {
+                            actor: string;
+                            actorName: string;
+                            /** Format: date-time */
+                            at: string;
+                            comment: string;
+                            /** @description published and discarded: {reason: published|discarded|trashed}. */
+                            data?: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {unknown} */
+                            kind: "submitted" | "resubmitted" | "approved" | "changes_requested" | "withdrawn" | "reopened" | "edited" | "comment" | "published" | "discarded";
+                        }[];
+                        /** @description The item's type uses reviews. */
+                        required: boolean;
+                        reviewerNames: {
+                            [key: string]: string;
+                        };
+                        /** @description user:<id> and group:<id> refs; informational. */
+                        reviewers: string[];
+                        /** @enum {unknown} */
+                        state: "none" | "in_review" | "approved" | "changes_requested";
+                        /** Format: date-time */
+                        submittedAt: string | null;
+                        submittedBy: string;
+                        submittedByName: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    approveItemReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    comment?: string;
+                    /** @description The review's draftHash that the reviewer saw. When the draft differs now: 409 review_stale. */
+                    draftHash?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The review. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The caller may approve or request changes now (four eyes applied). */
+                        canApprove: boolean;
+                        /** @description The caller may submit the draft now. */
+                        canSubmit: boolean;
+                        canWithdraw: boolean;
+                        /** Format: date-time */
+                        decidedAt: string | null;
+                        decidedBy: string;
+                        decidedByName: string;
+                        /** @description Identifies the draft as it is now (parts, key, availability); send it with approve to approve what you reviewed. Empty without a draft. */
+                        draftHash: string;
+                        /** @description The thread, oldest first (the latest 200). */
+                        events: {
+                            actor: string;
+                            actorName: string;
+                            /** Format: date-time */
+                            at: string;
+                            comment: string;
+                            /** @description published and discarded: {reason: published|discarded|trashed}. */
+                            data?: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {unknown} */
+                            kind: "submitted" | "resubmitted" | "approved" | "changes_requested" | "withdrawn" | "reopened" | "edited" | "comment" | "published" | "discarded";
+                        }[];
+                        /** @description The item's type uses reviews. */
+                        required: boolean;
+                        reviewerNames: {
+                            [key: string]: string;
+                        };
+                        /** @description user:<id> and group:<id> refs; informational. */
+                        reviewers: string[];
+                        /** @enum {unknown} */
+                        state: "none" | "in_review" | "approved" | "changes_requested";
+                        /** Format: date-time */
+                        submittedAt: string | null;
+                        submittedBy: string;
+                        submittedByName: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
+    commentItemReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    comment: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The review. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The caller may approve or request changes now (four eyes applied). */
+                        canApprove: boolean;
+                        /** @description The caller may submit the draft now. */
+                        canSubmit: boolean;
+                        canWithdraw: boolean;
+                        /** Format: date-time */
+                        decidedAt: string | null;
+                        decidedBy: string;
+                        decidedByName: string;
+                        /** @description Identifies the draft as it is now (parts, key, availability); send it with approve to approve what you reviewed. Empty without a draft. */
+                        draftHash: string;
+                        /** @description The thread, oldest first (the latest 200). */
+                        events: {
+                            actor: string;
+                            actorName: string;
+                            /** Format: date-time */
+                            at: string;
+                            comment: string;
+                            /** @description published and discarded: {reason: published|discarded|trashed}. */
+                            data?: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {unknown} */
+                            kind: "submitted" | "resubmitted" | "approved" | "changes_requested" | "withdrawn" | "reopened" | "edited" | "comment" | "published" | "discarded";
+                        }[];
+                        /** @description The item's type uses reviews. */
+                        required: boolean;
+                        reviewerNames: {
+                            [key: string]: string;
+                        };
+                        /** @description user:<id> and group:<id> refs; informational. */
+                        reviewers: string[];
+                        /** @enum {unknown} */
+                        state: "none" | "in_review" | "approved" | "changes_requested";
+                        /** Format: date-time */
+                        submittedAt: string | null;
+                        submittedBy: string;
+                        submittedByName: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
+    requestItemReviewChanges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    comment: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The review. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The caller may approve or request changes now (four eyes applied). */
+                        canApprove: boolean;
+                        /** @description The caller may submit the draft now. */
+                        canSubmit: boolean;
+                        canWithdraw: boolean;
+                        /** Format: date-time */
+                        decidedAt: string | null;
+                        decidedBy: string;
+                        decidedByName: string;
+                        /** @description Identifies the draft as it is now (parts, key, availability); send it with approve to approve what you reviewed. Empty without a draft. */
+                        draftHash: string;
+                        /** @description The thread, oldest first (the latest 200). */
+                        events: {
+                            actor: string;
+                            actorName: string;
+                            /** Format: date-time */
+                            at: string;
+                            comment: string;
+                            /** @description published and discarded: {reason: published|discarded|trashed}. */
+                            data?: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {unknown} */
+                            kind: "submitted" | "resubmitted" | "approved" | "changes_requested" | "withdrawn" | "reopened" | "edited" | "comment" | "published" | "discarded";
+                        }[];
+                        /** @description The item's type uses reviews. */
+                        required: boolean;
+                        reviewerNames: {
+                            [key: string]: string;
+                        };
+                        /** @description user:<id> and group:<id> refs; informational. */
+                        reviewers: string[];
+                        /** @enum {unknown} */
+                        state: "none" | "in_review" | "approved" | "changes_requested";
+                        /** Format: date-time */
+                        submittedAt: string | null;
+                        submittedBy: string;
+                        submittedByName: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
+    submitItemReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    comment?: string;
+                    /** @description user:<id> and group:<id> refs; they see the review in their "assigned to me" queue, but anyone with review.approve may decide. */
+                    reviewers?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The review. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The caller may approve or request changes now (four eyes applied). */
+                        canApprove: boolean;
+                        /** @description The caller may submit the draft now. */
+                        canSubmit: boolean;
+                        canWithdraw: boolean;
+                        /** Format: date-time */
+                        decidedAt: string | null;
+                        decidedBy: string;
+                        decidedByName: string;
+                        /** @description Identifies the draft as it is now (parts, key, availability); send it with approve to approve what you reviewed. Empty without a draft. */
+                        draftHash: string;
+                        /** @description The thread, oldest first (the latest 200). */
+                        events: {
+                            actor: string;
+                            actorName: string;
+                            /** Format: date-time */
+                            at: string;
+                            comment: string;
+                            /** @description published and discarded: {reason: published|discarded|trashed}. */
+                            data?: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {unknown} */
+                            kind: "submitted" | "resubmitted" | "approved" | "changes_requested" | "withdrawn" | "reopened" | "edited" | "comment" | "published" | "discarded";
+                        }[];
+                        /** @description The item's type uses reviews. */
+                        required: boolean;
+                        reviewerNames: {
+                            [key: string]: string;
+                        };
+                        /** @description user:<id> and group:<id> refs; informational. */
+                        reviewers: string[];
+                        /** @enum {unknown} */
+                        state: "none" | "in_review" | "approved" | "changes_requested";
+                        /** Format: date-time */
+                        submittedAt: string | null;
+                        submittedBy: string;
+                        submittedByName: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
+    withdrawItemReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    comment?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The review. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The caller may approve or request changes now (four eyes applied). */
+                        canApprove: boolean;
+                        /** @description The caller may submit the draft now. */
+                        canSubmit: boolean;
+                        canWithdraw: boolean;
+                        /** Format: date-time */
+                        decidedAt: string | null;
+                        decidedBy: string;
+                        decidedByName: string;
+                        /** @description Identifies the draft as it is now (parts, key, availability); send it with approve to approve what you reviewed. Empty without a draft. */
+                        draftHash: string;
+                        /** @description The thread, oldest first (the latest 200). */
+                        events: {
+                            actor: string;
+                            actorName: string;
+                            /** Format: date-time */
+                            at: string;
+                            comment: string;
+                            /** @description published and discarded: {reason: published|discarded|trashed}. */
+                            data?: Record<string, never>;
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {unknown} */
+                            kind: "submitted" | "resubmitted" | "approved" | "changes_requested" | "withdrawn" | "reopened" | "edited" | "comment" | "published" | "discarded";
+                        }[];
+                        /** @description The item's type uses reviews. */
+                        required: boolean;
+                        reviewerNames: {
+                            [key: string]: string;
+                        };
+                        /** @description user:<id> and group:<id> refs; informational. */
+                        reviewers: string[];
+                        /** @enum {unknown} */
+                        state: "none" | "in_review" | "approved" | "changes_requested";
+                        /** Format: date-time */
+                        submittedAt: string | null;
+                        submittedBy: string;
+                        submittedByName: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
     unpublishItem: {
         parameters: {
             query?: never;
@@ -3318,6 +3936,46 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    restoreVersion: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the item as read (GET returns it, writes return the new one). A mismatch answers 412; without the header nothing is checked. */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                id: components["parameters"]["ItemId"];
+                n: components["parameters"]["VersionNumber"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RestoreVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description The item. */
+            200: {
+                headers: {
+                    /** @description Identifies the item's working state; send it as If-Match on writes. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemView"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+            422: components["responses"]["Invalid"];
         };
     };
     getOpenAPI: {
@@ -5473,6 +6131,95 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    listReviews: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated: in_review, approved, changes_requested, none. */
+                state?: string;
+                type?: string;
+                /** @description me: reviews that name the caller or one of the caller's groups. */
+                reviewer?: "me";
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of reviews. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        hasMore: boolean;
+                        items: {
+                            /** Format: date-time */
+                            decidedAt?: string | null;
+                            decidedBy?: string;
+                            decidedByName?: string;
+                            /** Format: uuid */
+                            item: string;
+                            name: string;
+                            reviewerNames: {
+                                [key: string]: string;
+                            };
+                            reviewers: string[];
+                            /** @enum {unknown} */
+                            state: "none" | "in_review" | "approved" | "changes_requested";
+                            /** Format: date-time */
+                            submittedAt: string | null;
+                            submittedBy: string;
+                            submittedByName: string;
+                            type: string;
+                            /** Format: date-time */
+                            updatedAt?: string;
+                        }[];
+                        total: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listReviewApprovers: {
+        parameters: {
+            query: {
+                item: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The approvers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** @enum {unknown} */
+                            kind: "user" | "group";
+                            name: string;
+                            ref: string;
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listRoles: {
         parameters: {
             query?: {
@@ -5795,7 +6542,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Compiled types: name, label, description, singleton, page, fields, and when set admin (group, icon, list), namePattern and options. */
+            /** @description Compiled types: name, label, description, singleton, page, review (publishing needs an approved review), fields, and when set admin (group, icon, list), namePattern and options. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5814,6 +6561,7 @@ export interface operations {
                         namePattern?: string;
                         options?: Record<string, never>;
                         page?: boolean;
+                        review?: boolean;
                         singleton?: boolean;
                     }[];
                 };

@@ -71,6 +71,10 @@ func (s *Service) UnpublishTx(ctx context.Context, tx store.Tx, id ids.UUID) err
 	if err := s.takeOffline(ctx, tx, st); err != nil {
 		return fmt.Errorf("content: unpublish %s: %w", id, err)
 	}
+	// The withdrawal turned the published content into draft parts.
+	if err := s.draftChanged(ctx, tx, st); err != nil {
+		return err
+	}
 	actor := audit.ActorFrom(ctx)
 	if err := s.record(ctx, tx, actor, "item.unpublish", id, map[string]any{"type": it.Type, "version": it.PublishedVersion}); err != nil {
 		return err

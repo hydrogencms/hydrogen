@@ -105,6 +105,11 @@ func (s *Service) publish(ctx context.Context, tx store.Tx, it store.Item, o Pub
 	if err := s.check(ctx, access.PolicyContentPublish, st, st.publishLocales(sel)); err != nil {
 		return nil, err
 	}
+	if h := s.reviewHook(st); h != nil {
+		if st.reviewBypassed, err = h.CheckPublish(ctx, tx, st.item, hashDrafts(st)); err != nil {
+			return nil, err
+		}
+	}
 	if !o.Force {
 		if err := st.checkConflicts(ctx, c, sel); err != nil {
 			return nil, fmt.Errorf("content: publish %s: %w", it.ID, err)
@@ -113,6 +118,11 @@ func (s *Service) publish(ctx context.Context, tx store.Tx, it store.Item, o Pub
 	v, err := s.publishParts(ctx, tx, st, sel)
 	if err != nil {
 		return nil, fmt.Errorf("content: publish %s: %w", it.ID, err)
+	}
+	if h := s.reviewHook(st); h != nil {
+		if err := h.Closed(ctx, tx, st.item, ReviewClosedPublished); err != nil {
+			return nil, err
+		}
 	}
 	return v, nil
 }
@@ -294,6 +304,9 @@ func (s *Service) publishParts(ctx context.Context, tx store.Tx, st *itemState, 
 	}
 	changed := sel.changedLocales(codesOf(outs))
 	data := map[string]any{"type": st.typ.Name, "version": st.item.PublishedVersion, "locales": changed}
+	if st.reviewBypassed {
+		data["reviewBypassed"] = true
+	}
 	if err := s.record(ctx, tx, actor, "item.publish", st.item.ID, data); err != nil {
 		return nil, err
 	}

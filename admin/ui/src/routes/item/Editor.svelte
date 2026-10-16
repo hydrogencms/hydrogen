@@ -40,6 +40,11 @@
   import { releaseApi } from '../release/api';
   import { formatInZone, nextScheduled, type Release } from '../release/logic';
   import SidePanels from './SidePanels.svelte';
+  import '../../lib/messages/review';
+  import { reviewApi } from '../review/api';
+  import { canBypass as showBypass, publishBlock, stateTone, type ReviewData } from '../review/logic';
+  import ReviewActions from '../review/ReviewActions.svelte';
+  import { reviewRev } from '../review/revision.svelte';
   import { copyText, errorMessage } from '../../lib/errors';
   import { formatDateTime } from '../../lib/format';
   import type { CompiledField } from '../../lib/types.svelte';
@@ -349,6 +354,15 @@
   let dialogs = $state<ActionDialogs>();
   async function openPublish() {
     if (form.dirty && !(await save())) return;
+    // Saving a draft reopens an approved review: re-read it before publishing.
+    if (reviewRequired && data) {
+      const r = await reviewApi.get(data.id).catch(() => null);
+      if (r) review = r;
+      if (r && publishBlock(true, r.state, canBypassReview)) {
+        toast.error(t('review.needsApproved'));
+        return;
+      }
+    }
     dialogs?.publish();
   }
   async function withSaved(fn: () => void) {
@@ -382,6 +396,61 @@
     return () => ctl.abort();
   });
   const scheduled = $derived(nextScheduled(releases));
+
+  // ---- review (types with `review: true`)
+  let review = $state.raw<ReviewData | null>(null);
+  let bypassOpen = $state(false);
+  const reviewKey = $derived(`${data?.id ?? ''}|${data?.version ?? ''}|${data?.updatedAt ?? ''}|${data?.status ?? ''}`);
+  const reviewRequired = $derived(mode !== 'new' && !!data && !!type?.review);
+  const canBypassReview = $derived(session.can('review.bypass', { type: type?.name }));
+  $effect(() => {
+    void reviewKey;
+    void reviewRev.n;
+    const rid = reviewRequired ? untrack(() => data?.id) : undefined;
+    if (!rid) {
+      review = null;
+      return;
+    }
+    const ctl = new AbortController();
+    reviewApi
+      .get(rid, ctl.signal)
+      .then((r) => (review = r))
+      .catch(() => {
+        if (!ctl.signal.aborted) review = null;
+      });
+    return () => ctl.abort();
+  });
+  let bypassBusy = $state(false);
+  // Publishes every draft locale at once (the publish dialog's default); the server records the bypass.
+  async function publishBypass() {
+    if (!data || !target) return;
+    if (form.dirty && !(await save())) {
+      bypassOpen = false;
+      return;
+    }
+    bypassBusy = true;
+    try {
+      const locs = (data.draftParts ?? []).filter((p) => p !== 'shared').sort();
+      await itemApi.publish(target, locs.length ? { locales: locs } : {}, cc());
+      bypassOpen = false;
+      toast.success(t('collections.published'));
+      reloadTick++;
+      relTick++;
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.status >= 500 || e.status === 0) throw e;
+      if (isConflict(e)) {
+        bypassOpen = false;
+        openConflict(e, () => void publishBypass());
+      } else toast.error(errorMessage(e));
+    } finally {
+      bypassBusy = false;
+    }
+  }
+  const reviewState = $derived(review?.state ?? 'none');
+  const needsReview = $derived(reviewRequired && (review?.required ?? true));
+  const reviewBlock = $derived(needsReview ? publishBlock(true, reviewState, canBypassReview) : '');
+  const bypassItem = $derived(needsReview && showBypass(true, reviewState, canBypassReview));
+  const reviewReason = $derived(reviewBlock ? t('review.needsApproved') : '');
 
   const unrouted = $derived(type ? unroutedErrors(type.fields, form.errors, form.values.fields) : {});
   const title = $derived(isNew ? t('collections.newTitle', { type: type?.label ?? '' }) : data?.name || t('editor.untitled'));
@@ -506,14 +575,18 @@
     ...(canDelete ? [{ label: t('trash.move'), icon: 'trash', danger: true, separator: true, onselect: () => dialogs?.remove() }] : []),
   ]);
   const nothingToPublish = $derived(!canPublish && !form.dirty);
-  const publishMenu = $derived<MenuItem[]>(
-    canSchedule
+  // A release or schedule would be refused by the review gate as well: off with the same reason.
+  const menuOff = $derived(nothingToPublish || !!reviewBlock);
+  const menuHint = $derived(reviewBlock ? reviewReason : nothingToPublish ? t('release.nothingToPublish') : undefined);
+  const publishMenu = $derived<MenuItem[]>([
+    ...(bypassItem && !isNew && (data?.actions?.publish ?? true) ? [{ label: t('review.bypass'), icon: 'send', disabled: nothingToPublish, hint: nothingToPublish ? t('release.nothingToPublish') : undefined, onselect: () => (bypassOpen = true) }] : []),
+    ...(canSchedule
       ? [
-          { label: t('schedule.publishMenu'), icon: 'clock', disabled: nothingToPublish, hint: nothingToPublish ? t('release.nothingToPublish') : undefined, onselect: () => void withSaved(() => dialogs?.schedule('publish')) },
-          { label: t('releases.addMenu'), icon: 'send', disabled: nothingToPublish, hint: nothingToPublish ? t('release.nothingToPublish') : undefined, onselect: () => void withSaved(() => dialogs?.addToRelease()) },
+          { label: t('schedule.publishMenu'), icon: 'clock', disabled: menuOff, hint: menuHint, onselect: () => void withSaved(() => dialogs?.schedule('publish')) },
+          { label: t('releases.addMenu'), icon: 'send', disabled: menuOff, hint: menuHint, onselect: () => void withSaved(() => dialogs?.addToRelease()) },
         ]
-      : [],
-  );
+      : []),
+  ]);
   const saveLabel = $derived(!isNew && !form.dirty && !form.pending ? t('editor.saved') : t('common.save'));
 </script>
 
@@ -699,8 +772,20 @@
   />
 {/if}
 
+{#snippet publishButton()}
+  <Button
+    variant="primary"
+    disabled={(!canPublish && !form.dirty) || !!reviewBlock}
+    aria-describedby={reviewReason ? 'h-publish-reason' : undefined}
+    onclick={() => void openPublish()}>{t('collections.publish')}</Button>
+  {#if reviewReason}<span id="h-publish-reason" class="h-sr">{reviewReason}</span>{/if}
+{/snippet}
+
 {#snippet badge()}
   <StatusBadge status={data ? data.status : 'draft'} />
+  {#if reviewRequired && reviewState !== 'none'}
+    <span class="h-item__review" title={t('review.chipTitle', { state: t(`review.state.${reviewState}`) })}><Badge tone={stateTone(reviewState)} dot>{t(`review.state.${reviewState}`)}</Badge></span>
+  {/if}
   {#if scheduled}
     <a class="h-item__sched" use:link href={href(`/releases/${scheduled.id}`)} title={scheduled.name}>
       <Badge tone="info"><Icon name="clock" size={12} /> {t('release.scheduledBadge', { date: formatInZone(scheduled.scheduledAt) })}</Badge>
@@ -740,6 +825,9 @@
     loading={form.pending}
     disabled={!canEdit || (!form.dirty && !isNew)}
     onclick={() => void save()}>{saveLabel}</Button>
+  {#if reviewRequired && data && !form.pending}
+    <ReviewActions id={data.id} {review} before={async () => !form.dirty || (await save())} />
+  {/if}
   {#each extActions as a, i (a.tag + i)}
     <span class="h-item__ext" data-action={a.tag} title={a.title}>
       <Extension tag={a.tag} props={{ item: data, type: type?.name, locale }} onEvents={extEvents} />
@@ -752,16 +840,27 @@
   {#if !isNew}
     {#if publishMenu.length}
       <span class="h-split">
-        <Button variant="primary" disabled={!canPublish && !form.dirty} onclick={() => void openPublish()}>{t('collections.publish')}</Button>
+        {@render publishButton()}
         <Menu label={t('release.publishOptions')} items={publishMenu} triggerClass="h-button h-button--primary h-button--md h-split__more">
           {#snippet trigger()}<Icon name="chevron-down" size={16} /><span class="h-sr">{t('release.publishOptions')}</span>{/snippet}
         </Menu>
       </span>
     {:else}
-      <Button variant="primary" disabled={!canPublish && !form.dirty} onclick={() => void openPublish()}>{t('collections.publish')}</Button>
+      {@render publishButton()}
     {/if}
   {/if}
 {/snippet}
+
+<Dialog bind:open={bypassOpen} title={t('review.bypassTitle')} size="sm">
+  <p>{t('review.bypassText', { name: data?.name || t('editor.untitled') })}</p>
+  {#snippet footer()}
+    <Button disabled={bypassBusy} onclick={() => (bypassOpen = false)}>{t('common.cancel')}</Button>
+    <Button
+      variant="danger"
+      loading={bypassBusy}
+      onclick={() => void publishBypass()}>{t('review.bypass')}</Button>
+  {/snippet}
+</Dialog>
 
 <Dialog open={!!conflict} title={t('collections.conflict.title')} size="sm" dismissible={false}>
   {#if conflict}

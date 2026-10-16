@@ -113,7 +113,7 @@ func (c *compiler) groupFields(name string) ([]*Field, bool) {
 
 func (c *compiler) compileType(def *typeDef) *Type {
 	t := &Type{
-		Name: def.name, Label: def.label, Description: def.description, Singleton: def.singleton, Page: def.page, Blockset: def.blockset,
+		Name: def.name, Label: def.label, Description: def.description, Singleton: def.singleton, Page: def.page, Blockset: def.blockset, Review: def.review,
 		NamePattern: def.namePattern.s, Pos: def.pos,
 		Admin: TypeAdmin{Group: def.adminGroup, Icon: def.adminIcon},
 		AI:    TypeAI{Instructions: def.aiInstr},

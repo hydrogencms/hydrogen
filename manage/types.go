@@ -34,7 +34,7 @@ func (a *api) buildCaches(extra []Route) error {
 		ct := compiled.Types[i]
 		sum := map[string]any{
 			"name": t.Name, "label": t.Label, "description": t.Description,
-			"singleton": t.Singleton, "page": t.Page, "fields": ct["fields"],
+			"singleton": t.Singleton, "page": t.Page, "review": t.Review, "fields": ct["fields"],
 		}
 		for _, k := range []string{"admin", "namePattern", "options"} {
 			if v, ok := ct[k]; ok {

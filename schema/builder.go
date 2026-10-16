@@ -285,6 +285,7 @@ type TypeBuilder struct {
 func (t *TypeBuilder) Name() string    { return t.def.name }
 func (t *TypeBuilder) Page() bool      { return t.def.page }
 func (t *TypeBuilder) Singleton() bool { return t.def.singleton }
+func (t *TypeBuilder) Review() bool    { return t.def.review }
 
 // Type returns another type of the same builder, for checks that relate types to each other.
 func (t *TypeBuilder) Type(name string) (*TypeBuilder, bool) { return t.b.Type(name) }

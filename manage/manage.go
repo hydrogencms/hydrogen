@@ -37,6 +37,7 @@ type Content interface {
 	List(ctx context.Context, o content.ListOptions) (*content.ListResult, error)
 	Versions(ctx context.Context, id ids.UUID) ([]store.VersionMeta, error)
 	VersionContent(ctx context.Context, id ids.UUID, version int) (*content.VersionView, error)
+	RestoreVersion(ctx context.Context, id ids.UUID, version int, locales []string) (*content.View, error)
 	ReferencesVisible(ctx context.Context, id ids.UUID) ([]content.Referrer, int, error)
 	Singleton(ctx context.Context, typ string, o content.GetOptions) (*content.View, error)
 	UpdateSingleton(ctx context.Context, typ string, in content.UpdateInput) (*content.View, error)
@@ -183,6 +184,7 @@ var coreRoutes = []route{
 	{"GET", "/trash", access.PolicyContentRead, (*api).listTrash},
 	{"GET", "/items/{id}/versions", access.PolicyContentRead, (*api).versions},
 	{"GET", "/items/{id}/versions/{n}", access.PolicyContentRead, (*api).version},
+	{"POST", "/items/{id}/versions/{n}/restore", access.PolicyContentEdit, (*api).restoreVersion},
 	{"GET", "/items/{id}/references", access.PolicyContentRead, (*api).references},
 	{"GET", "/singletons/{type}", access.PolicyContentRead, (*api).getSingleton},
 	{"PATCH", "/singletons/{type}", access.PolicyContentEdit, (*api).updateSingleton},
