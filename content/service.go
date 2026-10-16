@@ -127,7 +127,17 @@ func validateKey(k string) error {
 	return nil
 }
 
+// getItem reads an item that is not in the trash; a trashed item is ErrNotFound.
 func getItem(ctx context.Context, tx store.Tx, id ids.UUID, forUpdate bool) (store.Item, error) {
+	it, err := getItemAny(ctx, tx, id, forUpdate)
+	if err == nil && it.DeletedAt != nil {
+		return it, fmt.Errorf("%w: %s", ErrNotFound, id)
+	}
+	return it, err
+}
+
+// getItemAny reads an item, trashed or not.
+func getItemAny(ctx context.Context, tx store.Tx, id ids.UUID, forUpdate bool) (store.Item, error) {
 	it, err := tx.Content().GetItem(ctx, id, forUpdate)
 	return it, itemErr(id.String(), err)
 }

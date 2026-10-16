@@ -10,6 +10,7 @@ module.
 
 If `planning/` exists, read [`planning/README.md`](planning/README.md) first. It is private and gitignored:
 never commit it, quote it in commit messages or public docs, or move its content into tracked files unless asked.
+It is its own git repository: commit planning changes there (`git -C planning …`), alongside the code commits.
 
 ## Layout
 
@@ -92,6 +93,12 @@ never commit it, quote it in commit messages or public docs, or move its content
   `content.preview.share`, config `delivery.share_links|share_default_ttl|share_max_ttl`, cleanup job
   `preview.cleanup`. The bridge's viewer mode follows the stream outside a frame. Public doc:
   `docs/share-links.md`. Contract: `planning/design/share-h7s.md`.
+- Publishing (H8a): `content` unpublish, trash (`DELETE /items/{id}`), restore, purge (`?permanent=true`, trashed
+  items only) and the `content.trash` retention job (`content.trash_retention`); trashed items are hidden by every
+  store query unless `store.Query.Trashed` says otherwise, and free their key. `release/` groups items (publish or
+  unpublish actions) and publishes them in one transaction, now or scheduled (job `releases`, run as the principal
+  who scheduled, re-loaded by `access.Authenticator.PrincipalOf`); one-item schedules are releases of kind `item`.
+  Policy `release.manage`. Docs: `docs/releases.md`. Contract: `planning/design/editorial-h8a.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
@@ -178,6 +185,11 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
   an edit is open (`focusToolbar` checks `editing` and where the focus is); canvas model actions run through
   `BlocksModel.quietly` so they don't focus the form. Overlay texts go to a live frame when it reports `rendered`
   (never before the patch, or the mapping misses the new text) and to a reload frame with its next `ready`.
+- `DELETE /items/{id}` moves an item to the trash; only `?permanent=true` on a trashed item removes it (the old hard
+  delete). Async consumers that cleaned up on delete must also handle `item.unpublished` and `item.trashed`.
+- Release publishing goes through `content.Service.PublishTx/UnpublishTx` inside one `store.Tx`: call the service's
+  grant preparation before opening the transaction (small pools deadlock otherwise), and change release status only
+  through the store's conditional transition, never a blind update (several nodes run the `releases` job and the API).
 - Reload-mode preview never autosaves: the admin relays the unsaved fields (`lib/preview/relay.ts`, `PUT
   /preview-relay`) and delivery overlays them on draft views for any preview token covering the item, until the item
   is saved (the overlay loses to a newer item update) or the relay is an hour old. A share token is a bearer secret:

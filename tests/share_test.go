@@ -739,6 +739,8 @@ func TestShareStreamItemGone(t *testing.T) {
 		if err := n.app.Services().Content.Delete(ctx, art); err != nil {
 			t.Fatal(err)
 		}
+		// The link to a trashed item stops working.
+		n.wantStatus("/items/"+art.String()+"?preview="+sh["token"].(string), 404)
 		n.clk.Advance(time.Second)
 		// A relay notification wakes the stream; the item is gone, so it ends as unavailable (not revoked).
 		if err := n.db.Tx(ctx, func(tx store.Tx) error {

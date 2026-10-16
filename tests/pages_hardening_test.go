@@ -289,15 +289,11 @@ func TestPagesLinksToDeletedTargetsAreCleared(t *testing.T) {
 				t.Errorf("before: %s link = %+v", name, got[name])
 			}
 		}
-		if err := e.c.Delete(ctx, art); err != nil {
-			t.Fatal(err)
-		}
+		hardDelete(t, e.c, art)
 		if err := e.pages.DeleteNode(ctx, mount.ID); err != nil {
 			t.Fatal(err)
 		}
-		if err := e.c.Delete(ctx, page); err != nil {
-			t.Fatal(err)
-		}
+		hardDelete(t, e.c, page)
 		got = targets()
 		for _, name := range []string{"item", "page", "mount", "page item"} {
 			n := got[name]

@@ -209,6 +209,48 @@ func (s *service) removeItem(ctx context.Context, tx store.Tx, item ids.UUID) ([
 	return append(out, change{Site: n.Site}), nil
 }
 
+// dropRoutes removes what the module serves for an item that is not published: its routes, memberships and,
+// for a page, its slugs. The page node stays in the tree. The history rows (former paths, state redirect) stay:
+// they resolve to nothing while the item is offline (their target is its current route) and redirect again once
+// it is restored and published; any live route may take their path over meanwhile. Only a purge
+// (removeItem) drops them. Idempotent.
+func (s *service) dropRoutes(ctx context.Context, tx store.Tx, item ids.UUID) ([]change, error) {
+	q := tx.SQL()
+	n, ok, err := s.lockedNodeByItem(ctx, tx, item)
+	if err != nil {
+		return nil, err
+	}
+	freed, err := q.Exec(ctx, "DELETE FROM route WHERE item_id = ? AND state <> 'redirect'", item)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := q.Exec(ctx, "DELETE FROM page_mount_item WHERE item_id = ?", item); err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	slugs, err := q.Exec(ctx, "DELETE FROM page_slug WHERE node_id = ?", n.ID)
+	if err != nil {
+		return nil, err
+	}
+	if freed > 0 {
+		cols, err := siteCollections(ctx, q, n.Site)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range cols {
+			if err := s.recomputeCollection(ctx, q, n.Site, c, nil, nil); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if freed == 0 && slugs == 0 {
+		return nil, nil
+	}
+	return []change{{n.Site, &n.ID}}, nil
+}
+
 func countChildren(ctx context.Context, q store.SQL, node ids.UUID) (int, error) {
 	var n int
 	err := q.QueryRow(ctx, "SELECT COUNT(*) FROM page_node WHERE parent_id = ?", node).Scan(&n)

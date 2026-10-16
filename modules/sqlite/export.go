@@ -33,7 +33,7 @@ func (s contentStore) SchemaRevisions(ctx context.Context) ([]store.SchemaRevisi
 }
 
 func (s contentStore) ItemsAfter(ctx context.Context, after ids.UUID, limit int) ([]store.Item, error) {
-	rows, err := s.tx.QueryContext(ctx, `SELECT `+itemColumns+` FROM item WHERE id > ? ORDER BY id LIMIT ?`, uid(after), limit)
+	rows, err := s.tx.QueryContext(ctx, `SELECT `+itemColumns+` FROM item WHERE id > ? AND deleted_at IS NULL ORDER BY id LIMIT ?`, uid(after), limit)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: items after: %w", err)
 	}
@@ -163,7 +163,7 @@ func (s contentStore) ContentMigrationLog(ctx context.Context) ([]store.AppliedC
 
 func (s contentStore) CountItems(ctx context.Context) (int, error) {
 	var n int
-	err := s.tx.QueryRowContext(ctx, `SELECT count(*) FROM item`).Scan(&n)
+	err := s.tx.QueryRowContext(ctx, `SELECT count(*) FROM item WHERE deleted_at IS NULL`).Scan(&n)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}

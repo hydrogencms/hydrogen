@@ -41,6 +41,11 @@ func (s *Service) prepare(ctx context.Context) error {
 	return s.o.Access.Prepare(ctx)
 }
 
+// Prepare warms the grants of the principal in ctx. The Tx variants (PublishTx, UnpublishTx) do not, because
+// they run inside the caller's transaction, where loading grants through the pool can starve a small one: call
+// it once before opening the transaction. It is a no-op for the system.
+func (s *Service) Prepare(ctx context.Context) error { return s.prepare(ctx) }
+
 func (s *Service) targetOf(st *itemState, locales []string, doc map[string]any) access.Target {
 	it := st.item
 	return access.Target{Type: st.typ.Name, Item: &it, Locales: locales, Doc: doc}
@@ -165,6 +170,34 @@ func (s *Service) readable(ctx context.Context, c store.ContentStore, it store.I
 		return false, nil
 	}
 	return false, err
+}
+
+// CanRead reports whether the principal in ctx may read the item, by the full read check (grants, limitations
+// and access rules on its state). A missing item reads as false. Without a principal, or for the system, it
+// is true for any item that exists.
+func (s *Service) CanRead(ctx context.Context, id ids.UUID) (bool, error) {
+	if err := s.prepare(ctx); err != nil {
+		return false, err
+	}
+	var ok bool
+	err := s.o.DB.View(ctx, func(tx store.Tx) error {
+		it, err := tx.Content().GetItem(ctx, id, false)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		ok, err = s.CanReadTx(ctx, tx, it)
+		return err
+	})
+	return ok, err
+}
+
+// CanReadTx is CanRead for an item already loaded, inside the caller's transaction. Like the other Tx methods
+// it needs Prepare to have run before the transaction opened.
+func (s *Service) CanReadTx(ctx context.Context, tx store.Tx, it store.Item) (bool, error) {
+	return s.readable(store.WithTx(ctx, tx), tx.Content(), it)
 }
 
 // CanPreview refuses unless the principal in ctx may mint a preview token for the item in the channel: it must

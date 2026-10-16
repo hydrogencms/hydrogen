@@ -31,6 +31,7 @@ import (
 	"github.com/hydrogencms/hydrogen/jobs"
 	"github.com/hydrogencms/hydrogen/manage"
 	"github.com/hydrogencms/hydrogen/outbox"
+	"github.com/hydrogencms/hydrogen/release"
 	"github.com/hydrogencms/hydrogen/schema"
 	"github.com/hydrogencms/hydrogen/store"
 	"github.com/hydrogencms/hydrogen/webhook"
@@ -72,6 +73,9 @@ type JobsConfig struct {
 type ContentConfig struct {
 	SchemaDir     string `yaml:"schema_dir"`     // default "schema"
 	DefaultLocale string `yaml:"default_locale"` // default "en"
+	// TrashRetention is how long an item stays in the trash before the content.trash job purges it. Default
+	// 720h (30 days); 0 keeps trashed items until someone purges them.
+	TrashRetention time.Duration `yaml:"trash_retention"`
 }
 
 type ManageConfig struct {
@@ -172,6 +176,8 @@ type Services struct {
 	Schema  *schema.Schema
 	Hooks   *hooks.Registry
 	Content *content.Service
+	// Releases publish groups of items together, now or scheduled.
+	Releases *release.Service
 	// Channels are the compiled delivery channels (config/channels.yaml); one implicit "default" channel when
 	// none are configured.
 	Channels *channel.Set
@@ -288,6 +294,10 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 		a.closeDB(db)
 		return nil, err
 	}
+	if a.services.Releases, err = newReleases(a.services); err != nil {
+		a.closeDB(db)
+		return nil, err
+	}
 	if a.runner, err = newRunner(a.services, reg, o.JobHold); err != nil {
 		a.closeDB(db)
 		return nil, err
@@ -350,7 +360,7 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 	core := CoreConfig{
 		HTTP:    HTTPConfig{Addr: ":8080", ReadHeaderTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second},
 		Log:     LogConfig{Level: "info"},
-		Content: ContentConfig{SchemaDir: "schema", DefaultLocale: "en"},
+		Content: ContentConfig{SchemaDir: "schema", DefaultLocale: "en", TrashRetention: DefaultTrashRetention},
 		Delivery: DeliveryConfig{CacheBytes: delivery.DefaultCacheBytes, ShareLinks: true,
 			ShareDefaultTTL: delivery.DefaultShareTTL, ShareMaxTTL: delivery.MaxShareTTL},
 		Jobs:  JobsConfig{Enabled: true},
@@ -376,7 +386,13 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 	reg.env = cfg.Env()
 	if runtime {
 		reg.current = "core"
+		if core.Content.TrashRetention < 0 {
+			return nil, fmt.Errorf("content.trash_retention must not be negative (0 keeps trashed items forever)")
+		}
 		if err := reg.Job("auth.cleanup", "0 * * * *", cleanupSessions); err != nil {
+			return nil, err
+		}
+		if err := reg.Job("content.trash", "@hourly", purgeTrash(core.Content.TrashRetention)); err != nil {
 			return nil, err
 		}
 	}
@@ -604,7 +620,7 @@ func (a *App) Handler() (http.Handler, error) {
 		api, err := manage.New(manage.Options{Content: a.services.Content, Auth: a.services.Auth, Gate: a.services.Access,
 			Admin: a.services.Admin, Catalog: a.services.Catalog,
 			Channels: a.services.Channels, Log: a.services.Log, Prefix: prefix,
-			Routes: append(slices.Clone(a.reg.manageRts), a.services.Delivery.ManageRoutes()...)})
+			Routes: slices.Concat(a.reg.manageRts, a.services.Delivery.ManageRoutes(), a.services.Releases.ManageRoutes())})
 		if err != nil {
 			return nil, err
 		}
@@ -841,6 +857,7 @@ func newRunner(s *Services, reg *Registry, hold time.Duration) (*jobs.Runner, er
 		list[i] = jobs.Job{Name: j.value.name, Schedule: j.value.schedule,
 			Run: func(ctx context.Context) error { return j.value.fn(ctx, s) }}
 	}
+	list = append(list, releaseJob(s))
 	list = append(list, jobs.Job{Name: "preview.cleanup", Schedule: "@every 10m",
 		Run: func(ctx context.Context) error { return s.Delivery.CleanupPreview(ctx) }})
 	return jobs.NewRunner(jobs.Options{Clock: s.Clock, Locker: s.DB.Locker(), Log: s.Log, Hold: hold}, list)

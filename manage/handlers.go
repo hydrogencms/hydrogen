@@ -3,6 +3,7 @@ package manage
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -64,7 +65,8 @@ func getOptions(r *http.Request) (content.GetOptions, error) {
 			return o, BadRequest("draft must be true or false")
 		}
 	}
-	return o, nil
+	o.Trashed, err = boolParam(q, "trashed")
+	return o, err
 }
 
 func (a *api) listItems(w http.ResponseWriter, r *http.Request) error {
@@ -192,11 +194,93 @@ func (a *api) deleteItem(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := a.c.Delete(preconditionCtx(r), id); err != nil {
+	perm, err := boolParam(r.URL.Query(), "permanent")
+	if err != nil {
+		return err
+	}
+	if perm {
+		err = a.c.Purge(preconditionCtx(r), id)
+	} else {
+		err = a.c.Delete(preconditionCtx(r), id)
+	}
+	if err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+func (a *api) unpublishItem(w http.ResponseWriter, r *http.Request) error {
+	id, err := pathID(r)
+	if err != nil {
+		return err
+	}
+	v, err := a.c.Unpublish(preconditionCtx(r), id)
+	if err != nil {
+		return err
+	}
+	writeView(w, http.StatusOK, v)
+	return nil
+}
+
+func (a *api) restoreItem(w http.ResponseWriter, r *http.Request) error {
+	id, err := pathID(r)
+	if err != nil {
+		return err
+	}
+	v, err := a.c.Restore(preconditionCtx(r), id)
+	if err != nil {
+		return err
+	}
+	writeView(w, http.StatusOK, v)
+	return nil
+}
+
+func (a *api) listTrash(w http.ResponseWriter, r *http.Request) error {
+	q := r.URL.Query()
+	for k := range q {
+		switch k {
+		case "type", "locale", "limit", "offset":
+		default:
+			return BadRequest("unknown query parameter %q", k)
+		}
+	}
+	o := content.TrashOptions{}
+	var err error
+	if o.Type, err = single(q, "type"); err != nil {
+		return err
+	}
+	if o.Locale, err = single(q, "locale"); err != nil {
+		return err
+	}
+	if o.Limit, err = parseInt(q, "limit", defaultLimit, 1, maxLimit); err != nil {
+		return err
+	}
+	if o.Offset, err = parseInt(q, "offset", 0, 0, maxOffset); err != nil {
+		return err
+	}
+	res, err := a.c.ListTrash(r.Context(), o)
+	if err != nil {
+		return err
+	}
+	if res.Items == nil {
+		res.Items = []content.TrashSummary{}
+	}
+	WriteJSON(w, http.StatusOK, res)
+	return nil
+}
+
+// boolParam reads an optional true/false query parameter.
+func boolParam(q url.Values, name string) (bool, error) {
+	v, err := single(q, name)
+	if err != nil || v == "" {
+		return false, err
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, BadRequest("%s must be true or false", name)
+	}
+	return b, nil
 }
 
 type versionMeta struct {

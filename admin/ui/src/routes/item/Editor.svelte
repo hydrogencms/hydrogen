@@ -15,6 +15,7 @@
   import { href, link, router } from '../../lib/router.svelte';
   import { types } from '../../lib/types.svelte';
   import Button from '../../lib/ui/Button.svelte';
+  import Badge from '../../lib/ui/Badge.svelte';
   import Card from '../../lib/ui/Card.svelte';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import Icon from '../../lib/ui/Icon.svelte';
@@ -35,6 +36,9 @@
   import Slot from '../../lib/ext/Slot.svelte';
   import StatusBadge from '../collection/StatusBadge.svelte';
   import ActionDialogs from './ActionDialogs.svelte';
+  import '../../lib/messages/releases';
+  import { releaseApi } from '../release/api';
+  import { formatInZone, nextScheduled, type Release } from '../release/logic';
   import SidePanels from './SidePanels.svelte';
   import { copyText, errorMessage } from '../../lib/errors';
   import { formatDateTime } from '../../lib/format';
@@ -93,7 +97,8 @@
   let published = $state<string[]>([]);
   $effect(() => {
     const d = data;
-    if (!d || d.status === 'draft') {
+    // Nothing is published for a never-published or unpublished item.
+    if (!d || d.status === 'draft' || d.status === 'unpublished') {
       published = [];
       return;
     }
@@ -346,6 +351,37 @@
     if (form.dirty && !(await save())) return;
     dialogs?.publish();
   }
+  async function withSaved(fn: () => void) {
+    if (form.dirty && !(await save())) return;
+    fn();
+  }
+
+  // Open and scheduled releases that contain the item (the header badge and its link).
+  let releases = $state.raw<Release[]>([]);
+  let relTick = $state(0);
+  let relFor: string | undefined;
+  $effect(() => {
+    void relTick;
+    const id = mode === 'item' ? data?.id : undefined;
+    // Another item: drop the previous item's badge now rather than when the new answer lands.
+    if (id !== relFor) {
+      relFor = id;
+      releases = [];
+    }
+    if (!id || !session.can('content.read')) {
+      releases = [];
+      return;
+    }
+    const ctl = new AbortController();
+    releaseApi
+      .ofItem(id, ctl.signal)
+      .then((r) => (releases = r))
+      .catch(() => {
+        if (!ctl.signal.aborted) releases = [];
+      });
+    return () => ctl.abort();
+  });
+  const scheduled = $derived(nextScheduled(releases));
 
   const unrouted = $derived(type ? unroutedErrors(type.fields, form.errors, form.values.fields) : {});
   const title = $derived(isNew ? t('collections.newTitle', { type: type?.label ?? '' }) : data?.name || t('editor.untitled'));
@@ -354,7 +390,7 @@
       ? [{ label: t('nav.settingsContent') }, { label: type?.label ?? typeName }]
       : [{ label: t('nav.content') }, { label: type?.label ?? '', href: type ? `/collections/${type.name}` : undefined }],
   );
-  const canPublish = $derived(!isNew && (data?.actions?.publish ?? true) && (data?.draftParts.length ?? 0) > 0);
+  const canPublish = $derived(!isNew && (data?.actions?.publish ?? true) && ((data?.draftParts.length ?? 0) > 0 || data?.status === 'unpublished'));
   const canDiscard = $derived(!isNew && canEdit && (data?.draftParts.length ?? 0) > 0);
   const extActions = $derived(data && type ? ext.actions(type.name) : []);
   // An extension asked for a reload: unsaved edits are only dropped after a confirmation.
@@ -459,11 +495,25 @@
   async function copyId() {
     if (data && (await copyText(data.id))) toast.success(t('editor.idCopied'));
   }
+  const isLive = $derived(!!data && (data.status === 'published' || data.status === 'changed'));
+  const canUnpublish = $derived(!isNew && mode === 'item' && isLive && (data?.actions?.publish ?? true));
+  const canSchedule = $derived(!isNew && mode === 'item' && (data?.actions?.publish ?? true) && session.can('release.manage'));
   const overflow = $derived<MenuItem[]>([
     ...(canDiscard ? [{ label: t('collections.discard'), icon: 'refresh', onselect: () => dialogs?.discard() }] : []),
     ...(data ? [{ label: t('editor.copyId'), icon: 'copy', onselect: () => void copyId() }] : []),
-    ...(canDelete ? [{ label: t('common.delete'), icon: 'trash', danger: true, separator: true, onselect: () => dialogs?.remove() }] : []),
+    ...(canUnpublish ? [{ label: t('release.unpublish'), icon: 'eye', separator: true, onselect: () => dialogs?.unpublish() }] : []),
+    ...(canUnpublish && canSchedule ? [{ label: t('schedule.unpublishMenu'), icon: 'clock', onselect: () => void withSaved(() => dialogs?.schedule('unpublish')) }] : []),
+    ...(canDelete ? [{ label: t('trash.move'), icon: 'trash', danger: true, separator: true, onselect: () => dialogs?.remove() }] : []),
   ]);
+  const nothingToPublish = $derived(!canPublish && !form.dirty);
+  const publishMenu = $derived<MenuItem[]>(
+    canSchedule
+      ? [
+          { label: t('schedule.publishMenu'), icon: 'clock', disabled: nothingToPublish, hint: nothingToPublish ? t('release.nothingToPublish') : undefined, onselect: () => void withSaved(() => dialogs?.schedule('publish')) },
+          { label: t('releases.addMenu'), icon: 'send', disabled: nothingToPublish, hint: nothingToPublish ? t('release.nothingToPublish') : undefined, onselect: () => void withSaved(() => dialogs?.addToRelease()) },
+        ]
+      : [],
+  );
   const saveLabel = $derived(!isNew && !form.dirty && !form.pending ? t('editor.saved') : t('common.save'));
 </script>
 
@@ -639,7 +689,8 @@
     {published}
     {cc}
     onconflict={openConflict}
-    onchanged={() => reloadTick++}
+    onchanged={() => (reloadTick++, relTick++)}
+    onscheduled={() => relTick++}
     onswitch={(l) => router.setQuery({ locale: l })}
     onerrors={(f) => {
       form.setErrors(f);
@@ -650,6 +701,11 @@
 
 {#snippet badge()}
   <StatusBadge status={data ? data.status : 'draft'} />
+  {#if scheduled}
+    <a class="h-item__sched" use:link href={href(`/releases/${scheduled.id}`)} title={scheduled.name}>
+      <Badge tone="info"><Icon name="clock" size={12} /> {t('release.scheduledBadge', { date: formatInZone(scheduled.scheduledAt) })}</Badge>
+    </a>
+  {/if}
 {/snippet}
 
 {#snippet meta()}
@@ -694,7 +750,16 @@
 
 {#snippet primary()}
   {#if !isNew}
-    <Button variant="primary" disabled={!canPublish && !form.dirty} onclick={() => void openPublish()}>{t('collections.publish')}</Button>
+    {#if publishMenu.length}
+      <span class="h-split">
+        <Button variant="primary" disabled={!canPublish && !form.dirty} onclick={() => void openPublish()}>{t('collections.publish')}</Button>
+        <Menu label={t('release.publishOptions')} items={publishMenu} triggerClass="h-button h-button--primary h-button--md h-split__more">
+          {#snippet trigger()}<Icon name="chevron-down" size={16} /><span class="h-sr">{t('release.publishOptions')}</span>{/snippet}
+        </Menu>
+      </span>
+    {:else}
+      <Button variant="primary" disabled={!canPublish && !form.dirty} onclick={() => void openPublish()}>{t('collections.publish')}</Button>
+    {/if}
   {/if}
 {/snippet}
 

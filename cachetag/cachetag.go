@@ -44,7 +44,7 @@ type Mapper func(topic string, payload json.RawMessage) []string
 func Items(singleton func(typ string) bool) Mapper {
 	return func(topic string, payload json.RawMessage) []string {
 		switch topic {
-		case "item.created", "item.updated", "item.published", "item.deleted":
+		case "item.created", "item.updated", "item.published", "item.unpublished", "item.trashed", "item.deleted":
 		default:
 			return nil
 		}

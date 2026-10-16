@@ -121,6 +121,22 @@ func (f *fake) Delete(_ context.Context, id ids.UUID) error {
 	return f.rec(call{name: "Delete", id: id})
 }
 
+func (f *fake) Unpublish(_ context.Context, id ids.UUID) (*content.View, error) {
+	return f.view, f.rec(call{name: "Unpublish", id: id})
+}
+
+func (f *fake) Restore(_ context.Context, id ids.UUID) (*content.View, error) {
+	return f.view, f.rec(call{name: "Restore", id: id})
+}
+
+func (f *fake) Purge(_ context.Context, id ids.UUID) error {
+	return f.rec(call{name: "Purge", id: id})
+}
+
+func (f *fake) ListTrash(_ context.Context, o content.TrashOptions) (*content.TrashResult, error) {
+	return &content.TrashResult{}, f.rec(call{name: "ListTrash", arg: o})
+}
+
 func (f *fake) List(_ context.Context, o content.ListOptions) (*content.ListResult, error) {
 	return f.list, f.rec(call{name: "List", arg: o})
 }

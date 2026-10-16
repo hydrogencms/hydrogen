@@ -144,7 +144,7 @@ func (s contentStore) LatestSchemaRev(ctx context.Context) (int, string, []byte,
 // Items
 
 const itemColumns = `item.id, item.key, item.type, item.main_locale, item.always_available, item.published_version,
-	item.created_at, item.updated_at, item.created_by, item.updated_by`
+	item.created_at, item.updated_at, item.created_by, item.updated_by, item.deleted_at, item.deleted_by`
 
 // scanItem reads itemColumns followed by any extra destinations.
 func scanItem(r scanner, extra ...any) (store.Item, error) {
@@ -153,9 +153,10 @@ func scanItem(r scanner, extra ...any) (store.Item, error) {
 		id               []byte
 		key              sql.NullString
 		created, updated int64
+		deleted          sql.NullInt64
 	)
 	dest := append([]any{&id, &key, &it.Type, &it.MainLocale, &it.AlwaysAvailable, &it.PublishedVersion,
-		&created, &updated, &it.CreatedBy, &it.UpdatedBy}, extra...)
+		&created, &updated, &it.CreatedBy, &it.UpdatedBy, &deleted, &it.DeletedBy}, extra...)
 	if err := r.Scan(dest...); err != nil {
 		return it, err
 	}
@@ -165,15 +166,16 @@ func scanItem(r scanner, extra ...any) (store.Item, error) {
 	}
 	it.Key = key.String
 	it.CreatedAt, it.UpdatedAt = fromMs(created), fromMs(updated)
+	it.DeletedAt = fromOptMs(deleted)
 	return it, nil
 }
 
 func (s contentStore) InsertItem(ctx context.Context, it store.Item) error {
 	_, err := s.tx.ExecContext(ctx, `INSERT INTO item (id, key, type, main_locale, always_available, published_version,
-			created_at, updated_at, created_by, updated_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			created_at, updated_at, created_by, updated_by, deleted_at, deleted_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		uid(it.ID), nullable(it.Key), it.Type, it.MainLocale, it.AlwaysAvailable, it.PublishedVersion,
-		ms(it.CreatedAt), ms(it.UpdatedAt), it.CreatedBy, it.UpdatedBy)
+		ms(it.CreatedAt), ms(it.UpdatedAt), it.CreatedBy, it.UpdatedBy, optMs(it.DeletedAt), it.DeletedBy)
 	if isKeyConflict(err) {
 		return store.ErrDuplicateKey
 	}
@@ -195,7 +197,7 @@ func (s contentStore) GetItemByKey(ctx context.Context, key string) (store.Item,
 	if key == "" {
 		return store.Item{}, store.ErrNotFound
 	}
-	it, err := scanItem(s.tx.QueryRowContext(ctx, `SELECT `+itemColumns+` FROM item WHERE key = ?`, key))
+	it, err := scanItem(s.tx.QueryRowContext(ctx, `SELECT `+itemColumns+` FROM item WHERE key = ? AND deleted_at IS NULL`, key))
 	if err != nil {
 		return it, wrapNotFound(fmt.Sprintf("get item by key %q", key), err)
 	}
@@ -243,6 +245,25 @@ func (s contentStore) UpdateItem(ctx context.Context, it store.Item) error {
 	}
 	if err != nil {
 		return fmt.Errorf("sqlite: update item %s: %w", it.ID, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+// SetDeleted writes only the trash columns. Restoring into a key a live item has taken fails on the partial
+// unique index.
+func (s contentStore) SetDeleted(ctx context.Context, id ids.UUID, at *time.Time, by string) error {
+	if at == nil {
+		by = ""
+	}
+	res, err := s.tx.ExecContext(ctx, `UPDATE item SET deleted_at = ?, deleted_by = ? WHERE id = ?`, optMs(at), by, uid(id))
+	if isKeyConflict(err) {
+		return store.ErrDuplicateKey
+	}
+	if err != nil {
+		return fmt.Errorf("sqlite: set deleted %s: %w", id, err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return store.ErrNotFound
@@ -417,6 +438,34 @@ func (s contentStore) PublishedLocalesOf(ctx context.Context, list []ids.UUID) (
 		}
 		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 			return nil, fmt.Errorf("sqlite: published locales of: %w", err)
+		}
+	}
+	return out, nil
+}
+
+func (s contentStore) MainNamesOf(ctx context.Context, list []ids.UUID) (map[ids.UUID]string, error) {
+	out := map[ids.UUID]string{}
+	for chunk := range slices.Chunk(list, maxVars) {
+		rows, err := s.tx.QueryContext(ctx, `SELECT i.id, COALESCE(NULLIF(d.name, ''), vl.name, '') FROM item i
+			LEFT JOIN draft_part d ON d.item_id = i.id AND d.part = i.main_locale
+			LEFT JOIN item_version_locale vl ON vl.item_id = i.id AND vl.version = i.published_version AND vl.locale = i.main_locale
+			WHERE i.id IN (`+placeholders(len(chunk))+`)`, idArgs(chunk)...)
+		if err != nil {
+			return nil, fmt.Errorf("sqlite: main names of: %w", err)
+		}
+		for rows.Next() {
+			var raw []byte
+			var name string
+			if err := rows.Scan(&raw, &name); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("sqlite: main names of: %w", err)
+			}
+			var id ids.UUID
+			copy(id[:], raw)
+			out[id] = name
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			return nil, fmt.Errorf("sqlite: main names of: %w", err)
 		}
 	}
 	return out, nil

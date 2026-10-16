@@ -133,7 +133,12 @@ func Fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, content.ErrInvalid):
 		writeErrorBody(w, http.StatusUnprocessableEntity, errorBody{Code: "invalid", Message: err.Error()})
 	case errors.Is(err, content.ErrConflict):
-		writeErrorBody(w, http.StatusConflict, errorBody{Code: "conflict", Message: err.Error()})
+		code := "conflict"
+		var coded interface{ APICode() string }
+		if errors.As(err, &coded) {
+			code = coded.APICode()
+		}
+		writeErrorBody(w, http.StatusConflict, errorBody{Code: code, Message: err.Error()})
 	case errors.Is(err, content.ErrReferenced):
 		writeErrorBody(w, http.StatusConflict, errorBody{Code: "referenced", Message: err.Error()})
 	case errors.Is(err, content.ErrDuplicateKey), errors.Is(err, store.ErrDuplicateKey):

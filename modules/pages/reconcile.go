@@ -49,6 +49,14 @@ func (s *service) reconcile(ctx context.Context, e outbox.Event) error {
 		if err != nil {
 			return fmt.Errorf("pages: read item %s: %w", p.ID, err)
 		}
+		if it.DeletedAt != nil || it.PublishedVersion == 0 {
+			// Unpublished or trashed (or an event that arrived late for an item that is offline now).
+			changes, err := s.dropRoutes(ctx, tx, p.ID)
+			if err != nil {
+				return err
+			}
+			return s.emitChanges(ctx, tx, changes)
+		}
 		docs, err := publishedDocs(ctx, tx.Content(), it)
 		if err != nil {
 			return err

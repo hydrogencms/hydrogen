@@ -704,17 +704,13 @@ func TestPagesDeleteNodes(t *testing.T) {
 		}
 
 		e.wantRoutes(child, "en current /parent/child")
-		if err := e.c.Delete(ctx, child); err != nil {
-			t.Fatal(err)
-		}
+		hardDelete(t, e.c, child)
 		e.wantRoutes(child)
 		e.wantNotFound("en", "/parent/child")
 		if _, err := e.pages.Node(ctx, childN); !errors.Is(err, content.ErrNotFound) {
 			t.Errorf("child node after delete: %v", err)
 		}
-		if err := e.c.Delete(ctx, parent); err != nil {
-			t.Fatal(err)
-		}
+		hardDelete(t, e.c, parent)
 		e.wantRoutes(parent)
 		e.drain()
 
@@ -726,9 +722,22 @@ func TestPagesDeleteNodes(t *testing.T) {
 		e.update(art, "en", `{"slug":"again"}`)
 		e.mustPublish(art)
 		e.wantRoutes(art, "en current /blog/again", "en redirect /blog/renamed", "en redirect /blog/post")
+		// Trashing it removes its routes but keeps the history, which redirects nowhere while it is offline.
 		if err := e.c.Delete(ctx, art); err != nil {
 			t.Fatal(err)
 		}
+		e.wantRoutes(art, "en redirect /blog/renamed", "en redirect /blog/post")
+		e.wantNotFound("en", "/blog/renamed")
+		e.wantNotFound("en", "/blog/again")
+		// Restoring and publishing it again brings the old paths back as redirects.
+		if _, err := e.c.Restore(ctx, art); err != nil {
+			t.Fatal(err)
+		}
+		e.mustPublish(art)
+		e.wantRoutes(art, "en current /blog/again", "en redirect /blog/renamed", "en redirect /blog/post")
+		e.wantRedirect("en", "/blog/post", "/blog/again", 301)
+		// Purging it removes the history too.
+		hardDelete(t, e.c, art)
 		e.wantRoutes(art)
 		e.wantNotFound("en", "/blog/renamed")
 		_ = m2

@@ -25,6 +25,7 @@ var contentTests = []struct {
 	{"ContentDraftParts", testDraftParts},
 	{"ContentDraftPartsOf", testDraftPartsOf},
 	{"ContentPublishedLocalesOf", testPublishedLocalesOf},
+	{"ContentMainNamesOf", testMainNamesOf},
 	{"ContentRefs", testRefs},
 	{"ContentIndex", testIndexReplace},
 	{"ContentSearch", testSearch},
@@ -471,6 +472,54 @@ func testPublishedLocalesOf(t *testing.T, db store.DB) {
 	})
 	if len(got) != 0 {
 		t.Fatalf("no items: %v", got)
+	}
+}
+
+func testMainNamesOf(t *testing.T, db store.DB) {
+	ctx := context.Background()
+	g := newIDs()
+	drafted, published, both, bare, missing := g.New(), g.New(), g.New(), g.New(), g.New()
+	withContent(t, db, func(c store.ContentStore) error {
+		if _, err := c.AddSchemaRev(ctx, "h", []byte(`{}`), t0); err != nil {
+			return err
+		}
+		for _, id := range []ids.UUID{drafted, published, both, bare} {
+			it := newItem(id, "article", "")
+			if id == published || id == both {
+				it.PublishedVersion = 1
+			}
+			if err := c.InsertItem(ctx, it); err != nil {
+				return err
+			}
+		}
+		for _, id := range []ids.UUID{published, both} {
+			v := store.Version{ItemID: id, Version: 1, SchemaRev: 1, Shared: []byte(`{}`), CreatedAt: t0,
+				Locales: []store.VersionLocale{{Locale: "en", Name: "Published", Data: []byte(`{}`)}, {Locale: "de", Name: "Veroeffentlicht", Data: []byte(`{}`)}}}
+			if err := c.InsertVersion(ctx, v); err != nil {
+				return err
+			}
+		}
+		for id, name := range map[ids.UUID]string{drafted: "Drafted", both: "Draft name"} {
+			if err := c.PutDraftPart(ctx, store.DraftPart{ItemID: id, Part: "en", Name: name, Data: []byte(`{}`), UpdatedAt: t0}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	var got map[ids.UUID]string
+	viewContent(t, db, func(c store.ContentStore) error {
+		var err error
+		got, err = c.MainNamesOf(ctx, []ids.UUID{drafted, published, both, bare, missing})
+		return err
+	})
+	want := map[ids.UUID]string{drafted: "Drafted", published: "Published", both: "Draft name", bare: ""}
+	if len(got) != len(want) {
+		t.Fatalf("main names: %v", got)
+	}
+	for id, n := range want {
+		if got[id] != n {
+			t.Fatalf("main name of %s = %q, want %q", id, got[id], n)
+		}
 	}
 }
 
@@ -1448,8 +1497,10 @@ func testItemIDsOfType(t *testing.T, db store.DB) {
 
 func sameItem(a, b store.Item) bool {
 	ta, tb := [2]time.Time{a.CreatedAt, a.UpdatedAt}, [2]time.Time{b.CreatedAt, b.UpdatedAt}
+	da, db := a.DeletedAt, b.DeletedAt
 	a.CreatedAt, a.UpdatedAt, b.CreatedAt, b.UpdatedAt = time.Time{}, time.Time{}, time.Time{}, time.Time{}
-	return a == b && ta[0].Equal(tb[0]) && ta[1].Equal(tb[1])
+	a.DeletedAt, b.DeletedAt = nil, nil
+	return a == b && ta[0].Equal(tb[0]) && ta[1].Equal(tb[1]) && (da == nil) == (db == nil) && (da == nil || da.Equal(*db))
 }
 
 // testQueryAvailable checks Query.Available on every plan: eight kinds of item, ten of each.

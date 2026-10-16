@@ -9,6 +9,9 @@
 //	content_migrations.ndjson  applied content migrations
 //	modules/<name>.ndjson      one file per module exporter, records are the module's own
 //
+// Items in the trash are not exported (the store skips them), so an import has no trashed items; module
+// exporters should skip records of trashed items the same way.
+//
 // Files are written and read as streams: nothing but one item (or one module record) is held in memory.
 // The manifest is written last; its checksums cover every other file and are verified before an import writes.
 package exportfmt

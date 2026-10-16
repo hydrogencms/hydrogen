@@ -218,9 +218,7 @@ func TestSnapshotNullifyRepublish(t *testing.T) {
 		if !slices.Equal(s.Refs, []ids.UUID{ed.ID}) || !bytes.Contains(s.Payload, []byte(ed.ID.String())) {
 			t.Fatalf("before: refs %v %s", s.Refs, s.Payload)
 		}
-		if err := e.svc.Delete(ctx, ed.ID); err != nil {
-			t.Fatal(err)
-		}
+		hardDelete(t, e.svc, ed.ID)
 		s = e.snapshot(v.ID, "en")
 		eq(t, "version", s.Version, 2)
 		if len(s.Refs) != 0 || bytes.Contains(s.Payload, []byte(ed.ID.String())) || bytes.Contains(s.Payload, []byte(`"editor"`)) {

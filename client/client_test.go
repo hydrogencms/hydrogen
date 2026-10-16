@@ -208,6 +208,27 @@ func TestManageRequests(t *testing.T) {
 		t.Errorf("delete %s %v", got.method, err)
 	}
 
+	srv, got = stub(t, 204, "", nil)
+	if err = client.NewManage(srv.URL, "t").Purge(ctx, "i1"); err != nil || got.method != "DELETE" || got.path != "/api/manage/v1/items/i1" || got.rawQuery != "permanent=true" {
+		t.Errorf("purge %s %s?%s %v", got.method, got.path, got.rawQuery, err)
+	}
+	srv, got = stub(t, 200, `{"id":"i1","status":"unpublished","deletedAt":"2026-10-15T10:15:00Z","deletedByName":"Ann"}`, nil)
+	tm := client.NewManage(srv.URL, "t")
+	if v, err := tm.Restore(ctx, "i1"); err != nil || got.method != "POST" || got.path != "/api/manage/v1/items/i1/restore" || v.Status != "unpublished" {
+		t.Errorf("restore %s %s %v", got.method, got.path, err)
+	}
+	if _, err := tm.Unpublish(ctx, "i1"); err != nil || got.method != "POST" || got.path != "/api/manage/v1/items/i1/unpublish" {
+		t.Errorf("unpublish %s %s %v", got.method, got.path, err)
+	}
+	if v, err := tm.GetTrashed(ctx, "i1", "de"); err != nil || got.rawQuery != "locale=de&trashed=true" || v.DeletedAt == nil || v.DeletedByName != "Ann" {
+		t.Errorf("get trashed %s %v", got.rawQuery, err)
+	}
+	srv, got = stub(t, 200, `{"items":[{"id":"i1","type":"page","name":"N","status":"draft","deletedAt":"2026-10-15T10:15:00Z","deletedBy":"user:u1","deletedByName":"Ann"}],"total":1}`, nil)
+	tl, err := client.NewManage(srv.URL, "t").ListTrash(ctx, "page", 10, 5)
+	if err != nil || tl.Total != 1 || tl.Items[0].DeletedByName != "Ann" || tl.Items[0].DeletedAt.IsZero() || got.path != "/api/manage/v1/trash" || got.rawQuery != "type=page&limit=10&offset=5" {
+		t.Errorf("list trash %+v %s?%s %v", tl, got.path, got.rawQuery, err)
+	}
+
 	srv, got = stub(t, 200, `{"token":"abc.def","expiresAt":"2026-10-15T10:15:00Z"}`, nil)
 	tok, err := client.NewManage(srv.URL, "t").PreviewToken(ctx, client.PreviewTokenInput{Channel: "web", Item: "i1", TTL: 10 * time.Minute})
 	if err != nil || tok.Token != "abc.def" || tok.ExpiresAt.Minute() != 15 || got.path != "/api/manage/v1/preview-tokens" ||

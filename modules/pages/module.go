@@ -67,6 +67,8 @@ func (m *module) Register(r *kernel.Registry) error {
 		{hooks.AfterPublish, (*service).afterPublish},
 		{hooks.BeforeDelete, (*service).beforeDelete},
 		{hooks.AfterDelete, (*service).afterDelete},
+		{hooks.BeforeUnpublish, (*service).beforeUnpublish},
+		{hooks.AfterUnpublish, (*service).afterUnpublish},
 	} {
 		err := r.AddHook(hooks.Hook{Event: h.event, Fn: func(hc *hooks.Context) error {
 			impl, err := m.svc.get()
@@ -81,7 +83,7 @@ func (m *module) Register(r *kernel.Registry) error {
 	}
 	r.Consumer(outbox.Consumer{
 		Name:   "pages.reconcile",
-		Topics: []string{"item.published", "item.deleted"},
+		Topics: []string{"item.published", "item.unpublished", "item.trashed", "item.deleted"},
 		Handle: func(ctx context.Context, e outbox.Event) error {
 			impl, err := m.svc.get()
 			if err != nil {

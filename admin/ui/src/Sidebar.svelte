@@ -106,6 +106,12 @@
   </a>
 {/snippet}
 
+{#snippet links(list: { to: string; label: string; icon: string }[])}
+  {#each list as s (s.to)}
+    {@render navlink(s.to, s.label, s.icon)}
+  {/each}
+{/snippet}
+
 {#snippet group(id: string, label: string)}
   <button type="button" class="h-nav__group" aria-expanded={isOpen(id)} onclick={() => toggle(id)}>
     <span>{label}</span><span class="h-nav__chev"><Icon name={isOpen(id) ? 'chevron-up' : 'chevron-down'} size={14} /></span>
@@ -168,6 +174,14 @@
       {/if}
     {/if}
 
+    {#if session.can('content.read')}
+      <div class="h-nav__group">{t('nav.publishing')}</div>
+      {@render links([
+        { to: '/releases', label: t('nav.releases'), icon: 'send' },
+        { to: '/trash', label: t('nav.trash'), icon: 'trash' },
+      ])}
+    {/if}
+
     {#each ext.menu() as g (g.menu)}
       <div class="h-nav__group">{g.menu}</div>
       {#each g.views as v (v.path)}
@@ -178,9 +192,7 @@
     {#if settings.length}
       {@render group('settings', t('nav.settings'))}
       {#if isOpen('settings')}
-        {#each settings as s (s.to)}
-          {@render navlink(s.to, s.label, s.icon)}
-        {/each}
+        {@render links(settings)}
       {/if}
     {/if}
   </div>

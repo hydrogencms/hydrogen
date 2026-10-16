@@ -1362,3 +1362,32 @@ a.h-name__title:hover {
     justify-content: space-between;
   }
 }
+
+/* Split button (Publish + options menu), scheduled badge link */
+.h-split {
+  display: inline-flex;
+  align-items: stretch;
+}
+.h-split > .h-button {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.h-split .h-split__more.h-button--primary {
+  min-height: 0;
+  padding: 0 var(--h-space-2);
+  border-color: var(--h-accent);
+  border-left: 1px solid color-mix(in srgb, var(--h-accent-contrast) 30%, transparent);
+  border-radius: 0 var(--h-radius-pill, 999px) var(--h-radius-pill, 999px) 0;
+  background: var(--h-accent);
+  color: var(--h-accent-contrast);
+}
+.h-split .h-split__more.h-button--primary:hover {
+  background: var(--h-accent-strong);
+}
+.h-item__sched {
+  text-decoration: none;
+}
+.h-item__sched:hover {
+  text-decoration: none;
+  filter: brightness(0.95);
+}

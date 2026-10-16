@@ -462,12 +462,15 @@ func (a *API) revokeShare(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// itemGone says whether the item is purged or in the trash: share links to it no longer work.
 func (a *API) itemGone(ctx context.Context, id ids.UUID) bool {
+	gone := false
 	err := a.o.DB.View(ctx, func(tx store.Tx) error {
-		_, err := tx.Content().GetItem(ctx, id, false)
+		it, err := tx.Content().GetItem(ctx, id, false)
+		gone = err == nil && it.DeletedAt != nil
 		return err
 	})
-	return errors.Is(err, store.ErrNotFound)
+	return gone || errors.Is(err, store.ErrNotFound)
 }
 
 // CleanupPreview deletes expired and revoked share sessions of more than a day ago and stale relayed drafts.

@@ -6,7 +6,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/audit"
 	"github.com/hydrogencms/hydrogen/hooks"
 	"github.com/hydrogencms/hydrogen/ids"
@@ -14,31 +13,8 @@ import (
 	"github.com/hydrogencms/hydrogen/store"
 )
 
-// Delete removes an item with its versions and drafts. Items that reference it with on_delete block stop the
-// delete (ReferencedError); nullify referrers get a new published version without the reference.
-func (s *Service) Delete(ctx context.Context, id ids.UUID) error {
-	if err := s.prepare(ctx); err != nil {
-		return err
-	}
-	return s.o.DB.Tx(ctx, func(tx store.Tx) error {
-		ctx := store.WithTx(ctx, tx)
-		it, err := getItem(ctx, tx, id, true)
-		if err != nil {
-			return err
-		}
-		if err := s.authorizeItem(ctx, tx.Content(), it, access.PolicyContentDelete, nil); err != nil {
-			return err
-		}
-		if err := s.checkState(ctx, it); err != nil {
-			return err
-		}
-		if err := s.deleteItem(ctx, tx, it); err != nil {
-			return fmt.Errorf("content: delete %s: %w", id, err)
-		}
-		return nil
-	})
-}
-
+// deleteItem removes a trashed item for good (Purge). Items that reference it with on_delete block stop it
+// (ReferencedError); nullify referrers get a new published version without the reference.
 func (s *Service) deleteItem(ctx context.Context, tx store.Tx, it store.Item) error {
 	if _, err := s.typeOf(it.Type); err != nil {
 		return err
@@ -66,7 +42,7 @@ func (s *Service) deleteItem(ctx context.Context, tx store.Tx, it store.Item) er
 		return itemErr(it.ID.String(), err)
 	}
 	actor := audit.ActorFrom(ctx)
-	if err := s.record(ctx, tx, actor, "item.delete", it.ID, map[string]any{"type": it.Type}); err != nil {
+	if err := s.record(ctx, tx, actor, "item.purge", it.ID, map[string]any{"type": it.Type}); err != nil {
 		return err
 	}
 	if err := s.emit(ctx, tx, "item.deleted", it, it.PublishedVersion, locales); err != nil {

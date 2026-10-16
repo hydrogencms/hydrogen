@@ -38,7 +38,7 @@ func (s contentStore) SchemaRevisions(ctx context.Context) ([]store.SchemaRevisi
 }
 
 func (s contentStore) ItemsAfter(ctx context.Context, after ids.UUID, limit int) ([]store.Item, error) {
-	rows, err := s.tx.Query(ctx, `SELECT `+itemColumns+` FROM item WHERE id > $1 ORDER BY id LIMIT $2`, uid(after), limit)
+	rows, err := s.tx.Query(ctx, `SELECT `+itemColumns+` FROM item WHERE id > $1 AND deleted_at IS NULL ORDER BY id LIMIT $2`, uid(after), limit)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: items after: %w", err)
 	}
@@ -140,7 +140,7 @@ func (s contentStore) ContentMigrationLog(ctx context.Context) ([]store.AppliedC
 
 func (s contentStore) CountItems(ctx context.Context) (int, error) {
 	var n int
-	if err := s.tx.QueryRow(ctx, `SELECT count(*) FROM item`).Scan(&n); err != nil {
+	if err := s.tx.QueryRow(ctx, `SELECT count(*) FROM item WHERE deleted_at IS NULL`).Scan(&n); err != nil {
 		return 0, fmt.Errorf("postgres: count items: %w", err)
 	}
 	return n, nil

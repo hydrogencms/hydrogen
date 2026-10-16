@@ -16,13 +16,16 @@ type treeLevel struct {
 	TreeNode
 	row  nodeRow
 	kids []*treeLevel
+	// trashed marks a page whose item is in the trash: its node stays (restoring puts the page back) but the
+	// tree does not list it.
+	trashed bool
 }
 
 func (t *treeLevel) done() TreeNode {
-	if len(t.kids) > 0 {
-		t.Nodes = make([]TreeNode, len(t.kids))
-		for i, k := range t.kids {
-			t.Nodes[i] = k.done()
+	t.Nodes = nil
+	for _, k := range t.kids {
+		if !k.trashed {
+			t.Nodes = append(t.Nodes, k.done())
 		}
 	}
 	return t.TreeNode
@@ -69,9 +72,11 @@ func (s *service) tree(ctx context.Context, site, locale string, parent *ids.UUI
 				return err
 			}
 		}
-		out = make([]TreeNode, len(root.kids))
-		for i, k := range root.kids {
-			out[i] = k.done()
+		out = make([]TreeNode, 0, len(root.kids))
+		for _, k := range root.kids {
+			if !k.trashed {
+				out = append(out, k.done())
+			}
 		}
 		return nil
 	})
@@ -250,6 +255,7 @@ func (s *service) describe(ctx context.Context, tx store.Tx, g *graph, locale st
 			if !ok {
 				continue
 			}
+			t.trashed = it.DeletedAt != nil
 			t.Type, t.Path = it.Type, paths[t.row.ID]
 			t.Name = names[slugKey{t.row.ID, locale}]
 			if t.Name == "" {

@@ -23,6 +23,7 @@
     icon?: string;
     verb: string;
     deleted?: boolean;
+    trashed?: boolean;
     id?: string;
     name?: string;
     type?: string;
@@ -86,7 +87,8 @@
     return () => (live = false);
   });
 
-  const verbs = ['item.create', 'item.update', 'item.publish', 'item.delete', 'item.discard'];
+  const verbs = ['item.create', 'item.update', 'item.publish', 'item.unpublish', 'item.trash', 'item.restore', 'item.purge', 'item.delete', 'item.discard'];
+  const GONE = ['item.purge', 'item.delete'];
   const TEN_MIN = 600_000;
 
   // Directory lookups are cached for the session: users and tokens are listed once.
@@ -133,10 +135,13 @@
         else recs.push({ e, who: '', actions: [e.action] });
       }
       const feed = recs.slice(0, 8);
+      // The newest action on each item says where it is now: purged items are not asked for, trashed ones from the trash.
+      const last = new Map<string, string>();
+      for (const e of entries) if (e.subject && !last.has(e.subject)) last.set(e.subject, e.action);
       const items = await Promise.all(
-        [...new Set(feed.map((r) => r.e.subject).filter((x): x is string => !!x))].map((id) =>
+        [...new Set(feed.map((r) => r.e.subject).filter((x): x is string => !!x && !GONE.includes(last.get(x) ?? '')))].map((id) =>
           api
-            .get('/items/{id}', { params: { id }, query: { draft: true } })
+            .get('/items/{id}', { params: { id }, query: (last.get(id) === 'item.trash' ? { draft: true, trashed: true } : { draft: true }) as never })
             .then((it) => [id, { name: it.name, type: it.type }] as const)
             .catch(() => null),
         ),
@@ -144,7 +149,7 @@
       const actors = await Promise.all(feed.map((r) => actorOf(r.e)));
       rows = feed.map((r, i) => {
         const it = r.e.subject ? items.get(r.e.subject) : undefined;
-        return { key: r.e.id, ...actors[i]!, verb: verbText(r.actions), deleted: r.actions.includes('item.delete'), id: it ? r.e.subject : undefined, name: it?.name, type: it?.type, at: r.e.at };
+        return { key: r.e.id, ...actors[i]!, verb: verbText(r.actions), deleted: GONE.includes(last.get(r.e.subject ?? '') ?? ''), trashed: last.get(r.e.subject ?? '') === 'item.trash', id: it ? r.e.subject : undefined, name: it?.name, type: it?.type, at: r.e.at };
       });
     } catch {
       failed = true;
@@ -189,7 +194,7 @@
 
 {#snippet sentence(r: Row)}
   <strong>{r.who}</strong> {r.verb}
-  {#if r.id && !r.deleted}<a use:link href={href(`/items/${r.id}`)}>{r.name || t('dashboard.anItem')}</a>{:else}<strong>{r.name || t('dashboard.anItem')}</strong>{/if}
+  {#if r.id && !r.deleted}<a use:link href={href(r.trashed ? `/trash/${r.id}` : `/items/${r.id}`)}>{r.name || t('dashboard.anItem')}</a>{:else}<strong>{r.name || t('dashboard.anItem')}</strong>{/if}
 {/snippet}
 
 <div class="h-page">

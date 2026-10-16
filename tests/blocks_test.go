@@ -162,9 +162,7 @@ func TestBlockProjections(t *testing.T) {
 		}
 		wantErr(t, e.svc.Delete(ctx, kept.ID), content.ErrReferenced)
 
-		if err := e.svc.Delete(ctx, target.ID); err != nil {
-			t.Fatal(err)
-		}
+		hardDelete(t, e.svc, target.ID)
 		pub := e.get(p.ID, "", false)
 		props := bodyOf(pub)[0].(map[string]any)["props"].(map[string]any)
 		if _, ok := props["cta"]; ok {

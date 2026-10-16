@@ -14,6 +14,18 @@ var ErrNotFound = errors.New("store: not found")
 // ErrDuplicateKey is returned when an item key is already taken.
 var ErrDuplicateKey = errors.New("store: duplicate key")
 
+// Trash. An item with Item.DeletedAt set is trashed: Query leaves it out unless Query.Trashed says otherwise,
+// GetItemByKey does not find it, ItemsAfter/CountItems (export) skip it, and its key is free for another item
+// (keys are unique among non-trashed items). GetItem and GetItems return trashed items too, so the service
+// decides what a trashed item means to its caller; ItemIDsOfType includes them (content migrations and
+// reindexing must keep trashed items current for a later restore).
+//
+// Unpublish needs no ContentStore method of its own; publish writes snapshots, references, and the published
+// index and search rows, and the service removes exactly those with existing calls:
+// DeleteSnapshots, ReplaceRefs(id, nil), ReplaceIndex(id, ProjectionPublished, nil),
+// ReplaceSearch(id, ProjectionPublished, nil), then UpdateItem with PublishedVersion 0 (the working projection
+// and module index rows are the service's to refresh). Trashing = that, then SetDeleted.
+
 // ContentStore persists items, versions, drafts and the projections of published versions. Documents are JSON
 // bytes; the content service owns their meaning. Contract: planning/design/content-core.md.
 type ContentStore interface {
@@ -30,8 +42,14 @@ type ContentStore interface {
 	GetItem(ctx context.Context, id ids.UUID, forUpdate bool) (Item, error)
 	GetItemByKey(ctx context.Context, key string) (Item, error)
 	GetItems(ctx context.Context, ids []ids.UUID) ([]Item, error) // missing ids are skipped; any order
-	UpdateItem(ctx context.Context, it Item) error                // all mutable columns; ErrNotFound, ErrDuplicateKey
-	DeleteItem(ctx context.Context, id ids.UUID) error            // cascades to versions, drafts, projections
+	// UpdateItem writes every mutable column except DeletedAt/DeletedBy (SetDeleted owns those): ErrNotFound,
+	// ErrDuplicateKey (a key taken by a non-trashed item; a trashed item's key is not checked).
+	UpdateItem(ctx context.Context, it Item) error
+	// SetDeleted trashes the item (at set; by is the actor, "kind:id") or restores it (at nil; the actor is
+	// cleared). It writes nothing else: the caller unpublishes first (see the note on trashing below). ErrNotFound;
+	// ErrDuplicateKey when restoring an item whose key a non-trashed item has taken meanwhile.
+	SetDeleted(ctx context.Context, id ids.UUID, at *time.Time, by string) error
+	DeleteItem(ctx context.Context, id ids.UUID) error // cascades to versions, drafts, projections
 
 	InsertVersion(ctx context.Context, v Version) error
 	// GetVersion returns the version with all its locales.
@@ -47,6 +65,10 @@ type ContentStore interface {
 	// PublishedLocalesOf lists the locales of the published version of many items in one query, sorted. Items
 	// that were never published are absent from the map.
 	PublishedLocalesOf(ctx context.Context, items []ids.UUID) (map[ids.UUID][]string, error)
+
+	// MainNamesOf returns the display name of many items in their main locale in one query: the draft's, else
+	// the published version's, "" when neither has one. Missing ids are absent.
+	MainNamesOf(ctx context.Context, items []ids.UUID) (map[ids.UUID]string, error)
 
 	// Projections of an item's current published version; Replace* deletes the item's old rows first.
 	ReplaceRefs(ctx context.Context, from ids.UUID, refs []Ref) error
@@ -78,6 +100,8 @@ type Item struct {
 	UpdatedAt        time.Time
 	CreatedBy        string // "kind:id" of the actor
 	UpdatedBy        string
+	DeletedAt        *time.Time // non-nil: the item is in the trash
+	DeletedBy        string     // "kind:id" of the actor who trashed it
 }
 
 type Version struct {
@@ -186,17 +210,28 @@ type Cond struct {
 }
 
 // Sort orders by an indexed field (Column set) or a meta field (Column empty): "name", "createdAt",
-// "updatedAt", "key".
+// "updatedAt", "key", "deletedAt" (trashed items; others sort as NULL).
 type Sort struct {
 	Field  string
 	Column Column
 	Desc   bool
 }
 
+// Trashed says what a query does with trashed items. The zero value leaves them out.
+type Trashed int
+
+const (
+	TrashedExclude Trashed = iota // only items that are not in the trash
+	TrashedOnly                   // only trashed items
+	TrashedInclude                // both
+)
+
 type Query struct {
 	Type   string
 	Locale string // for names, locale-specific index rows and search
 	Status Status
+	// Trashed selects trashed items; the default excludes them from lists, counts, search and scoped queries.
+	Trashed Trashed
 	// Available, when set, keeps only published items a channel can show: a published snapshot in one of these
 	// locales, or published and always available. Totals and paging respect it.
 	Available []string

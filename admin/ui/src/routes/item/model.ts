@@ -10,7 +10,7 @@ export interface ItemData {
   locale: string;
   mainLocale: string;
   alwaysAvailable: boolean;
-  status: 'draft' | 'published' | 'changed';
+  status: 'draft' | 'published' | 'changed' | 'unpublished';
   version: number;
   draft: boolean;
   name: string;
@@ -68,8 +68,14 @@ export const itemApi = {
   discard(id: string, parts?: string[], c: Concurrency = {}): Promise<void> {
     return loose.del('/items/{id}/draft', { params: { id }, query: { parts: parts?.join(',') }, ...c });
   },
+  /** Moves the item to the trash. */
   remove(id: string, c: Concurrency = {}): Promise<void> {
     return loose.del('/items/{id}', { params: { id }, ...c });
+  },
+  /** Collection items only: singletons cannot be unpublished. */
+  unpublish(t: Target, c: Concurrency = {}): Promise<ItemData> {
+    if (t.kind !== 'item') return Promise.reject(new Error('singletons cannot be unpublished'));
+    return loose.post('/items/{id}/unpublish', { params: { id: t.id }, ...c });
   },
 };
 

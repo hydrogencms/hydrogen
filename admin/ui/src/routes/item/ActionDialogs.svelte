@@ -10,7 +10,12 @@
   import Dialog from '../../lib/ui/Dialog.svelte';
   import { toast } from '../../lib/ui/toast.svelte';
   import { errorMessage } from '../../lib/errors';
+  import '../../lib/messages/releases';
   import { isConflict, itemApi, type Concurrency, type ItemData, type Referrer, type Target } from './model';
+  import { releaseApi } from '../release/api';
+  import { scheduleName } from '../release/logic';
+  import AddToReleaseDialog from '../release/AddToReleaseDialog.svelte';
+  import ScheduleDialog from '../release/ScheduleDialog.svelte';
 
   let {
     data,
@@ -22,6 +27,7 @@
     onchanged,
     onswitch,
     onerrors,
+    onscheduled,
   }: {
     data: ItemData | null;
     type: CompiledType;
@@ -35,6 +41,8 @@
     onchanged: () => void;
     onswitch: (locale: string) => void;
     onerrors: (fields: ApiError['fields']) => void;
+    /** A schedule or release membership changed (the editor reloads its badge). */
+    onscheduled?: () => void;
   } = $props();
 
   const target = $derived<Target | null>(data ? (type.singleton ? { kind: 'singleton', type: type.name } : { kind: 'item', id: data.id }) : null);
@@ -149,7 +157,7 @@
     try {
       await itemApi.remove(data.id, cc(noMatch));
       delOpen = false;
-      toast.success(t('collections.deleted'));
+      toast.success(t('trash.moved'));
       void router.navigate(`/collections/${type.name}`, { force: true });
     } catch (e) {
       if (isConflict(e)) {
@@ -164,6 +172,60 @@
     } finally {
       delBusy = false;
     }
+  }
+
+  // ---- unpublish
+  let unpOpen = $state(false);
+  let unpBusy = $state(false);
+  let unpError = $state('');
+  export function unpublish() {
+    unpError = '';
+    unpOpen = true;
+  }
+  async function doUnpublish(noMatch = false) {
+    if (!data || !target) return;
+    unpBusy = true;
+    unpError = '';
+    try {
+      await itemApi.unpublish(target, cc(noMatch));
+      unpOpen = false;
+      toast.success(t('release.unpublished'));
+      onchanged();
+    } catch (e) {
+      if (isConflict(e)) {
+        unpOpen = false;
+        onconflict(e as ApiError, () => void doUnpublish(true));
+      } else if (e instanceof ApiError && e.status < 500 && e.status > 0) unpError = errorMessage(e);
+      else throw e;
+    } finally {
+      unpBusy = false;
+    }
+  }
+
+  // ---- schedule (a one-item release) and add to release
+  let schedAction = $state<'publish' | 'unpublish'>('publish');
+  let schedOpen = $state(false);
+  export function schedule(action: 'publish' | 'unpublish') {
+    schedAction = action;
+    schedOpen = true;
+  }
+  async function doSchedule(at: string) {
+    if (!data) return;
+    const rel = await releaseApi.create({ name: scheduleName(data.name || data.id, schedAction, at), kind: 'item' });
+    try {
+      await releaseApi.putItem(rel.id, data.id, { action: schedAction, ...(schedAction === 'publish' && localeParts.length ? { locales: localeParts } : {}) });
+      await releaseApi.schedule(rel.id, at);
+    } catch (e) {
+      await releaseApi.remove(rel.id).catch(() => undefined);
+      throw e;
+    }
+    toast.success(t(schedAction === 'publish' ? 'schedule.donePublish' : 'schedule.doneUnpublish'));
+    onscheduled?.();
+  }
+
+  let addOpen = $state(false);
+  export function addToRelease() {
+    addOpen = true;
   }
 </script>
 
@@ -219,13 +281,13 @@
   {/snippet}
 </Dialog>
 
-<Dialog bind:open={delOpen} title={t('collections.deleteTitle')} dismissible={!delBusy}>
-  {#if data}<p>{t('collections.deleteText', { name: data.name || data.id })}</p>{/if}
+<Dialog bind:open={delOpen} title={t('trash.dialogTitle')} dismissible={!delBusy}>
+  {#if data}<p>{t('trash.text', { name: data.name || data.id })}</p>{/if}
   {#if delError}<p class="h-alert" role="alert">{delError}</p>{/if}
   {#if blockers}
     <div class="h-alert h-adlg__blockers" role="alert">
       <div>
-        <p><strong>{t('collections.deleteBlocked', { n: blockers.length + hidden })}</strong></p>
+        <p><strong>{t('trash.blocked', { n: blockers.length + hidden })}</strong></p>
         <ul>
           {#each blockers as b (b.id + b.field)}
             <li>
@@ -240,9 +302,28 @@
   {/if}
   {#snippet footer()}
     <Button variant="ghost" onclick={() => (delOpen = false)}>{t('common.cancel')}</Button>
-    <Button variant="danger" loading={delBusy} disabled={!!blockers} onclick={() => void doDelete()}>{t('common.delete')}</Button>
+    <Button variant="danger" loading={delBusy} disabled={!!blockers} onclick={() => void doDelete()}>{t('trash.move')}</Button>
   {/snippet}
 </Dialog>
+
+<Dialog bind:open={unpOpen} title={t('release.unpublishTitle')} size="sm" dismissible={!unpBusy}>
+  {#if data}<p>{t('release.unpublishText', { name: data.name || data.id })}</p>{/if}
+  {#if unpError}<p class="h-alert" role="alert">{unpError}</p>{/if}
+  {#snippet footer()}
+    <Button variant="ghost" onclick={() => (unpOpen = false)}>{t('common.cancel')}</Button>
+    <Button variant="danger" loading={unpBusy} onclick={() => void doUnpublish()}>{t('release.unpublish')}</Button>
+  {/snippet}
+</Dialog>
+
+<ScheduleDialog
+  bind:open={schedOpen}
+  title={t(schedAction === 'publish' ? 'schedule.titlePublish' : 'schedule.titleUnpublish')}
+  text={data ? t(schedAction === 'publish' ? 'schedule.textPublish' : 'schedule.textUnpublish', { name: data.name || data.id }) : undefined}
+  onconfirm={doSchedule} />
+
+{#if data}
+  <AddToReleaseDialog bind:open={addOpen} item={data.id} itemName={data.name || data.id} locales={localeParts} onadded={onscheduled} />
+{/if}
 
 <style>
   .h-adlg__parts {

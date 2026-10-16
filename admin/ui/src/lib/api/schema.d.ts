@@ -367,7 +367,7 @@ export interface paths {
         get: operations["getItem"];
         put?: never;
         post?: never;
-        /** Delete an item */
+        /** Move an item to the trash, or delete it for good */
         delete: operations["deleteItem"];
         options?: never;
         head?: never;
@@ -420,6 +420,60 @@ export interface paths {
         get: operations["listReferences"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/items/{id}/releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Releases that contain an item
+         * @description Open and scheduled releases, each with the item's action and locales. Needs content.read.
+         */
+        get: operations["listItemReleases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/items/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore an item from the trash (it comes back unpublished) */
+        post: operations["restoreItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/items/{id}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unpublish an item */
+        post: operations["unpublishItem"];
         delete?: never;
         options?: never;
         head?: never;
@@ -715,6 +769,162 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List releases
+         * @description Newest first. Needs content.read.
+         */
+        get: operations["listReleases"];
+        put?: never;
+        /**
+         * Create a release
+         * @description Creates an open release; with scheduledAt it is scheduled at once (it needs items then). Needs release.manage and content.read on the items.
+         */
+        post: operations["createRelease"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/releases/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a release
+         * @description With its items. Needs content.read.
+         */
+        get: operations["getRelease"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a release
+         * @description Only open and cancelled releases (409 release_state otherwise).
+         */
+        delete: operations["deleteRelease"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a release
+         * @description Changes the name or description. A failed release becomes open again; published and cancelled releases cannot change (409 release_state).
+         */
+        patch: operations["updateRelease"];
+        trace?: never;
+    };
+    "/releases/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a release
+         * @description Retires an open or scheduled release for good (a cancelled release can still be deleted).
+         */
+        post: operations["cancelRelease"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/releases/{id}/items/{item}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Add an item to a release
+         * @description Adds the item or replaces its action and locales. Only open and failed releases change items (a failed one becomes open); scheduled releases must be unscheduled first. A trashed item is refused (409 trashed), and so is unpublishing a singleton.
+         */
+        put: operations["putReleaseItem"];
+        post?: never;
+        /**
+         * Remove an item from a release
+         * @description Idempotent. Same status rules as adding.
+         */
+        delete: operations["deleteReleaseItem"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/releases/{id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish a release now
+         * @description Publishes (or unpublishes) every item in one transaction, as the caller. If any item cannot be, nothing is: the answer is 422 release_failed with the release (status failed, errors listing item, code, message and path) and the release can be fixed and published again. force publishes over draft conflicts. 409 release_state when the release is not open, scheduled or failed, or is being published.
+         */
+        post: operations["publishRelease"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/releases/{id}/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Schedule a release
+         * @description Publishes the release at a future time (at most a year ahead) as the caller: the job re-loads the principal then, and a user who is gone or lost rights makes the release fail with forbidden. Open, failed and scheduled releases with items.
+         */
+        post: operations["scheduleRelease"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/releases/{id}/unschedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unschedule a release
+         * @description Turns a scheduled release back into an open one.
+         */
+        post: operations["unscheduleRelease"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/roles": {
         parameters: {
             query?: never;
@@ -800,6 +1010,23 @@ export interface paths {
         post?: never;
         /** Revoke a token */
         delete: operations["revokeToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List trashed items, newest deletion first */
+        get: operations["listTrash"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1054,6 +1281,7 @@ export interface components {
                  * @example too_large
                  * @example invalid
                  * @example conflict
+                 * @example has_children
                  * @example referenced
                  * @example duplicate_key
                  * @example forbidden
@@ -1187,6 +1415,10 @@ export interface components {
             alwaysAvailable: boolean;
             /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
+            deletedAt?: string;
+            deletedBy?: string;
+            deletedByName?: string;
             draft: boolean;
             draftParts: string[];
             fields: components["schemas"]["Fields_article"];
@@ -1199,8 +1431,11 @@ export interface components {
             name: string;
             /** Format: date-time */
             publishedAt?: string;
-            /** @enum {string} */
-            status: "draft" | "published" | "changed";
+            /**
+             * @description unpublished: was published, is not now (single-item views only; lists show such items as draft).
+             * @enum {string}
+             */
+            status: "draft" | "published" | "changed" | "unpublished";
             /** @constant */
             type: "article";
             /** Format: date-time */
@@ -1217,6 +1452,10 @@ export interface components {
             alwaysAvailable: boolean;
             /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
+            deletedAt?: string;
+            deletedBy?: string;
+            deletedByName?: string;
             draft: boolean;
             draftParts: string[];
             fields: components["schemas"]["Fields_landing"];
@@ -1229,8 +1468,11 @@ export interface components {
             name: string;
             /** Format: date-time */
             publishedAt?: string;
-            /** @enum {string} */
-            status: "draft" | "published" | "changed";
+            /**
+             * @description unpublished: was published, is not now (single-item views only; lists show such items as draft).
+             * @enum {string}
+             */
+            status: "draft" | "published" | "changed" | "unpublished";
             /** @constant */
             type: "landing";
             /** Format: date-time */
@@ -1247,6 +1489,10 @@ export interface components {
             alwaysAvailable: boolean;
             /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
+            deletedAt?: string;
+            deletedBy?: string;
+            deletedByName?: string;
             draft: boolean;
             draftParts: string[];
             fields: components["schemas"]["Fields_page"];
@@ -1259,8 +1505,11 @@ export interface components {
             name: string;
             /** Format: date-time */
             publishedAt?: string;
-            /** @enum {string} */
-            status: "draft" | "published" | "changed";
+            /**
+             * @description unpublished: was published, is not now (single-item views only; lists show such items as draft).
+             * @enum {string}
+             */
+            status: "draft" | "published" | "changed" | "unpublished";
             /** @constant */
             type: "page";
             /** Format: date-time */
@@ -1277,6 +1526,10 @@ export interface components {
             alwaysAvailable: boolean;
             /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
+            deletedAt?: string;
+            deletedBy?: string;
+            deletedByName?: string;
             draft: boolean;
             draftParts: string[];
             fields: components["schemas"]["Fields_product"];
@@ -1289,8 +1542,11 @@ export interface components {
             name: string;
             /** Format: date-time */
             publishedAt?: string;
-            /** @enum {string} */
-            status: "draft" | "published" | "changed";
+            /**
+             * @description unpublished: was published, is not now (single-item views only; lists show such items as draft).
+             * @enum {string}
+             */
+            status: "draft" | "published" | "changed" | "unpublished";
             /** @constant */
             type: "product";
             /** Format: date-time */
@@ -1307,6 +1563,10 @@ export interface components {
             alwaysAvailable: boolean;
             /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
+            deletedAt?: string;
+            deletedBy?: string;
+            deletedByName?: string;
             draft: boolean;
             draftParts: string[];
             fields: components["schemas"]["Fields_redirect"];
@@ -1319,8 +1579,11 @@ export interface components {
             name: string;
             /** Format: date-time */
             publishedAt?: string;
-            /** @enum {string} */
-            status: "draft" | "published" | "changed";
+            /**
+             * @description unpublished: was published, is not now (single-item views only; lists show such items as draft).
+             * @enum {string}
+             */
+            status: "draft" | "published" | "changed" | "unpublished";
             /** @constant */
             type: "redirect";
             /** Format: date-time */
@@ -1445,8 +1708,11 @@ export interface components {
             key?: string;
             locales: string[];
             name: string;
-            /** @enum {string} */
-            status: "draft" | "published" | "changed";
+            /**
+             * @description unpublished: was published, is not now (single-item views only; lists show such items as draft).
+             * @enum {string}
+             */
+            status: "draft" | "published" | "changed" | "unpublished";
             type: string;
             /** Format: date-time */
             updatedAt: string;
@@ -1478,6 +1744,34 @@ export interface components {
         TokenList: {
             items: components["schemas"]["Token"][];
             total: number;
+        };
+        TrashList: {
+            items: components["schemas"]["TrashSummary"][];
+            total: number;
+        };
+        /** @description A trashed item: the summary fields plus who trashed it and when. */
+        TrashSummary: {
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            deletedAt: string;
+            deletedBy: string;
+            deletedByName: string;
+            draftParts: string[];
+            /** Format: uuid */
+            id: string;
+            key?: string;
+            locales: string[];
+            name: string;
+            /**
+             * @description unpublished: was published, is not now (single-item views only; lists show such items as draft).
+             * @enum {string}
+             */
+            status: "draft" | "published" | "changed" | "unpublished";
+            type: string;
+            /** Format: date-time */
+            updatedAt: string;
+            version: number;
         };
         UpdateRequest: {
             alwaysAvailable?: boolean;
@@ -1678,12 +1972,18 @@ export interface components {
         Offset: number;
         /** @description Comma-separated draft parts (shared or locale codes); default all. */
         Parts: string;
+        /** @description Delete for good instead of moving to the trash; only items already in the trash (else 409). */
+        Permanent: boolean;
         /** @description Full-text search. */
         Q: string;
         SingletonType: string;
         /** @description Comma-separated fields; a - prefix sorts descending, e.g. -publishDate,name. */
         Sort: string;
         Status: "any" | "published" | "draft";
+        /** @description Only items of this content type. */
+        TrashType: string;
+        /** @description Also read an item in the trash (returned as its draft view, with deletedAt and deletedBy). */
+        Trashed: boolean;
         UserId: string;
         VersionNumber: number;
         /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix; repeated filters are ANDed; in takes comma-separated values. */
@@ -2622,6 +2922,8 @@ export interface operations {
                 locale?: components["parameters"]["Locale"];
                 /** @description Overlay draft parts on the published content. */
                 draft?: components["parameters"]["Draft"];
+                /** @description Also read an item in the trash (returned as its draft view, with deletedAt and deletedBy). */
+                trashed?: components["parameters"]["Trashed"];
             };
             header?: never;
             path: {
@@ -2650,7 +2952,10 @@ export interface operations {
     };
     deleteItem: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Delete for good instead of moving to the trash; only items already in the trash (else 409). */
+                permanent?: components["parameters"]["Permanent"];
+            };
             header?: {
                 /** @description The ETag of the item as read (GET returns it, writes return the new one). A mismatch answers 412; without the header nothing is checked. */
                 "If-Match"?: components["parameters"]["IfMatch"];
@@ -2662,13 +2967,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Deleted. */
+            /** @description Moved to the trash (unpublished first when it was published), or deleted for good with permanent=true. */
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -2810,6 +3116,156 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listItemReleases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The releases. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        hasMore: boolean;
+                        items: {
+                            /**
+                             * @description GET /items/{id}/releases only: the release's action for that item.
+                             * @enum {unknown}
+                             */
+                            action?: "publish" | "unpublish";
+                            /** Format: date-time */
+                            createdAt: string;
+                            createdBy: string;
+                            createdByName: string;
+                            description: string;
+                            /** @description Why the last publish failed. */
+                            errors: {
+                                code: string;
+                                /** Format: uuid */
+                                item?: string;
+                                message: string;
+                                path?: string;
+                            }[];
+                            /** Format: uuid */
+                            id: string;
+                            itemCount: number;
+                            /** @description In the detail views only. */
+                            items?: {
+                                /** @enum {unknown} */
+                                action: "publish" | "unpublish";
+                                /** Format: date-time */
+                                addedAt: string;
+                                addedBy: string;
+                                /** Format: uuid */
+                                item: string;
+                                locales: string[];
+                                name: string;
+                                /**
+                                 * @description changes: the action has something to do; current: nothing to do; trashed or missing: the item is gone; hidden: the caller may not read it.
+                                 * @enum {unknown}
+                                 */
+                                state: "changes" | "current" | "trashed" | "missing" | "hidden";
+                                type: string;
+                            }[];
+                            /** @enum {unknown} */
+                            kind: "release" | "item";
+                            /** @description GET /items/{id}/releases only. */
+                            locales?: string[];
+                            name: string;
+                            /** Format: date-time */
+                            publishedAt?: string;
+                            /** Format: date-time */
+                            scheduledAt?: string;
+                            scheduledBy?: string;
+                            /** @enum {unknown} */
+                            status: "open" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+                            /** Format: date-time */
+                            updatedAt: string;
+                            updatedBy: string;
+                        }[];
+                        total: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    restoreItem: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the item as read (GET returns it, writes return the new one). A mismatch answers 412; without the header nothing is checked. */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                id: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The item. */
+            200: {
+                headers: {
+                    /** @description Identifies the item's working state; send it as If-Match on writes. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemView"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+        };
+    };
+    unpublishItem: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of the item as read (GET returns it, writes return the new one). A mismatch answers 412; without the header nothing is checked. */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                id: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The item. */
+            200: {
+                headers: {
+                    /** @description Identifies the item's working state; send it as If-Match on writes. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemView"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Invalid"];
         };
     };
     listVersions: {
@@ -4090,6 +4546,933 @@ export interface operations {
             415: components["responses"]["UnsupportedMedia"];
         };
     };
+    listReleases: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated statuses: open, scheduled, publishing, published, failed, cancelled. */
+                status?: string;
+                kind?: "release" | "item";
+                /** @description Only releases that contain this item. */
+                item?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of releases, without their items. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        hasMore: boolean;
+                        items: {
+                            /**
+                             * @description GET /items/{id}/releases only: the release's action for that item.
+                             * @enum {unknown}
+                             */
+                            action?: "publish" | "unpublish";
+                            /** Format: date-time */
+                            createdAt: string;
+                            createdBy: string;
+                            createdByName: string;
+                            description: string;
+                            /** @description Why the last publish failed. */
+                            errors: {
+                                code: string;
+                                /** Format: uuid */
+                                item?: string;
+                                message: string;
+                                path?: string;
+                            }[];
+                            /** Format: uuid */
+                            id: string;
+                            itemCount: number;
+                            /** @description In the detail views only. */
+                            items?: {
+                                /** @enum {unknown} */
+                                action: "publish" | "unpublish";
+                                /** Format: date-time */
+                                addedAt: string;
+                                addedBy: string;
+                                /** Format: uuid */
+                                item: string;
+                                locales: string[];
+                                name: string;
+                                /**
+                                 * @description changes: the action has something to do; current: nothing to do; trashed or missing: the item is gone; hidden: the caller may not read it.
+                                 * @enum {unknown}
+                                 */
+                                state: "changes" | "current" | "trashed" | "missing" | "hidden";
+                                type: string;
+                            }[];
+                            /** @enum {unknown} */
+                            kind: "release" | "item";
+                            /** @description GET /items/{id}/releases only. */
+                            locales?: string[];
+                            name: string;
+                            /** Format: date-time */
+                            publishedAt?: string;
+                            /** Format: date-time */
+                            scheduledAt?: string;
+                            scheduledBy?: string;
+                            /** @enum {unknown} */
+                            status: "open" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+                            /** Format: date-time */
+                            updatedAt: string;
+                            updatedBy: string;
+                        }[];
+                        total: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    description?: string;
+                    items?: {
+                        /**
+                         * @default publish
+                         * @enum {unknown}
+                         */
+                        action?: "publish" | "unpublish";
+                        /** Format: uuid */
+                        item: string;
+                        /** @description Publish only these locales (default: every locale with a draft). */
+                        locales?: string[];
+                    }[];
+                    /**
+                     * @default release
+                     * @enum {unknown}
+                     */
+                    kind?: "release" | "item";
+                    name: string;
+                    /** Format: date-time */
+                    scheduledAt?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The release. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description GET /items/{id}/releases only: the release's action for that item.
+                         * @enum {unknown}
+                         */
+                        action?: "publish" | "unpublish";
+                        /** Format: date-time */
+                        createdAt: string;
+                        createdBy: string;
+                        createdByName: string;
+                        description: string;
+                        /** @description Why the last publish failed. */
+                        errors: {
+                            code: string;
+                            /** Format: uuid */
+                            item?: string;
+                            message: string;
+                            path?: string;
+                        }[];
+                        /** Format: uuid */
+                        id: string;
+                        itemCount: number;
+                        /** @description In the detail views only. */
+                        items?: {
+                            /** @enum {unknown} */
+                            action: "publish" | "unpublish";
+                            /** Format: date-time */
+                            addedAt: string;
+                            addedBy: string;
+                            /** Format: uuid */
+                            item: string;
+                            locales: string[];
+                            name: string;
+                            /**
+                             * @description changes: the action has something to do; current: nothing to do; trashed or missing: the item is gone; hidden: the caller may not read it.
+                             * @enum {unknown}
+                             */
+                            state: "changes" | "current" | "trashed" | "missing" | "hidden";
+                            type: string;
+                        }[];
+                        /** @enum {unknown} */
+                        kind: "release" | "item";
+                        /** @description GET /items/{id}/releases only. */
+                        locales?: string[];
+                        name: string;
+                        /** Format: date-time */
+                        publishedAt?: string;
+                        /** Format: date-time */
+                        scheduledAt?: string;
+                        scheduledBy?: string;
+                        /** @enum {unknown} */
+                        status: "open" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+                        /** Format: date-time */
+                        updatedAt: string;
+                        updatedBy: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
+    getRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The release. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description GET /items/{id}/releases only: the release's action for that item.
+                         * @enum {unknown}
+                         */
+                        action?: "publish" | "unpublish";
+                        /** Format: date-time */
+                        createdAt: string;
+                        createdBy: string;
+                        createdByName: string;
+                        description: string;
+                        /** @description Why the last publish failed. */
+                        errors: {
+                            code: string;
+                            /** Format: uuid */
+                            item?: string;
+                            message: string;
+                            path?: string;
+                        }[];
+                        /** Format: uuid */
+                        id: string;
+                        itemCount: number;
+                        /** @description In the detail views only. */
+                        items?: {
+                            /** @enum {unknown} */
+                            action: "publish" | "unpublish";
+                            /** Format: date-time */
+                            addedAt: string;
+                            addedBy: string;
+                            /** Format: uuid */
+                            item: string;
+                            locales: string[];
+                            name: string;
+                            /**
+                             * @description changes: the action has something to do; current: nothing to do; trashed or missing: the item is gone; hidden: the caller may not read it.
+                             * @enum {unknown}
+                             */
+                            state: "changes" | "current" | "trashed" | "missing" | "hidden";
+                            type: string;
+                        }[];
+                        /** @enum {unknown} */
+                        kind: "release" | "item";
+                        /** @description GET /items/{id}/releases only. */
+                        locales?: string[];
+                        name: string;
+                        /** Format: date-time */
+                        publishedAt?: string;
+                        /** Format: date-time */
+                        scheduledAt?: string;
+                        scheduledBy?: string;
+                        /** @enum {unknown} */
+                        status: "open" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+                        /** Format: date-time */
+                        updatedAt: string;
+                        updatedBy: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    description?: string;
+                    name?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The release. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description GET /items/{id}/releases only: the release's action for that item.
+                         * @enum {unknown}
+                         */
+                        action?: "publish" | "unpublish";
+                        /** Format: date-time */
+                        createdAt: string;
+                        createdBy: string;
+                        createdByName: string;
+                        description: string;
+                        /** @description Why the last publish failed. */
+                        errors: {
+                            code: string;
+                            /** Format: uuid */
+                            item?: string;
+                            message: string;
+                            path?: string;
+                        }[];
+                        /** Format: uuid */
+                        id: string;
+                        itemCount: number;
+                        /** @description In the detail views only. */
+                        items?: {
+                            /** @enum {unknown} */
+                            action: "publish" | "unpublish";
+                            /** Format: date-time */
+                            addedAt: string;
+                            addedBy: string;
+                            /** Format: uuid */
+                            item: string;
+                            locales: string[];
+                            name: string;
+                            /**
+                             * @description changes: the action has something to do; current: nothing to do; trashed or missing: the item is gone; hidden: the caller may not read it.
+                             * @enum {unknown}
+                             */
+                            state: "changes" | "current" | "trashed" | "missing" | "hidden";
+                            type: string;
+                        }[];
+                        /** @enum {unknown} */
+                        kind: "release" | "item";
+                        /** @description GET /items/{id}/releases only. */
+                        locales?: string[];
+                        name: string;
+                        /** Format: date-time */
+                        publishedAt?: string;
+                        /** Format: date-time */
+                        scheduledAt?: string;
+                        scheduledBy?: string;
+                        /** @enum {unknown} */
+                        status: "open" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+                        /** Format: date-time */
+                        updatedAt: string;
+                        updatedBy: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
+    cancelRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The release. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description GET /items/{id}/releases only: the release's action for that item.
+                         * @enum {unknown}
+                         */
+                        action?: "publish" | "unpublish";
+                        /** Format: date-time */
+                        createdAt: string;
+                        createdBy: string;
+                        createdByName: string;
+                        description: string;
+                        /** @description Why the last publish failed. */
+                        errors: {
+                            code: string;
+                            /** Format: uuid */
+                            item?: string;
+                            message: string;
+                            path?: string;
+                        }[];
+                        /** Format: uuid */
+                        id: string;
+                        itemCount: number;
+                        /** @description In the detail views only. */
+                        items?: {
+                            /** @enum {unknown} */
+                            action: "publish" | "unpublish";
+                            /** Format: date-time */
+                            addedAt: string;
+                            addedBy: string;
+                            /** Format: uuid */
+                            item: string;
+                            locales: string[];
+                            name: string;
+                            /**
+                             * @description changes: the action has something to do; current: nothing to do; trashed or missing: the item is gone; hidden: the caller may not read it.
+                             * @enum {unknown}
+                             */
+                            state: "changes" | "current" | "trashed" | "missing" | "hidden";
+                            type: string;
+                        }[];
+                        /** @enum {unknown} */
+                        kind: "release" | "item";
+                        /** @description GET /items/{id}/releases only. */
+                        locales?: string[];
+                        name: string;
+                        /** Format: date-time */
+                        publishedAt?: string;
+                        /** Format: date-time */
+                        scheduledAt?: string;
+                        scheduledBy?: string;
+                        /** @enum {unknown} */
+                        status: "open" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+                        /** Format: date-time */
+                        updatedAt: string;
+                        updatedBy: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    putReleaseItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                item: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default publish
+                     * @enum {unknown}
+                     */
+                    action?: "publish" | "unpublish";
+                    /** @description Publish only these locales (default: every locale with a draft). */
+                    locales?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The release. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description GET /items/{id}/releases only: the release's action for that item.
+                         * @enum {unknown}
+                         */
+                        action?: "publish" | "unpublish";
+                        /** Format: date-time */
+                        createdAt: string;
+                        createdBy: string;
+                        createdByName: string;
+                        description: string;
+                        /** @description Why the last publish failed. */
+                        errors: {
+                            code: string;
+                            /** Format: uuid */
+                            item?: string;
+                            message: string;
+                            path?: string;
+                        }[];
+                        /** Format: uuid */
+                        id: string;
+                        itemCount: number;
+                        /** @description In the detail views only. */
+                        items?: {
+                            /** @enum {unknown} */
+                            action: "publish" | "unpublish";
+                            /** Format: date-time */
+                            addedAt: string;
+                            addedBy: string;
+                            /** Format: uuid */
+                            item: string;
+                            locales: string[];
+                            name: string;
+                            /**
+                             * @description changes: the action has something to do; current: nothing to do; trashed or missing: the item is gone; hidden: the caller may not read it.
+                             * @enum {unknown}
+                             */
+                            state: "changes" | "current" | "trashed" | "missing" | "hidden";
+                            type: string;
+                        }[];
+                        /** @enum {unknown} */
+                        kind: "release" | "item";
+                        /** @description GET /items/{id}/releases only. */
+                        locales?: string[];
+                        name: string;
+                        /** Format: date-time */
+                        publishedAt?: string;
+                        /** Format: date-time */
+                        scheduledAt?: string;
+                        scheduledBy?: string;
+                        /** @enum {unknown} */
+                        status: "open" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+                        /** Format: date-time */
+                        updatedAt: string;
+                        updatedBy: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
+    deleteReleaseItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                item: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    publishRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    force?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Published. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description GET /items/{id}/releases only: the release's action for that item.
+                         * @enum {unknown}
+                         */
+                        action?: "publish" | "unpublish";
+                        /** Format: date-time */
+                        createdAt: string;
+                        createdBy: string;
+                        createdByName: string;
+                        description: string;
+                        /** @description Why the last publish failed. */
+                        errors: {
+                            code: string;
+                            /** Format: uuid */
+                            item?: string;
+                            message: string;
+                            path?: string;
+                        }[];
+                        /** Format: uuid */
+                        id: string;
+                        itemCount: number;
+                        /** @description In the detail views only. */
+                        items?: {
+                            /** @enum {unknown} */
+                            action: "publish" | "unpublish";
+                            /** Format: date-time */
+                            addedAt: string;
+                            addedBy: string;
+                            /** Format: uuid */
+                            item: string;
+                            locales: string[];
+                            name: string;
+                            /**
+                             * @description changes: the action has something to do; current: nothing to do; trashed or missing: the item is gone; hidden: the caller may not read it.
+                             * @enum {unknown}
+                             */
+                            state: "changes" | "current" | "trashed" | "missing" | "hidden";
+                            type: string;
+                        }[];
+                        /** @enum {unknown} */
+                        kind: "release" | "item";
+                        /** @description GET /items/{id}/releases only. */
+                        locales?: string[];
+                        name: string;
+                        /** Format: date-time */
+                        publishedAt?: string;
+                        /** Format: date-time */
+                        scheduledAt?: string;
+                        scheduledBy?: string;
+                        /** @enum {unknown} */
+                        status: "open" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+                        /** Format: date-time */
+                        updatedAt: string;
+                        updatedBy: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+            /** @description Nothing was published. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code?: "release_failed";
+                            message?: string;
+                        };
+                        release: {
+                            /**
+                             * @description GET /items/{id}/releases only: the release's action for that item.
+                             * @enum {unknown}
+                             */
+                            action?: "publish" | "unpublish";
+                            /** Format: date-time */
+                            createdAt: string;
+                            createdBy: string;
+                            createdByName: string;
+                            description: string;
+                            /** @description Why the last publish failed. */
+                            errors: {
+                                code: string;
+                                /** Format: uuid */
+                                item?: string;
+                                message: string;
+                                path?: string;
+                            }[];
+                            /** Format: uuid */
+                            id: string;
+                            itemCount: number;
+                            /** @description In the detail views only. */
+                            items?: {
+                                /** @enum {unknown} */
+                                action: "publish" | "unpublish";
+                                /** Format: date-time */
+                                addedAt: string;
+                                addedBy: string;
+                                /** Format: uuid */
+                                item: string;
+                                locales: string[];
+                                name: string;
+                                /**
+                                 * @description changes: the action has something to do; current: nothing to do; trashed or missing: the item is gone; hidden: the caller may not read it.
+                                 * @enum {unknown}
+                                 */
+                                state: "changes" | "current" | "trashed" | "missing" | "hidden";
+                                type: string;
+                            }[];
+                            /** @enum {unknown} */
+                            kind: "release" | "item";
+                            /** @description GET /items/{id}/releases only. */
+                            locales?: string[];
+                            name: string;
+                            /** Format: date-time */
+                            publishedAt?: string;
+                            /** Format: date-time */
+                            scheduledAt?: string;
+                            scheduledBy?: string;
+                            /** @enum {unknown} */
+                            status: "open" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+                            /** Format: date-time */
+                            updatedAt: string;
+                            updatedBy: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    scheduleRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: date-time */
+                    at: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The release. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description GET /items/{id}/releases only: the release's action for that item.
+                         * @enum {unknown}
+                         */
+                        action?: "publish" | "unpublish";
+                        /** Format: date-time */
+                        createdAt: string;
+                        createdBy: string;
+                        createdByName: string;
+                        description: string;
+                        /** @description Why the last publish failed. */
+                        errors: {
+                            code: string;
+                            /** Format: uuid */
+                            item?: string;
+                            message: string;
+                            path?: string;
+                        }[];
+                        /** Format: uuid */
+                        id: string;
+                        itemCount: number;
+                        /** @description In the detail views only. */
+                        items?: {
+                            /** @enum {unknown} */
+                            action: "publish" | "unpublish";
+                            /** Format: date-time */
+                            addedAt: string;
+                            addedBy: string;
+                            /** Format: uuid */
+                            item: string;
+                            locales: string[];
+                            name: string;
+                            /**
+                             * @description changes: the action has something to do; current: nothing to do; trashed or missing: the item is gone; hidden: the caller may not read it.
+                             * @enum {unknown}
+                             */
+                            state: "changes" | "current" | "trashed" | "missing" | "hidden";
+                            type: string;
+                        }[];
+                        /** @enum {unknown} */
+                        kind: "release" | "item";
+                        /** @description GET /items/{id}/releases only. */
+                        locales?: string[];
+                        name: string;
+                        /** Format: date-time */
+                        publishedAt?: string;
+                        /** Format: date-time */
+                        scheduledAt?: string;
+                        scheduledBy?: string;
+                        /** @enum {unknown} */
+                        status: "open" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+                        /** Format: date-time */
+                        updatedAt: string;
+                        updatedBy: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMedia"];
+        };
+    };
+    unscheduleRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The release. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description GET /items/{id}/releases only: the release's action for that item.
+                         * @enum {unknown}
+                         */
+                        action?: "publish" | "unpublish";
+                        /** Format: date-time */
+                        createdAt: string;
+                        createdBy: string;
+                        createdByName: string;
+                        description: string;
+                        /** @description Why the last publish failed. */
+                        errors: {
+                            code: string;
+                            /** Format: uuid */
+                            item?: string;
+                            message: string;
+                            path?: string;
+                        }[];
+                        /** Format: uuid */
+                        id: string;
+                        itemCount: number;
+                        /** @description In the detail views only. */
+                        items?: {
+                            /** @enum {unknown} */
+                            action: "publish" | "unpublish";
+                            /** Format: date-time */
+                            addedAt: string;
+                            addedBy: string;
+                            /** Format: uuid */
+                            item: string;
+                            locales: string[];
+                            name: string;
+                            /**
+                             * @description changes: the action has something to do; current: nothing to do; trashed or missing: the item is gone; hidden: the caller may not read it.
+                             * @enum {unknown}
+                             */
+                            state: "changes" | "current" | "trashed" | "missing" | "hidden";
+                            type: string;
+                        }[];
+                        /** @enum {unknown} */
+                        kind: "release" | "item";
+                        /** @description GET /items/{id}/releases only. */
+                        locales?: string[];
+                        name: string;
+                        /** Format: date-time */
+                        publishedAt?: string;
+                        /** Format: date-time */
+                        scheduledAt?: string;
+                        scheduledBy?: string;
+                        /** @enum {unknown} */
+                        status: "open" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+                        /** Format: date-time */
+                        updatedAt: string;
+                        updatedBy: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     listRoles: {
         parameters: {
             query?: {
@@ -4367,6 +5750,37 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listTrash: {
+        parameters: {
+            query?: {
+                /** @description Only items of this content type. */
+                type?: components["parameters"]["TrashType"];
+                /** @description Locale; default the item's main locale (reads) or the service default (writes). */
+                locale?: components["parameters"]["Locale"];
+                limit?: components["parameters"]["Limit"];
+                offset?: components["parameters"]["Offset"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of trashed items. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrashList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

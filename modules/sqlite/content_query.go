@@ -257,6 +257,15 @@ func (c *compiler) itemConds(probes bool) ([]string, error) {
 	if q.Type != "" {
 		conds = append(conds, "item.type = "+c.bind(q.Type))
 	}
+	switch q.Trashed {
+	case store.TrashedExclude:
+		conds = append(conds, "item.deleted_at IS NULL")
+	case store.TrashedOnly:
+		conds = append(conds, "item.deleted_at IS NOT NULL")
+	case store.TrashedInclude:
+	default:
+		return nil, fmt.Errorf("unknown trashed filter %d", q.Trashed)
+	}
 	switch q.Status {
 	case store.StatusAny:
 	case store.StatusPublished:
@@ -369,6 +378,8 @@ func (c *compiler) sortKey(s store.Sort) (string, error) {
 			return "item.created_at" + dir, nil
 		case "updatedAt":
 			return "item.updated_at" + dir, nil
+		case "deletedAt":
+			return "item.deleted_at" + dir + " NULLS LAST", nil
 		case "key":
 			return "item.key" + dir + " NULLS LAST", nil
 		}

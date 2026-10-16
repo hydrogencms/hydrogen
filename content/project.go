@@ -234,7 +234,9 @@ func (s *Service) checkRefs(ctx context.Context, c store.ContentStore, t *schema
 			return fmt.Errorf("content: check references: %w", err)
 		}
 		for _, it := range items {
-			found[it.ID] = it.Type
+			if it.DeletedAt == nil {
+				found[it.ID] = it.Type
+			}
 		}
 	}
 	for _, o := range outs {

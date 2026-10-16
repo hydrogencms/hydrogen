@@ -213,17 +213,17 @@ test.describe.serial('exit scenario: an editor confined to the careers site', ()
     expect(now.item.id).toBe(jobs.id);
   });
 
-  test('4. a delete blocked by a reference shows the blocker', async ({ page }) => {
+  test('4. a trash blocked by a reference shows the blocker', async ({ page }) => {
     const referrer = await seedPage('careers', `Referrer ${t}`, roots.careers.node, { related: jobs.id });
     await signIn(page, editor.login, editor.password);
     await page.goto(`/admin/items/${jobs.id}`);
     await page.getByRole('button', { name: 'More actions' }).click();
-    await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
-    const dlg = page.getByRole('dialog', { name: 'Delete item' });
-    await dlg.getByRole('button', { name: 'Delete', exact: true }).click();
-    await expect(dlg.getByRole('alert')).toContainText('still referenced by 1 items');
+    await page.getByRole('menuitem', { name: 'Move to trash' }).click();
+    const dlg = page.getByRole('dialog');
+    await dlg.getByRole('button', { name: 'Move to trash' }).click();
+    await expect(dlg.getByRole('alert')).toContainText('Referenced by 1 items');
     await expect(dlg.getByRole('link', { name: referrer.title })).toBeVisible();
-    await expect(dlg.getByRole('button', { name: 'Delete', exact: true })).toBeDisabled();
+    await expect(dlg.getByRole('button', { name: 'Move to trash' })).toBeDisabled();
     await dlg.getByRole('button', { name: 'Cancel' }).click();
     expect((await manage('GET', `/items/${jobs.id}`)).id).toBe(jobs.id);
   });

@@ -218,6 +218,21 @@ func TestRoutes(t *testing.T) {
 		}},
 		{"discard empty part", "DELETE", "/items/" + id + "/draft?parts=shared,", "", 400, "", nil},
 		{"delete", "DELETE", "/items/" + id, "", 204, "Delete", nil},
+		{"purge", "DELETE", "/items/" + id + "?permanent=true", "", 204, "Purge", nil},
+		{"bad permanent flag", "DELETE", "/items/" + id + "?permanent=x", "", 400, "", nil},
+		{"unpublish", "POST", "/items/" + id + "/unpublish", "", 200, "Unpublish", nil},
+		{"restore", "POST", "/items/" + id + "/restore", "", 200, "Restore", nil},
+		{"get trashed", "GET", "/items/" + id + "?trashed=true", "", 200, "Get", func(t *testing.T, _ *httptest.ResponseRecorder, c call) {
+			if o, _ := c.arg.(content.GetOptions); !o.Trashed {
+				t.Errorf("options = %+v", c.arg)
+			}
+		}},
+		{"trash list", "GET", "/trash?type=article&limit=5&offset=2", "", 200, "ListTrash", func(t *testing.T, _ *httptest.ResponseRecorder, c call) {
+			if o, _ := c.arg.(content.TrashOptions); o.Type != "article" || o.Limit != 5 || o.Offset != 2 {
+				t.Errorf("options = %+v", c.arg)
+			}
+		}},
+		{"trash list unknown parameter", "GET", "/trash?bogus=1", "", 400, "", nil},
 		{"versions", "GET", "/items/" + id + "/versions", "", 200, "Versions", func(t *testing.T, w *httptest.ResponseRecorder, _ call) {
 			var m struct {
 				Items []map[string]any `json:"items"`
@@ -478,6 +493,7 @@ func TestErrorMapping(t *testing.T) {
 		{"store duplicate", fmt.Errorf("x: %w", store.ErrDuplicateKey), 409, "duplicate_key", ""},
 		{"plain invalid", content.ErrInvalid, 422, "invalid", ""},
 		{"plain conflict", content.ErrConflict, 409, "conflict", ""},
+		{"coded conflict", codedConflict{}, 409, "has_children", ""},
 		{"plain referenced", content.ErrReferenced, 409, "referenced", ""},
 		{"internal", errors.New("pq: password=hunter2"), 500, "internal", ""},
 	}
@@ -509,6 +525,13 @@ func TestErrorMapping(t *testing.T) {
 		})
 	}
 }
+
+// codedConflict is a conflict that names its own API code, as the pages module's has_children does.
+type codedConflict struct{}
+
+func (codedConflict) Error() string        { return "content: conflict: has children" }
+func (codedConflict) Is(target error) bool { return target == content.ErrConflict }
+func (codedConflict) APICode() string      { return "has_children" }
 
 func TestPanicRecovery(t *testing.T) {
 	f := newFake(t)

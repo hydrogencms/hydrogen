@@ -1,6 +1,8 @@
 import type { Route } from './lib/router.svelte';
 import Login from './routes/login/Login.svelte';
 
+const publishing = () => import('./routes/publishing/Route.svelte');
+
 // First match wins. Routes of the content, pages and settings screens load lazily (one chunk each).
 export const routes: Route[] = [
   { path: '/login', public: true, title: 'login.title', load: async () => ({ default: Login }) },
@@ -13,6 +15,10 @@ export const routes: Route[] = [
   { path: '/singletons/:type', title: 'nav.settingsContent', load: () => import('./routes/singleton/Singleton.svelte') },
 
   { path: '/pages/:site', title: 'nav.pages', load: () => import('./routes/pages/Pages.svelte') },
+
+  // One lazy entry for both: the list at `/x`, the detail at `/x/:id` (params.rest).
+  { path: '/releases/*', title: 'nav.releases', load: publishing },
+  { path: '/trash/*', title: 'nav.trash', load: publishing },
 
   { path: '/settings/users', title: 'nav.users', load: () => import('./routes/settings/Users.svelte') },
   { path: '/settings/users/:id', title: 'nav.users', load: () => import('./routes/settings/UserEdit.svelte') },

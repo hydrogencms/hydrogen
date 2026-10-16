@@ -75,6 +75,7 @@ export const collections: Record<string, string> = {
   'collections.status.draft': 'Draft',
   'collections.status.published': 'Published',
   'collections.status.changed': 'Changed',
+  'collections.status.unpublished': 'Unpublished',
   'collections.locale.published': 'published',
   'collections.locale.draft': 'draft only',
   'collections.locale.fallback': 'fallback',

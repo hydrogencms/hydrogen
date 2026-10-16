@@ -118,7 +118,7 @@ type draftPlan struct {
 }
 
 func (s *Service) migrateItem(ctx context.Context, tx store.Tx, m Migration, id ids.UUID) error {
-	it, err := getItem(ctx, tx, id, true)
+	it, err := getItemAny(ctx, tx, id, true)
 	if err != nil {
 		return err
 	}

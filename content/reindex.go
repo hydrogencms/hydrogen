@@ -111,7 +111,7 @@ func (s *Service) eachItem(ctx context.Context, progress func(int),
 			}
 			for _, id := range batch {
 				err := s.o.DB.Tx(ctx, func(tx store.Tx) error {
-					it, err := getItem(ctx, tx, id, true)
+					it, err := getItemAny(ctx, tx, id, true)
 					if err != nil {
 						return err
 					}

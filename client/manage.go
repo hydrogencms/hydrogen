@@ -27,7 +27,7 @@ type View struct {
 	Locale          string          `json:"locale"`
 	MainLocale      string          `json:"mainLocale"`
 	AlwaysAvailable bool            `json:"alwaysAvailable"`
-	Status          string          `json:"status"` // draft, published, changed
+	Status          string          `json:"status"` // draft, published, changed, unpublished
 	Version         int             `json:"version"`
 	Draft           bool            `json:"draft"`
 	Name            string          `json:"name"`
@@ -37,6 +37,24 @@ type View struct {
 	CreatedAt       time.Time       `json:"createdAt"`
 	UpdatedAt       time.Time       `json:"updatedAt"`
 	PublishedAt     *time.Time      `json:"publishedAt"`
+	// DeletedAt, DeletedBy and DeletedByName are set on an item read from the trash.
+	DeletedAt     *time.Time `json:"deletedAt"`
+	DeletedBy     string     `json:"deletedBy"`
+	DeletedByName string     `json:"deletedByName"`
+}
+
+// TrashSummary is one row of the trash listing.
+type TrashSummary struct {
+	Summary
+	DeletedAt     time.Time `json:"deletedAt"`
+	DeletedBy     string    `json:"deletedBy"`
+	DeletedByName string    `json:"deletedByName"`
+}
+
+// TrashList is a page of the trash.
+type TrashList struct {
+	Items []TrashSummary `json:"items"`
+	Total int            `json:"total"`
 }
 
 // Summary is one row of a listing.
@@ -183,11 +201,65 @@ func (m *Manage) List(ctx context.Context, typ string, o *ManageListOptions) (*M
 	return &out, nil
 }
 
-// Delete removes an item with all its versions. Items that others reference may refuse (an *Error with code
-// "referenced" and its Referrers) depending on the reference's on_delete policy.
-func (m *Manage) Delete(ctx context.Context, id string) error {
+// Delete moves an item to the trash; it is Trash. A published item is unpublished first. Items that others
+// reference with on_delete block refuse (an *Error with code "referenced" and its Referrers); a page with
+// children refuses with code "has_children".
+func (m *Manage) Delete(ctx context.Context, id string) error { return m.Trash(ctx, id) }
+
+// Trash moves an item to the trash (DELETE /items/{id}).
+func (m *Manage) Trash(ctx context.Context, id string) error {
 	_, _, err := m.c.call(ctx, http.MethodDelete, "/items/"+url.PathEscape(id), "", nil, nil, false)
 	return err
+}
+
+// Purge deletes a trashed item for good with its versions and drafts (an *Error with code "conflict" when it
+// is not in the trash).
+func (m *Manage) Purge(ctx context.Context, id string) error {
+	_, _, err := m.c.call(ctx, http.MethodDelete, "/items/"+url.PathEscape(id), "permanent=true", nil, nil, false)
+	return err
+}
+
+// Restore takes an item out of the trash; it comes back unpublished.
+func (m *Manage) Restore(ctx context.Context, id string) (*View, error) {
+	return m.view(ctx, http.MethodPost, "/items/"+url.PathEscape(id)+"/restore", "", nil)
+}
+
+// Unpublish stops delivering an item; its draft and versions stay. It returns the draft view.
+func (m *Manage) Unpublish(ctx context.Context, id string) (*View, error) {
+	return m.view(ctx, http.MethodPost, "/items/"+url.PathEscape(id)+"/unpublish", "", nil)
+}
+
+// GetTrashed reads an item that is in the trash (as its draft view); a live item reads as with Get.
+func (m *Manage) GetTrashed(ctx context.Context, id, locale string) (*View, error) {
+	q := &query{}
+	if locale != "" {
+		q.add("locale", locale)
+	}
+	q.add("trashed", "true")
+	return m.view(ctx, http.MethodGet, "/items/"+url.PathEscape(id), q.String(), nil)
+}
+
+// ListTrash lists trashed items, newest deletion first. typ, limit and offset are optional (zero values).
+func (m *Manage) ListTrash(ctx context.Context, typ string, limit, offset int) (*TrashList, error) {
+	q := &query{}
+	if typ != "" {
+		q.add("type", typ)
+	}
+	if limit > 0 {
+		q.add("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		q.add("offset", strconv.Itoa(offset))
+	}
+	_, raw, err := m.c.call(ctx, http.MethodGet, "/trash", q.String(), nil, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	var out TrashList
+	if err := decode(raw, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // PreviewTokenInput asks for a preview token.

@@ -57,6 +57,17 @@ func badRequest(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", content.ErrBadRequest, fmt.Sprintf(format, args...))
 }
 
+// childrenError is a conflict the API reports with the code has_children.
+type childrenError struct{ msg string }
+
+func (e *childrenError) Error() string        { return content.ErrConflict.Error() + ": " + e.msg }
+func (e *childrenError) Is(target error) bool { return target == content.ErrConflict }
+func (e *childrenError) APICode() string      { return "has_children" }
+
+func hasChildren(format string, args ...any) error {
+	return &childrenError{fmt.Sprintf(format, args...)}
+}
+
 func conflict(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", content.ErrConflict, fmt.Sprintf(format, args...))
 }

@@ -29,7 +29,11 @@ type Content interface {
 	Update(ctx context.Context, id ids.UUID, in content.UpdateInput) (*content.View, error)
 	Publish(ctx context.Context, id ids.UUID, o content.PublishOptions) (*content.View, error)
 	Discard(ctx context.Context, id ids.UUID, parts []string) error
-	Delete(ctx context.Context, id ids.UUID) error
+	Delete(ctx context.Context, id ids.UUID) error // moves to the trash
+	Unpublish(ctx context.Context, id ids.UUID) (*content.View, error)
+	Restore(ctx context.Context, id ids.UUID) (*content.View, error)
+	Purge(ctx context.Context, id ids.UUID) error
+	ListTrash(ctx context.Context, o content.TrashOptions) (*content.TrashResult, error)
 	List(ctx context.Context, o content.ListOptions) (*content.ListResult, error)
 	Versions(ctx context.Context, id ids.UUID) ([]store.VersionMeta, error)
 	VersionContent(ctx context.Context, id ids.UUID, version int) (*content.VersionView, error)
@@ -173,7 +177,10 @@ var coreRoutes = []route{
 	{"PATCH", "/items/{id}", access.PolicyContentEdit, (*api).updateItem},
 	{"POST", "/items/{id}/publish", access.PolicyContentPublish, (*api).publishItem},
 	{"DELETE", "/items/{id}/draft", access.PolicyContentEdit, (*api).discardDraft},
+	{"POST", "/items/{id}/unpublish", access.PolicyContentPublish, (*api).unpublishItem},
 	{"DELETE", "/items/{id}", access.PolicyContentDelete, (*api).deleteItem},
+	{"POST", "/items/{id}/restore", access.PolicyContentDelete, (*api).restoreItem},
+	{"GET", "/trash", access.PolicyContentRead, (*api).listTrash},
 	{"GET", "/items/{id}/versions", access.PolicyContentRead, (*api).versions},
 	{"GET", "/items/{id}/versions/{n}", access.PolicyContentRead, (*api).version},
 	{"GET", "/items/{id}/references", access.PolicyContentRead, (*api).references},

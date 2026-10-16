@@ -154,10 +154,13 @@ const (
 	PolicyContentPreview = "content.preview"
 	// PolicyContentPreviewShare creates and revokes share links: preview links anyone can open.
 	PolicyContentPreviewShare = "content.preview.share"
-	PolicyUserManage          = "user.manage"
-	PolicyRoleManage          = "role.manage"
-	PolicyTokenManage         = "token.manage"
-	PolicyAuditRead           = "audit.read"
+	// PolicyReleaseManage creates, edits, schedules, cancels and publishes releases; the items in a release still
+	// need content.publish when it runs.
+	PolicyReleaseManage = "release.manage"
+	PolicyUserManage    = "user.manage"
+	PolicyRoleManage    = "role.manage"
+	PolicyTokenManage   = "token.manage"
+	PolicyAuditRead     = "audit.read"
 )
 
 // NotifyChannel carries auth changes; listeners drop cached grants (empty payload: all).

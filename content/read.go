@@ -24,7 +24,11 @@ func (s *Service) Get(ctx context.Context, id ids.UUID, o GetOptions) (*View, er
 	var v *View
 	err := s.o.DB.View(ctx, func(tx store.Tx) error {
 		ctx := store.WithTx(ctx, tx)
-		it, err := getItem(ctx, tx, id, false)
+		get := getItem
+		if o.Trashed {
+			get = getItemAny
+		}
+		it, err := get(ctx, tx, id, false)
 		if err != nil {
 			return err
 		}
@@ -103,6 +107,9 @@ func (s *Service) viewOf(ctx context.Context, tx store.Tx, it store.Item, o GetO
 	if err := st.load(ctx, tx.Content()); err != nil {
 		return nil, err
 	}
+	if it.DeletedAt != nil {
+		o.Draft = true
+	}
 	if err := s.checkRead(ctx, st, o.Draft); err != nil {
 		return nil, err
 	}
@@ -110,10 +117,24 @@ func (s *Service) viewOf(ctx context.Context, tx store.Tx, it store.Item, o GetO
 		return nil, fmt.Errorf("%w: %s is not published", ErrNotFound, it.ID)
 	}
 	v, err := st.view(locale, o.Draft)
-	if err == nil {
-		s.withActions(ctx, st, v)
+	if err != nil {
+		return nil, err
 	}
-	return v, err
+	if o.Draft && it.PublishedVersion == 0 {
+		metas, err := tx.Content().ListVersions(ctx, it.ID)
+		if err != nil {
+			return nil, fmt.Errorf("content: list versions of %s: %w", it.ID, err)
+		}
+		if len(metas) > 0 {
+			v.Status = StatusUnpublished
+		}
+	}
+	if it.DeletedAt != nil {
+		v.DeletedAt, v.DeletedBy = it.DeletedAt, it.DeletedBy
+		v.DeletedByName = s.actorNames(ctx, tx, []string{it.DeletedBy})[it.DeletedBy]
+	}
+	s.withActions(ctx, st, v)
+	return v, nil
 }
 
 // view builds the view of one locale from the loaded state.

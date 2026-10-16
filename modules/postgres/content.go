@@ -110,7 +110,7 @@ func (s contentStore) LatestSchemaRev(ctx context.Context) (int, string, []byte,
 // Items
 
 const itemColumns = `item.id, item.key, item.type, item.main_locale, item.always_available, item.published_version,
-	item.created_at, item.updated_at, item.created_by, item.updated_by`
+	item.created_at, item.updated_at, item.created_by, item.updated_by, item.deleted_at, item.deleted_by`
 
 // scanItem reads itemColumns followed by any extra destinations.
 func scanItem(r pgx.Row, extra ...any) (store.Item, error) {
@@ -120,7 +120,7 @@ func scanItem(r pgx.Row, extra ...any) (store.Item, error) {
 		key *string
 	)
 	dest := append([]any{&id, &key, &it.Type, &it.MainLocale, &it.AlwaysAvailable, &it.PublishedVersion,
-		&it.CreatedAt, &it.UpdatedAt, &it.CreatedBy, &it.UpdatedBy}, extra...)
+		&it.CreatedAt, &it.UpdatedAt, &it.CreatedBy, &it.UpdatedBy, &it.DeletedAt, &it.DeletedBy}, extra...)
 	if err := r.Scan(dest...); err != nil {
 		return it, err
 	}
@@ -128,17 +128,17 @@ func scanItem(r pgx.Row, extra ...any) (store.Item, error) {
 	if key != nil {
 		it.Key = *key
 	}
-	it.CreatedAt, it.UpdatedAt = utc(it.CreatedAt), utc(it.UpdatedAt)
+	it.CreatedAt, it.UpdatedAt, it.DeletedAt = utc(it.CreatedAt), utc(it.UpdatedAt), optUTC(it.DeletedAt)
 	return it, nil
 }
 
 func (s contentStore) InsertItem(ctx context.Context, it store.Item) error {
 	tag, err := s.tx.Exec(ctx, `INSERT INTO item (id, key, type, main_locale, always_available, published_version,
-			created_at, updated_at, created_by, updated_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		ON CONFLICT (key) DO NOTHING`,
+			created_at, updated_at, created_by, updated_by, deleted_at, deleted_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		ON CONFLICT (key) WHERE deleted_at IS NULL DO NOTHING`,
 		uid(it.ID), nullable(it.Key), it.Type, it.MainLocale, it.AlwaysAvailable, it.PublishedVersion,
-		tz(it.CreatedAt), tz(it.UpdatedAt), it.CreatedBy, it.UpdatedBy)
+		tz(it.CreatedAt), tz(it.UpdatedAt), it.CreatedBy, it.UpdatedBy, optTz(it.DeletedAt), it.DeletedBy)
 	if err != nil {
 		return fmt.Errorf("postgres: insert item %s: %w", it.ID, err)
 	}
@@ -164,7 +164,7 @@ func (s contentStore) GetItemByKey(ctx context.Context, key string) (store.Item,
 	if key == "" {
 		return store.Item{}, store.ErrNotFound
 	}
-	it, err := scanItem(s.tx.QueryRow(ctx, `SELECT `+itemColumns+` FROM item WHERE key = $1`, key))
+	it, err := scanItem(s.tx.QueryRow(ctx, `SELECT `+itemColumns+` FROM item WHERE key = $1 AND deleted_at IS NULL`, key))
 	if err != nil {
 		return it, wrapNotFound(fmt.Sprintf("get item by key %q", key), err)
 	}
@@ -190,7 +190,8 @@ func (s contentStore) GetItems(ctx context.Context, list []ids.UUID) ([]store.It
 func (s contentStore) UpdateItem(ctx context.Context, it store.Item) error {
 	tag, err := s.tx.Exec(ctx, `UPDATE item SET key = $2, main_locale = $3, always_available = $4,
 			published_version = $5, updated_at = $6, updated_by = $7
-		WHERE id = $1 AND ($2::text IS NULL OR NOT EXISTS (SELECT 1 FROM item o WHERE o.key = $2 AND o.id <> $1))`,
+		WHERE id = $1 AND ($2::text IS NULL OR deleted_at IS NOT NULL
+			OR NOT EXISTS (SELECT 1 FROM item o WHERE o.key = $2 AND o.id <> $1 AND o.deleted_at IS NULL))`,
 		uid(it.ID), nullable(it.Key), it.MainLocale, it.AlwaysAvailable, it.PublishedVersion, tz(it.UpdatedAt), it.UpdatedBy)
 	if isKeyConflict(err) {
 		return store.ErrDuplicateKey
@@ -204,6 +205,40 @@ func (s contentStore) UpdateItem(ctx context.Context, it store.Item) error {
 	var exists bool
 	if err := s.tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM item WHERE id = $1)`, uid(it.ID)).Scan(&exists); err != nil {
 		return fmt.Errorf("postgres: update item %s: %w", it.ID, err)
+	}
+	if exists {
+		return store.ErrDuplicateKey
+	}
+	return store.ErrNotFound
+}
+
+// SetDeleted writes only the trash columns. A restore into a key a live item has taken is rejected in the
+// statement, because a unique violation would abort the transaction.
+func (s contentStore) SetDeleted(ctx context.Context, id ids.UUID, at *time.Time, by string) error {
+	if at != nil {
+		tag, err := s.tx.Exec(ctx, `UPDATE item SET deleted_at = $2, deleted_by = $3 WHERE id = $1`, uid(id), tz(*at), by)
+		if err != nil {
+			return fmt.Errorf("postgres: set deleted %s: %w", id, err)
+		}
+		if tag.RowsAffected() == 0 {
+			return store.ErrNotFound
+		}
+		return nil
+	}
+	tag, err := s.tx.Exec(ctx, `UPDATE item SET deleted_at = NULL, deleted_by = '' WHERE id = $1
+		AND (key IS NULL OR deleted_at IS NULL OR NOT EXISTS (SELECT 1 FROM item o WHERE o.key = item.key AND o.id <> item.id AND o.deleted_at IS NULL))`, uid(id))
+	if isKeyConflict(err) {
+		return store.ErrDuplicateKey
+	}
+	if err != nil {
+		return fmt.Errorf("postgres: set deleted %s: %w", id, err)
+	}
+	if tag.RowsAffected() > 0 {
+		return nil
+	}
+	var exists bool
+	if err := s.tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM item WHERE id = $1)`, uid(id)).Scan(&exists); err != nil {
+		return fmt.Errorf("postgres: set deleted %s: %w", id, err)
 	}
 	if exists {
 		return store.ErrDuplicateKey
@@ -378,6 +413,33 @@ func (s contentStore) PublishedLocalesOf(ctx context.Context, list []ids.UUID) (
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("postgres: published locales of: %w", err)
+	}
+	return out, nil
+}
+
+func (s contentStore) MainNamesOf(ctx context.Context, list []ids.UUID) (map[ids.UUID]string, error) {
+	out := map[ids.UUID]string{}
+	if len(list) == 0 {
+		return out, nil
+	}
+	rows, err := s.tx.Query(ctx, `SELECT i.id, COALESCE(NULLIF(d.name, ''), vl.name, '') FROM item i
+		LEFT JOIN draft_part d ON d.item_id = i.id AND d.part = i.main_locale
+		LEFT JOIN item_version_locale vl ON vl.item_id = i.id AND vl.version = i.published_version AND vl.locale = i.main_locale
+		WHERE i.id = ANY($1)`, idArgs(list))
+	if err != nil {
+		return nil, fmt.Errorf("postgres: main names of: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id [16]byte
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("postgres: main names of: %w", err)
+		}
+		out[ids.UUID(id)] = name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres: main names of: %w", err)
 	}
 	return out, nil
 }

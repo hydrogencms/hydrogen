@@ -57,8 +57,53 @@ type pageRecord struct {
 	Updated *time.Time `json:"updatedAt,omitempty"`
 }
 
+// offline lists what an export leaves out because the content export skips trashed items: the trashed items,
+// the nodes of those items and every node below them. Their slugs, mounts and routes (history included) go
+// with them, and links that pointed at them lose their target, as when the target is purged.
+type offline struct {
+	items map[ids.UUID]bool
+	nodes map[ids.UUID]bool
+}
+
+func loadOffline(ctx context.Context, q store.SQL) (*offline, error) {
+	o := &offline{items: map[ids.UUID]bool{}, nodes: map[ids.UUID]bool{}}
+	if err := each(ctx, q, `SELECT id FROM item WHERE deleted_at IS NOT NULL`, nil, func(r store.Rows) error {
+		var id ids.UUID
+		if err := r.Scan(&id); err != nil {
+			return err
+		}
+		o.items[id] = true
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if len(o.items) == 0 {
+		return o, nil
+	}
+	// Parents come before their children, so one pass marks every descendant.
+	err := each(ctx, q, `SELECT id, parent_id, item_id FROM page_node ORDER BY depth, id`, nil, func(r store.Rows) error {
+		var id ids.UUID
+		var parent, item *ids.UUID
+		if err := r.Scan(&id, &parent, &item); err != nil {
+			return err
+		}
+		if (item != nil && o.items[*item]) || (parent != nil && o.nodes[*parent]) {
+			o.nodes[id] = true
+		}
+		return nil
+	})
+	return o, err
+}
+
+func (o *offline) item(id *ids.UUID) bool { return id != nil && o.items[*id] }
+func (o *offline) node(id *ids.UUID) bool { return id != nil && o.nodes[*id] }
+
 func (exporter) Export(ctx context.Context, tx store.Tx, w *exportfmt.ModuleWriter) error {
 	q := tx.SQL()
+	off, err := loadOffline(ctx, q)
+	if err != nil {
+		return fmt.Errorf("pages: export: %w", err)
+	}
 	if err := each(ctx, q, `SELECT id, site, parent_id, path, depth, sort_key, kind, item_id, hidden, data, main_locale,
 			collection, link_item, link_node, created_at, updated_at FROM page_node ORDER BY depth, id`, nil, func(r store.Rows) error {
 		var n pageRecord
@@ -69,8 +114,19 @@ func (exporter) Export(ctx context.Context, tx store.Tx, w *exportfmt.ModuleWrit
 			&n.MainLocale, &n.Collection, &n.LinkItem, &n.LinkNode, &created, &updated); err != nil {
 			return err
 		}
+		if off.nodes[id] {
+			return nil
+		}
 		if data != nil {
 			n.Data = bytesOf(*data)
+		}
+		if off.item(n.LinkItem) || off.node(n.LinkNode) {
+			var spec LinkSpec
+			if err := jsonUnmarshal(n.Data, &spec); err != nil {
+				return err
+			}
+			spec.Item, spec.Node = nil, nil
+			n.LinkItem, n.LinkNode, n.Data = nil, nil, mustJSON(spec)
 		}
 		n.T, n.ID, n.Created, n.Updated = "node", &id, &created, &updated
 		return w.Write(n)
@@ -83,6 +139,9 @@ func (exporter) Export(ctx context.Context, tx store.Tx, w *exportfmt.ModuleWrit
 		if err := r.Scan(&node, &s.Locale, &s.Slug, &s.Name, &s.Vanity); err != nil {
 			return err
 		}
+		if off.nodes[node] {
+			return nil
+		}
 		s.Node = &node
 		return w.Write(s)
 	}); err != nil {
@@ -93,6 +152,9 @@ func (exporter) Export(ctx context.Context, tx store.Tx, w *exportfmt.ModuleWrit
 		var node, item ids.UUID
 		if err := r.Scan(&node, &item, &m.Locale, &m.Rel); err != nil {
 			return err
+		}
+		if off.nodes[node] || off.items[item] {
+			return nil
 		}
 		m.Node, m.Item = &node, &item
 		return w.Write(m)
@@ -105,6 +167,9 @@ func (exporter) Export(ctx context.Context, tx store.Tx, w *exportfmt.ModuleWrit
 		var updated time.Time
 		if err := r.Scan(&rt.Site, &rt.Locale, &rt.Path, &rt.State, &rt.Item, &rt.Node, &rt.Target, &rt.Status, &updated); err != nil {
 			return err
+		}
+		if off.item(rt.Item) || off.node(rt.Node) {
+			return nil
 		}
 		rt.Updated = &updated
 		return w.Write(rt)

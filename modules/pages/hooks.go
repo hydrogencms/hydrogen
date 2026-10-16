@@ -196,6 +196,16 @@ func (s *service) afterPublish(hc *hooks.Context) error {
 }
 
 func (s *service) beforeDelete(hc *hooks.Context) error {
+	return s.refuseChildren(hc, "move or delete its children first")
+}
+
+// beforeUnpublish refuses to take a page that has children offline (unpublishing it or moving it to the
+// trash): their paths hang below it.
+func (s *service) beforeUnpublish(hc *hooks.Context) error {
+	return s.refuseChildren(hc, "move or delete its children first, or unpublish it later")
+}
+
+func (s *service) refuseChildren(hc *hooks.Context, advice string) error {
 	if !s.isPageType(hc.Item.Type) {
 		return nil
 	}
@@ -209,9 +219,19 @@ func (s *service) beforeDelete(hc *hooks.Context) error {
 		return err
 	}
 	if children > 0 {
-		return conflict("this page has %d child node(s): move or delete its children first", children)
+		return hasChildren("this page has %d child node(s): %s", children, advice)
 	}
 	return nil
+}
+
+// afterUnpublish drops the routes and memberships of an item that is no longer published. A page keeps its
+// node, so restoring and publishing it again puts it back where it was.
+func (s *service) afterUnpublish(hc *hooks.Context) error {
+	changes, err := s.dropRoutes(hc, hc.Tx, hc.Item.ID)
+	if err != nil {
+		return fmt.Errorf("pages: remove routes of %s: %w", hc.Item.ID, err)
+	}
+	return s.emitChanges(hc, hc.Tx, changes)
 }
 
 func (s *service) afterDelete(hc *hooks.Context) error {

@@ -22,6 +22,10 @@ const (
 	AfterPublish   Event = "afterPublish"   // after the version is written (in the tx, or async after commit)
 	BeforeDelete   Event = "beforeDelete"   // may block
 	AfterDelete    Event = "afterDelete"    // in the tx, or async after commit
+	// BeforeUnpublish and AfterUnpublish run when an item stops being published, by unpublishing it or by moving
+	// it to the trash (Version is 0 in AfterUnpublish). Synchronous only. Doc is nil.
+	BeforeUnpublish Event = "beforeUnpublish" // may block
+	AfterUnpublish  Event = "afterUnpublish"
 )
 
 func (e Event) asyncAllowed() bool { return e == AfterPublish || e == AfterDelete }
@@ -67,7 +71,7 @@ func (r *Registry) Add(h Hook) error {
 	switch {
 	case h.Fn == nil:
 		return fmt.Errorf("hooks: %s hook without a function", h.Event)
-	case !slices.Contains([]Event{BeforeValidate, Validate, BeforeSave, BeforePublish, AfterPublish, BeforeDelete, AfterDelete}, h.Event):
+	case !slices.Contains([]Event{BeforeValidate, Validate, BeforeSave, BeforePublish, AfterPublish, BeforeDelete, AfterDelete, BeforeUnpublish, AfterUnpublish}, h.Event):
 		return fmt.Errorf("hooks: unknown event %q", h.Event)
 	case h.Async && !h.Event.asyncAllowed():
 		return fmt.Errorf("hooks: %s hooks cannot be async", h.Event)

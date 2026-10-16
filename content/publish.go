@@ -20,16 +20,23 @@ func (s *Service) Publish(ctx context.Context, id ids.UUID, o PublishOptions) (*
 		return nil, err
 	}
 	var v *View
-	err := s.o.DB.Tx(ctx, func(tx store.Tx) error {
-		ctx := store.WithTx(ctx, tx)
-		it, err := getItem(ctx, tx, id, true)
-		if err != nil {
-			return err
-		}
-		v, err = s.publish(ctx, tx, it, o)
+	err := s.o.DB.Tx(ctx, func(tx store.Tx) (err error) {
+		v, err = s.PublishTx(ctx, tx, id, o)
 		return err
 	})
 	return v, err
+}
+
+// PublishTx is Publish inside the caller's transaction (releases publish many items in one). The caller owns
+// the commit and the error: on a failure the transaction must be rolled back, not committed. Call Prepare
+// before opening the transaction: loading the principal's grants needs a connection of its own.
+func (s *Service) PublishTx(ctx context.Context, tx store.Tx, id ids.UUID, o PublishOptions) (*View, error) {
+	ctx = store.WithTx(ctx, tx)
+	it, err := getItem(ctx, tx, id, true)
+	if err != nil {
+		return nil, err
+	}
+	return s.publish(ctx, tx, it, o)
 }
 
 // PublishSingleton is Publish for a singleton type.
@@ -82,6 +89,9 @@ func (s *Service) publish(ctx context.Context, tx store.Tx, it store.Item, o Pub
 	if err := st.load(ctx, c); err != nil {
 		return nil, err
 	}
+	if err := st.loadLatest(ctx, c); err != nil {
+		return nil, err
+	}
 	if err := s.check(ctx, access.PolicyContentPublish, st, nil); err != nil {
 		return nil, err
 	}
@@ -111,8 +121,8 @@ func (s *Service) publish(ctx context.Context, tx store.Tx, it store.Item, o Pub
 // the shared part goes.
 func (st *itemState) publishLocales(sel selection) []string {
 	all := slices.Clone(sel.locales)
-	if st.pub != nil {
-		all = append(all, st.pub.codes()...)
+	if cur := st.current(); cur != nil {
+		all = append(all, cur.codes()...)
 	}
 	slices.Sort(all)
 	return sel.changedLocales(slices.Compact(all))
@@ -142,7 +152,7 @@ func (st *itemState) selectParts(o PublishOptions) (selection, error) {
 	switch {
 	case !sel.shared && len(sel.locales) == 0:
 		return sel, badRequest("nothing to publish")
-	case st.item.PublishedVersion == 0 && !slices.Contains(sel.locales, st.item.MainLocale):
+	case st.current() == nil && !slices.Contains(sel.locales, st.item.MainLocale):
 		return sel, badRequest("the first publish must include the main locale %q", st.item.MainLocale)
 	}
 	return sel, nil
@@ -152,9 +162,14 @@ func (st *itemState) selectParts(o PublishOptions) (selection, error) {
 func (st *itemState) checkConflicts(ctx context.Context, c store.ContentStore, sel selection) error {
 	bases := map[int]*pubVersion{}
 	var conflicts []string
+	cur := st.current()
+	curNo := st.item.PublishedVersion
+	if st.pub == nil && cur != nil {
+		curNo = cur.Version.Version
+	}
 	check := func(part string) error {
 		d := st.drafts[part]
-		if d.BaseVersion >= st.item.PublishedVersion {
+		if d.BaseVersion >= curNo {
 			return nil
 		}
 		base, ok := bases[d.BaseVersion]
@@ -165,7 +180,7 @@ func (st *itemState) checkConflicts(ctx context.Context, c store.ContentStore, s
 			}
 			bases[d.BaseVersion] = base
 		}
-		differs, err := partDiffers(base, st.pub, part)
+		differs, err := partDiffers(base, cur, part)
 		if differs {
 			conflicts = append(conflicts, partLabel(part))
 		}
@@ -303,15 +318,15 @@ func (st *itemState) nextVersion(sel selection) (shared map[string]any, sharedDa
 			return nil, nil, nil, err
 		}
 		sharedData = d.Data
-	} else if st.pub != nil {
-		if shared, err = st.pub.sharedDoc(); err != nil {
+	} else if cur := st.current(); cur != nil {
+		if shared, err = cur.sharedDoc(); err != nil {
 			return nil, nil, nil, err
 		}
-		sharedData = st.pub.Shared
+		sharedData = cur.Shared
 	}
 	codes := sel.locales
-	if st.pub != nil {
-		codes = slices.Concat(st.pub.codes(), sel.locales)
+	if cur := st.current(); cur != nil {
+		codes = slices.Concat(cur.codes(), sel.locales)
 		slices.Sort(codes)
 		codes = slices.Compact(codes)
 	}
@@ -331,11 +346,12 @@ func (st *itemState) localeOut(code string, sel selection) (*localeOut, error) {
 		doc, err := d.document()
 		return &localeOut{code: code, data: d.Data, doc: doc}, err
 	}
-	doc, _, err := st.pub.localeDoc(code)
+	cur := st.current()
+	doc, _, err := cur.localeDoc(code)
 	if err != nil {
 		return nil, err
 	}
-	return &localeOut{code: code, data: st.pub.Locales[st.pub.idx[code]].Data, doc: doc}, nil
+	return &localeOut{code: code, data: cur.Locales[cur.idx[code]].Data, doc: doc}, nil
 }
 
 // prepareOuts merges every locale with the shared document and runs normalisation, validation and the
@@ -433,7 +449,11 @@ func (s *Service) commitVersion(ctx context.Context, c store.ContentStore, st *i
 		return err
 	}
 	now := s.now()
-	v := store.Version{ItemID: st.item.ID, Version: st.item.PublishedVersion + 1, SchemaRev: rev,
+	next, err := s.nextVersion(ctx, c, st.item)
+	if err != nil {
+		return err
+	}
+	v := store.Version{ItemID: st.item.ID, Version: next, SchemaRev: rev,
 		Shared: sharedData, Locales: make([]store.VersionLocale, len(outs)), CreatedAt: now, CreatedBy: by}
 	for i, o := range outs {
 		v.Locales[i] = store.VersionLocale{Locale: o.code, Name: o.name, Data: o.data}
@@ -450,6 +470,22 @@ func (s *Service) commitVersion(ctx context.Context, c store.ContentStore, st *i
 		return err
 	}
 	return s.putSnapshots(ctx, c, st, outs, v.Version, now)
+}
+
+// nextVersion is the number of the version a publish writes: the one after the published version, or, for an
+// unpublished item that has history, after its newest version.
+func (s *Service) nextVersion(ctx context.Context, c store.ContentStore, it store.Item) (int, error) {
+	if it.PublishedVersion > 0 {
+		return it.PublishedVersion + 1, nil
+	}
+	metas, err := c.ListVersions(ctx, it.ID)
+	if err != nil {
+		return 0, fmt.Errorf("content: list versions of %s: %w", it.ID, err)
+	}
+	if len(metas) == 0 {
+		return 1, nil
+	}
+	return metas[0].Version + 1, nil
 }
 
 func (s *Service) afterPublish(ctx context.Context, tx store.Tx, st *itemState, outs []*localeOut, changed []string) error {

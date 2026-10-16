@@ -2,6 +2,16 @@
 // delete policies, singletons, hooks and content migrations. The management API, AI tools and project code
 // all write through it, so every rule applies everywhere.
 //
+// Outbox topics (payload: id, type, version, locales): item.created, item.updated, item.published,
+// item.unpublished (the item stopped being published), item.trashed (moved to the trash, unpublished if it
+// was published), item.restored (out of the trash, unpublished) and item.deleted (purged for good). Audit
+// actions: item.unpublish, item.trash, item.restore, item.purge.
+//
+// Async consumers that must react when an item goes offline subscribe to item.unpublished and item.trashed
+// (a trash emits only item.trashed, not item.unpublished as well); the AfterDelete hook, in the transaction
+// or async, fires on a purge only. A purge of an item that is already trashed has nothing left to take
+// offline, so item.deleted is the topic for dropping everything of it.
+//
 // Contract: planning/design/content-core.md.
 package content
 
@@ -100,6 +110,9 @@ const (
 	StatusDraft     = "draft"     // never published
 	StatusPublished = "published" // published, no pending draft parts
 	StatusChanged   = "changed"   // published, with draft parts
+	// StatusUnpublished: not published now, but it was (it has versions). Single-item views report it; list
+	// summaries show such items as draft.
+	StatusUnpublished = "unpublished"
 )
 
 // SharedPart names the shared (non-translatable) draft part in APIs; storage uses "".
@@ -124,6 +137,10 @@ type View struct {
 	CreatedAt       time.Time      `json:"createdAt"`
 	UpdatedAt       time.Time      `json:"updatedAt"`
 	PublishedAt     *time.Time     `json:"publishedAt,omitempty"`
+	// DeletedAt, DeletedBy and DeletedByName are set on a trashed item (GetOptions.Trashed).
+	DeletedAt     *time.Time `json:"deletedAt,omitempty"`
+	DeletedBy     string     `json:"deletedBy,omitempty"`
+	DeletedByName string     `json:"deletedByName,omitempty"`
 	// Actions says what the calling principal may do with the item; nil when no principal is acting.
 	Actions *Actions `json:"actions,omitempty"`
 }
@@ -149,6 +166,27 @@ type Summary struct {
 	UpdatedAt  time.Time `json:"updatedAt"`
 	// Fields holds the requested top-level fields (ListOptions.Fields) of the working document.
 	Fields map[string]any `json:"fields,omitempty"`
+}
+
+// TrashSummary is a trashed item in a trash listing.
+type TrashSummary struct {
+	Summary
+	DeletedAt     time.Time `json:"deletedAt"`
+	DeletedBy     string    `json:"deletedBy"`
+	DeletedByName string    `json:"deletedByName"`
+}
+
+// TrashOptions selects the trashed items ListTrash returns, newest deletion first.
+type TrashOptions struct {
+	Type   string // optional
+	Locale string // names are read in this locale; default: the service's default locale
+	Limit  int
+	Offset int
+}
+
+type TrashResult struct {
+	Items []TrashSummary `json:"items"`
+	Total int            `json:"total"`
 }
 
 // VersionView is one stored version with its documents: Shared holds the non-translatable fields, Locales the
@@ -188,6 +226,9 @@ type CreateInput struct {
 type GetOptions struct {
 	Locale string // default: the item's main locale
 	Draft  bool   // overlay draft parts
+	// Trashed also reads an item in the trash (always as its draft view: a trashed item is unpublished).
+	// Without it a trashed item is ErrNotFound.
+	Trashed bool
 }
 
 type UpdateInput struct {

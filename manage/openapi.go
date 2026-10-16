@@ -91,7 +91,7 @@ func baseSchemas() obj {
 			"properties": obj{
 				"code": obj{"type": "string", "description": "Machine-readable code; modules may add their own.",
 					"examples": []any{"bad_request", "unauthorized", "not_found", "unsupported_media_type",
-						"too_large", "invalid", "conflict", "referenced", "duplicate_key", "forbidden", "csrf", "throttled", "internal"}},
+						"too_large", "invalid", "conflict", "has_children", "referenced", "duplicate_key", "forbidden", "csrf", "throttled", "internal"}},
 				"message":   openapi.Str(""),
 				"fields":    openapi.ArrayOf(openapi.SchemaRef("FieldError")),
 				"locale":    openapi.Str(""),
@@ -106,6 +106,14 @@ func baseSchemas() obj {
 				"fields": obj{"type": "object", "description": "The fields named by the fields parameter (working document, requested locale with main-locale fallback); absent fields are left out."}}},
 		"ListResult": obj{"type": "object", "required": []any{"items", "total"},
 			"properties": obj{"items": openapi.ArrayOf(openapi.SchemaRef("Summary")), "total": obj{"type": "integer"}}},
+		"TrashSummary": obj{"type": "object",
+			"required":    []any{"id", "type", "name", "status", "version", "locales", "draftParts", "createdAt", "updatedAt", "deletedAt", "deletedBy", "deletedByName"},
+			"description": "A trashed item: the summary fields plus who trashed it and when.",
+			"properties": obj{"id": uuid, "type": openapi.Str(""), "key": openapi.Str(""), "name": openapi.Str(""), "status": statusSchema(),
+				"version": obj{"type": "integer"}, "locales": strs, "draftParts": strs, "createdAt": dt, "updatedAt": dt,
+				"deletedAt": dt, "deletedBy": openapi.Str(""), "deletedByName": openapi.Str("")}},
+		"TrashList": obj{"type": "object", "required": []any{"items", "total"},
+			"properties": obj{"items": openapi.ArrayOf(openapi.SchemaRef("TrashSummary")), "total": obj{"type": "integer"}}},
 		"VersionMeta": obj{"type": "object", "required": []any{"version", "schemaRev", "locales", "createdAt", "createdBy"},
 			"properties": obj{"version": obj{"type": "integer"}, "schemaRev": obj{"type": "integer"}, "locales": strs,
 				"createdAt": dt, "createdBy": openapi.Str("")}},
@@ -135,7 +143,8 @@ func mergeObj(a, b obj) obj {
 }
 
 func statusSchema() obj {
-	return obj{"type": "string", "enum": []any{"draft", "published", "changed"}}
+	return obj{"type": "string", "enum": []any{"draft", "published", "changed", "unpublished"},
+		"description": "unpublished: was published, is not now (single-item views only; lists show such items as draft)."}
 }
 
 func itemView(fields obj, typeName string) obj {
@@ -151,6 +160,7 @@ func itemView(fields obj, typeName string) obj {
 			"alwaysAvailable": obj{"type": "boolean"}, "status": statusSchema(), "version": obj{"type": "integer"},
 			"draft": obj{"type": "boolean"}, "name": openapi.Str(""), "fields": fields, "locales": strs, "draftParts": strs,
 			"createdAt": openapi.Str("date-time"), "updatedAt": openapi.Str("date-time"), "publishedAt": openapi.Str("date-time"),
+			"deletedAt": openapi.Str("date-time"), "deletedBy": openapi.Str(""), "deletedByName": openapi.Str(""),
 			"actions": obj{"type": "object", "required": []any{"edit", "publish", "delete"},
 				"description": "What the calling principal may do with the item.",
 				"properties":  obj{"edit": obj{"type": "boolean"}, "publish": obj{"type": "boolean"}, "delete": obj{"type": "boolean"}}}}}
@@ -223,6 +233,11 @@ func parameters(collections, singletons []*schema.Type) obj {
 				"repeated filters are ANDed; in takes comma-separated values."},
 		"IfMatch": obj{"name": "If-Match", "in": "header", "schema": openapi.Str(""),
 			"description": "The ETag of the item as read (GET returns it, writes return the new one). A mismatch answers 412; without the header nothing is checked."},
+		"Trashed": obj{"name": "trashed", "in": "query", "schema": obj{"type": "boolean"},
+			"description": "Also read an item in the trash (returned as its draft view, with deletedAt and deletedBy)."},
+		"Permanent": obj{"name": "permanent", "in": "query", "schema": obj{"type": "boolean"},
+			"description": "Delete for good instead of moving to the trash; only items already in the trash (else 409)."},
+		"TrashType": obj{"name": "type", "in": "query", "schema": openapi.Str(""), "description": "Only items of this content type."},
 		"Fields": obj{"name": "fields", "in": "query", "schema": openapi.Str(""),
 			"description": "Comma-separated top-level fields (at most 10) to return in each item's fields."},
 		"VersionNumber": obj{"name": "n", "in": "path", "required": true, "schema": obj{"type": "integer", "minimum": 1}},
@@ -327,13 +342,20 @@ func genericPaths(paths obj, collections, singletons []*schema.Type) {
 		}
 	}
 	paths["/items/{id}"] = obj{
-		"get": operation("getItem", "Read an item", openapi.Params("ItemId", "Locale", "Draft"), nil,
+		"get": operation("getItem", "Read an item", openapi.Params("ItemId", "Locale", "Draft", "Trashed"), nil,
 			responses(obj{"200": view}, "400", "401", "403", "404")),
 		"patch": operation("updateItem", "Update the draft (merge patch)", openapi.Params("ItemId", "IfMatch"), body(openapi.SchemaRef("UpdateRequest")),
 			responses(obj{"200": view}, "400", "401", "403", "404", "409", "412", "413", "415", "422")),
-		"delete": operation("deleteItem", "Delete an item", openapi.Params("ItemId", "IfMatch"), nil,
-			responses(obj{"204": obj{"description": "Deleted."}}, "401", "403", "404", "409", "412")),
+		"delete": operation("deleteItem", "Move an item to the trash, or delete it for good", openapi.Params("ItemId", "Permanent", "IfMatch"), nil,
+			responses(obj{"204": obj{"description": "Moved to the trash (unpublished first when it was published), or deleted for good with permanent=true."}},
+				"400", "401", "403", "404", "409", "412")),
 	}
+	paths["/items/{id}/unpublish"] = obj{"post": operation("unpublishItem", "Unpublish an item", openapi.Params("ItemId", "IfMatch"), nil,
+		responses(obj{"200": view}, "400", "401", "403", "404", "409", "412", "422"))}
+	paths["/items/{id}/restore"] = obj{"post": operation("restoreItem", "Restore an item from the trash (it comes back unpublished)", openapi.Params("ItemId", "IfMatch"), nil,
+		responses(obj{"200": view}, "401", "403", "404", "409", "412"))}
+	paths["/trash"] = obj{"get": operation("listTrash", "List trashed items, newest deletion first", openapi.Params("TrashType", "Locale", "Limit", "Offset"), nil,
+		responses(obj{"200": openapi.OKResp("A page of trashed items.", openapi.SchemaRef("TrashList"))}, "400", "401", "403", "404"))}
 	paths["/items/{id}/publish"] = obj{"post": operation("publishItem", "Publish draft parts", openapi.Params("ItemId", "IfMatch"),
 		optionalBody(openapi.SchemaRef("PublishRequest")), responses(obj{"200": view}, "400", "401", "403", "404", "409", "412", "413", "415", "422"))}
 	paths["/items/{id}/draft"] = obj{"delete": operation("discardDraft", "Discard draft parts", openapi.Params("ItemId", "Parts", "IfMatch"), nil,

@@ -64,6 +64,15 @@ func parentFor(ctx context.Context, q store.SQL, site string, id ids.UUID) (node
 		return p, badRequest("parent %s belongs to site %q, not %q", id, p.Site, site)
 	case p.Kind != KindPage:
 		return p, badRequest("parent %s is a %s node; only pages can have children", id, p.Kind)
+	case p.Item != nil:
+		var trashed bool
+		err := q.QueryRow(ctx, "SELECT deleted_at IS NOT NULL FROM item WHERE id = ?", *p.Item).Scan(&trashed)
+		if err != nil && !isNoRows(err) {
+			return p, err
+		}
+		if trashed {
+			return p, conflict("parent page %s is in the trash: restore it first", id)
+		}
 	}
 	return p, nil
 }
@@ -167,7 +176,7 @@ const maxNodeDepth = 32
 // placeable loads the page item a place call puts into the tree and checks nothing else holds it.
 func (s *service) placeable(ctx context.Context, tx store.Tx, id ids.UUID) (store.Item, error) {
 	it, err := tx.Content().GetItem(ctx, id, false)
-	if isNoRows(err) {
+	if isNoRows(err) || err == nil && it.DeletedAt != nil {
 		return it, notFound("item %s", id)
 	}
 	if err != nil {

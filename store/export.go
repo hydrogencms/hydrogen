@@ -15,8 +15,8 @@ import (
 type ExportStore interface {
 	// SchemaRevisions lists every recorded schema revision, oldest first.
 	SchemaRevisions(ctx context.Context) ([]SchemaRevision, error)
-	// ItemsAfter returns up to limit items with an id greater than after, in id order. The zero id starts at
-	// the beginning.
+	// ItemsAfter returns up to limit items that are not in the trash with an id greater than after, in id order.
+	// The zero id starts at the beginning. Trashed items are not exported.
 	ItemsAfter(ctx context.Context, after ids.UUID, limit int) ([]Item, error)
 	// VersionsOf returns every version of those items with its locales, ordered by item and version; with
 	// publishedOnly, only the version each item currently has published (none for unpublished items).
@@ -25,7 +25,7 @@ type ExportStore interface {
 	DraftPartsFor(ctx context.Context, items []ids.UUID) ([]DraftPart, error)
 	// ContentMigrationLog lists the applied content migrations by name.
 	ContentMigrationLog(ctx context.Context) ([]AppliedContentMigration, error)
-	// CountItems returns the number of items.
+	// CountItems returns the number of items that are not in the trash.
 	CountItems(ctx context.Context) (int, error)
 }
 

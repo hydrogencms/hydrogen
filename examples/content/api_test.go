@@ -192,7 +192,7 @@ func lifecycle(t *testing.T, s *server) {
 		t.Fatalf("error code %q", bad.Error.Code)
 	}
 
-	// Singleton with a nullify reference to a page; deleting the page clears it.
+	// Singleton with a nullify reference to a page; purging the page clears it.
 	var page, settings view
 	s.must(s.do("POST", "/collections/page/items", map[string]any{"locale": "en", "fields": map[string]any{
 		"title": "About", "seo": map[string]any{"metaTitle": "About us"}}}, &page), 201, "create page (seo from module)")
@@ -200,7 +200,8 @@ func lifecycle(t *testing.T, s *server) {
 	s.must(s.do("PATCH", "/singletons/settings", map[string]any{"locale": "en", "fields": map[string]any{
 		"siteName": "Acme", "footerLinks": []any{page.ID}}}, &settings), 200, "settings")
 	s.must(s.do("POST", "/singletons/settings/publish", map[string]any{}, &settings), 200, "publish settings")
-	s.must(s.do("DELETE", "/items/"+page.ID, nil, nil), 204, "delete page")
+	s.must(s.do("DELETE", "/items/"+page.ID, nil, nil), 204, "move page to the trash")
+	s.must(s.do("DELETE", "/items/"+page.ID+"?permanent=true", nil, nil), 204, "delete page for good")
 	s.must(s.do("GET", "/singletons/settings?locale=en", nil, &settings), 200, "settings after delete")
 	if links, _ := settings.Fields["footerLinks"].([]any); len(links) != 0 {
 		t.Fatalf("nullify: %v", settings.Fields["footerLinks"])

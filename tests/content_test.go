@@ -382,9 +382,7 @@ func TestDeletePolicies(t *testing.T) {
 
 		e.update(a.ID, "en", `{"summary":"draft edit","editor":null}`) // a draft that still has the nullified ref gone
 		e.update(a.ID, "en", fmt.Sprintf(`{"editor":%q}`, free.ID))
-		if err := e.svc.Delete(ctx, free.ID); err != nil {
-			t.Fatal(err)
-		}
+		hardDelete(t, e.svc, free.ID)
 		_, err = e.svc.Get(ctx, free.ID, content.GetOptions{})
 		wantErr(t, err, content.ErrNotFound)
 		pub := e.get(a.ID, "", false)
@@ -402,7 +400,7 @@ func TestDeletePolicies(t *testing.T) {
 		eq(t, "draft change kept", dr.Fields["summary"], any("draft edit"))
 		acts := e.auditActions(a.ID)
 		eq(t, "last audit", acts[len(acts)-1], "item.update")
-		eqSlice(t, "deleted audit", e.auditActions(free.ID), []string{"item.create", "item.publish", "item.delete"})
+		eqSlice(t, "deleted audit", e.auditActions(free.ID), []string{"item.create", "item.publish", "item.trash", "item.purge"})
 		// warn left a dangling reviewer id: publishing must fail until it is fixed.
 		_, err = e.svc.Publish(ctx, a.ID, content.PublishOptions{})
 		if ve := wantValidation(t, err); !slices.Contains(codes(ve), "reviewer:ref_target") {
@@ -783,9 +781,7 @@ func TestAsyncHooks(t *testing.T) {
 		}
 		e.drain()
 		eq(t, "idempotent drain", len(calls), 1)
-		if err := e.svc.Delete(ctx, a.ID); err != nil {
-			t.Fatal(err)
-		}
+		hardDelete(t, e.svc, a.ID)
 		e.drain()
 		if len(calls) != 2 || calls[1].event != hooks.AfterDelete || calls[1].tx {
 			t.Fatalf("calls = %+v", calls)

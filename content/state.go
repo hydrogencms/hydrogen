@@ -95,7 +95,8 @@ type itemState struct {
 	typ    *schema.Type
 	drafts map[string]*draft
 	pub    *pubVersion
-	prev   *prevRows // rows the projections held before the operation, see rememberRows
+	latest *pubVersion // newest version of an unpublished item with history; set by loadLatest for publish
+	prev   *prevRows   // rows the projections held before the operation, see rememberRows
 }
 
 // prevRows are the remembered rows; published is nil for a never-published item.
@@ -139,6 +140,35 @@ func (st *itemState) loadPub(ctx context.Context, c store.ContentStore) error {
 	}
 	st.pub = newPubVersion(v)
 	return nil
+}
+
+// loadLatest reads the newest version of an unpublished item, which a publish builds the parts it does not
+// select from (the item has no published version, but its history is still the best base).
+func (st *itemState) loadLatest(ctx context.Context, c store.ContentStore) error {
+	if st.item.PublishedVersion != 0 {
+		return nil
+	}
+	metas, err := c.ListVersions(ctx, st.item.ID)
+	if err != nil {
+		return fmt.Errorf("content: list versions of %s: %w", st.item.ID, err)
+	}
+	if len(metas) == 0 {
+		return nil
+	}
+	v, err := c.GetVersion(ctx, st.item.ID, metas[0].Version)
+	if err != nil {
+		return itemErr(fmt.Sprintf("%s version %d", st.item.ID, metas[0].Version), err)
+	}
+	st.latest = newPubVersion(v)
+	return nil
+}
+
+// current is the version a publish builds on: the published one, else the newest of an unpublished item.
+func (st *itemState) current() *pubVersion {
+	if st.pub != nil {
+		return st.pub
+	}
+	return st.latest
 }
 
 // draftNames lists the draft part names ("" = shared), sorted.
