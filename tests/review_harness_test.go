@@ -13,12 +13,12 @@ import (
 	"github.com/hydrogencms/hydrogen/clock"
 	"github.com/hydrogencms/hydrogen/config"
 	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/features/review"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/kernel"
 	"github.com/hydrogencms/hydrogen/modules/postgres"
 	"github.com/hydrogencms/hydrogen/modules/sqlite"
 	"github.com/hydrogencms/hydrogen/outbox"
-	"github.com/hydrogencms/hydrogen/review"
 	"github.com/hydrogencms/hydrogen/store"
 )
 

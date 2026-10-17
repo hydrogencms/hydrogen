@@ -21,8 +21,8 @@ import (
 	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/exportfmt"
+	"github.com/hydrogencms/hydrogen/features/media"
 	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/media"
 	"github.com/hydrogencms/hydrogen/store"
 )
 

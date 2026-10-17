@@ -70,7 +70,7 @@ origin (other than localhost) or an internal-looking host logs one warning.
 For routes of your own (a collection the CMS does not route): `hydrogen.clientFor(channel)` (cached and tagged, or
 uncached with the token in draft mode), `hydrogen.previewToken()`, `hydrogen.render(Template, { item, locale, metadata,
 draft })` (applies the live wrapper), `hydrogen.channel()` (the request's channel, for layouts) and `hydrogen.adminOrigin`.
-See `starters/next` and `docs/adapter-kit.md`.
+See `packages/starters/next` and `docs/adapter-kit.md`.
 
 ## Notes
 

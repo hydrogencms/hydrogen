@@ -1,7 +1,7 @@
 # Adapter kit: connecting a frontend to Hydrogen
 
 An adapter is the small piece of glue between a frontend framework and the CMS. `@hydrogencms/next` is the reference
-implementation (`packages/next`, used by `starters/next`); the `site` module is the same contract implemented in Go
+implementation (`packages/next`, used by `packages/starters/next`); the `site` module is the same contract implemented in Go
 templates. This guide is what you need to write another one, and `@hydrogencms/adapter-test` tells you when it works.
 
 Your frontend only renders. The CMS decides which page lives at which URL, the admin performs every edit, and the

@@ -7,8 +7,8 @@ import (
 
 	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/features/review"
 	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/review"
 	"github.com/hydrogencms/hydrogen/store"
 )
 

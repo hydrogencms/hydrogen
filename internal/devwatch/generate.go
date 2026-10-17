@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/hydrogencms/hydrogen/codegen"
+	"github.com/hydrogencms/hydrogen/internal/codegen"
 	"github.com/hydrogencms/hydrogen/schema"
 )
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/manage"
+	"github.com/hydrogencms/hydrogen/api/manage"
 	"github.com/hydrogencms/hydrogen/schema"
 )
 

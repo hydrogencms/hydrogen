@@ -7,7 +7,7 @@ set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 work="$root/.work/starter-next-e2e"
-starter="$root/starters/next"
+starter="$root/packages/starters/next"
 secret=e2e-revalidate-0123456789abcdef
 manage_token=e2e-token
 pids=()

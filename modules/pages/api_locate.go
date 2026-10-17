@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/manage"
+	"github.com/hydrogencms/hydrogen/api/manage"
 )
 
 const headerParam = "header."

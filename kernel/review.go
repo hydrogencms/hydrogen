@@ -1,6 +1,6 @@
 package kernel
 
-import "github.com/hydrogencms/hydrogen/review"
+import "github.com/hydrogencms/hydrogen/features/review"
 
 // wireReview builds the review service and plugs it into the content service.
 func (s *Services) wireReview() error {

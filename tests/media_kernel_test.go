@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"github.com/hydrogencms/hydrogen/config"
+	"github.com/hydrogencms/hydrogen/features/media"
 	"github.com/hydrogencms/hydrogen/kernel"
-	"github.com/hydrogencms/hydrogen/media"
 	"github.com/hydrogencms/hydrogen/modules/sqlite"
 )
 

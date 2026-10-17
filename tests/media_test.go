@@ -20,11 +20,11 @@ import (
 	"time"
 
 	"github.com/hydrogencms/hydrogen/access"
+	"github.com/hydrogencms/hydrogen/api/manage"
 	"github.com/hydrogencms/hydrogen/audit"
 	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/features/media"
 	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/manage"
-	"github.com/hydrogencms/hydrogen/media"
 	"github.com/hydrogencms/hydrogen/store"
 )
 

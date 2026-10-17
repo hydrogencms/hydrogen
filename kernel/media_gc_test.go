@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/collab"
-	"github.com/hydrogencms/hydrogen/delivery"
-	"github.com/hydrogencms/hydrogen/media"
+	"github.com/hydrogencms/hydrogen/api/delivery"
+	"github.com/hydrogencms/hydrogen/features/collab"
+	"github.com/hydrogencms/hydrogen/features/media"
 )
 
 // Garbage collection does not read unsaved collaborative state or relayed drafts, so the windows in which those

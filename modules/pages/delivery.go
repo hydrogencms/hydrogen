@@ -10,12 +10,12 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/hydrogencms/hydrogen/api/delivery"
+	"github.com/hydrogencms/hydrogen/api/manage"
 	"github.com/hydrogencms/hydrogen/cachetag"
 	"github.com/hydrogencms/hydrogen/channel"
-	"github.com/hydrogencms/hydrogen/delivery"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/kernel"
-	"github.com/hydrogencms/hydrogen/manage"
 	"github.com/hydrogencms/hydrogen/store"
 )
 

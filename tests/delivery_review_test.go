@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hydrogencms/hydrogen/api/delivery"
 	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/delivery"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/kernel"
 )

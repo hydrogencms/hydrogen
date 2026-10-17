@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/hydrogencms/hydrogen/api/delivery"
 	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/config"
-	"github.com/hydrogencms/hydrogen/delivery"
 )
 
 // DeliveryRoute adds a read endpoint to the delivery API under /api/deliver/v1 (GET only). The handler runs

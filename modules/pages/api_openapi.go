@@ -1,6 +1,6 @@
 package pages
 
-import "github.com/hydrogencms/hydrogen/openapi"
+import "github.com/hydrogencms/hydrogen/api/openapi"
 
 type obj = openapi.Obj
 

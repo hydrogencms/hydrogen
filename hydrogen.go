@@ -25,10 +25,10 @@ import (
 
 	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/cachetag"
-	"github.com/hydrogencms/hydrogen/codegen"
 	"github.com/hydrogencms/hydrogen/config"
 	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/hooks"
+	"github.com/hydrogencms/hydrogen/internal/codegen"
 	"github.com/hydrogencms/hydrogen/kernel"
 	"github.com/hydrogencms/hydrogen/schema"
 	"github.com/hydrogencms/hydrogen/store"

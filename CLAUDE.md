@@ -17,12 +17,16 @@ It is its own git repository: commit planning changes there (`git -C planning â€
 - Core module `github.com/hydrogencms/hydrogen` at the repo root: `hydrogen.go` (project entry point and
   commands), `kernel/`, `config/`, `store/` (interfaces; `store/storetest` is the adapter conformance suite),
   `outbox/`, `audit/`, `clock/`, `ids/`, `cmd/hydrogen` (developer CLI), `internal/scaffold`, `internal/devwatch`.
+- Grouping: services and the libraries modules build on stay at the root; `api/` holds the HTTP APIs (`manage`,
+  `delivery`, `openapi`, `webhook`), `features/` the built-in editorial features (`collab`, `media`, `release`,
+  `review`), `internal/` what only hydrogen itself uses, and `packages/` the npm packages and `packages/starters`.
+  `cachetag` and `exportfmt` stay at the root because modules implement their interfaces.
 - `modules/<name>`: optional modules. Those with third-party dependencies have their own `go.mod`
   (`modules/sqlite`: modernc.org/sqlite; `modules/postgres`: pgx). `go.work` joins everything for development;
   each module also builds alone (`GOWORK=off`).
 - Content core (H1): `schema/` (YAML schema â†’ compiled schema, field types, validation), `content/` (the content
   service = Local API: drafts, publish, projections, delete policies, hooks, content migrations), `hooks/`,
-  `manage/` (management REST API + OpenAPI at `/api/manage/v1`), `codegen/` (typed Go and TypeScript),
+  `api/manage/` (management REST API + OpenAPI at `/api/manage/v1`), `internal/codegen/` (typed Go and TypeScript),
   `store/storeutil` (dialect-neutral helpers shared by the adapters' query compilers).
 - Module extension points (H2): `Tx.SQL()` / `DB.Read()` (portable SQL for modules' own tables: `?`
   placeholders, ids.UUID/time conversion), schema type options (`Registry.TypeOption`), module management routes
@@ -33,11 +37,11 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   tokens, preview patterns, module options), `config.Node` (position-aware config for modules), web channels in
   `modules/pages/web*.go` (match/site/reserved options, Match, Locate, canonical, hreflang, URL/LinkURL).
   Contract: `planning/design/channels-h3.md`.
-- Delivery (H4): published snapshots (`content/snapshot.go`, `store.Reader`, `RebuildProjections`), `delivery/`
+- Delivery (H4): published snapshots (`content/snapshot.go`, `store.Reader`, `RebuildProjections`), `api/delivery/`
   (read API at `/api/deliver/v1`: channel/locale selection, `include`, LRU cache purged by tag, ETag, preview
   tokens; `POST /preview-tokens` with an `item` also returns the frontend `url`: a module's `Registry.PreviewURL`
   resolver (pages: the item's route), else the channel's `preview` pattern, plus `?preview=<token>`), `cachetag/`
-  (tags and the `cache.purge` consumer), `webhook/` (signed `Hydrogen-Signature`), `jobs/` (cron jobs under a lock),
+  (tags and the `cache.purge` consumer), `api/webhook/` (signed `Hydrogen-Signature`), `jobs/` (cron jobs under a lock),
   `kernel/endpoints.go` (`/api/x`), export/import (`exportfmt/`, `store/export.go`, `hydrogen_export.go`), `client/`
   (Go client), `hydrogen_frontend.go` (`check-frontend`). Pages adds `/route` and `/tree`. Contract:
   `planning/design/delivery-h4.md`.
@@ -64,7 +68,7 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   package, `manage` `GET /blocks` (block types + token sets), codegen `Block`/`Blocks<â€¦>`/`DecodeProps`, and
   `examples/starter` (schema, channels and the committed `fixture/` export; `make starter-fixture` rebuilds it
   deterministically). Contract: `planning/design/pagebuilder-h6.md`.
-- Frontend starters (H6b): `starters/next` (Next.js starter on `examples/starter`), `packages/adapter-test`
+- Frontend starters (H6b): `packages/starters/next` (Next.js starter on `examples/starter`), `packages/adapter-test`
   (adapter conformance suite), `docs/adapter-kit.md` and `docs/bridge-protocol.md` (adapters; preview bridge).
 - Site module (H6c): `modules/site` renders a website with `html/template` for web channels that set `render: go`
   (channel option; needs `match`, public access). It calls the delivery API in process (so shared blocks, links,
@@ -95,30 +99,30 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   `docs/share-links.md`. Contract: `planning/design/share-h7s.md`.
 - Publishing (H8a): `content` unpublish, trash (`DELETE /items/{id}`), restore, purge (`?permanent=true`, trashed
   items only) and the `content.trash` retention job (`content.trash_retention`); trashed items are hidden by every
-  store query unless `store.Query.Trashed` says otherwise, and free their key. `release/` groups items (publish or
-  unpublish actions) and publishes them in one transaction, now or scheduled (job `releases`, run as the principal
-  who scheduled, re-loaded by `access.Authenticator.PrincipalOf`); one-item schedules are releases of kind `item`.
-  Policy `release.manage`. Docs: `docs/releases.md`. Contract: `planning/design/editorial-h8a.md`.
-- Review (H8b): types with `review: true` publish only an approved draft (`review/`, hook `content.ReviewHook`:
+  store query unless `store.Query.Trashed` says otherwise, and free their key. `features/release/` groups items
+  (publish or unpublish actions) and publishes them in one transaction, now or scheduled (job `releases`, run as the
+  principal who scheduled, re-loaded by `access.Authenticator.PrincipalOf`); one-item schedules are releases of kind
+  `item`. Policy `release.manage`. Docs: `docs/releases.md`. Contract: `planning/design/editorial-h8a.md`.
+- Review (H8b): types with `review: true` publish only an approved draft (`features/review/`, hook `content.ReviewHook`:
   `CheckPublish` on every publish path, `DraftChanged` on every draft change, `Closed` on publish/discard/trash);
   policies `review.submit|approve|bypass`; four eyes (`content.review_four_eyes`). Versions: `POST
   /items/{id}/versions/{n}/restore`; the admin compares versions client-side (`admin/ui/src/lib/diff`). Docs:
   `docs/reviews.md`. Contract: `planning/design/editorial-h8b.md`.
-- Collaboration (H8c): `collab/` relays and stores opaque Yjs updates per item (join with per-part seeding claims,
-  SSE stream, presence heartbeats, compaction, cleanup job `collab.cleanup`; config `collab.enabled`, exposed in the
-  admin's config.json). Content events carry the saving collab client, so sessions get `saved` or `reset`. The admin
-  binds the form to Yjs in `admin/ui/src/lib/collab` (lazy chunk; rich text through y-prosemirror) with a convergence
-  fuzz test. Docs: `docs/collaboration.md`. Contract: `planning/design/collab-h8c.md`.
+- Collaboration (H8c): `features/collab/` relays and stores opaque Yjs updates per item (join with per-part seeding
+  claims, SSE stream, presence heartbeats, compaction, cleanup job `collab.cleanup`; config `collab.enabled`, exposed
+  in the admin's config.json). Content events carry the saving collab client, so sessions get `saved` or `reset`. The
+  admin binds the form to Yjs in `admin/ui/src/lib/collab` (lazy chunk; rich text through y-prosemirror) with a
+  convergence fuzz test. Docs: `docs/collaboration.md`. Contract: `planning/design/collab-h8c.md`.
 - Locale overlays (H8d): `modules/overlays` gives the content service each language's `inherits` chain
   (`content.Overlays`); an overlay locale stores only the translatable top-level fields it overrides (`null` in a
   draft PATCH removes one) and resolves the rest field by field; publishing a parent rebuilds its descendants'
   snapshots, projections and pages routes. Views carry `inherits`, `overrides`, `inheritedFrom`, `availableLocales`.
   Without the module `inherits` is ignored (config:check warns). `examples/multisite` registers it. Docs:
   `docs/locales.md`. Contract: `planning/design/overlays-h8d.md`.
-- Media (H9a): `media/` stores files by SHA-256 (`media.Storage`: local, or S3-compatible with in-house SigV4),
+- Media (H9a): `features/media/` stores files by SHA-256 (`media.Storage`: local, or S3-compatible with in-house SigV4),
   records them in `media_upload`, serves `/assets/{sha}/{name}` with hardening headers and runs the `media.gc` job.
   Types marked `upload:` are asset collections (built-in `file`, `folder`, `tags`); `asset` fields reference them and
-  delivery expands them (`delivery/assets.go`); `content` reads server-owned file metadata through `content.Files`.
+  delivery expands them (`api/delivery/assets.go`); `content` reads server-owned file metadata through `content.Files`.
   The admin library is `/assets` (`admin/ui/src/lib/media`). Docs: `docs/media.md`. Contract:
   `planning/design/media-h9a.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
@@ -135,7 +139,7 @@ make db-up                      # Postgres 17 on localhost:5436 (hydrogen/hydrog
 make smoke                      # hydrogen new â†’ config:check â†’ migrate â†’ serve + D0 budget checks
 make sdk                        # packages/: install, build, test, size budgets
 make next-e2e                   # examples/next-site against examples/multisite (SQLite), curl assertions
-make starter-next-e2e           # starters/next on examples/starter (SQLite) + conformance suite
+make starter-next-e2e           # packages/starters/next on examples/starter (SQLite) + conformance suite
 make conformance                # the conformance suite against every frontend (Next starter; site module)
 make admin                      # admin/ui: npm ci, typecheck, vitest, build into admin/dist, gzip budgets
 make admin-e2e                  # Playwright: admin exit scenarios + axe; page builder live preview on the real
@@ -163,7 +167,7 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 ## Gotchas
 
 - Contract for H1 packages: `planning/design/content-core.md` (Deviations section records every agreed change).
-- Generated code (`gen/`, `codegen/testdata/*.golden`) is never edited by hand: `hydrogen generate`,
+- Generated code (`gen/`, `internal/codegen/testdata/*.golden`) is never edited by hand: `hydrogen generate`,
   `go test ./codegen -update`.
 - Core packages never write SQL. Modules may, through `Tx.SQL()`/`DB.Read()`, branching on `Dialect()` where
   syntax differs; byte slices handed out by drivers must be copied before the next row (pgx reuses buffers).
@@ -239,7 +243,7 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - Blocks are plain JSON in item fields; a merge patch replaces a blocks field whole. The service assigns UUIDv7
   block ids to blocks without one (`Schema.AssignBlockIDs`, in the draft pipeline). Shared blocks are stored as
   `{type: shared, props: {item}}` and inlined (`blocks`) by the delivery API when a response is built
-  (`delivery/shared.go`), never in snapshots: the shared item is looked up like any item, so its cache tag is on the
+  (`api/delivery/shared.go`), never in snapshots: the shared item is looked up like any item, so its cache tag is on the
   page response and publishing it purges the pages. Anything that reads snapshots directly must resolve shared
   blocks itself (the `site` module goes through the delivery API, so it doesn't). Block props reuse the field types
   but cannot be `translatable` or `index`; a blocks field is translatable as a whole. Regenerate

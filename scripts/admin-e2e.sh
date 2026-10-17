@@ -4,7 +4,7 @@
 # examples/content (its extensions spec only, on another port and database). E2E_KEEP=1 leaves the last server
 # running afterwards. A third run uses examples/starter with its fixture imported and a tiny preview host standing
 # in for the frontend (admin/ui/e2e/fixtures/preview-host): the block editor and the live and reload previews.
-# Then the H6 exit scenarios on the real frontends: examples/starter with starters/next (live preview of a page and a
+# Then the H6 exit scenarios on the real frontends: examples/starter with packages/starters/next (live preview of a page and a
 # post) and examples/fullstack (the site module, reload mode). ADMIN_E2E_ONLY=multisite|starter|next|fullstack runs just that one
 # (starter uses the admin/dist already built); E2E_GREP passes --grep to Playwright.
 # Run from the repo root: make admin-e2e.
@@ -216,7 +216,7 @@ if [ -z "$only" ] || [ "$only" = next ]; then
   (cd "$root/examples/starter" && go build -o "$work/starter" .)
   "$root/scripts/npm-ci.sh" "$root/packages" >/dev/null
   (cd "$root/packages" && npm run build >/dev/null)
-  (cd "$root/starters/next" && rm -rf node_modules/@hydrogencms && npm install --no-audit --no-fund >/dev/null)
+  (cd "$root/packages/starters/next" && rm -rf node_modules/@hydrogencms && npm install --no-audit --no-fund >/dev/null)
   cport=$(port); nport=$(port)
   cms=http://127.0.0.1:$cport; nxt=http://127.0.0.1:$nport
   unset SCHEMA_DIR CONFIG_DIR
@@ -225,8 +225,8 @@ if [ -z "$only" ] || [ "$only" = next ]; then
   new_cms next "$work/starter" "$cport" fixture
   echo "== next build + start"
   export HYDROGEN_URL=$cms HYDROGEN_ORIGIN=$nxt
-  (cd "$root/starters/next" && rm -rf .next && npm run build >"$work/next-build.log" 2>&1) || { tail -n 30 "$work/next-build.log"; fail "next build"; }
-  (cd "$root/starters/next" && exec node_modules/.bin/next start -p "$nport" >"$work/next.log" 2>&1) & npid=$!
+  (cd "$root/packages/starters/next" && rm -rf .next && npm run build >"$work/next-build.log" 2>&1) || { tail -n 30 "$work/next-build.log"; fail "next build"; }
+  (cd "$root/packages/starters/next" && exec node_modules/.bin/next start -p "$nport" >"$work/next.log" 2>&1) & npid=$!
   wait_http "$nxt/en" 30
   echo "== playwright (the starter's Next.js frontend: live preview of a page and a post)"
   status=0

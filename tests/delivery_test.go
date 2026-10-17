@@ -18,12 +18,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hydrogencms/hydrogen/api/delivery"
 	"github.com/hydrogencms/hydrogen/cachetag"
 	"github.com/hydrogencms/hydrogen/channel"
 	"github.com/hydrogencms/hydrogen/clock"
 	"github.com/hydrogencms/hydrogen/config"
 	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/delivery"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/kernel"
 	"github.com/hydrogencms/hydrogen/modules/postgres"

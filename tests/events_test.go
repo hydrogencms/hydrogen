@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/hydrogencms/hydrogen"
+	"github.com/hydrogencms/hydrogen/api/webhook"
 	"github.com/hydrogencms/hydrogen/cachetag"
 	"github.com/hydrogencms/hydrogen/clock"
 	"github.com/hydrogencms/hydrogen/config"
@@ -27,7 +28,6 @@ import (
 	"github.com/hydrogencms/hydrogen/modules/postgres/pgtest"
 	"github.com/hydrogencms/hydrogen/modules/sqlite"
 	"github.com/hydrogencms/hydrogen/store"
-	"github.com/hydrogencms/hydrogen/webhook"
 )
 
 const eventsSchema = `

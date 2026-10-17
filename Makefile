@@ -28,10 +28,10 @@ starter-fixture:
 
 # Local Postgres 17 on localhost:5436 (hydrogen/hydrogen) for adapter tests and development.
 db-up:
-	docker compose -p hydrogen up -d --wait
+	docker compose -f scripts/docker-compose.yml -p hydrogen up -d --wait
 
 db-down:
-	docker compose -p hydrogen down
+	docker compose -f scripts/docker-compose.yml -p hydrogen down
 
 # hydrogen new → config:check → migrate → serve, with binary size, cold start and idle memory budgets.
 smoke:
@@ -45,7 +45,7 @@ sdk:
 next-e2e:
 	./scripts/next-e2e.sh
 
-# starters/next against examples/starter (SQLite, fixture), checked by the adapter conformance suite with a browser.
+# packages/starters/next against examples/starter (SQLite, fixture), checked by the adapter conformance suite with a browser.
 starter-next-e2e:
 	./scripts/starter-next-e2e.sh
 

@@ -3,7 +3,7 @@ package kernel
 import (
 	"context"
 
-	"github.com/hydrogencms/hydrogen/collab"
+	"github.com/hydrogencms/hydrogen/features/collab"
 	"github.com/hydrogencms/hydrogen/outbox"
 )
 

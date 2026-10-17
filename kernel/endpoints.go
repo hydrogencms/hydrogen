@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/hydrogencms/hydrogen/access"
-	"github.com/hydrogencms/hydrogen/manage"
+	"github.com/hydrogencms/hydrogen/api/manage"
 )
 
 // Auth says who may call a custom endpoint: Public, Authenticated or Policy("module.action").

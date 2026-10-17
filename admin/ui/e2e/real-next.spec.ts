@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { add, card, clickBlock, expand, frameOf, rootAdd } from './blocks-helpers';
 import { adminLogin, adminPassword, draftOf, manage, signIn, tag } from './helpers';
 
-// The H6 exit scenario on the real Next.js starter (starters/next) against examples/starter: the editor types in the
+// The H6 exit scenario on the real Next.js starter (packages/starters/next) against examples/starter: the editor types in the
 // admin and the page in the frame follows without a save, across origins (live mode).
 const t = tag();
 test.setTimeout(90_000);

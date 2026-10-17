@@ -5,10 +5,10 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/hydrogencms/hydrogen/api/manage"
 	"github.com/hydrogencms/hydrogen/content"
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/kernel"
-	"github.com/hydrogencms/hydrogen/manage"
 	"github.com/hydrogencms/hydrogen/modules/pages"
 )
 

@@ -3,8 +3,8 @@ package kernel
 import (
 	"context"
 
+	"github.com/hydrogencms/hydrogen/features/release"
 	"github.com/hydrogencms/hydrogen/jobs"
-	"github.com/hydrogencms/hydrogen/release"
 )
 
 // ReleasesJob is the name of the job that publishes due releases.

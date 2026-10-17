@@ -7,13 +7,13 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/hydrogencms/hydrogen/api/webhook"
 	"github.com/hydrogencms/hydrogen/cachetag"
 	"github.com/hydrogencms/hydrogen/clock"
 	"github.com/hydrogencms/hydrogen/jobs"
 	"github.com/hydrogencms/hydrogen/outbox"
 	"github.com/hydrogencms/hydrogen/schema"
 	"github.com/hydrogencms/hydrogen/store"
-	"github.com/hydrogencms/hydrogen/webhook"
 )
 
 // PurgeConsumer is the name of the outbox consumer that broadcasts cache purges.
