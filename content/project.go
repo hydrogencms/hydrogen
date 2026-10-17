@@ -46,22 +46,27 @@ func (s *Service) rememberRows(st *itemState) {
 	st.prev = prev
 }
 
+// publishedOuts lists the locales of the published version, overlay locales resolved, with the overlay locales
+// that inherit from them.
 func (s *Service) publishedOuts(st *itemState) ([]*localeOut, error) {
 	sc := s.o.Schema
-	shared, err := st.pub.sharedDoc()
-	if err != nil {
-		return nil, err
-	}
 	var outs []*localeOut
-	for _, code := range st.pub.codes() {
-		loc, _, err := st.pub.localeDoc(code)
+	for _, code := range st.availableLocales(false) {
+		shared, loc, ok, err := st.publishedParts(code)
 		if err != nil {
 			return nil, err
+		}
+		if !ok {
+			continue
 		}
 		doc := mergeParts(cloneDoc(shared), cloneDoc(loc))
 		sc.Normalize(st.typ, doc)
 		sc.Prune(st.typ, doc)
-		outs = append(outs, &localeOut{code: code, doc: doc, name: st.pub.Locales[st.pub.idx[code]].Name})
+		name := sc.Name(st.typ, doc)
+		if st.chain(code) == nil {
+			name = st.pub.Locales[st.pub.idx[code]].Name
+		}
+		outs = append(outs, &localeOut{code: code, doc: doc, name: name, refs: sc.Refs(st.typ, doc), final: true})
 	}
 	return outs, nil
 }
@@ -112,7 +117,7 @@ func (s *Service) searchDocs(st *itemState, outs []*localeOut) []store.SearchDoc
 func (s *Service) workingOuts(st *itemState) ([]*localeOut, error) {
 	sc := s.o.Schema
 	outs := make([]*localeOut, 0, len(st.drafts)+1)
-	for _, code := range st.locales(true) {
+	for _, code := range st.availableLocales(true) {
 		shared, loc, _, err := st.workingParts(code)
 		if err != nil {
 			return nil, err

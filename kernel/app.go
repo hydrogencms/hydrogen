@@ -252,6 +252,13 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 		}
 	}
 
+	for _, w := range p.warnings() {
+		log.Warn(w)
+	}
+	var overlays content.Overlays
+	if reg.overlays != nil {
+		overlays = reg.overlays.value(p.chans)
+	}
 	a := &App{modules: ordered, reg: reg}
 	db := o.DB
 	if db == nil {
@@ -295,7 +302,7 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 			Rand: o.Rand, Catalog: catalog, Checker: checker, Log: log, PasswordIterations: o.PasswordIterations})
 		if err == nil {
 			svc, err = content.New(content.Options{DB: db, Schema: p.schema, Hooks: hookReg, Outbox: ob, Audit: al,
-				Clock: o.Clock, IDs: gen, DefaultLocale: core.Content.DefaultLocale, Migrations: migrations, Access: checker})
+				Clock: o.Clock, IDs: gen, DefaultLocale: core.Content.DefaultLocale, Migrations: migrations, Access: checker, Overlays: overlays})
 			a.services = &Services{
 				Env: cfg.Env(), Config: cfg, Core: core, Log: log, Clock: o.Clock, IDs: gen, DB: db, Outbox: ob,
 				Audit: al, Schema: p.schema, Hooks: hookReg, Content: svc, Channels: p.chans, Catalog: catalog,
@@ -568,6 +575,32 @@ func Inspect(cfg *config.Config, mods ...Module) (*schema.Schema, *channel.Set, 
 func Check(cfg *config.Config, mods ...Module) error {
 	_, err := prepare(cfg, mods, true)
 	return err
+}
+
+// Warnings lists problems that do not stop the application from starting (config:check prints them).
+func Warnings(cfg *config.Config, mods ...Module) ([]string, error) {
+	p, err := prepare(cfg, mods, true)
+	if err != nil {
+		return nil, err
+	}
+	return p.warnings(), nil
+}
+
+func (p *plan) warnings() []string {
+	if p.reg.overlays != nil || p.chans == nil {
+		return nil
+	}
+	var inherit []string
+	for code, l := range p.chans.Languages() {
+		if l.Inherits != "" {
+			inherit = append(inherit, code)
+		}
+	}
+	if len(inherit) == 0 {
+		return nil
+	}
+	slices.Sort(inherit)
+	return []string{fmt.Sprintf("languages %s inherit (languages.<code>.inherits) but the overlays module is not installed: the locales stay independent", strings.Join(inherit, ", "))}
 }
 
 func (a *App) closeDB(db store.DB) {

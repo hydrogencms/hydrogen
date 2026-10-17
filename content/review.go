@@ -95,7 +95,7 @@ type DraftInfo struct {
 
 // DraftInfoTx reads the draft of an item (its key and availability are part of the hash).
 func (s *Service) DraftInfoTx(ctx context.Context, tx store.Tx, it store.Item) (DraftInfo, error) {
-	st := &itemState{item: it, drafts: map[string]*draft{}}
+	st := &itemState{svc: s, item: it, drafts: map[string]*draft{}}
 	if err := st.loadDrafts(ctx, tx.Content()); err != nil {
 		return DraftInfo{}, err
 	}

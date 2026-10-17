@@ -100,7 +100,7 @@ func clientScenario(t *testing.T, s *server) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if r.Located.Kind != "page" || r.Located.Canonical != "https://www.acme.com/en/about" || len(r.Located.Alternates) != 3 ||
+		if r.Located.Kind != "page" || r.Located.Canonical != "https://www.acme.com/en/about" || len(r.Located.Alternates) != 4 ||
 			it.ID != f.about || it.Fields.Title != "About" || it.URL != "https://www.acme.com/en/about" {
 			t.Errorf("route %+v item %+v", r.Located, it)
 		}

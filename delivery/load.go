@@ -257,26 +257,58 @@ func (st *state) loadSummaries(ctx context.Context, items []store.ItemSummary) (
 
 // fetchLocales loads the snapshot each item shows, one query per locale.
 func (st *state) fetchLocales(ctx context.Context, items []store.ItemSummary) (map[ids.UUID]*resolved, error) {
+	got := map[ids.UUID]*resolved{}
+	if st.a.hasOverlays(st.eff) {
+		// An overlay locale has a snapshot whenever its chain reaches a published locale, though the item's
+		// version lists only the stored ones. Items whose snapshot is missing after all (inheritance is
+		// switched off) are picked again from the version's locales.
+		missed, err := st.fetchPicked(ctx, items, true, got)
+		if err != nil {
+			return nil, err
+		}
+		items = missed
+	}
+	_, err := st.fetchPicked(ctx, items, false, got)
+	return got, err
+}
+
+// fetchPicked fetches the locale PickLocale chooses for each item, widening the locales an item is available
+// in with the overlay languages whose chain reaches one of them. It returns the items whose chosen locale had
+// no snapshot.
+func (st *state) fetchPicked(ctx context.Context, items []store.ItemSummary, widen bool, got map[ids.UUID]*resolved) ([]store.ItemSummary, error) {
 	byLocale := map[string][]ids.UUID{}
+	picked := map[ids.UUID]store.ItemSummary{}
 	for _, it := range items {
-		if loc, _, ok := channel.PickLocale(st.eff, it.Locales, it.MainLocale, it.AlwaysAvailable); ok {
+		avail := it.Locales
+		if widen {
+			avail = st.a.withDerived(st.eff, avail)
+		}
+		if loc, _, ok := channel.PickLocale(st.eff, avail, it.MainLocale, it.AlwaysAvailable); ok {
 			byLocale[loc] = append(byLocale[loc], it.ID)
+			picked[it.ID] = it
 		}
 	}
-	got := map[ids.UUID]*resolved{}
+	var missed []store.ItemSummary
 	for _, loc := range sortedKeys(byLocale) {
 		rows, err := st.a.o.Reader.Snapshots(ctx, byLocale[loc], []string{loc})
 		if err != nil {
 			return nil, err
 		}
+		found := make(map[ids.UUID]bool, len(rows))
 		for i := range rows {
+			found[rows[i].ItemID] = true
 			if st.m.ch.AllowsCollection(rows[i].Type) {
 				got[rows[i].ItemID] = &resolved{id: rows[i].ItemID, typ: rows[i].Type, locale: loc, payload: rows[i].Payload,
 					refs: rows[i].Refs, fallback: loc != st.eff.Languages[0], etag: rows[i].ETag}
 			}
 		}
+		for _, id := range byLocale[loc] {
+			if !found[id] {
+				missed = append(missed, picked[id])
+			}
+		}
 	}
-	return got, nil
+	return missed, nil
 }
 
 func sortedKeys[V any](m map[string]V) []string {

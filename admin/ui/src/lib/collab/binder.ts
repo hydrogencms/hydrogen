@@ -395,7 +395,11 @@ export class Binder {
   }
 
   #base(): Doc {
-    return hydrate(this.#o.type.fields, (this.#o.draft as { fields?: Doc } | null)?.fields) as Doc;
+    const fields = (this.#o.draft as { fields?: Doc } | null)?.fields;
+    const out = hydrate(this.#o.type.fields, fields) as Doc;
+    // An inheriting locale: the groups hydrate adds are not overrides.
+    if (this.#env.sparse) for (const f of this.#o.type.fields) if (f.translatable && !(fields && f.name in fields)) delete out[f.name];
+    return out;
   }
 
   #finish() {

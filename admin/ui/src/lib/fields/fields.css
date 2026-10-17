@@ -177,3 +177,10 @@ a.h-ref__chip:hover {
   margin-bottom: var(--h-space-1);
   font-size: var(--h-text-sm);
 }
+
+.h-fieldrow__overlay {
+  display: flex;
+  align-items: center;
+  gap: var(--h-space-2);
+  margin-bottom: var(--h-space-1);
+}

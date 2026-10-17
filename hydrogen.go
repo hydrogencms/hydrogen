@@ -474,6 +474,13 @@ func configCheck(ctx context.Context, b *Builder, o RunOptions, args []string) e
 	if err := kernel.Check(cfg, b.all()...); err != nil {
 		return err
 	}
+	warnings, err := kernel.Warnings(cfg, b.all()...)
+	if err != nil {
+		return err
+	}
+	for _, w := range warnings {
+		fmt.Fprintf(o.Stdout, "warning: %s\n", w)
+	}
 	if *withDB {
 		app, err := newApp(ctx, b, o)
 		if err != nil {

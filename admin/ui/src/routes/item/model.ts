@@ -17,6 +17,13 @@ export interface ItemData {
   fields: Record<string, unknown>;
   locales: string[];
   draftParts: string[];
+  /** Locale inheritance (agent A1): set when `locale` inherits from another. */
+  inherits?: string;
+  /** Translatable fields stored in this locale (the rest is inherited). */
+  overrides?: string[];
+  inheritedFrom?: Record<string, string>;
+  /** Stored plus derived (published through inheritance) locales. */
+  availableLocales?: string[];
   createdAt: string;
   updatedAt: string;
   publishedAt?: string;

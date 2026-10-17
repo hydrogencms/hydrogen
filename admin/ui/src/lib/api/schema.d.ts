@@ -1734,6 +1734,8 @@ export interface components {
                 publish: boolean;
             };
             alwaysAvailable: boolean;
+            /** @description Stored locales plus the overlay locales that inherit from one. */
+            availableLocales?: string[];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1745,11 +1747,19 @@ export interface components {
             fields: components["schemas"]["Fields_article"];
             /** Format: uuid */
             id: string;
+            /** @description Overlay locales only: for each inherited field, the locale it comes from. */
+            inheritedFrom?: {
+                [key: string]: string;
+            };
+            /** @description Direct parent of an overlay locale (with the overlays module). */
+            inherits?: string;
             key?: string;
             locale: string;
             locales: string[];
             mainLocale: string;
             name: string;
+            /** @description Overlay locales only: the fields this locale stores (draft or published per the view). */
+            overrides?: string[];
             /** Format: date-time */
             publishedAt?: string;
             /**
@@ -1771,6 +1781,8 @@ export interface components {
                 publish: boolean;
             };
             alwaysAvailable: boolean;
+            /** @description Stored locales plus the overlay locales that inherit from one. */
+            availableLocales?: string[];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1782,11 +1794,19 @@ export interface components {
             fields: components["schemas"]["Fields_landing"];
             /** Format: uuid */
             id: string;
+            /** @description Overlay locales only: for each inherited field, the locale it comes from. */
+            inheritedFrom?: {
+                [key: string]: string;
+            };
+            /** @description Direct parent of an overlay locale (with the overlays module). */
+            inherits?: string;
             key?: string;
             locale: string;
             locales: string[];
             mainLocale: string;
             name: string;
+            /** @description Overlay locales only: the fields this locale stores (draft or published per the view). */
+            overrides?: string[];
             /** Format: date-time */
             publishedAt?: string;
             /**
@@ -1808,6 +1828,8 @@ export interface components {
                 publish: boolean;
             };
             alwaysAvailable: boolean;
+            /** @description Stored locales plus the overlay locales that inherit from one. */
+            availableLocales?: string[];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1819,11 +1841,19 @@ export interface components {
             fields: components["schemas"]["Fields_page"];
             /** Format: uuid */
             id: string;
+            /** @description Overlay locales only: for each inherited field, the locale it comes from. */
+            inheritedFrom?: {
+                [key: string]: string;
+            };
+            /** @description Direct parent of an overlay locale (with the overlays module). */
+            inherits?: string;
             key?: string;
             locale: string;
             locales: string[];
             mainLocale: string;
             name: string;
+            /** @description Overlay locales only: the fields this locale stores (draft or published per the view). */
+            overrides?: string[];
             /** Format: date-time */
             publishedAt?: string;
             /**
@@ -1845,6 +1875,8 @@ export interface components {
                 publish: boolean;
             };
             alwaysAvailable: boolean;
+            /** @description Stored locales plus the overlay locales that inherit from one. */
+            availableLocales?: string[];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1856,11 +1888,19 @@ export interface components {
             fields: components["schemas"]["Fields_product"];
             /** Format: uuid */
             id: string;
+            /** @description Overlay locales only: for each inherited field, the locale it comes from. */
+            inheritedFrom?: {
+                [key: string]: string;
+            };
+            /** @description Direct parent of an overlay locale (with the overlays module). */
+            inherits?: string;
             key?: string;
             locale: string;
             locales: string[];
             mainLocale: string;
             name: string;
+            /** @description Overlay locales only: the fields this locale stores (draft or published per the view). */
+            overrides?: string[];
             /** Format: date-time */
             publishedAt?: string;
             /**
@@ -1882,6 +1922,8 @@ export interface components {
                 publish: boolean;
             };
             alwaysAvailable: boolean;
+            /** @description Stored locales plus the overlay locales that inherit from one. */
+            availableLocales?: string[];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1893,11 +1935,19 @@ export interface components {
             fields: components["schemas"]["Fields_redirect"];
             /** Format: uuid */
             id: string;
+            /** @description Overlay locales only: for each inherited field, the locale it comes from. */
+            inheritedFrom?: {
+                [key: string]: string;
+            };
+            /** @description Direct parent of an overlay locale (with the overlays module). */
+            inherits?: string;
             key?: string;
             locale: string;
             locales: string[];
             mainLocale: string;
             name: string;
+            /** @description Overlay locales only: the fields this locale stores (draft or published per the view). */
+            overrides?: string[];
             /** Format: date-time */
             publishedAt?: string;
             /**

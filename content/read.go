@@ -157,7 +157,11 @@ func (st *itemState) view(locale string, withDraft bool) (*View, error) {
 
 func (st *itemState) publishedView(locale string) (shared, loc map[string]any, name string, err error) {
 	shared, loc, ok, err := st.publishedParts(locale)
-	if ok {
+	switch {
+	case !ok || err != nil:
+	case st.chain(locale) != nil:
+		name = st.nameOf(shared, loc)
+	default:
 		name = st.pub.Locales[st.pub.idx[locale]].Name
 	}
 	return shared, loc, name, err
@@ -176,6 +180,7 @@ func (st *itemState) viewFrom(locale, name string, fields map[string]any, withDr
 		at := st.pub.CreatedAt
 		v.PublishedAt = &at
 	}
+	st.decorate(v, locale, withDraft)
 	return v
 }
 

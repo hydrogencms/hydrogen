@@ -143,7 +143,7 @@ func (s *Service) migrateItem(ctx context.Context, tx store.Tx, m Migration, id 
 		if err := s.commitVersion(ctx, c, st, sharedData, outs, audit.System.String()); err != nil {
 			return err
 		}
-		if err := s.emit(ctx, tx, "item.published", st.item, st.item.PublishedVersion, codesOf(outs)); err != nil {
+		if err := s.emit(ctx, tx, "item.published", st.item, st.item.PublishedVersion, codesOf(s.withDerived(outs))); err != nil {
 			return err
 		}
 	}
@@ -182,11 +182,20 @@ func (s *Service) migratePublished(m Migration, st *itemState) (sharedData []byt
 		return nil, nil, err
 	}
 	results := make(map[string]map[string]any, len(st.pub.Locales))
+	sparse := make(map[string]map[string]any, len(st.pub.Locales))
 	for _, code := range st.pub.codes() {
 		loc, _, err := st.pub.localeDoc(code)
 		if err != nil {
 			return nil, nil, err
 		}
+		sparse[code] = loc
+	}
+	for _, code := range st.pub.codes() {
+		loc := sparse[code]
+		if chain := st.chain(code); chain != nil {
+			loc = unionChain(chain, sparse) // migrations see the resolved document
+		}
+		var err error
 		if results[code], err = s.runUp(m, st, code, shared, loc); err != nil {
 			return nil, nil, err
 		}
@@ -196,9 +205,17 @@ func (s *Service) migratePublished(m Migration, st *itemState) (sharedData []byt
 	if sharedData, err = encodeDoc(newShared); err != nil {
 		return nil, nil, err
 	}
+	resolvedLocs := make(map[string]map[string]any, len(results))
+	for code, r := range results {
+		_, resolvedLocs[code] = splitDoc(st.typ, r)
+	}
 	for _, code := range st.pub.codes() {
-		_, loc := splitDoc(st.typ, results[code])
-		data, err := encodeDoc(loc)
+		loc := resolvedLocs[code]
+		keep := loc
+		if chain := st.chain(code); chain != nil {
+			keep = sparsify(loc, sparse[code], parentOf(chain, resolvedLocs), nil)
+		}
+		data, err := encodeDoc(keep)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -234,15 +251,40 @@ func (s *Service) planDrafts(m Migration, st *itemState) ([]draftPlan, error) {
 	}
 	results := make(map[string]map[string]any, len(carriers))
 	names := make(map[string]string, len(carriers))
-	for _, code := range carriers {
+	run := func(code string) error {
+		if _, done := results[code]; done {
+			return nil
+		}
 		shared, loc, _, err := st.workingParts(code)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if results[code], err = s.runUp(m, st, code, shared, loc); err != nil {
-			return nil, err
+			return err
 		}
 		names[code] = s.o.Schema.Name(st.typ, results[code])
+		return nil
+	}
+	for _, code := range carriers {
+		if err := run(code); err != nil {
+			return nil, err
+		}
+		// Overlay locales are stored sparse against their ancestors' migrated documents.
+		if chain := st.chain(code); chain != nil {
+			for _, a := range chain[1:] {
+				if res, err := st.resolve(true, []string{a}); err != nil {
+					return nil, err
+				} else if res.avail {
+					if err := run(a); err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
+	}
+	resolvedLocs := make(map[string]map[string]any, len(results))
+	for code, r := range results {
+		_, resolvedLocs[code] = splitDoc(st.typ, r)
 	}
 	var plans []draftPlan
 	if hasShared {
@@ -250,7 +292,14 @@ func (s *Service) planDrafts(m Migration, st *itemState) ([]draftPlan, error) {
 		plans = append(plans, draftPlan{part: "", doc: sh})
 	}
 	for _, code := range locales {
-		_, loc := splitDoc(st.typ, results[code])
+		loc := resolvedLocs[code]
+		if chain := st.chain(code); chain != nil {
+			own, _, _, err := st.rawLoc(true, code)
+			if err != nil {
+				return nil, err
+			}
+			loc = sparsify(loc, own, parentOf(chain, resolvedLocs), nil)
+		}
 		plans = append(plans, draftPlan{part: code, doc: loc, name: names[code]})
 	}
 	return plans, nil

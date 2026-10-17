@@ -57,7 +57,7 @@ func (s *service) reconcile(ctx context.Context, e outbox.Event) error {
 			}
 			return s.emitChanges(ctx, tx, changes)
 		}
-		docs, err := publishedDocs(ctx, tx.Content(), it)
+		docs, err := s.publishedDocs(ctx, tx, it)
 		if err != nil {
 			return err
 		}
@@ -66,7 +66,11 @@ func (s *service) reconcile(ctx context.Context, e outbox.Event) error {
 			var cs []change
 			switch class {
 			case classPage:
-				cs, err = s.syncPage(ctx, tx, it.ID, it.MainLocale, d.Locale, s.slugRowOf(it.Type, d.Doc))
+				sync := s.syncPage
+				if s.inherits {
+					sync = s.syncDerivedPage
+				}
+				cs, err = sync(ctx, tx, it.ID, it.MainLocale, d.Locale, s.slugRowOf(it.Type, d.Doc))
 			case classRedirect:
 				if d.Locale == it.MainLocale {
 					cs, err = s.syncRedirect(ctx, q, it.ID, d.Doc)

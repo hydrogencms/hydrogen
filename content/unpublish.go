@@ -67,7 +67,7 @@ func (s *Service) UnpublishTx(ctx context.Context, tx store.Tx, id ids.UUID) err
 	if err := s.checkState(ctx, it); err != nil {
 		return err
 	}
-	locales := st.pub.codes()
+	locales := s.withDescendants(st.pub.codes(), nil)
 	if err := s.takeOffline(ctx, tx, st); err != nil {
 		return fmt.Errorf("content: unpublish %s: %w", id, err)
 	}

@@ -108,23 +108,7 @@ func (s *service) checkPage(hc *hooks.Context) error {
 	if err != nil || unchanged {
 		return err
 	}
-	n.MainLocale = hc.Item.MainLocale
-	g := newGraph(q)
-	nodes, err := g.loadSubtree(hc, n)
-	if err != nil {
-		return err
-	}
-	g.nodes[n.ID].MainLocale = hc.Item.MainLocale
-	g.setSlug(n.ID, hc.Locale, row)
-	locales := []string{hc.Locale}
-	if hc.Locale == hc.Item.MainLocale {
-		locales = nil
-	}
-	existing, err := pageRoutesIn(hc, q, n.Path, locales)
-	if err != nil {
-		return err
-	}
-	plan, err := diffRoutes(hc, q, existing, g.pageWants(nodes, locales))
+	plan, g, err := s.planPage(hc, q, n, hc.Locale, hc.Item.MainLocale, row)
 	if err != nil {
 		return err
 	}
@@ -137,6 +121,29 @@ func (s *service) checkPage(hc *hooks.Context) error {
 			pageLabel(w, hc.Item.ID), w.Locale, len(w.Path), route.MaxPath)
 	}
 	return nil
+}
+
+// planPage computes the routes a page's subtree would have if the page's slug row in locale were row, and
+// how they differ from the stored ones. Nothing is written.
+func (s *service) planPage(ctx context.Context, q store.SQL, n nodeRow, locale, mainLocale string, row slugRow) (*routePlan, *graph, error) {
+	n.MainLocale = mainLocale
+	g := newGraph(q)
+	nodes, err := g.loadSubtree(ctx, n)
+	if err != nil {
+		return nil, nil, err
+	}
+	g.nodes[n.ID].MainLocale = mainLocale
+	g.setSlug(n.ID, locale, row)
+	locales := []string{locale}
+	if locale == mainLocale {
+		locales = nil
+	}
+	existing, err := pageRoutesIn(ctx, q, n.Path, locales)
+	if err != nil {
+		return nil, nil, err
+	}
+	plan, err := diffRoutes(ctx, q, existing, g.pageWants(nodes, locales))
+	return plan, g, err
 }
 
 func pageLabel(w want, self ids.UUID) string {
@@ -181,10 +188,15 @@ func reportClashes(hc *hooks.Context, clashes []clash) {
 func (s *service) afterPublish(hc *hooks.Context) error {
 	var changes []change
 	var err error
-	switch s.classOf(hc.Item.Type) {
-	case classPage:
+	class := s.classOf(hc.Item.Type)
+	switch {
+	case s.inherits && class != classRedirect:
+		// Overlay locales: route every locale of the item from its resolved snapshot (this one, its
+		// descendants and the locales derived from it).
+		changes, err = s.syncResolved(hc, hc.Tx, class)
+	case class == classPage:
 		changes, err = s.syncPage(hc, hc.Tx, hc.Item.ID, hc.Item.MainLocale, hc.Locale, s.slugRowOf(hc.Item.Type, hc.Doc))
-	case classRedirect:
+	case class == classRedirect:
 		changes, err = s.syncRedirect(hc, hc.Tx.SQL(), hc.Item.ID, hc.Doc)
 	default:
 		changes, err = s.syncMountedItem(hc, hc.Tx, hc.Item.ID, hc.Item.Type, hc.Locale, hc.Doc)

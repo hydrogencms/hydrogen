@@ -91,6 +91,7 @@ func decodeOrEmpty(data []byte) (map[string]any, error) {
 
 // itemState is an item with what an operation loaded of it: its draft parts and published version.
 type itemState struct {
+	svc            *Service // for overlay resolution and names; nil in states that only read drafts
 	item           store.Item
 	typ            *schema.Type
 	drafts         map[string]*draft
@@ -108,7 +109,7 @@ func (s *Service) newState(it store.Item) (*itemState, error) {
 	if err != nil {
 		return nil, fmt.Errorf("item %s: %w", it.ID, err)
 	}
-	return &itemState{item: it, typ: t, drafts: map[string]*draft{}}, nil
+	return &itemState{svc: s, item: it, typ: t, drafts: map[string]*draft{}}, nil
 }
 
 // load reads the draft parts and, when published, the current version.
@@ -199,8 +200,28 @@ func (st *itemState) dropDrafts(ctx context.Context, c store.ContentStore, parts
 }
 
 // publishedParts returns the published shared document ({} when never published) and the locale document
-// (ok false when the locale is not published).
+// (ok false when the locale is not published). An overlay locale's document is resolved against its
+// ancestors', and it is available whenever one of them is published.
 func (st *itemState) publishedParts(locale string) (shared, loc map[string]any, ok bool, err error) {
+	chain := st.chain(locale)
+	if chain == nil {
+		return st.rawPublishedParts(locale)
+	}
+	if st.pub == nil {
+		return map[string]any{}, nil, false, nil
+	}
+	if shared, err = st.pub.sharedDoc(); err != nil {
+		return nil, nil, false, err
+	}
+	res, err := st.resolve(false, chain)
+	if err != nil || !res.avail {
+		return shared, nil, false, err
+	}
+	return shared, res.doc, true, nil
+}
+
+// rawPublishedParts is publishedParts with the locale's stored (sparse) document.
+func (st *itemState) rawPublishedParts(locale string) (shared, loc map[string]any, ok bool, err error) {
 	if st.pub == nil {
 		return map[string]any{}, nil, false, nil
 	}
@@ -212,9 +233,27 @@ func (st *itemState) publishedParts(locale string) (shared, loc map[string]any, 
 }
 
 // workingParts returns the documents a draft view of locale shows: each draft part replaces the published
-// part it was based on. name is "" when the locale exists nowhere.
+// part it was based on. name is "" when the locale exists nowhere. An overlay locale's document is resolved
+// against its ancestors' working documents.
 func (st *itemState) workingParts(locale string) (shared, loc map[string]any, name string, err error) {
-	pubShared, pubLoc, pubOK, err := st.publishedParts(locale)
+	shared, loc, name, err = st.rawWorkingParts(locale)
+	chain := st.chain(locale)
+	if err != nil || chain == nil {
+		return shared, loc, name, err
+	}
+	res, err := st.resolve(true, chain)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if !res.avail {
+		return shared, map[string]any{}, "", nil
+	}
+	return shared, res.doc, st.nameOf(shared, res.doc), nil
+}
+
+// rawWorkingParts is workingParts with the locale's stored (sparse) documents.
+func (st *itemState) rawWorkingParts(locale string) (shared, loc map[string]any, name string, err error) {
+	pubShared, pubLoc, pubOK, err := st.rawPublishedParts(locale)
 	if err != nil {
 		return nil, nil, "", err
 	}

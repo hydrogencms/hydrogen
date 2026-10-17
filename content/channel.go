@@ -41,7 +41,7 @@ func (s *Service) GetForChannel(ctx context.Context, id ids.UUID, ch *channel.Ch
 		if err := st.load(ctx, tx.Content()); err != nil {
 			return err
 		}
-		locale, _, ok := channel.PickLocale(ch, st.locales(o.Draft), it.MainLocale, it.AlwaysAvailable)
+		locale, _, ok := channel.PickLocale(ch, st.availableLocales(o.Draft), it.MainLocale, it.AlwaysAvailable)
 		if !ok {
 			return unavailable
 		}

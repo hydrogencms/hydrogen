@@ -23,7 +23,14 @@ export type Doc = Record<string, unknown>;
 export interface Env {
   /** The property definitions of a block type (undefined: unknown, props are then plain values). */
   blockProps?(type: string): CompiledField[] | undefined;
+  /**
+   * The form holds only the overridden translatable fields (an inheriting locale): there, an absent top-level
+   * translatable field is not an empty one. It has no entry in the part map, an empty string is an override.
+   */
+  sparse?: boolean;
 }
+
+const sparseTop = (env: Env, d: CompiledField | undefined) => !!env.sparse && !!d?.translatable;
 
 /** Callbacks run after the new Y content is integrated into the document (rich text is filled then). */
 export type Post = (() => void)[];
@@ -636,6 +643,7 @@ export function partFields(fields: CompiledField[], locale: string, part: string
 export function seedPart(m: Y.Map<unknown>, defs: CompiledField[], values: Doc, env: Env) {
   const post: Post = [];
   for (const d of defs) {
+    if (sparseTop(env, d) && (values[d.name] === undefined || values[d.name] === null)) continue;
     const y = build(d, values[d.name], env, post);
     if (y !== undefined) m.set(d.name, y);
   }
@@ -648,7 +656,8 @@ export function syncPart(m: Y.Map<unknown>, defs: CompiledField[], values: Doc, 
   for (const d of defs) {
     if (only && !only.has(d.name)) continue;
     const ex = m.get(d.name);
-    put(m, d.name, ex, sync(ex, d, values[d.name], env, post));
+    const v = values[d.name];
+    put(m, d.name, ex, sparseTop(env, d) && (v === undefined || v === null) ? undefined : sync(ex, d, v, env, post));
   }
   for (const f of post) f();
 }
@@ -752,11 +761,11 @@ function mergeBlocks(arr: Y.Array<Y.Map<unknown>>, base: unknown, cur: unknown, 
  */
 export function mergeLocal(m: Y.Map<unknown>, defs: CompiledField[] | undefined, cur: Doc, base: Doc, env: Env, only?: Set<string>) {
   const post: Post = [];
-  mergeInto(m, defs, cur, base, env, post, only);
+  mergeInto(m, defs, cur, base, env, post, only, true);
   for (const f of post) f();
 }
 
-function mergeInto(m: Y.Map<unknown>, defs: CompiledField[] | undefined, cur: Doc, base: Doc, env: Env, post: Post, only?: Set<string>) {
+function mergeInto(m: Y.Map<unknown>, defs: CompiledField[] | undefined, cur: Doc, base: Doc, env: Env, post: Post, only?: Set<string>, top = false) {
   const names = only ?? new Set([...Object.keys(cur), ...Object.keys(base)]);
   for (const n of names) {
     const d = defOf(defs, n);
@@ -764,6 +773,17 @@ function mergeInto(m: Y.Map<unknown>, defs: CompiledField[] | undefined, cur: Do
     const c = cur[n];
     const b = base[n];
     if (jsonEq(c, b)) continue;
+    if (top && sparseTop(env, d)) {
+      // An override removed or added before the join: applied unless someone else changed that override meanwhile.
+      if (c === undefined || c === null) {
+        if (ex !== undefined && jsonEq(plainOf(ex, d, env), b)) m.delete(n);
+        continue;
+      }
+      if (ex === undefined) {
+        m.set(n, sync(undefined, d, c, env, post));
+        continue;
+      }
+    }
     if (ex instanceof Y.Text) {
       const c2 = typeof c === 'string' ? c : c == null ? '' : null;
       if (c2 !== null) mergeText(ex, typeof b === 'string' ? b : '', c2);
@@ -789,7 +809,9 @@ export function projectPart(m: Y.Map<unknown>, defs: CompiledField[], values: Do
   for (const d of defs) {
     if (only && !only.has(d.name)) continue;
     const cur = values[d.name];
-    assign(values, d.name, cur, project(m.get(d.name), cur, d, env, hooks, d.name));
+    const y = m.get(d.name);
+    if (sparseTop(env, d) && y !== undefined && cur === undefined) assign(values, d.name, cur, plainOf(y, d, env));
+    else assign(values, d.name, cur, project(y, cur, d, env, hooks, d.name));
   }
 }
 

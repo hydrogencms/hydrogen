@@ -538,6 +538,11 @@
     background var(--h-dur-fast),
     color var(--h-dur-fast);
 }
+.h-seg__sub {
+  font-size: var(--h-text-xs, 0.75rem);
+  font-weight: 400;
+  opacity: 0.75;
+}
 .h-seg--sm .h-seg__btn {
   height: 1.5rem;
   padding: 0 var(--h-space-2);

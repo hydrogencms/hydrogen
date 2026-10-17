@@ -76,6 +76,7 @@ type envConfig struct {
 	migrations []content.Migration
 	setup      func(*hooks.Registry)
 	skipRev    bool // do not record the schema revision
+	overlays   content.Overlays
 }
 
 type env struct {
@@ -126,7 +127,7 @@ func newEnv(t testing.TB, db store.DB, clk *clock.Manual, cfg envConfig) *env {
 		t.Fatal(err)
 	}
 	e.svc, err = content.New(content.Options{DB: db, Schema: buildSchema(t, cfg.schema), Hooks: e.hooks, Outbox: e.ob,
-		Audit: audit.New(clk), Clock: clk, IDs: ids.NewGenerator(clk, nil), DefaultLocale: "en", Migrations: cfg.migrations})
+		Audit: audit.New(clk), Clock: clk, IDs: ids.NewGenerator(clk, nil), DefaultLocale: "en", Migrations: cfg.migrations, Overlays: cfg.overlays})
 	if err != nil {
 		t.Fatal(err)
 	}

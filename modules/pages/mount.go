@@ -348,7 +348,7 @@ func (s *service) membershipRows(ctx context.Context, tx store.Tx, node ids.UUID
 		}
 		slices.SortFunc(items, func(a, b store.Item) int { return slices.Compare(a.ID[:], b.ID[:]) })
 		for _, it := range items {
-			docs, err := publishedDocs(ctx, c, it)
+			docs, err := s.publishedDocs(ctx, tx, it)
 			if err != nil {
 				return nil, err
 			}

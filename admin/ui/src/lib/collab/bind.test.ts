@@ -6,7 +6,7 @@ import { Form } from '../form.svelte';
 import { hydrate } from '../fields/logic';
 import { Binder } from './binder';
 import { bindForm } from './bind.svelte';
-import { draft, env, FakeServer, type, blockProps } from './fixture';
+import { doc, draft, env, FakeServer, type, blockProps } from './fixture';
 import type { CollabTransport, JoinResult } from './transport';
 import { jsonEq, toPlain, type Doc } from './ydoc';
 
@@ -292,5 +292,108 @@ describe('Binder', () => {
     expect(new Set(ids).size).toBe(ids.length);
     expect(jsonEq(late.v.fields, toPlain(late.b.doc.getMap('l:en')) as Doc)).toBe(false); // l:en holds only translatable fields
     expect(jsonEq(late.v.fields.blocks, (toPlain(late.b.doc.getMap('l:en')) as Doc).blocks)).toBe(true);
+  });
+});
+
+describe('bindForm with sparse documents (overlay locales)', () => {
+  // An inheriting locale's form holds only the shared fields and the overrides.
+  const sparse = (o: Doc = {}) => ({ fields: { slug: 'hello', count: 1, ...o } as Doc, key: '', alwaysAvailable: false });
+  const sparseDraft = { ...draft, fields: { slug: 'hello', count: 1, title: 'Hallo' } as Record<string, unknown> };
+
+  async function openSparse(server: FakeServer, v = sparse({ title: 'Hallo' })) {
+    const t = server.connect();
+    const join = await t.join('en');
+    const form = new Form(v);
+    const b = bindForm({ form, transport: t as unknown as CollabTransport, join: join as JoinResult, type: type as never, locale: 'en', draft: sparseDraft, sparse: true });
+    await b.ready;
+    return { t, form, b };
+  }
+  const pump = (x: { t: { queue: unknown[]; listeners: Set<(u: never) => void> } }) => {
+    for (const u of x.t.queue.splice(0)) for (const f of x.t.listeners) f(u as never);
+  };
+
+  it('syncs removing an override and adding it back', async () => {
+    const s = new FakeServer();
+    const a = await openSparse(s);
+    const b = await openSparse(s);
+    await settle();
+    const fa = a.form.values.fields as Doc;
+    const fb = b.form.values.fields as Doc;
+    expect('body' in fb).toBe(false);
+
+    delete fa.title;
+    flushSync();
+    await settle();
+    pump(b);
+    expect('title' in fb).toBe(false);
+
+    fa.title = 'Servus';
+    flushSync();
+    await settle();
+    pump(b);
+    expect(fb.title).toBe('Servus');
+
+    // An override of a field neither document had before: absent on both sides, then present.
+    fa.body = doc('override');
+    flushSync();
+    await settle();
+    pump(b);
+    expect(fb.body).toEqual(doc('override'));
+    delete fa.body;
+    flushSync();
+    await settle();
+    pump(b);
+    expect('body' in fb).toBe(false);
+    expect(fb.slug).toBe('hello');
+
+    // An empty override is an override, not a missing one.
+    fa.title = '';
+    flushSync();
+    await settle();
+    pump(b);
+    expect(fb.title).toBe('');
+    delete fa.title;
+    flushSync();
+    await settle();
+    pump(b);
+    expect('title' in fb).toBe(false);
+    a.b.destroy();
+    b.b.destroy();
+  });
+
+  it('a peer removing an override never removes the shared fields or other overrides', async () => {
+    const s = new FakeServer();
+    const a = await openSparse(s, sparse({ title: 'Hallo', body: doc('x') }));
+    const b = await openSparse(s, sparse({ title: 'Hallo', body: doc('x') }));
+    await settle();
+    delete (b.form.values.fields as Doc).title;
+    flushSync();
+    await settle();
+    pump(a);
+    const fa = a.form.values.fields as Doc;
+    expect('title' in fa).toBe(false);
+    expect(fa.body).toEqual(doc('x'));
+    expect(fa.count).toBe(1);
+    a.b.destroy();
+    b.b.destroy();
+  });
+
+  it('applies an override removed before the session was joined', async () => {
+    const s = new FakeServer();
+    const a = await openSparse(s);
+    await settle();
+    const t = s.connect();
+    const join = await t.join('en');
+    const form = new Form(sparse({ title: 'Hallo' }));
+    delete (form.values.fields as Doc).title;
+    const b = bindForm({ form, transport: t as unknown as CollabTransport, join: join as JoinResult, type: type as never, locale: 'en', draft: sparseDraft, sparse: true });
+    await b.ready;
+    flushSync();
+    await settle();
+    pump(a);
+    expect('title' in (a.form.values.fields as Doc)).toBe(false);
+    expect('title' in (form.values.fields as Doc)).toBe(false);
+    a.b.destroy();
+    b.destroy();
   });
 });

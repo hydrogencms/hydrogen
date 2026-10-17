@@ -109,6 +109,12 @@ It is its own git repository: commit planning changes there (`git -C planning �
   admin's config.json). Content events carry the saving collab client, so sessions get `saved` or `reset`. The admin
   binds the form to Yjs in `admin/ui/src/lib/collab` (lazy chunk; rich text through y-prosemirror) with a convergence
   fuzz test. Docs: `docs/collaboration.md`. Contract: `planning/design/collab-h8c.md`.
+- Locale overlays (H8d): `modules/overlays` gives the content service each language's `inherits` chain
+  (`content.Overlays`); an overlay locale stores only the translatable top-level fields it overrides (`null` in a
+  draft PATCH removes one) and resolves the rest field by field; publishing a parent rebuilds its descendants'
+  snapshots, projections and pages routes. Views carry `inherits`, `overrides`, `inheritedFrom`, `availableLocales`.
+  Without the module `inherits` is ignored (config:check warns). `examples/multisite` registers it. Docs:
+  `docs/locales.md`. Contract: `planning/design/overlays-h8d.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
@@ -204,6 +210,9 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
   the saver's rights. A draft write tells the session it was a session save only through the
   `X-Hydrogen-Collab-Client`/`-Seq` headers, honoured when the client belongs to the writer; anything else resets
   the session. Collab ordering on Postgres relies on the per-item advisory lock (`LockSession` first, always).
+- With overlays on, per-locale documents for reading, validating, snapshotting and projecting come from the
+  resolved parts (`itemState.publishedParts`/`workingParts`); stored parts are sparse (`raw…Parts`). New code that
+  reads a locale's document must use the resolved ones, and writes must stay sparse.
 - Release publishing goes through `content.Service.PublishTx/UnpublishTx` inside one `store.Tx`: call the service's
   grant preparation before opening the transaction (small pools deadlock otherwise), and change release status only
   through the store's conditional transition, never a blind update (several nodes run the `releases` job and the API).
@@ -228,6 +237,8 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 
 ## Rules
 
+- Several agents often share this working tree: never `git stash`, `git checkout -- …`, `git reset` or `git clean`
+  it to measure a baseline; build the baseline in a separate `git worktree` (or an export of HEAD) instead.
 - General-purpose headless: core never renders a public site and has no web assumptions; URLs, the page tree and
   web matchers live in the `pages` module; fullstack rendering lives in the `site` module.
 - Core stays small; features that a project can live without are modules registered through the kernel.

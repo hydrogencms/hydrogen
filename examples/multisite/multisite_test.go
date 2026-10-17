@@ -90,7 +90,7 @@ func buildSites(s *server) *site {
 	f.home = f.item("page", "en", title("Home"), false, map[string]map[string]any{"de": title("Startseite")})
 	homeNode := f.place("corporate", f.home, "")
 	f.about = f.item("page", "en", title("About"), false, map[string]map[string]any{
-		"de": title("Uber uns"), "de-CH": title("Uber eus")})
+		"de": title("Uber uns"), "de-CH": map[string]any{"title": "Uber eus", "slug": "uber-eus"}})
 	aboutNode := f.place("corporate", f.about, homeNode)
 	f.contact = f.item("page", "en", title("Contact"), false, map[string]map[string]any{"de": title("Kontakt")})
 	f.place("corporate", f.contact, homeNode)
@@ -159,12 +159,13 @@ func (f *site) locateURLs(t *testing.T) {
 	f.wantLocated("https://www.acme.com/de-ch/uber-eus", "corporate_dech", "page", "de-CH", f.about)
 	f.wantLocated("https://WWW.acme.com:8443/en/about/team", "corporate_en", "page", "en", f.team)
 	f.wantLocated("https://www.acme.com/en/news/hello", "corporate_en", "item", "en", f.article)
-	f.wantLocated("https://www.acme.sg/about", "corporate_sg_en", "page", "en", f.about) // en-SG missing: en
+	f.wantLocated("https://www.acme.sg/about", "corporate_sg_en", "page", "en-SG", f.about) // en-SG inherits en: available without a document
 	f.wantLocated("https://jobs.acme.com/open-roles", "careers_en", "page", "en", f.roles)
 	f.wantLocated("https://jobs.acme.com/", "careers_en", "page", "en", f.jobs)
 
-	// Fallback: no de-CH page, so the de route answers; no de or de-CH team, so en does.
-	f.wantLocated("https://www.acme.com/de-ch/kontakt", "corporate_dech", "page", "de", f.contact)
+	// de-CH inherits de: the contact page has no de-CH document, yet is served as de-CH (with de's slug).
+	// No de or de-CH team, so en answers there.
+	f.wantLocated("https://www.acme.com/de-ch/kontakt", "corporate_dech", "page", "de-CH", f.contact)
 	f.wantLocated("https://www.acme.com/de-ch/about/team", "corporate_dech", "page", "en", f.team)
 	// A path of another locale's route does not resolve in this channel.
 	f.wantLocated("https://www.acme.com/de/about", "corporate_de", "not_found", "", "")
@@ -208,8 +209,9 @@ func (f *site) alternatesAndCanonical(t *testing.T) {
 		{"corporate_de", "de", "https://www.acme.com/de/uber-uns"},
 		{"corporate_dech", "de-CH", "https://www.acme.com/de-ch/uber-eus"},
 		{"corporate_en", "en", "https://www.acme.com/en/about"},
+		{"corporate_sg_en", "en-SG", "https://www.acme.sg/about"},
 	}
-	// corporate_sg_en (first language en-SG) is no alternate: the page has no en-SG route.
+	// corporate_sg_en is an alternate: en-SG inherits en, so the page has an en-SG route.
 	l := f.locate("https://www.acme.com/en/about")
 	wantAlts(l, about)
 	if l.Canonical != "https://www.acme.com/en/about" {
@@ -220,19 +222,20 @@ func (f *site) alternatesAndCanonical(t *testing.T) {
 	if l.Canonical != "https://www.acme.com/de-ch/uber-eus" {
 		t.Errorf("canonical de-CH: %s", l.Canonical)
 	}
-	// Shown as the de fallback in the de-CH channel: canonical is the channel whose first language is de.
+	// Served as de-CH through inheritance: it is an alternate of its own, and the canonical is this channel's.
 	l = f.locate("https://www.acme.com/de-ch/kontakt")
 	wantAlts(l, []alt{
-		// corporate_dech shows de, so it owns that hreflang and corporate_de is not listed again.
-		{"corporate_dech", "de", "https://www.acme.com/de-ch/kontakt"},
+		{"corporate_de", "de", "https://www.acme.com/de/kontakt"},
+		{"corporate_dech", "de-CH", "https://www.acme.com/de-ch/kontakt"},
 		{"corporate_en", "en", "https://www.acme.com/en/contact"},
+		{"corporate_sg_en", "en-SG", "https://www.acme.sg/contact"},
 	})
-	if l.Canonical != "https://www.acme.com/de/kontakt" {
+	if l.Canonical != "https://www.acme.com/de-ch/kontakt" {
 		t.Errorf("canonical fallback: %s", l.Canonical)
 	}
-	// The market channel shows en for lack of en-SG; its canonical is the en channel.
+	// The market channel serves the inherited en-SG; it is its own canonical.
 	l = f.locate("https://www.acme.sg/about")
-	if l.Canonical != "https://www.acme.com/en/about" {
+	if l.Canonical != "https://www.acme.sg/about" {
 		t.Errorf("canonical sg: %s", l.Canonical)
 	}
 	// An item mounted under the tree has alternates too; the second site has no group, so only its own site.

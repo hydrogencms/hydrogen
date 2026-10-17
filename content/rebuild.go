@@ -56,22 +56,9 @@ func (s *Service) rebuild(ctx context.Context, c store.ContentStore, it store.It
 	} else {
 		st.pub = newPubVersion(*v)
 	}
-	shared, err := st.pub.sharedDoc()
+	outs, err := s.publishedOuts(st)
 	if err != nil {
 		return err
-	}
-	sc := s.o.Schema
-	outs := make([]*localeOut, 0, len(st.pub.Locales))
-	for _, code := range st.pub.codes() {
-		loc, _, err := st.pub.localeDoc(code)
-		if err != nil {
-			return err
-		}
-		doc := cloneDoc(mergeParts(shared, loc))
-		sc.Normalize(st.typ, doc)
-		sc.Prune(st.typ, doc)
-		outs = append(outs, &localeOut{code: code, doc: doc, name: st.pub.Locales[st.pub.idx[code]].Name,
-			refs: sc.Refs(st.typ, doc), final: true})
 	}
 	if len(outs) == 0 {
 		return fmt.Errorf("content: published version %d of %s has no locales", it.PublishedVersion, it.ID)

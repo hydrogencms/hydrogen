@@ -275,7 +275,7 @@ func (s *service) place(ctx context.Context, site string, in Place) (*Node, erro
 		if err := s.reindexItems(ctx, tx, []ids.UUID{it.ID}); err != nil {
 			return err
 		}
-		docs, err := publishedDocs(ctx, tx.Content(), it)
+		docs, err := s.publishedDocs(ctx, tx, it)
 		if err != nil {
 			return err
 		}

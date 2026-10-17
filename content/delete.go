@@ -138,7 +138,7 @@ func (s *Service) nullifyRef(ctx context.Context, tx store.Tx, id, target ids.UU
 	if err := s.record(ctx, tx, audit.System, "item.update", id, data); err != nil {
 		return err
 	}
-	return s.emit(ctx, tx, "item.published", st.item, st.item.PublishedVersion, codesOf(outs))
+	return s.emit(ctx, tx, "item.published", st.item, st.item.PublishedVersion, codesOf(s.withDerived(outs)))
 }
 
 // nullifies matches the reference fields whose on_delete policy is nullify; only those are cleared when their
@@ -179,9 +179,20 @@ func (st *itemState) removeRef(sc *schema.Schema, target string) (sharedData []b
 		}
 		outs = append(outs, &localeOut{code: code, data: data, doc: doc, name: stored.Name})
 	}
+	sparse := make(map[string]map[string]any, len(outs))
 	for _, o := range outs {
-		o.doc = mergeParts(shared, o.doc)
+		sparse[o.code] = o.doc
+	}
+	for _, o := range outs {
+		loc := o.doc
+		if chain := st.chain(o.code); chain != nil {
+			loc = unionChain(chain, sparse)
+		}
+		o.doc = mergeParts(shared, loc)
 		o.refs = sc.Refs(st.typ, o.doc)
+		if st.chain(o.code) != nil {
+			o.name = st.nameOf(shared, loc)
+		}
 	}
 	return sharedData, outs, changed, nil
 }

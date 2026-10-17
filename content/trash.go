@@ -71,7 +71,7 @@ func (s *Service) trashItem(ctx context.Context, tx store.Tx, it store.Item) err
 	}
 	locales := []string(nil)
 	if st.pub != nil {
-		locales = st.pub.codes()
+		locales = s.withDescendants(st.pub.codes(), nil)
 	}
 	version := it.PublishedVersion
 	if err := s.takeOffline(ctx, tx, st); err != nil {

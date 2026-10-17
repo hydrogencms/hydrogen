@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"maps"
 	"strconv"
 	"strings"
 	"sync"
@@ -550,7 +551,8 @@ func (h *hub) refreshPresence(ctx context.Context, item ids.UUID) {
 	}
 	h.mu.Lock()
 	if _, ok := h.byItem[item]; ok {
-		h.names[item] = names
+		// A copy: add() writes into the hub's map under the lock while this function keeps reading its own.
+		h.names[item] = maps.Clone(names)
 	}
 	h.mu.Unlock()
 	f := &frame{event: "presence", data: mustJSON(map[string]any{"clients": participants(clients)})}

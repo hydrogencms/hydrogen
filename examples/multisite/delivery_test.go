@@ -101,7 +101,7 @@ func (f *site) delivery(t *testing.T) {
 			t.Errorf("headers %v", d.header)
 		}
 		alts, _ := at(j, "located", "alternates").([]any)
-		if len(alts) != 3 {
+		if len(alts) != 4 {
 			t.Errorf("alternates: %v", alts)
 		}
 

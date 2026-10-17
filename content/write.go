@@ -48,7 +48,7 @@ func (s *Service) create(ctx context.Context, tx store.Tx, in CreateInput) (*Vie
 		}
 	}
 	now, actor := s.now(), audit.ActorFrom(ctx)
-	st := &itemState{typ: t, drafts: map[string]*draft{}, item: store.Item{
+	st := &itemState{svc: s, typ: t, drafts: map[string]*draft{}, item: store.Item{
 		ID: s.o.IDs.New(), Key: key, Type: t.Name, MainLocale: locale, AlwaysAvailable: in.AlwaysAvailable,
 		CreatedAt: now, UpdatedAt: now, CreatedBy: actor.String(), UpdatedBy: actor.String(),
 	}}
@@ -206,7 +206,16 @@ func (s *Service) writeDraft(ctx context.Context, tx store.Tx, st *itemState, re
 	if err != nil {
 		return nil, err
 	}
-	applyPatch(doc, req.patch)
+	var ov *overlayWrite
+	if chain := st.chain(req.locale); chain != nil {
+		// An overlay locale stores only its overrides; the patch, hooks and validation work on the resolved document.
+		if ov, err = s.startOverlayWrite(st, req.locale, chain, doc, req.patch); err != nil {
+			return nil, err
+		}
+		doc = ov.resolved
+	} else {
+		applyPatch(doc, req.patch)
+	}
 	if req.create {
 		s.o.Schema.ApplyDefaults(st.typ, doc)
 	}
@@ -231,7 +240,11 @@ func (s *Service) writeDraft(ctx context.Context, tx store.Tx, st *itemState, re
 		}
 	}
 	name := s.o.Schema.Name(st.typ, doc)
-	changed, err := s.storeDraftParts(ctx, c, st, req.locale, doc, name, now, actor)
+	stored := doc
+	if ov != nil {
+		stored = ov.sparse(st, doc)
+	}
+	changed, err := s.storeDraftParts(ctx, c, st, req.locale, stored, name, now, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -295,9 +308,10 @@ func (s *Service) authorizeDraft(ctx context.Context, st *itemState, req writeRe
 	return nil
 }
 
-// baseDoc is the working document of a locale (a private copy: draft parts over published parts).
+// baseDoc is the working document of a locale as it is stored (a private copy: draft parts over published
+// parts; an overlay locale's is sparse).
 func (s *Service) baseDoc(st *itemState, locale string) (map[string]any, error) {
-	shared, loc, _, err := st.workingParts(locale)
+	shared, loc, _, err := st.rawWorkingParts(locale)
 	if err != nil {
 		return nil, err
 	}
@@ -329,9 +343,12 @@ func (s *Service) prepareDraft(ctx context.Context, tx store.Tx, st *itemState, 
 // from the current draft. It reports whether anything changed.
 func (s *Service) storeDraftParts(ctx context.Context, c store.ContentStore, st *itemState, locale string,
 	doc map[string]any, name string, now time.Time, actor audit.Actor) (bool, error) {
-	pubShared, pubLoc, _, err := st.publishedParts(locale)
+	pubShared, pubLoc, _, err := st.rawPublishedParts(locale)
 	if err != nil {
 		return false, err
+	}
+	if pubLoc == nil && st.chain(locale) != nil {
+		pubLoc = map[string]any{} // an overlay locale without overrides needs no part
 	}
 	shared, loc := splitDoc(st.typ, doc)
 	by := actor.String()

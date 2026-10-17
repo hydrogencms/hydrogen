@@ -269,6 +269,9 @@ type localeOut struct {
 	errs []schema.FieldError
 
 	final bool // doc went through Normalize and Prune (prepareOuts)
+
+	sparse  map[string]any // an overlay locale's stored document, while doc holds the resolved one
+	derived bool           // an overlay locale without a stored document: in snapshots and projections only
 }
 
 func (s *Service) publishParts(ctx context.Context, tx store.Tx, st *itemState, sel selection) (*View, error) {
@@ -302,7 +305,8 @@ func (s *Service) publishParts(ctx context.Context, tx store.Tx, st *itemState, 
 	if err := s.projectWorking(ctx, c, st); err != nil {
 		return nil, err
 	}
-	changed := sel.changedLocales(codesOf(outs))
+	all := s.withDerived(outs)
+	changed := s.withDescendants(sel.changedLocales(codesOf(outs)), codesOf(all))
 	data := map[string]any{"type": st.typ.Name, "version": st.item.PublishedVersion, "locales": changed}
 	if st.reviewBypassed {
 		data["reviewBypassed"] = true
@@ -313,7 +317,7 @@ func (s *Service) publishParts(ctx context.Context, tx store.Tx, st *itemState, 
 	if err := s.emit(ctx, tx, "item.published", st.item, st.item.PublishedVersion, changed); err != nil {
 		return nil, err
 	}
-	if err := s.afterPublish(ctx, tx, st, outs, changed); err != nil {
+	if err := s.afterPublish(ctx, tx, st, all, changed); err != nil {
 		return nil, err
 	}
 	v := st.publishedResult(outs)
@@ -377,8 +381,17 @@ func (st *itemState) localeOut(code string, sel selection) (*localeOut, error) {
 func (s *Service) prepareOuts(ctx context.Context, tx store.Tx, st *itemState, shared map[string]any, sharedData []byte, outs []*localeOut) ([]byte, error) {
 	sc := s.o.Schema
 	pre := make([]map[string]any, len(outs))
+	stored := make(map[string]map[string]any, len(outs))
+	for _, o := range outs {
+		stored[o.code] = o.doc
+	}
 	for i, o := range outs {
-		doc := mergeParts(cloneDoc(shared), cloneDoc(o.doc))
+		loc := o.doc
+		if chain := st.chain(o.code); chain != nil {
+			// An overlay locale is validated and published resolved; its stored document stays sparse.
+			o.sparse, loc = o.doc, unionChain(chain, stored)
+		}
+		doc := mergeParts(cloneDoc(shared), cloneDoc(loc))
 		sc.Normalize(st.typ, doc)
 		sc.Prune(st.typ, doc)
 		o.errs = sc.Validate(st.typ, doc, schema.ModePublish)
@@ -413,10 +426,12 @@ func (s *Service) persistHookChanges(st *itemState, sharedData []byte, pre []map
 		return sharedData, nil
 	}
 	primary := outs[0]
+	resolvedLocs := make(map[string]map[string]any, len(outs))
 	for _, o := range outs {
 		if o.code == st.item.MainLocale {
 			primary = o
 		}
+		_, resolvedLocs[o.code] = splitDoc(st.typ, o.doc)
 	}
 	finalShared, _ := splitDoc(st.typ, primary.doc)
 	data, err := encodeDoc(finalShared)
@@ -427,7 +442,12 @@ func (s *Service) persistHookChanges(st *itemState, sharedData []byte, pre []map
 	for i, o := range outs {
 		_, loc := splitDoc(st.typ, o.doc)
 		if locChanged[i] {
-			if o.data, err = encodeDoc(loc); err != nil {
+			keep := loc
+			if o.sparse != nil {
+				_, own := splitDoc(st.typ, o.sparse)
+				keep = sparsify(loc, own, parentOf(st.chain(o.code), resolvedLocs), nil)
+			}
+			if o.data, err = encodeDoc(keep); err != nil {
 				return nil, fmt.Errorf("content: encode %s document of %s: %w", o.code, st.item.ID, err)
 			}
 		}
@@ -479,10 +499,11 @@ func (s *Service) commitVersion(ctx context.Context, c store.ContentStore, st *i
 		return itemErr(st.item.ID.String(), err)
 	}
 	st.pub = newPubVersion(v)
-	if err := s.project(ctx, c, st, outs); err != nil {
+	all := s.withDerived(outs)
+	if err := s.project(ctx, c, st, all); err != nil {
 		return err
 	}
-	return s.putSnapshots(ctx, c, st, outs, v.Version, now)
+	return s.putSnapshots(ctx, c, st, all, v.Version, now)
 }
 
 // nextVersion is the number of the version a publish writes: the one after the published version, or, for an

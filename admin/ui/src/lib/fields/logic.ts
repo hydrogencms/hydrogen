@@ -181,11 +181,73 @@ export function mergePatch(base: unknown, cur: unknown): unknown {
   return out;
 }
 
-/** The PATCH `fields` body: only what changed between the saved and the current values. Empty when nothing did. */
-export function fieldsPatch(fields: CompiledField[], saved: Doc, current: Doc): Doc {
+/**
+ * The PATCH `fields` body: only what changed between the saved and the current values. Empty when nothing did.
+ * `overlay`: the form holds only the overrides of an inheriting locale. A translatable field present in `current`
+ * is an override (an empty string or list is one too), one that went missing is sent as `null` (inherit again).
+ */
+export function fieldsPatch(fields: CompiledField[], saved: Doc, current: Doc, overlay = false): Doc {
+  if (overlay) return overlayPatch(fields, saved, current);
   const a = cleanDoc(fields, saved);
   const b = cleanDoc(fields, current);
   return (mergePatch(a, b) as Doc) ?? {};
+}
+
+const isPlain = (x: unknown): x is Doc => typeof x === 'object' && x !== null && !Array.isArray(x);
+
+/** What an override stores: the cleaned value, or the empty value the editor chose on purpose; undefined = none. */
+function overrideOf(f: CompiledField, raw: unknown): unknown {
+  if (raw === undefined || raw === null) return undefined;
+  const c = cleanValue(f, raw);
+  if (c !== undefined) return c;
+  if (raw === '') return '';
+  if (Array.isArray(raw)) return [];
+  if (isPlain(raw)) return {};
+  return undefined;
+}
+
+function overlayPatch(fields: CompiledField[], saved: Doc, current: Doc): Doc {
+  const shared = fields.filter((f) => !f.translatable);
+  const pick = (d: Doc) => Object.fromEntries(shared.filter((f) => f.name in d).map((f) => [f.name, d[f.name]]));
+  const out: Doc = shared.length ? ((mergePatch(cleanDoc(shared, pick(saved)), cleanDoc(shared, pick(current))) as Doc) ?? {}) : {};
+  for (const f of fields) {
+    if (!f.translatable) continue;
+    const sv = overrideOf(f, saved[f.name]);
+    const cv = overrideOf(f, current[f.name]);
+    if (cv === undefined) {
+      if (sv !== undefined) out[f.name] = null;
+    } else if (!jsonEqual(sv, cv)) {
+      out[f.name] = isPlain(sv) && isPlain(cv) ? mergePatch(sv, cv) : cv;
+    }
+  }
+  return out;
+}
+
+// ---- overlays (locale inheritance)
+
+/** The form values of an item view: hydrated; for an inheriting locale only the shared fields and the overrides. */
+export function viewValues(fields: CompiledField[], view: { fields: Doc; inherits?: string; overrides?: string[] }): Doc {
+  const out = hydrate(fields, view.fields);
+  if (!view.inherits) return out;
+  const own = new Set(view.overrides ?? []);
+  for (const f of fields) if (f.translatable && !own.has(f.name)) delete out[f.name];
+  return out;
+}
+
+/** Whether the translatable field `name` is overridden in the sparse form values. */
+export const overlayState = (doc: Doc, name: string): 'inherited' | 'overridden' => (name in doc ? 'overridden' : 'inherited');
+
+/** The sparse values with the inherited translatable fields filled from the parent's (for `when`, preview, error routing). */
+export function resolvedDoc(fields: CompiledField[], doc: Doc, parent: Doc | undefined): Doc {
+  const out: Doc = { ...doc };
+  if (parent) for (const f of fields) if (f.translatable && !(f.name in out) && parent[f.name] !== undefined) out[f.name] = parent[f.name];
+  return out;
+}
+
+/** The value an Override starts from: a copy of the inherited one, else an empty value (null when the type has none). */
+export function overrideValue(f: CompiledField, inherited: unknown): unknown {
+  if (inherited !== undefined && inherited !== null) return structuredClone(inherited);
+  return emptyValue(f) ?? null;
 }
 
 /** Top-level names of translatable fields. */

@@ -33,10 +33,16 @@ type View struct {
 	Name            string          `json:"name"`
 	Fields          json.RawMessage `json:"fields"`
 	Locales         []string        `json:"locales"`
-	DraftParts      []string        `json:"draftParts"`
-	CreatedAt       time.Time       `json:"createdAt"`
-	UpdatedAt       time.Time       `json:"updatedAt"`
-	PublishedAt     *time.Time      `json:"publishedAt"`
+	// AvailableLocales are the stored locales plus the overlay locales that inherit from one.
+	AvailableLocales []string `json:"availableLocales"`
+	// Inherits, Overrides and InheritedFrom describe an overlay locale (the overlays module).
+	Inherits      string            `json:"inherits"`
+	Overrides     []string          `json:"overrides"`
+	InheritedFrom map[string]string `json:"inheritedFrom"`
+	DraftParts    []string          `json:"draftParts"`
+	CreatedAt     time.Time         `json:"createdAt"`
+	UpdatedAt     time.Time         `json:"updatedAt"`
+	PublishedAt   *time.Time        `json:"publishedAt"`
 	// DeletedAt, DeletedBy and DeletedByName are set on an item read from the trash.
 	DeletedAt     *time.Time `json:"deletedAt"`
 	DeletedBy     string     `json:"deletedBy"`

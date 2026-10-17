@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { CompiledField } from '../types.svelte';
+import type { Doc } from './logic';
 import {
   autoSlug, hydrate, cleanDoc, copyTranslatable, errorFieldNames, evalWhen, fieldAtPath, fieldsPatch, fromLocalInput, isSlug,
   joinPath, listAdd, listMove, listRemove, mergePatch, parsePath, slugify, slugSource, toLocalInput,
-  runPool, unroutedErrors,
+  runPool, unroutedErrors, viewValues, overlayState, resolvedDoc, overrideValue,
 } from './logic';
 
 const f = (name: string, base: string, extra: Partial<CompiledField> = {}): CompiledField =>
@@ -183,5 +184,73 @@ describe('hydrate', () => {
   it('reaches groups inside lists', () => {
     const fs = [f('rows', 'list', { of: f('r', 'group', { fields: [f('x', 'group', { fields: [f('y', 'string')] })] }) })];
     expect(hydrate(fs, { rows: [{}] })).toEqual({ rows: [{ x: {} }] });
+  });
+});
+
+describe('overlays', () => {
+  const fs = [
+    f('title', 'string', { translatable: true }),
+    f('body', 'richtext', { translatable: true }),
+    f('seo', 'group', { translatable: true, fields: [f('desc', 'string'), f('noindex', 'boolean')] }),
+    f('tags', 'list', { translatable: true, of: f('t', 'string') }),
+    f('count', 'number'),
+  ];
+  const view = { fields: { title: 'Hallo', body: { type: 'doc' }, count: 3 }, inherits: 'de', overrides: ['title'] };
+
+  it('keeps only the shared fields and the overrides in the form', () => {
+    expect(viewValues(fs, view)).toEqual({ title: 'Hallo', count: 3 });
+    expect(viewValues(fs, { fields: view.fields })).toEqual({ ...view.fields, seo: {} });
+  });
+  it('reports the field state', () => {
+    const doc = viewValues(fs, view);
+    expect(overlayState(doc, 'title')).toBe('overridden');
+    expect(overlayState(doc, 'body')).toBe('inherited');
+    delete doc.title;
+    expect(overlayState(doc, 'title')).toBe('inherited');
+  });
+  it('sends only the override diff', () => {
+    const saved = viewValues(fs, view);
+    expect(fieldsPatch(fs, saved, { ...saved }, true)).toEqual({});
+    expect(fieldsPatch(fs, saved, { ...saved, title: 'Servus' }, true)).toEqual({ title: 'Servus' });
+    expect(fieldsPatch(fs, saved, { ...saved, body: { type: 'doc', content: [] } }, true)).toEqual({ body: { type: 'doc', content: [] } });
+    expect(fieldsPatch(fs, saved, { ...saved, count: 4 }, true)).toEqual({ count: 4 });
+  });
+  it('sends null for a reset override and nothing for an untouched inherited field', () => {
+    const saved = viewValues(fs, view);
+    const cur = { ...saved };
+    delete cur.title;
+    expect(fieldsPatch(fs, saved, cur, true)).toEqual({ title: null });
+    expect(fieldsPatch(fs, {}, {}, true)).toEqual({});
+  });
+  it('treats an emptied override as an override, not a reset', () => {
+    const saved = viewValues(fs, view);
+    expect(fieldsPatch(fs, saved, { ...saved, title: '' }, true)).toEqual({ title: '' });
+    expect(fieldsPatch(fs, {}, { tags: [] }, true)).toEqual({ tags: [] });
+    expect(fieldsPatch(fs, { tags: [] }, { tags: [] }, true)).toEqual({});
+  });
+  it('merges inside an overridden group', () => {
+    expect(fieldsPatch(fs, { seo: { desc: 'a', noindex: true } }, { seo: { desc: 'b', noindex: true } }, true)).toEqual({ seo: { desc: 'b' } });
+    expect(fieldsPatch(fs, {}, { seo: { desc: 'a' } }, true)).toEqual({ seo: { desc: 'a' } });
+  });
+  it('override then reset round trips to no change; the non-overlay patch is unchanged', () => {
+    const saved = viewValues(fs, view);
+    const cur: Doc = { ...saved, body: { type: 'doc' } };
+    delete cur.body;
+    expect(fieldsPatch(fs, saved, cur, true)).toEqual({});
+    expect(fieldsPatch(fs, { title: 'A' }, { title: '' })).toEqual({ title: null });
+  });
+  it('resolves inherited fields from the parent for conditions', () => {
+    const doc = { title: 'x', count: 1 };
+    expect(resolvedDoc(fs, doc, { title: 'p', body: 'b', count: 9 })).toEqual({ title: 'x', body: 'b', count: 1 });
+    expect(resolvedDoc(fs, doc, undefined)).toEqual(doc);
+  });
+  it('starts an override from a copy of the inherited value', () => {
+    const inh = { type: 'doc', content: [1] };
+    const v = overrideValue(fs[1]!, inh) as typeof inh;
+    expect(v).toEqual(inh);
+    expect(v).not.toBe(inh);
+    expect(overrideValue(fs[0]!, undefined)).toBe('');
+    expect(overrideValue(fs[3]!, undefined)).toEqual([]);
+    expect(overrideValue(f('n', 'number', { translatable: true }), undefined)).toBeNull();
   });
 });

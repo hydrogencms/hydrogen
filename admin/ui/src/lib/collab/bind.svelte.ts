@@ -44,6 +44,8 @@ export function bindForm(o: {
   locale: string;
   draft: unknown;
   onFatal?(reason: 'claim_lost' | 'poison' | 'reset-failed'): void;
+  /** The form holds only the overridden translatable fields (an inheriting locale). */
+  sparse?: boolean;
   merge?: string[];
   resume?: { parts: string[]; base: Record<string, unknown> };
 }): BindingInfo {
@@ -52,7 +54,7 @@ export function bindForm(o: {
   const listeners = new Set<() => void>();
   let caret: { el: HTMLInputElement | HTMLTextAreaElement; start: number; end: number } | undefined;
 
-  const env: Env = { blockProps: (n) => blocksCatalog.get(n)?.props };
+  const env: Env = { blockProps: (n) => blocksCatalog.get(n)?.props, sparse: o.sparse };
   const binder = new Binder({
     transport: o.transport,
     join: o.join,

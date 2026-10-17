@@ -133,10 +133,17 @@ type View struct {
 	Name            string         `json:"name"`
 	Fields          map[string]any `json:"fields"`
 	Locales         []string       `json:"locales"`
-	DraftParts      []string       `json:"draftParts"`
-	CreatedAt       time.Time      `json:"createdAt"`
-	UpdatedAt       time.Time      `json:"updatedAt"`
-	PublishedAt     *time.Time     `json:"publishedAt,omitempty"`
+	// AvailableLocales are the stored locales plus the overlay locales that inherit from one.
+	AvailableLocales []string `json:"availableLocales"`
+	// Inherits is the direct parent of an overlay locale; Overrides lists the fields the locale stores and
+	// InheritedFrom the locale each other field comes from (both always present, and only, with Inherits).
+	Inherits      string            `json:"inherits,omitempty"`
+	Overrides     []string          `json:"-"`
+	InheritedFrom map[string]string `json:"-"`
+	DraftParts    []string          `json:"draftParts"`
+	CreatedAt     time.Time         `json:"createdAt"`
+	UpdatedAt     time.Time         `json:"updatedAt"`
+	PublishedAt   *time.Time        `json:"publishedAt,omitempty"`
 	// DeletedAt, DeletedBy and DeletedByName are set on a trashed item (GetOptions.Trashed).
 	DeletedAt     *time.Time `json:"deletedAt,omitempty"`
 	DeletedBy     string     `json:"deletedBy,omitempty"`
@@ -304,4 +311,6 @@ type Options struct {
 	// Review plugs the review workflow into types with `review: true`; nil without the workflow. SetReview
 	// installs it later.
 	Review ReviewHook
+	// Overlays resolves locales that inherit from others (market overlays); nil: every locale is independent.
+	Overlays Overlays
 }

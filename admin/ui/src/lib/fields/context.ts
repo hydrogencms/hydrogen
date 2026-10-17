@@ -17,6 +17,22 @@ export interface FieldCtx {
   loading?(name: string): boolean;
   /** A collaboration session is bound: values may change under the editor from other people's edits. */
   collab?(): boolean;
+  /** Set when the locale being edited inherits from another. */
+  readonly overlay?: OverlayCtx;
+}
+
+/** Locale inheritance: the item is edited in a locale that inherits its translatable fields from `parent`. */
+export interface OverlayCtx {
+  parent: string;
+  state(name: string): 'inherited' | 'overridden';
+  /** The locale an inherited field's value comes from. */
+  source(name: string): string;
+  /** The inherited value (the parent's resolved one). */
+  value(name: string): unknown;
+  /** The form values plus the inherited fields (for conditions). */
+  resolved(): Record<string, unknown>;
+  override(name: string): void;
+  reset(name: string): void;
 }
 
 const KEY = Symbol('h.fields');

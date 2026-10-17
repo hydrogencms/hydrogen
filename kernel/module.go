@@ -100,6 +100,7 @@ type Registry struct {
 	exporters    []exportfmt.NamedExporter
 	catalog      *access.Catalog
 	adminExts    []registered[AdminExtension]
+	overlays     *registered[func(*channel.Set) content.Overlays]
 }
 
 type registered[T any] struct {
@@ -191,6 +192,17 @@ func (r *Registry) ChannelOption(o channel.Option) {
 // during start-up and config:check, after every channel compiled without error.
 func (r *Registry) ChannelCheck(c channel.Check) {
 	r.chanChecks = append(r.chanChecks, registered[channel.Check]{r.current, c})
+}
+
+// Overlays switches on locale inheritance (languages.<code>.inherits in channels.yaml): the content service
+// resolves overlay locales through the provider, which build derives from the compiled channels. One module
+// may register it.
+func (r *Registry) Overlays(build func(channels *channel.Set) content.Overlays) error {
+	if r.overlays != nil {
+		return fmt.Errorf("overlays registered by both %s and %s", r.overlays.module, r.current)
+	}
+	r.overlays = &registered[func(*channel.Set) content.Overlays]{r.current, build}
+	return nil
 }
 
 // Handle adds an HTTP route (net/http ServeMux pattern syntax).

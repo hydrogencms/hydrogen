@@ -149,6 +149,7 @@ type Options struct {
 // API is the delivery API.
 type API struct {
 	o       Options
+	parents map[string]string // language → language it inherits from
 	log     *slog.Logger
 	cache   *cache
 	meta    map[string]*chanMeta
@@ -208,7 +209,7 @@ func New(o Options) (*API, error) {
 	if o.MaxStreams <= 0 {
 		o.MaxStreams = DefaultMaxStreams
 	}
-	a := &API{o: o, log: o.Log, meta: map[string]*chanMeta{}, hub: newHub(o.MaxStreamsPerShare, o.MaxStreams)}
+	a := &API{o: o, parents: parentsOf(o.Channels), log: o.Log, meta: map[string]*chanMeta{}, hub: newHub(o.MaxStreamsPerShare, o.MaxStreams)}
 	for _, origin := range o.CORSOrigins {
 		if n, ok := normOrigin(origin); ok {
 			a.corsOrigins = append(a.corsOrigins, n)

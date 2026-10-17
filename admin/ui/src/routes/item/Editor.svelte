@@ -14,12 +14,13 @@
   import { api, ApiError } from '../../lib/api/client';
   import { session } from '../../lib/auth/session.svelte';
   import { channels } from '../../lib/channels.svelte';
-  import { provideFields } from '../../lib/fields/context';
+  import { provideFields, type OverlayCtx } from '../../lib/fields/context';
+  import '../../lib/messages/overlays';
   import Fields from '../../lib/fields/Fields.svelte';
   import { setContext, untrack, type Component } from 'svelte';
   import '../../lib/messages/preview';
-  import { copyTranslatable, fieldsPatch, hydrate, initialValues, cleanDoc, jsonEqual, unroutedErrors, type Doc } from '../../lib/fields/logic';
-  import { itemLocales, knownLocales, localeState } from '../../lib/fields/locales';
+  import { copyTranslatable, fieldsPatch, hydrate, initialValues, cleanDoc, jsonEqual, overlayState, overrideValue, resolvedDoc, unroutedErrors, viewValues, type Doc } from '../../lib/fields/logic';
+  import { itemLocales, knownLocales, localeState, overlayNote } from '../../lib/fields/locales';
   import { Form } from '../../lib/form.svelte';
   import { t } from '../../lib/i18n';
   import { href, link, router } from '../../lib/router.svelte';
@@ -182,7 +183,7 @@
         return;
       }
       joinReloads = 0;
-      collabBinding = m.bindForm({ form, transport: tr, join, type: ty, locale: loc, draft: d, merge, resume: resumeFrom, onFatal: (r) => onCollabFatal(g, r) });
+      collabBinding = m.bindForm({ form, transport: tr, join, type: ty, locale: loc, draft: { ...d, fields: viewValues(ty.fields, d) }, sparse: !!d.inherits, merge, resume: resumeFrom, onFatal: (r) => onCollabFatal(g, r) });
     } catch {
       // The transport reports `unavailable` (the banner) and retries what may pass; a chunk that failed to load
       // never reports anything, so say so here.
@@ -199,7 +200,7 @@
     const fresh = await itemApi.read(target, locale, undefined, cc()).catch(() => null);
     if (!fresh || g !== collabGen) return;
     data = fresh;
-    const fv: Values = { fields: hydrate(type.fields, fresh.fields), key: fresh.key ?? '', alwaysAvailable: fresh.alwaysAvailable };
+    const fv: Values = { fields: viewValues(type.fields, fresh), key: fresh.key ?? '', alwaysAvailable: fresh.alwaysAvailable };
     // What the draft holds now is what a later save must be measured against.
     saved = structuredClone(fv);
     // Clean only when nothing local is missing from the save, and the saved draft is what the form shows.
@@ -285,25 +286,35 @@
 
   // The draft view lists draft-only locales too; the published ones decide the state shown per locale.
   let published = $state<string[]>([]);
+  // Stored plus derived (published through inheritance) locales.
+  let available = $state<string[]>([]);
   $effect(() => {
     const d = data;
     // Nothing is published for a never-published or unpublished item.
     if (!d || d.status === 'draft' || d.status === 'unpublished') {
       published = [];
+      available = [];
       return;
     }
     if (!d.draftParts.some((p) => p !== 'shared')) {
       published = d.locales;
+      available = d.availableLocales ?? d.locales;
       return;
     }
     const ctl = new AbortController();
     api
       .get('/items/{id}', { params: { id: d.id }, query: { locale: d.mainLocale } as never, signal: ctl.signal })
-      .then((v) => (published = v.locales))
-      .catch(() => (published = d.locales.filter((l) => !d.draftParts.includes(l))));
+      .then((v) => {
+        published = v.locales;
+        available = (v as { availableLocales?: string[] }).availableLocales ?? v.locales;
+      })
+      .catch(() => {
+        published = d.locales.filter((l) => !d.draftParts.includes(l));
+        available = published;
+      });
     return () => ctl.abort();
   });
-  const item = $derived(data ? { ...data, locales: published } : null);
+  const item = $derived(data ? { ...data, locales: published, availableLocales: available } : null);
 
   const urlLocale = $derived(router.query.get('locale') ?? '');
   const type = $derived(types.get(mode === 'item' ? (data?.type ?? '') : typeName));
@@ -314,7 +325,58 @@
   const locales = $derived(item ? itemLocales(knownLocales(), item) : [locale].filter(Boolean));
   const hasTranslatable = $derived(!!type?.fields.some((f) => f.translatable));
 
+  // ---- locale inheritance: the form holds only the overridden translatable fields
+  // The parent's resolved draft view (its values are what an inherited field shows and what Reset falls back to).
+  let parentView = $state.raw<{ locale: string; fields: Doc; inheritedFrom?: Record<string, string> } | null>(null);
+  $effect(() => {
+    const d = data;
+    const tgt = target;
+    const ty = type;
+    if (!d?.inherits || !tgt || !ty) {
+      parentView = null;
+      return;
+    }
+    const ctl = new AbortController();
+    const parent = d.inherits;
+    itemApi
+      .read(tgt, parent, ctl.signal)
+      .then((v) => (parentView = { locale: parent, fields: hydrate(ty.fields, v.fields), inheritedFrom: v.inheritedFrom }))
+      .catch(() => undefined);
+    return () => ctl.abort();
+  });
+  const inheritedValue = (name: string): unknown => {
+    const pv = parentView && parentView.locale === data?.inherits ? parentView : null;
+    return $state.snapshot(pv ? pv.fields[name] : data?.fields[name]);
+  };
+  const overlay = $derived<OverlayCtx | undefined>(
+    data?.inherits
+      ? {
+          parent: data.inherits,
+          state: (name) => overlayState(form.values.fields, name),
+          source(name) {
+            const pv = parentView && parentView.locale === data?.inherits ? parentView : null;
+            return (pv ? pv.inheritedFrom?.[name] : data?.inheritedFrom?.[name]) ?? data?.inherits ?? '';
+          },
+          value: inheritedValue,
+          resolved: () => resolvedDoc(type?.fields ?? [], form.values.fields, parentView?.fields ?? data?.fields),
+          override(name) {
+            const f = type?.fields.find((x) => x.name === name);
+            if (!f || name in form.values.fields) return;
+            form.values.fields[name] = overrideValue(f, inheritedValue(name));
+            form.clearError(name);
+          },
+          reset(name) {
+            delete form.values.fields[name];
+            form.clearError(name);
+          },
+        }
+      : undefined,
+  );
+
   provideFields({
+    get overlay() {
+      return overlay;
+    },
     error: (p) => form.error(p),
     clearError: (p) => form.clearError(p),
     errors: () => form.errors,
@@ -341,7 +403,7 @@
   function apply(d: ItemData) {
     data = d;
     const t0 = types.get(d.type);
-    const v: Values = { fields: hydrate(t0?.fields ?? [], d.fields), key: d.key ?? '', alwaysAvailable: d.alwaysAvailable };
+    const v: Values = { fields: viewValues(t0?.fields ?? [], d), key: d.key ?? '', alwaysAvailable: d.alwaysAvailable };
     form.reset(v);
     saved = structuredClone(v);
   }
@@ -401,7 +463,7 @@
       const body: Record<string, unknown> = {};
       if (locale) body.locale = locale;
       if (data) {
-        const patch = fieldsPatch(type.fields, saved.fields, v.fields);
+        const patch = fieldsPatch(type.fields, saved.fields, v.fields, !!data.inherits);
         if (v.key !== saved.key) body.key = v.key;
         if (v.alwaysAvailable !== saved.alwaysAvailable) body.alwaysAvailable = v.alwaysAvailable;
         if (!Object.keys(patch).length && !('key' in body) && !('alwaysAvailable' in body)) {
@@ -508,7 +570,7 @@
   const shares = new ShareList();
   const relayItem = $derived(mode === 'new' ? '' : (data?.id ?? ''));
   const relayWanted = $derived(!!relayItem && canEdit && ((previewOpen && paneMode === 'reload') || shares.active > 0));
-  const workingFields = $derived(type && (previewOpen || relayWanted) ? cleanDoc(type.fields, $state.snapshot(form.values.fields) as Doc) : null);
+  const workingFields = $derived(type && (previewOpen || relayWanted) ? cleanDoc(type.fields, $state.snapshot(overlay ? overlay.resolved() : form.values.fields) as Doc) : null);
   const previewDoc = $derived(previewOpen && workingFields ? { fields: workingFields } : null);
 
   $effect(() => {
@@ -658,7 +720,7 @@
   const bypassItem = $derived(needsReview && showBypass(true, reviewState, canBypassReview));
   const reviewReason = $derived(reviewBlock ? t('review.needsApproved') : '');
 
-  const unrouted = $derived(type ? unroutedErrors(type.fields, form.errors, form.values.fields) : {});
+  const unrouted = $derived(type ? unroutedErrors(type.fields, form.errors, overlay ? overlay.resolved() : form.values.fields) : {});
   const title = $derived(isNew ? t('collections.newTitle', { type: type?.label ?? '' }) : data?.name || t('editor.untitled'));
   const crumbs = $derived(
     mode === 'singleton'
@@ -690,10 +752,27 @@
     return [...m].map(([g, fields]) => ({ title: g || t('editor.content'), fields }));
   });
 
+  // Parents of the inheriting locales seen so far (the view of a locale says which one it inherits from).
+  let parents = $state<Record<string, string>>({});
+  $effect(() => {
+    const d = data;
+    if (d?.inherits && parents[d.locale] !== d.inherits) parents[d.locale] = d.inherits;
+  });
   const localeOptions = $derived(
     locales.map((l) => {
       const s = item ? localeState(l, item) : l === locale ? 'draft' : 'missing';
-      return { value: l, label: l, dot: s === 'published' ? ('filled' as const) : s === 'draft' ? ('half' as const) : ('hollow' as const), disabled: isNew && l !== locale };
+      const parent = l === locale ? data?.inherits : parents[l];
+      const note = item && (parent || item.availableLocales?.includes(l)) ? overlayNote(l, item) : '';
+      const state = note ? (note === 'derived' ? (parent ? t('overlay.state.derived', { locale: parent }) : t('overlay.state.derivedPlain')) : t(`overlay.state.${note}`)) : '';
+      const dot = s === 'published' || note === 'derived' ? ('filled' as const) : s === 'draft' ? ('half' as const) : ('hollow' as const);
+      return {
+        value: l,
+        label: l,
+        sub: parent ? t('overlay.inherits', { locale: parent }) : undefined,
+        title: [parent ? t('overlay.inherits', { locale: parent }) : '', state].filter(Boolean).join(', ') || undefined,
+        dot,
+        disabled: isNew && l !== locale,
+      };
     }),
   );
 
@@ -864,7 +943,9 @@
 
     <div class="h-item__grid" class:h-item__grid--preview={previewOpen} style:--h-preview-w="{paneWidth}px">
       <div class="h-item__main">
-        {#if data && locale !== data.mainLocale && hasTranslatable && canEdit}
+        {#if data?.inherits}
+          <div class="h-item__translate"><span class="h-muted">{t('overlay.banner', { locale, parent: data.inherits })}</span></div>
+        {:else if data && locale !== data.mainLocale && hasTranslatable && canEdit}
           <div class="h-item__translate">
             <span class="h-muted">{t('editor.translating', { locale })}</span>
             <Button size="sm" icon="copy" loading={copying} onclick={() => void copyFromMain()}>{t('collections.copyFrom', { locale: data.mainLocale })}</Button>
@@ -1026,7 +1107,7 @@
     <Select
       aria-label={t('collections.languages')}
       value={locale}
-      options={localeOptions.map((o) => ({ value: o.value, label: o.label, disabled: o.disabled }))}
+      options={localeOptions.map((o) => ({ value: o.value, label: o.sub ? `${o.label} (${o.sub})` : o.label, disabled: o.disabled }))}
       onchange={(e) => {
         const el = e.currentTarget as HTMLSelectElement;
         if (!switchLocale(el.value)) el.value = locale;

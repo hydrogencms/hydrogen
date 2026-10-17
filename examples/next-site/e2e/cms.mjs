@@ -33,7 +33,7 @@ const commands = {
   async seed() {
     const home = await item('page', 'en', t('Home'), { de: t('Startseite') })
     const homeNode = await place('corporate', home)
-    const about = await item('page', 'en', { title: 'About', intro: 'About Acme' }, { de: t('Uber uns'), 'de-CH': t('Uber eus') })
+    const about = await item('page', 'en', { title: 'About', intro: 'About Acme' }, { de: t('Uber uns'), 'de-CH': { ...t('Uber eus'), slug: 'uber-eus' } })
     const aboutNode = await place('corporate', about, homeNode)
     const contact = await item('page', 'en', t('Contact'), { de: t('Kontakt') })
     await place('corporate', contact, homeNode)
