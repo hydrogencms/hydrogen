@@ -8,10 +8,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/clock"
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/clock"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 const assetSchema = `

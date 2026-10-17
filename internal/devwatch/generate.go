@@ -10,8 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/hydrogencms/hydrogen/core/schema"
 	"github.com/hydrogencms/hydrogen/internal/codegen"
-	"github.com/hydrogencms/hydrogen/schema"
 )
 
 // Prepare builds the project. If the build fails, it regenerates gen/ from the schema files alone (stale

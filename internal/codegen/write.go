@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/schema"
+	"github.com/hydrogencms/hydrogen/core/schema"
 )
 
 // WriteGo generates the Go package into dir (created if missing). It writes only files whose content

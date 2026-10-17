@@ -9,14 +9,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/audit"
-	"github.com/hydrogencms/hydrogen/channel"
-	"github.com/hydrogencms/hydrogen/clock"
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/kernel"
-	"github.com/hydrogencms/hydrogen/outbox"
-	"github.com/hydrogencms/hydrogen/schema"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/audit"
+	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/clock"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/kernel"
+	"github.com/hydrogencms/hydrogen/core/outbox"
+	"github.com/hydrogencms/hydrogen/core/schema"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // service holds the module's dependencies; Service delegates to it once the kernel has booted.

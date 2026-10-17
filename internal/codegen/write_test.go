@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/schema"
+	"github.com/hydrogencms/hydrogen/core/schema"
 )
 
 func TestWriteGo(t *testing.T) {

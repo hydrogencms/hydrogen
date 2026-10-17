@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/hydrogencms/hydrogen/api/manage"
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/ids"
 )
 
 // pagesAPI is the part of *Service the management routes use; tests substitute a fake.

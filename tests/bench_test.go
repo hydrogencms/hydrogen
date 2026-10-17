@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/clock"
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/clock"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 func benchSchema() string {

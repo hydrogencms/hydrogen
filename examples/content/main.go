@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/hydrogencms/hydrogen"
-	"github.com/hydrogencms/hydrogen/access"
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/hooks"
+	"github.com/hydrogencms/hydrogen/core/access"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/hooks"
 	"github.com/hydrogencms/hydrogen/modules/pages"
 	"github.com/hydrogencms/hydrogen/modules/postgres"
 	"github.com/hydrogencms/hydrogen/modules/sqlite"

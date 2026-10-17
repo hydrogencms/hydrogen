@@ -7,9 +7,9 @@ package overlays
 import (
 	"slices"
 
-	"github.com/hydrogencms/hydrogen/channel"
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/kernel"
 )
 
 // Module returns the overlays module.

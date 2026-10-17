@@ -18,11 +18,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/hydrogencms/hydrogen/access"
-	"github.com/hydrogencms/hydrogen/audit"
-	"github.com/hydrogencms/hydrogen/clock"
-	"github.com/hydrogencms/hydrogen/outbox"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/access"
+	"github.com/hydrogencms/hydrogen/core/audit"
+	"github.com/hydrogencms/hydrogen/core/clock"
+	"github.com/hydrogencms/hydrogen/core/outbox"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // DefaultMaxUpload is the largest accepted upload when media.max_upload is not set.

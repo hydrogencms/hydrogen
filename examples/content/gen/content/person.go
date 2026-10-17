@@ -3,7 +3,7 @@
 package content
 
 import (
-	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/core/content"
 )
 
 // Person is the "person" content type.

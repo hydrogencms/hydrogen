@@ -10,8 +10,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/access"
-	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/core/access"
+	"github.com/hydrogencms/hydrogen/core/kernel"
 )
 
 // adminPasswordEnv carries the password of users:create-admin; without it one line is read from stdin.

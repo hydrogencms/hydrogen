@@ -7,11 +7,11 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/access"
-	"github.com/hydrogencms/hydrogen/cachetag"
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/access"
+	"github.com/hydrogencms/hydrogen/core/cachetag"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 func TestUnpublish(t *testing.T) {

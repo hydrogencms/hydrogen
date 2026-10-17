@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/hydrogencms/hydrogen/api/manage"
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // Get returns a release with its items. Needs content.read.

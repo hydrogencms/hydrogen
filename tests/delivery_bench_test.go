@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/ids"
 )
 
 // nopWriter discards the response and reuses its header map, so a benchmark measures the handler.

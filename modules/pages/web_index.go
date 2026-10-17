@@ -9,7 +9,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/hydrogencms/hydrogen/channel"
+	"github.com/hydrogencms/hydrogen/core/channel"
 )
 
 // Channel option names the pages module registers.

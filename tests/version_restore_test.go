@@ -5,11 +5,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/access"
-	"github.com/hydrogencms/hydrogen/client"
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/hooks"
-	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/api/client"
+	"github.com/hydrogencms/hydrogen/core/access"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/hooks"
+	"github.com/hydrogencms/hydrogen/core/kernel"
 )
 
 // twoVersions makes an article published twice: v1 {A, de A, rating 1, address.street s}, v2 {B, de B, rating 2,

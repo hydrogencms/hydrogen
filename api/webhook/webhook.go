@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/clock"
-	"github.com/hydrogencms/hydrogen/outbox"
+	"github.com/hydrogencms/hydrogen/core/clock"
+	"github.com/hydrogencms/hydrogen/core/outbox"
 )
 
 const (

@@ -3,8 +3,8 @@ package tests
 import (
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/ids"
 )
 
 // hardDelete moves an item to the trash and purges it: what Delete did before the trash existed.

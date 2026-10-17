@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/hydrogencms/hydrogen"
-	"github.com/hydrogencms/hydrogen/config"
+	"github.com/hydrogencms/hydrogen/core/config"
 	"github.com/hydrogencms/hydrogen/modules/postgres/pgtest"
 )
 

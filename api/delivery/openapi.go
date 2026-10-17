@@ -6,7 +6,7 @@ import (
 	"unicode"
 
 	"github.com/hydrogencms/hydrogen/api/openapi"
-	"github.com/hydrogencms/hydrogen/schema"
+	"github.com/hydrogencms/hydrogen/core/schema"
 )
 
 type obj = openapi.Obj

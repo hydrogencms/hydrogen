@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/access"
-	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/core/access"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/features/review"
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/store"
 )
 
 func TestReviewTypeOption(t *testing.T) {

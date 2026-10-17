@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/client"
-	"github.com/hydrogencms/hydrogen/config"
+	"github.com/hydrogencms/hydrogen/api/client"
+	"github.com/hydrogencms/hydrogen/core/config"
 	"github.com/hydrogencms/hydrogen/modules/postgres/pgtest"
 
 	gen "github.com/hydrogencms/hydrogen/examples/multisite/gen/content"

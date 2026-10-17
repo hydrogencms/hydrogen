@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/access"
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/access"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/modules/postgres"
 	"github.com/hydrogencms/hydrogen/modules/postgres/pgtest"
-	"github.com/hydrogencms/hydrogen/store"
 )
 
 const shareChannels = `

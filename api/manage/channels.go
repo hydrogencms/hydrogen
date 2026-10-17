@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/hydrogencms/hydrogen/api/openapi"
-	"github.com/hydrogencms/hydrogen/channel"
+	"github.com/hydrogencms/hydrogen/core/channel"
 )
 
 // channelJSON is a channel as the API shows it. Tokens are never included. Settings and module options are

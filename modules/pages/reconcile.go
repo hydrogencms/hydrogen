@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/outbox"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/outbox"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // reconcile is the outbox consumer behind the hooks. Publishes that ran no hooks (content migrations,

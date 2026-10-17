@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/kernel"
 	"github.com/hydrogencms/hydrogen/modules/overlays"
 	"github.com/hydrogencms/hydrogen/modules/pages"
 )

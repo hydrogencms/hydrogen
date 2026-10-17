@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // accessIndexBuilt is recorded (as a content migration name, which no registered migration can use) once the

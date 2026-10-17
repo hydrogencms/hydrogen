@@ -12,11 +12,11 @@ import (
 
 	"github.com/hydrogencms/hydrogen/api/delivery"
 	"github.com/hydrogencms/hydrogen/api/manage"
-	"github.com/hydrogencms/hydrogen/cachetag"
-	"github.com/hydrogencms/hydrogen/channel"
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/kernel"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/cachetag"
+	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/kernel"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // maxLinkTags is how many linked items a response tags one by one; beyond it the response is tagged with the

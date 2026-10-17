@@ -9,12 +9,12 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/hydrogencms/hydrogen/access"
-	"github.com/hydrogencms/hydrogen/hooks"
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/access"
+	"github.com/hydrogencms/hydrogen/core/hooks"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/schema"
+	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/modules/pages/internal/route"
-	"github.com/hydrogencms/hydrogen/schema"
-	"github.com/hydrogencms/hydrogen/store"
 )
 
 const (

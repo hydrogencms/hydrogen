@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/core/kernel"
 	"github.com/hydrogencms/hydrogen/modules/postgres"
 	"github.com/hydrogencms/hydrogen/modules/sqlite"
 )

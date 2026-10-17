@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/schema"
+	"github.com/hydrogencms/hydrogen/core/schema"
 )
 
 // GoOptions configures Go.
@@ -22,7 +22,7 @@ type GoOptions struct {
 }
 
 const (
-	goImportContent = `"github.com/hydrogencms/hydrogen/content"`
+	goImportContent = `"github.com/hydrogencms/hydrogen/core/content"`
 	goImportJSON    = `"encoding/json"`
 )
 

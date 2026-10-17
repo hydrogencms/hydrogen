@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/clock"
+	"github.com/hydrogencms/hydrogen/core/clock"
 )
 
 // S3Config configures the S3-compatible driver (AWS S3, MinIO, Cloudflare R2, ...).

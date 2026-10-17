@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/access"
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/access"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/modules/postgres"
 	"github.com/hydrogencms/hydrogen/modules/postgres/pgtest"
-	"github.com/hydrogencms/hydrogen/store"
 )
 
 // principalFor makes a token with the policies (and optional limitations) and returns a context acting as it.

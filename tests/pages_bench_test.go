@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/modules/pages"
-	"github.com/hydrogencms/hydrogen/store"
 )
 
 // seedPage inserts a published page item with two locales straight into the content store (the content

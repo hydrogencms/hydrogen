@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/channel"
-	"github.com/hydrogencms/hydrogen/config"
+	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/config"
 )
 
 func channelSet(t *testing.T) *channel.Set {

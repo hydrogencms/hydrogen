@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/channel"
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 func (s *service) matchURL(rawURL string, h http.Header) (*webChannel, string, bool) {

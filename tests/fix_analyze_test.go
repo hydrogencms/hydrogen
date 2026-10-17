@@ -6,9 +6,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/modules/postgres"
 	"github.com/hydrogencms/hydrogen/modules/postgres/pgtest"
-	"github.com/hydrogencms/hydrogen/store"
 )
 
 func TestPostgresAnalyzeAfterMigrateAndOnDemand(t *testing.T) {

@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/clock"
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/clock"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/modules/postgres"
 	"github.com/hydrogencms/hydrogen/modules/postgres/pgtest"
-	"github.com/hydrogencms/hydrogen/store"
 )
 
 // collabNode is a delivery test node with the collaboration notifications running and an HTTP server.

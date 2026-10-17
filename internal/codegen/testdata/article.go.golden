@@ -5,7 +5,7 @@ package content
 import (
 	"encoding/json"
 
-	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/core/content"
 )
 
 // Article is the "article" content type.

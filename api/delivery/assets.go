@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/schema"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/schema"
 )
 
 // Asset fields hold the id of an upload item. A response shows each as the asset itself, built when the

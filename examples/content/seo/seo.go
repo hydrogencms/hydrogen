@@ -3,8 +3,8 @@
 package seo
 
 import (
-	"github.com/hydrogencms/hydrogen/kernel"
-	"github.com/hydrogencms/hydrogen/schema"
+	"github.com/hydrogencms/hydrogen/core/kernel"
+	"github.com/hydrogencms/hydrogen/core/schema"
 )
 
 func Module() kernel.Module { return module{} }

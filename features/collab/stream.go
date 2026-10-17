@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/hydrogencms/hydrogen/api/manage"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // events serves GET …/events: the item's session as a Server-Sent Events stream for one joined client.

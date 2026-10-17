@@ -6,9 +6,9 @@ import (
 	"net/http"
 
 	"github.com/hydrogencms/hydrogen/api/manage"
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/kernel"
 	"github.com/hydrogencms/hydrogen/modules/pages"
 )
 

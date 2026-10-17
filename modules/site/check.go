@@ -11,9 +11,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/channel"
-	"github.com/hydrogencms/hydrogen/kernel"
-	"github.com/hydrogencms/hydrogen/schema"
+	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/kernel"
+	"github.com/hydrogencms/hydrogen/core/schema"
 )
 
 func (m *module) runCheck(ctx context.Context, app *kernel.App, args []string) error {

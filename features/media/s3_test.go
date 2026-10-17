@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/clock"
+	"github.com/hydrogencms/hydrogen/core/clock"
 )
 
 // fakeS3 is a path-style S3 endpoint for one bucket that verifies request signatures and payload hashes.

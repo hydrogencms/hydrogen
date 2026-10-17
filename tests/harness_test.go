@@ -9,17 +9,17 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/audit"
-	"github.com/hydrogencms/hydrogen/clock"
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/hooks"
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/audit"
+	"github.com/hydrogencms/hydrogen/core/clock"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/hooks"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/outbox"
+	"github.com/hydrogencms/hydrogen/core/schema"
+	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/modules/postgres"
 	"github.com/hydrogencms/hydrogen/modules/postgres/pgtest"
 	"github.com/hydrogencms/hydrogen/modules/sqlite"
-	"github.com/hydrogencms/hydrogen/outbox"
-	"github.com/hydrogencms/hydrogen/schema"
-	"github.com/hydrogencms/hydrogen/store"
 )
 
 type backend struct {

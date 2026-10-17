@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/hydrogencms/hydrogen"
-	"github.com/hydrogencms/hydrogen/config"
+	"github.com/hydrogencms/hydrogen/core/config"
 )
 
 func checkFrontend(t *testing.T, db string, templates []string, args ...string) (string, error) {

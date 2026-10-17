@@ -9,11 +9,11 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/hydrogencms/hydrogen/cachetag"
-	"github.com/hydrogencms/hydrogen/config"
-	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/core/cachetag"
+	"github.com/hydrogencms/hydrogen/core/config"
+	"github.com/hydrogencms/hydrogen/core/kernel"
+	"github.com/hydrogencms/hydrogen/core/schema"
 	"github.com/hydrogencms/hydrogen/modules/pages"
-	"github.com/hydrogencms/hydrogen/schema"
 )
 
 // server is the booted module: templates, routes and the page cache.

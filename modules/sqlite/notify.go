@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // hub delivers notifications within the process; SQLite runs on one node.

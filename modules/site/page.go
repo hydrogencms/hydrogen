@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/channel"
+	"github.com/hydrogencms/hydrogen/core/channel"
 	"github.com/hydrogencms/hydrogen/modules/pages"
 )
 

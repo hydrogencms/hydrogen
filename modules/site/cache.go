@@ -4,7 +4,7 @@ import (
 	"container/list"
 	"sync"
 
-	"github.com/hydrogencms/hydrogen/cachetag"
+	"github.com/hydrogencms/hydrogen/core/cachetag"
 )
 
 // pageCache is a byte-bounded LRU of rendered pages with a tag index, purged by the same cache tags the

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // chunkSize bounds the rows or ids one statement carries, well below SQLite's and Postgres' parameter limits.

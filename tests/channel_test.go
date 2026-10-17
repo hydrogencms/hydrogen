@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/channel"
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/ids"
 )
 
 func (e *env) forChannel(id ids.UUID, ch *channel.Channel, draft bool) (*content.View, error) {

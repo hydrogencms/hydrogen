@@ -8,9 +8,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/modules/pages/internal/route"
-	"github.com/hydrogencms/hydrogen/store"
 )
 
 // graph holds the nodes and slugs needed to compute paths: some subtrees and the ancestors of everything

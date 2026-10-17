@@ -11,10 +11,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/schema"
+	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/modules/pages/internal/route"
-	"github.com/hydrogencms/hydrogen/schema"
-	"github.com/hydrogencms/hydrogen/store"
 )
 
 // checkMountSpec validates a mount spec and returns its parsed route pattern.

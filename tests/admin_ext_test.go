@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/hydrogencms/hydrogen"
-	"github.com/hydrogencms/hydrogen/config"
+	"github.com/hydrogencms/hydrogen/core/config"
 	"github.com/hydrogencms/hydrogen/modules/sqlite"
 	"io"
 	"net/http/httptest"
@@ -14,9 +14,9 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/hydrogencms/hydrogen/access"
 	"github.com/hydrogencms/hydrogen/admin"
-	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/core/access"
+	"github.com/hydrogencms/hydrogen/core/kernel"
 )
 
 type extMod struct{}

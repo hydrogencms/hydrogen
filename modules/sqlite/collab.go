@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 type collabStore struct{ authStore }

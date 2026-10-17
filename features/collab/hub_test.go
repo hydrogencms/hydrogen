@@ -3,8 +3,8 @@ package collab
 import (
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 func upd(seq int64, size int) store.CollabUpdate {

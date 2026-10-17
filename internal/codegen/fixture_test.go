@@ -1,6 +1,6 @@
 package codegen
 
-import "github.com/hydrogencms/hydrogen/schema"
+import "github.com/hydrogencms/hydrogen/core/schema"
 
 func str(name, format string, required bool) *schema.Field {
 	return &schema.Field{Name: name, Type: "string", Required: required, Shape: schema.Shape{Base: schema.BaseString, Format: format}}

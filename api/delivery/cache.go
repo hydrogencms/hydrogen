@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/hydrogencms/hydrogen/cachetag"
+	"github.com/hydrogencms/hydrogen/core/cachetag"
 )
 
 // entry is a cached 200 response: the body and the header values to send with it. The header slices are

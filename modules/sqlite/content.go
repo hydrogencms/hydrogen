@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/store"
-	"github.com/hydrogencms/hydrogen/store/storeutil"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
+	"github.com/hydrogencms/hydrogen/core/store/storeutil"
 )
 
 // maxVars stays below SQLite's default limit of 32766 bound variables per statement.

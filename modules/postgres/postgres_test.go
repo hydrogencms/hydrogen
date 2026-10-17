@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hydrogencms/hydrogen/core/store"
+	"github.com/hydrogencms/hydrogen/core/store/storetest"
 	"github.com/hydrogencms/hydrogen/modules/postgres/pgtest"
-	"github.com/hydrogencms/hydrogen/store"
-	"github.com/hydrogencms/hydrogen/store/storetest"
 )
 
 func open(t *testing.T) store.DB {

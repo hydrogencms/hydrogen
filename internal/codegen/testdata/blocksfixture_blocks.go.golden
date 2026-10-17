@@ -5,7 +5,7 @@ package content
 import (
 	"encoding/json"
 
-	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/core/content"
 )
 
 // Block is one block of a blocks field. Props holds the typed props of its type: decode them with DecodeProps.

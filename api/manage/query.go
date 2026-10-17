@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/store"
-	"github.com/hydrogencms/hydrogen/store/storeutil"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/store"
+	"github.com/hydrogencms/hydrogen/core/store/storeutil"
 )
 
 const (

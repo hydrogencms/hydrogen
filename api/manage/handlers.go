@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/schema"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/schema"
 )
 
 type createBody struct {

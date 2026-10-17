@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/core/kernel"
 )
 
 // parseDirArgs parses flags and the one directory argument, in any order.

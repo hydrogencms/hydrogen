@@ -23,15 +23,15 @@ import (
 	"syscall"
 	"text/tabwriter"
 
-	"github.com/hydrogencms/hydrogen/access"
-	"github.com/hydrogencms/hydrogen/cachetag"
-	"github.com/hydrogencms/hydrogen/config"
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/hooks"
+	"github.com/hydrogencms/hydrogen/core/access"
+	"github.com/hydrogencms/hydrogen/core/cachetag"
+	"github.com/hydrogencms/hydrogen/core/config"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/hooks"
+	"github.com/hydrogencms/hydrogen/core/kernel"
+	"github.com/hydrogencms/hydrogen/core/schema"
+	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/internal/codegen"
-	"github.com/hydrogencms/hydrogen/kernel"
-	"github.com/hydrogencms/hydrogen/schema"
-	"github.com/hydrogencms/hydrogen/store"
 )
 
 // Builder collects a project's modules and customisations. Generated typed handles register hooks on it

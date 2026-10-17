@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/channel"
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/ids"
 )
 
 const defaultTTL = 60

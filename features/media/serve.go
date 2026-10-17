@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // AssetPattern is the route of the file handler; the kernel mounts Handler under it.

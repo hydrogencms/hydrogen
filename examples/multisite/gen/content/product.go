@@ -3,7 +3,7 @@
 package content
 
 import (
-	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/core/content"
 )
 
 // Product is the "product" content type.

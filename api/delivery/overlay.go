@@ -3,7 +3,7 @@ package delivery
 import (
 	"slices"
 
-	"github.com/hydrogencms/hydrogen/channel"
+	"github.com/hydrogencms/hydrogen/core/channel"
 )
 
 // parents maps a language to the language it inherits from (the registry's `inherits`).

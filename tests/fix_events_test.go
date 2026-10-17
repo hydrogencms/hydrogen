@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/hydrogencms/hydrogen/api/webhook"
-	"github.com/hydrogencms/hydrogen/cachetag"
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/kernel"
-	"github.com/hydrogencms/hydrogen/outbox"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/cachetag"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/kernel"
+	"github.com/hydrogencms/hydrogen/core/outbox"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 func TestDraftWritesMapToNoTags(t *testing.T) {

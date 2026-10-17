@@ -15,12 +15,12 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/channel"
-	"github.com/hydrogencms/hydrogen/clock"
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/schema"
-	"github.com/hydrogencms/hydrogen/store"
-	"github.com/hydrogencms/hydrogen/store/storeutil"
+	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/clock"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/schema"
+	"github.com/hydrogencms/hydrogen/core/store"
+	"github.com/hydrogencms/hydrogen/core/store/storeutil"
 )
 
 func TestSplice(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/ids"
 )
 
 // Shared blocks are inlined when a response is built, not stored in snapshots: a snapshot keeps the reference

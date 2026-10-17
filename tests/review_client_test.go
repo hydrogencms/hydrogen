@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/client"
-	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/api/client"
+	"github.com/hydrogencms/hydrogen/core/kernel"
 )
 
 func TestReviewGoClient(t *testing.T) {

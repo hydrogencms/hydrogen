@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/hydrogencms/hydrogen/cachetag"
+	"github.com/hydrogencms/hydrogen/core/cachetag"
 )
 
 // Start subscribes to preview (relay) notifications and cache purges and applies them until ctx ends. It returns once the subscription is

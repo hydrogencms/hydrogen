@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // subtreeResult is what recomputeSubtree found: whether routes changed, and the page routes it could not

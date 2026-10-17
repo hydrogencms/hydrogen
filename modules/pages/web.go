@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/hydrogencms/hydrogen/channel"
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/ids"
 )
 
 // Located kinds beyond the Resolution kinds.

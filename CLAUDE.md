@@ -14,38 +14,39 @@ It is its own git repository: commit planning changes there (`git -C planning �
 
 ## Layout
 
-- Core module `github.com/hydrogencms/hydrogen` at the repo root: `hydrogen.go` (project entry point and
-  commands), `kernel/`, `config/`, `store/` (interfaces; `store/storetest` is the adapter conformance suite),
-  `outbox/`, `audit/`, `clock/`, `ids/`, `cmd/hydrogen` (developer CLI), `internal/scaffold`, `internal/devwatch`.
-- Grouping: services and the libraries modules build on stay at the root; `api/` holds the HTTP APIs (`manage`,
-  `delivery`, `openapi`, `webhook`), `features/` the built-in editorial features (`collab`, `media`, `release`,
-  `review`), `internal/` what only hydrogen itself uses, and `packages/` the npm packages and `packages/starters`.
-  `cachetag` and `exportfmt` stay at the root because modules implement their interfaces.
+- Core module `github.com/hydrogencms/hydrogen` at the repo root: `hydrogen*.go` (the root package: project entry
+  point and commands), `cmd/hydrogen` (developer CLI).
+- Grouping: `core/` holds the services and the libraries modules and projects build on (`kernel`, `config`,
+  `store` (interfaces; `core/store/storetest` is the adapter conformance suite), `content`, `schema`, `channel`,
+  `access`, `hooks`, `outbox`, `audit`, `jobs`, `cachetag`, `exportfmt`, `clock`, `ids`); `api/` the HTTP APIs and
+  the Go client (`manage`, `delivery`, `openapi`, `webhook`, `client`); `features/` the built-in editorial
+  features (`collab`, `media`, `release`, `review`); `internal/` what only hydrogen itself uses (`codegen`,
+  `scaffold`, `devwatch`); `modules/` optional modules; `packages/` the npm packages and `packages/starters`.
 - `modules/<name>`: optional modules. Those with third-party dependencies have their own `go.mod`
   (`modules/sqlite`: modernc.org/sqlite; `modules/postgres`: pgx). `go.work` joins everything for development;
   each module also builds alone (`GOWORK=off`).
-- Content core (H1): `schema/` (YAML schema → compiled schema, field types, validation), `content/` (the content
-  service = Local API: drafts, publish, projections, delete policies, hooks, content migrations), `hooks/`,
-  `api/manage/` (management REST API + OpenAPI at `/api/manage/v1`), `internal/codegen/` (typed Go and TypeScript),
-  `store/storeutil` (dialect-neutral helpers shared by the adapters' query compilers).
+- Content core (H1): `core/schema/` (YAML schema → compiled schema, field types, validation), `core/content/` (the
+  content service = Local API: drafts, publish, projections, delete policies, hooks, content migrations),
+  `core/hooks/`, `api/manage/` (management REST API + OpenAPI at `/api/manage/v1`), `internal/codegen/` (typed Go and
+  TypeScript), `core/store/storeutil` (dialect-neutral helpers shared by the adapters' query compilers).
 - Module extension points (H2): `Tx.SQL()` / `DB.Read()` (portable SQL for modules' own tables: `?`
   placeholders, ids.UUID/time conversion), schema type options (`Registry.TypeOption`), module management routes
   (`Registry.ManageRoute`, `manage.WriteJSON/DecodeJSON/Fail`).
 - `modules/pages`: page tree per site, mounts, links, routes with history, manual redirects, Resolve; its SQL lives
   in `modules/pages/migrations/{sqlite,postgres}` and its contract in `planning/design/pages-h2.md`.
-- Channels (H3): `channel/` (channels.yaml → compiled set: languages, collections, settings cascade, templates,
+- Channels (H3): `core/channel/` (channels.yaml → compiled set: languages, collections, settings cascade, templates,
   tokens, preview patterns, module options), `config.Node` (position-aware config for modules), web channels in
   `modules/pages/web*.go` (match/site/reserved options, Match, Locate, canonical, hreflang, URL/LinkURL).
   Contract: `planning/design/channels-h3.md`.
-- Delivery (H4): published snapshots (`content/snapshot.go`, `store.Reader`, `RebuildProjections`), `api/delivery/`
-  (read API at `/api/deliver/v1`: channel/locale selection, `include`, LRU cache purged by tag, ETag, preview
-  tokens; `POST /preview-tokens` with an `item` also returns the frontend `url`: a module's `Registry.PreviewURL`
-  resolver (pages: the item's route), else the channel's `preview` pattern, plus `?preview=<token>`), `cachetag/`
-  (tags and the `cache.purge` consumer), `api/webhook/` (signed `Hydrogen-Signature`), `jobs/` (cron jobs under a lock),
-  `kernel/endpoints.go` (`/api/x`), export/import (`exportfmt/`, `store/export.go`, `hydrogen_export.go`), `client/`
-  (Go client), `hydrogen_frontend.go` (`check-frontend`). Pages adds `/route` and `/tree`. Contract:
-  `planning/design/delivery-h4.md`.
-- Access (H5a): `access/` (principals, RBAC policies and limitations, code access rules, passwords, sessions, API
+- Delivery (H4): published snapshots (`core/content/snapshot.go`, `store.Reader`, `RebuildProjections`),
+  `api/delivery/` (read API at `/api/deliver/v1`: channel/locale selection, `include`, LRU cache purged by tag, ETag,
+  preview tokens; `POST /preview-tokens` with an `item` also returns the frontend `url`: a module's
+  `Registry.PreviewURL` resolver (pages: the item's route), else the channel's `preview` pattern, plus
+  `?preview=<token>`), `core/cachetag/` (tags and the `cache.purge` consumer), `api/webhook/` (signed
+  `Hydrogen-Signature`), `core/jobs/` (cron jobs under a lock), `core/kernel/endpoints.go` (`/api/x`), export/import
+  (`core/exportfmt/`, `core/store/export.go`, `hydrogen_export.go`), `api/client/` (Go client), `hydrogen_frontend.go`
+  (`check-frontend`). Pages adds `/route` and `/tree`. Contract: `planning/design/delivery-h4.md`.
+- Access (H5a): `core/access/` (principals, RBAC policies and limitations, code access rules, passwords, sessions, API
   tokens, `Authenticator`, `Checker`, `Admin` for users/groups/roles/tokens/audit), `store.AuthStore` (migration
   0004), working projections (0005). `content.Service` checks the principal in the context (HTTP entry points
   always set one; no principal = the system, unchecked); the management API authenticates every request.
@@ -63,7 +64,7 @@ It is its own git repository: commit planning changes there (`git -C planning �
   gzip budgets in `packages/scripts/size.mjs`). `examples/next-site`: Next.js sample against `examples/multisite`
   (one deployment, every web channel; the proxy answers CMS redirects and 404s; `"use cache"` entries tagged from
   `Surrogate-Key`, revalidated by the signed webhook). Contract: `planning/design/sdk-h4b.md`.
-- Page builder (H6a): `schema/blocks.go` (top-level `tokens` and `blocks` schema keys, the `blocks` and `token`
+- Page builder (H6a): `core/schema/blocks.go` (top-level `tokens` and `blocks` schema keys, the `blocks` and `token`
   field types, `blockset` types and the built-in `shared` block), block ids/validation/projections in the same
   package, `manage` `GET /blocks` (block types + token sets), codegen `Block`/`Blocks<…>`/`DecodeProps`, and
   `examples/starter` (schema, channels and the committed `fixture/` export; `make starter-fixture` rebuilds it

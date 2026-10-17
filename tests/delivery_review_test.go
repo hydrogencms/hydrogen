@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/hydrogencms/hydrogen/api/delivery"
-	"github.com/hydrogencms/hydrogen/content"
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/kernel"
 )
 
 func TestDeliveryRepeatedParametersAreRejected(t *testing.T) {

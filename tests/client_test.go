@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/client"
-	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/api/client"
+	"github.com/hydrogencms/hydrogen/core/kernel"
 )
 
 // TestGoClient runs the Go client against real handlers on every adapter: delivery reads with their cache

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/store"
-	"github.com/hydrogencms/hydrogen/store/storetest"
+	"github.com/hydrogencms/hydrogen/core/store"
+	"github.com/hydrogencms/hydrogen/core/store/storetest"
 )
 
 func open(t *testing.T) store.DB {

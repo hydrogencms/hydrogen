@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/clock"
-	"github.com/hydrogencms/hydrogen/exportfmt"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/clock"
+	"github.com/hydrogencms/hydrogen/core/exportfmt"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // memFiles is an in-memory exportfmt.FileStorage.

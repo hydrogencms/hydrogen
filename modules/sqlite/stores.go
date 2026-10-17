@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 type outboxStore struct{ tx *sql.Tx }

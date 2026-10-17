@@ -1,6 +1,6 @@
 package main
 
-import "github.com/hydrogencms/hydrogen/ids"
+import "github.com/hydrogencms/hydrogen/core/ids"
 
 // refs resolves item names to ids for links.
 type refs map[string]ids.UUID

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/ids"
 )
 
 func TestDedupeChanges(t *testing.T) {

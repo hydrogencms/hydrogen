@@ -3,7 +3,7 @@ package manage
 import (
 	"net/url"
 
-	"github.com/hydrogencms/hydrogen/content"
+	"github.com/hydrogencms/hydrogen/core/content"
 )
 
 // ParseListQuery reads the list query parameters the management API accepts (locale, status, q, sort, limit,

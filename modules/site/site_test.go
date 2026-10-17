@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/cachetag"
+	"github.com/hydrogencms/hydrogen/core/cachetag"
 )
 
 func TestRichText(t *testing.T) {

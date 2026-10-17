@@ -12,10 +12,10 @@ import (
 	"testing"
 
 	"github.com/hydrogencms/hydrogen"
-	"github.com/hydrogencms/hydrogen/access"
-	"github.com/hydrogencms/hydrogen/config"
+	"github.com/hydrogencms/hydrogen/core/access"
+	"github.com/hydrogencms/hydrogen/core/config"
+	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/modules/postgres/pgtest"
-	"github.com/hydrogencms/hydrogen/store"
 
 	gen "github.com/hydrogencms/hydrogen/examples/content/gen/content"
 )

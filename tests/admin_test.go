@@ -2,7 +2,7 @@ package tests
 
 import (
 	"context"
-	"github.com/hydrogencms/hydrogen/config"
+	"github.com/hydrogencms/hydrogen/core/config"
 	"github.com/hydrogencms/hydrogen/modules/sqlite"
 	"io"
 	"net/http"
@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/kernel"
+	"github.com/hydrogencms/hydrogen/core/kernel"
+	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/modules/pages"
-	"github.com/hydrogencms/hydrogen/store"
 )
 
 func TestAdminMount(t *testing.T) {

@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/hydrogencms/hydrogen/api/manage"
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // The relay event stream (GET /preview/events?proof=) tells a share link's viewers what the item looks like

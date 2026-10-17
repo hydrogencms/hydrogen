@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hydrogencms/hydrogen/exportfmt"
-	"github.com/hydrogencms/hydrogen/ids"
-	"github.com/hydrogencms/hydrogen/store"
+	"github.com/hydrogencms/hydrogen/core/exportfmt"
+	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/store"
 )
 
 // exporter writes the module's tables as typed records (modules/pages.ndjson): nodes first, parents before

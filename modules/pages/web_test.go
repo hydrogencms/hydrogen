@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/channel"
-	"github.com/hydrogencms/hydrogen/config"
+	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/config"
 )
 
 func web(name, group string, langs []string, m matcher, opts map[string]any) *channel.Channel {

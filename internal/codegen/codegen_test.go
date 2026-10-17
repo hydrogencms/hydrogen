@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/schema"
+	"github.com/hydrogencms/hydrogen/core/schema"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files")

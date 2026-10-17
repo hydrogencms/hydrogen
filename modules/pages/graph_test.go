@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/hydrogencms/hydrogen/ids"
+	"github.com/hydrogencms/hydrogen/core/ids"
 )
 
 // treeFixture builds a small tree without a database:
