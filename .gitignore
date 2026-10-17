@@ -9,3 +9,7 @@ planning/
 /packages/node_modules/
 # Local media storage of example projects (media.storage.dir, default data/media)
 examples/*/data/
+
+# Binaries built inside example projects (go build in their directory)
+/examples/headless/headless
+/examples/minimal/minimal
