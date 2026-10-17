@@ -23,6 +23,25 @@ func (r *Registry) Decorator(d delivery.Decorator) {
 	r.decorators = append(r.decorators, registered[delivery.Decorator]{r.current, d})
 }
 
+// AssetDecorator adds keys to every asset a delivery response shows (once per asset per response).
+func (r *Registry) AssetDecorator(d delivery.AssetDecorator) {
+	r.assetDecs = append(r.assetDecs, d)
+}
+
+// AdminImages is what an image module tells the admin: the thumbnail base and the origins images come from.
+type AdminImages struct {
+	// ThumbBase is the URL prefix of thumbnails: <ThumbBase>/<sha>/<name>. Empty: the admin shows originals.
+	ThumbBase string
+	// Origins are the origins (scheme://host[:port]) images are loaded from when they are not this server's.
+	Origins []string
+}
+
+// AdminImages registers the function that describes the module's images for the admin. It is called once, after
+// every module booted. A later registration replaces an earlier one.
+func (r *Registry) AdminImages(f func() AdminImages) {
+	r.adminImages = &registered[func() AdminImages]{r.current, f}
+}
+
 // PublicChannelOption shows a channel option (registered with ChannelOption) in GET /channels/{name} of the
 // delivery API. Its decoded value must be JSON-encodable and safe to publish.
 func (r *Registry) PublicChannelOption(name string) {
@@ -101,7 +120,8 @@ func newDelivery(s *Services, reg *Registry) (*delivery.API, error) {
 		Notifier: s.DB.Notifier(), Clock: s.Clock, Log: s.Log, CacheBytes: s.Core.Delivery.CacheBytes,
 		PreviewSecret: secret, Varies: reg.varies, DB: s.DB, Audit: s.Audit, IDs: s.IDs,
 		ShareLinks: s.Core.Delivery.ShareLinks, ShareDefaultTTL: s.Core.Delivery.ShareDefaultTTL,
-		ShareMaxTTL: s.Core.Delivery.ShareMaxTTL, CORSOrigins: frameOrigins(s, reg), AssetBase: s.Core.Media.PublicURL}
+		ShareMaxTTL: s.Core.Delivery.ShareMaxTTL, CORSOrigins: frameOrigins(s, reg), AssetBase: s.Core.Media.PublicURL,
+		AssetDecorators: reg.assetDecs}
 	for _, rt := range reg.deliveryRts {
 		o.Routes = append(o.Routes, rt.value)
 	}

@@ -150,3 +150,28 @@ func TestFrameSrcAllowsChannelFrontendsOnly(t *testing.T) {
 		t.Fatalf("frameSrc = %q, want %q", got, want)
 	}
 }
+
+func TestConfigJSONThumbBase(t *testing.T) {
+	w := get(Handler("/admin", dist(), Options{Media: &Media{MaxUpload: 1, AssetBase: "/assets", ThumbBase: "/images/admin/1a2b3c4d/480"}}), "GET", "/admin/config.json")
+	if want := `"media":{"maxUpload":1,"assetBase":"/assets","thumbBase":"/images/admin/1a2b3c4d/480"}`; !strings.Contains(w.Body.String(), want) {
+		t.Fatalf("config.json: %s", w.Body)
+	}
+}
+
+func TestImageOriginsInCSP(t *testing.T) {
+	csp := func(o Options) string {
+		return get(Handler("/admin", dist(), o), "GET", "/admin/").Header().Get("Content-Security-Policy")
+	}
+	if c := csp(Options{}); strings.Contains(c, "media-src") || !strings.Contains(c, "img-src 'self' data: blob:;") {
+		t.Fatalf("default CSP changed: %s", c)
+	}
+	c := csp(Options{ImageOrigins: []string{"https://cdn.example.com", "https://cdn.example.com", "", "javascript:x", "https://img.example.com ; script-src *"}})
+	for _, want := range []string{"img-src 'self' data: blob: https://cdn.example.com;", "media-src 'self' https://cdn.example.com"} {
+		if !strings.Contains(c, want) {
+			t.Errorf("CSP lacks %q: %s", want, c)
+		}
+	}
+	if strings.Contains(c, "img.example.com") || strings.Contains(c, "script-src *") || !strings.Contains(c, "script-src 'self';") {
+		t.Fatalf("invalid origin accepted: %s", c)
+	}
+}

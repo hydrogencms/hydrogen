@@ -123,6 +123,16 @@ assert n == 1, "corporate_web collections not found"
 open(p, "w").write(s)
 PY
 
+# H9b images: one preset (images.spec.ts).
+python3 - "$work/config/app.yaml" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = "modules:\n"
+assert old in s
+open(p, "w").write(s.replace(old, old + "  images:\n    presets:\n      card: { width: 640, height: 360, fit: cover, widths: [320] }\n", 1))
+PY
+
 export SCHEMA_DIR="$work/schema" CONFIG_DIR="$work/config"
 export DATABASE_URL="sqlite:$work/h.db" LISTEN_ADDR="127.0.0.1:$port" PREVIEW_SECRET=e2e-preview-secret-0123456789abcdef
 export MANAGE_TOKEN=e2e-manage-token

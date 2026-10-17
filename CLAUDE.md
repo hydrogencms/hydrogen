@@ -126,6 +126,12 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   delivery expands them (`api/delivery/assets.go`); `content` reads server-owned file metadata through `content.Files`.
   The admin library is `/assets` (`admin/ui/src/lib/media`). Docs: `docs/media.md`. Contract:
   `planning/design/media-h9a.md`.
+- Images (H9b): `modules/images` (opt-in, pure Go) turns uploads into preset variants at
+  `/images/{preset}/{v}/{w}/{focal}/{sha}/{name}` (`v` hashes the preset; `focal` is `c` or `XXYY`), stored as media
+  derived files (`<sha>-<preset>-<v>-<w>-<focal>`, removed with their upload), with an imgproxy driver for
+  WebP/AVIF. Delivery adds `variants` to assets through `delivery.AssetDecorator` (`Registry.AssetDecorator`); the
+  admin gets `media.thumbBase` through `Registry.AdminImages`. SDK: `imageProps` (client), `Image` (react). Docs:
+  `docs/images.md`. Contract: `planning/design/images-h9b.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
@@ -224,6 +230,9 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - With overlays on, per-locale documents for reading, validating, snapshotting and projecting come from the
   resolved parts (`itemState.publishedParts`/`workingParts`); stored parts are sparse (`rawâ€¦Parts`). New code that
   reads a locale's document must use the resolved ones, and writes must stay sparse.
+- Image URLs must stay bounded: `/images` serves only configured presets, allowed widths and focal points that
+  some item holding the file really has (checked on a cache miss). Never add a free-form size or crop parameter.
+  Anything in a variant's output must be in its URL (preset version, width, focal), or immutable caching breaks.
 - A `file` value's `id`, `mime`, `size`, `width` and `height` are the server's: every item write re-reads them by
   sha through `content.Files`, so clients only choose `name` and `focal`. An asset is `null` in delivery unless it is
   published (or a draft in preview), not trashed, and its upload type is in the channel's `collections`. Uploads are

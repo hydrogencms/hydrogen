@@ -170,6 +170,17 @@ export function assetPath(f: { id: string; name: string }, base = config().media
   return `${(base || '/assets').replace(/\/+$/, '')}/${f.id}/${encodeURIComponent(f.name)}`;
 }
 
+const THUMB_EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'png', 'image/webp': 'png' };
+
+/** The thumbnail of a raster image (its extension becomes the output format's); the original when there is none. */
+export function thumbPath(f: { id: string; name: string; mime?: string }, base = config().media?.thumbBase, assets = config().media?.assetBase): string {
+  const ext = THUMB_EXT[(f.mime ?? '').toLowerCase()];
+  if (!base || !ext) return assetPath(f, assets);
+  const dot = f.name.lastIndexOf('.');
+  const name = `${(dot >= 0 ? f.name.slice(0, dot) : f.name) || 'image'}.${ext}`;
+  return `${base.replace(/\/+$/, '')}/${f.id}/${encodeURIComponent(name)}`;
+}
+
 /** Reads the `file` field of an item's fields; undefined when it is not a file value. */
 export function fileOf(v: unknown): FileValue | undefined {
   if (!v || typeof v !== 'object') return undefined;

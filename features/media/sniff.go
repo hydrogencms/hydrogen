@@ -23,7 +23,7 @@ import (
 // Detected is what the server learned from a file's bytes.
 type Detected struct {
 	MIME          string // media type without parameters
-	Width, Height int    // 0 when unknown or not an image
+	Width, Height int    // displayed size (EXIF orientation applied); 0 when unknown or not an image
 }
 
 // ErrInvalidImage is returned for a file whose content says image but does not parse as one.
@@ -76,6 +76,14 @@ func Detect(r io.ReadSeeker, name string) (Detected, error) {
 		d.Width, d.Height = cfg.Width, cfg.Height
 		if _, err := r.Seek(0, io.SeekStart); err != nil {
 			return Detected{}, err
+		}
+		if typ == "image/jpeg" {
+			if o := JPEGOrientation(r); o >= 5 {
+				d.Width, d.Height = d.Height, d.Width
+			}
+			if _, err := r.Seek(0, io.SeekStart); err != nil {
+				return Detected{}, err
+			}
 		}
 	}
 	return d, nil

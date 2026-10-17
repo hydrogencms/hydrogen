@@ -112,3 +112,14 @@ test('Field and pathAttrs', () => {
   assert.deepEqual(pathAttrs('a', true), { 'data-h-path': 'a' })
   assert.deepEqual(pathAttrs('a', false), {})
 })
+
+test('Image: variant, defaults, focal point, overrides', async () => {
+  const { Image } = await import('../dist/index.js')
+  const a = { url: '/o.jpg', width: 1000, height: 500, focal: { x: 0.25, y: 0.5 }, fields: { alt: 'Cat' },
+    variants: { card: { url: '/c.jpg', width: 640, height: 320, type: 'image/jpeg', srcset: '/c1.jpg 320w, /c.jpg 640w' } } }
+  assert.equal(html(h(Image, { asset: a, preset: 'card', sizes: '100vw' })),
+    '<img loading="lazy" decoding="async" src="/c.jpg" srcSet="/c1.jpg 320w, /c.jpg 640w" width="640" height="320" alt="Cat" sizes="100vw" style="object-position:25% 50%"/>')
+  const o = html(h(Image, { asset: { url: '/o.jpg', fields: {} }, alt: 'X', loading: 'lazy', decoding: 'sync', style: { color: 'red' } }))
+  assert.equal(o, '<img loading="lazy" decoding="sync" src="/o.jpg" alt="X" style="color:red"/>')
+  assert.match(html(h(Image, { asset: a, style: { color: 'red' } })), /style="object-position:25% 50%;color:red"/)
+})

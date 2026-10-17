@@ -92,6 +92,8 @@ type Registry struct {
 	mappers      []cachetag.Mapper
 	deliveryRts  []registered[delivery.Route]
 	decorators   []registered[delivery.Decorator]
+	assetDecs    []delivery.AssetDecorator
+	adminImages  *registered[func() AdminImages]
 	publicOpts   []registered[string]
 	varies       []delivery.Varier
 	previewURLs  []delivery.PreviewURLer

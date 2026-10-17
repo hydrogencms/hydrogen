@@ -24,6 +24,10 @@ func openAPI(s *schema.Schema, extra []Route) obj {
 				"options":     obj{"type": "object", "additionalProperties": true, "description": "Public channel options of modules."}}},
 	}
 	schemas["Asset"] = assetSchema()
+	schemas["ImageVariant"] = obj{"type": "object", "required": []any{"url", "width", "height", "type"},
+		"description": "A resized rendition of an image (added by the images module).",
+		"properties": obj{"url": openapi.Str("uri-reference"), "width": obj{"type": "integer"}, "height": obj{"type": "integer"},
+			"type": openapi.Str(""), "srcset": openapi.Str("")}}
 	var itemRefs []any
 	paths := obj{}
 	for _, t := range s.Types() {
@@ -243,6 +247,8 @@ func assetSchema() obj {
 		"description": "An uploaded file as an asset field shows it. The field is null when the asset is not published.",
 		"properties": obj{"id": openapi.Str("uuid"), "url": openapi.Str("uri-reference"), "name": openapi.Str(""), "mime": openapi.Str(""),
 			"size": obj{"type": "integer"}, "width": obj{"type": "integer"}, "height": obj{"type": "integer"}, "focal": focal,
+			"variants": obj{"type": "object", "additionalProperties": openapi.SchemaRef("ImageVariant"),
+				"description": "Renditions by preset name; present on raster images when the images module is on."},
 			"fields": obj{"type": "object", "additionalProperties": true, "description": "The asset item's own fields (alt, caption, …) in the response's locale."}}}
 }
 

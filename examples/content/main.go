@@ -9,6 +9,7 @@ import (
 	"github.com/hydrogencms/hydrogen/core/access"
 	"github.com/hydrogencms/hydrogen/core/content"
 	"github.com/hydrogencms/hydrogen/core/hooks"
+	"github.com/hydrogencms/hydrogen/modules/images"
 	"github.com/hydrogencms/hydrogen/modules/pages"
 	"github.com/hydrogencms/hydrogen/modules/postgres"
 	"github.com/hydrogencms/hydrogen/modules/sqlite"
@@ -20,7 +21,7 @@ import (
 func main() { hydrogen.Main(configure) }
 
 func configure(h *hydrogen.Builder) {
-	h.Use(sqlite.Module(), postgres.Module(), pages.Module(), seo.Module())
+	h.Use(sqlite.Module(), postgres.Module(), pages.Module(), seo.Module(), images.Module())
 	gen.ArticleType.BeforeSave(h, readingTime)
 	h.Migration(splitName)
 	h.Policy(access.Policy{Name: "import.run", Description: "Use the admin's article import tool."})

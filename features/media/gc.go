@@ -23,6 +23,7 @@ const JobSchedule = "@daily"
 type GCResult struct {
 	Uploads int // records (and their bytes) of unreferenced uploads
 	Orphans int // stored bytes that had no record
+	Derived int // derived files (variants) removed
 }
 
 const gcPage = 500
@@ -90,24 +91,65 @@ func (s *Service) GC(ctx context.Context) (GCResult, error) {
 			return res, err
 		}
 		for _, sha := range gone {
-			if _, err := s.dropBytes(ctx, sha); err != nil {
+			dropped, nd, err := s.dropBytes(ctx, sha)
+			res.Derived += nd
+			if err != nil {
 				return res, fmt.Errorf("media: delete %s: %w", sha, err)
 			}
-			res.Uploads++
+			if dropped {
+				res.Uploads++
+			}
 		}
 	}
 
 	var err error
-	res.Orphans, err = s.collectOrphans(ctx, cutoff)
-	if res.Uploads+res.Orphans > 0 {
-		s.o.Log.Info("media: unreferenced files removed", "uploads", res.Uploads, "orphans", res.Orphans)
+	var nd int
+	res.Orphans, nd, err = s.collectOrphans(ctx, cutoff)
+	res.Derived += nd
+	if res.Uploads+res.Orphans+res.Derived > 0 {
+		s.o.Log.Info("media: unreferenced files removed", "uploads", res.Uploads, "orphans", res.Orphans, "derived", res.Derived)
 	}
 	return res, err
 }
 
-// dropBytes deletes the bytes of a file that has no record. Under the file's lock it looks at the record
-// once more, so bytes an upload has just recorded stay; it reports whether it deleted.
-func (s *Service) dropBytes(ctx context.Context, sha string) (bool, error) {
+// dropBytes deletes the bytes of a file that has no record, and its derived files. Under the file's lock it
+// looks at the record once more, so bytes an upload has just recorded stay; it reports whether it deleted
+// and how many derived files went with it.
+func (s *Service) dropBytes(ctx context.Context, sha string) (bool, int, error) {
+	unlock := s.lock(sha)
+	defer unlock()
+	if _, err := s.record(ctx, sha); err == nil {
+		return false, 0, nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return false, 0, err
+	}
+	nd, after := 0, ""
+	for {
+		entries, err := s.o.Storage.List(ctx, sha+"-", after, gcPage)
+		if err != nil {
+			return false, nd, err
+		}
+		if len(entries) > 0 {
+			after = entries[len(entries)-1].Key
+		}
+		for _, e := range entries {
+			if _, _, ok := SplitDerived(e.Key); !ok {
+				continue
+			}
+			if err := s.o.Storage.Delete(ctx, e.Key); err != nil {
+				return false, nd, err
+			}
+			nd++
+		}
+		if len(entries) < gcPage {
+			break
+		}
+	}
+	return true, nd, s.o.Storage.Delete(ctx, sha)
+}
+
+// dropDerived deletes a derived file whose upload has no record; it reports whether the file was there.
+func (s *Service) dropDerived(ctx context.Context, key, sha string) (bool, error) {
 	unlock := s.lock(sha)
 	defer unlock()
 	if _, err := s.record(ctx, sha); err == nil {
@@ -115,32 +157,49 @@ func (s *Service) dropBytes(ctx context.Context, sha string) (bool, error) {
 	} else if !errors.Is(err, ErrNotFound) {
 		return false, err
 	}
-	return true, s.o.Storage.Delete(ctx, sha)
+	if _, err := s.o.Storage.Stat(ctx, key); errors.Is(err, ErrNotFound) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	return true, s.o.Storage.Delete(ctx, key)
 }
 
 // collectOrphans deletes stored files that have no upload record and are older than cutoff: leftovers of an
-// upload that stored its bytes and then failed, or of an interrupted collection.
-func (s *Service) collectOrphans(ctx context.Context, cutoff time.Time) (int, error) {
-	n, after := 0, ""
+// upload that stored its bytes and then failed, or of an interrupted collection. A derived file is kept while
+// its upload has a record.
+func (s *Service) collectOrphans(ctx context.Context, cutoff time.Time) (orphans, derived int, err error) {
+	after := ""
 	for {
 		entries, err := s.o.Storage.List(ctx, "", after, gcPage)
 		if err != nil {
-			return n, err
+			return orphans, derived, err
 		}
 		if len(entries) == 0 {
-			return n, nil
+			return orphans, derived, nil
 		}
 		after = entries[len(entries)-1].Key
 		for _, e := range entries {
-			if !IsSha(e.Key) || e.ModTime.IsZero() || !e.ModTime.Before(cutoff) {
+			if e.ModTime.IsZero() || !e.ModTime.Before(cutoff) {
 				continue
 			}
-			dropped, err := s.dropBytes(ctx, e.Key)
-			if err != nil {
-				return n, err
-			}
-			if dropped {
-				n++
+			if IsSha(e.Key) {
+				dropped, nd, err := s.dropBytes(ctx, e.Key)
+				derived += nd
+				if err != nil {
+					return orphans, derived, err
+				}
+				if dropped {
+					orphans++
+				}
+			} else if sha, _, ok := SplitDerived(e.Key); ok {
+				dropped, err := s.dropDerived(ctx, e.Key, sha)
+				if err != nil {
+					return orphans, derived, err
+				}
+				if dropped {
+					derived++
+				}
 			}
 		}
 	}

@@ -138,3 +138,14 @@ test('linkTo and parseTags', () => {
   assert.equal(linkTo({}, 'a'), undefined)
   assert.deepEqual(parseTags(null), [])
 })
+
+test('imageProps: variant, original fallback, alt', async () => {
+  const { imageProps } = await import('../dist/index.js')
+  const a = { url: '/o.jpg', width: 1000, height: 500, fields: { alt: 'Cat' },
+    variants: { card: { url: '/c.jpg', width: 640, height: 320, type: 'image/jpeg', srcset: '/c1.jpg 320w, /c.jpg 640w' } } }
+  assert.deepEqual(imageProps(a, 'card'), { src: '/c.jpg', srcSet: '/c1.jpg 320w, /c.jpg 640w', width: 640, height: 320, alt: 'Cat' })
+  assert.deepEqual(imageProps(a, 'nope'), { src: '/o.jpg', srcSet: undefined, width: 1000, height: 500, alt: 'Cat' })
+  assert.deepEqual(imageProps(a), imageProps(a, 'nope'))
+  assert.equal(imageProps({ url: '/x', fields: { alt: 3 } }).alt, '')
+  assert.equal(imageProps({ url: '/x' }).alt, '')
+})

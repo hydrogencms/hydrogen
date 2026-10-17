@@ -146,6 +146,8 @@ type Options struct {
 	// differently.
 	AssetBase string
 	AssetURL  func(sha, name string) string
+	// AssetDecorators add keys to every asset a response shows (an image module adds resized variants).
+	AssetDecorators []AssetDecorator
 	// MaxStreamsPerShare and MaxStreams cap the open relay event streams of one share link and of the server
 	// (defaults 20 and 1000).
 	MaxStreamsPerShare, MaxStreams int

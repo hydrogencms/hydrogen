@@ -99,6 +99,11 @@ base from its `config.json` (`media.assetBase`, next to `media.maxUpload`).
 `Content-Disposition` (`attachment` except for images, video, audio and PDF). Without them, an uploaded SVG or HTML
 file opened at that host would run with the host's origin.
 
+### Resized images
+
+Delivery shows the original file. For resized renditions (thumbnails, `srcset`) add the images module; see
+[images.md](images.md).
+
 ### In delivery
 
 The delivery API shows an `asset` field as the asset itself, in the response's locale:

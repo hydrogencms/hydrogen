@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addTags, ancestorsOf, checkFile, clamp01, focalFromPoint, focalStep, folderTree, formatSize, matchAccept, normFolder,
-  objectPosition, parseSize, pickType, previewKind, assetPath, fileOf, dimensions, droppedFiles, whyRejected,
+  objectPosition, parseSize, pickType, previewKind, assetPath, thumbPath, fileOf, dimensions, droppedFiles, whyRejected,
 } from './logic';
 
 describe('folders', () => {
@@ -163,5 +163,22 @@ describe('dropped files', () => {
   it('falls back to files without items', () => {
     const dt = { files: [file('b.png')] as unknown as FileList, items: [] as unknown as DataTransferItemList };
     expect(droppedFiles(dt).map((x) => x.name)).toEqual(['b.png']);
+  });
+});
+
+describe('thumbPath', () => {
+  const f = (name: string, mime: string) => ({ id: 'ab', name, mime });
+  it('maps the extension to the output format', () => {
+    expect(thumbPath(f('my photo.jpeg', 'image/jpeg'), '/thumbs/')).toBe('/thumbs/ab/my%20photo.jpg');
+    expect(thumbPath(f('a.PNG', 'image/png'), '/thumbs')).toBe('/thumbs/ab/a.png');
+    expect(thumbPath(f('a.gif', 'image/gif'), '/thumbs')).toBe('/thumbs/ab/a.png');
+    expect(thumbPath(f('a.webp', 'image/webp'), 'https://cdn.example.com/t')).toBe('https://cdn.example.com/t/ab/a.png');
+    expect(thumbPath(f('noext', 'image/jpeg'), '/thumbs')).toBe('/thumbs/ab/noext.jpg');
+  });
+  it('falls back to the original', () => {
+    expect(thumbPath(f('a b.jpg', 'image/jpeg'), undefined, undefined)).toBe('/assets/ab/a%20b.jpg');
+    expect(thumbPath(f('a.svg', 'image/svg+xml'), '/thumbs', '/media')).toBe('/media/ab/a.svg');
+    expect(thumbPath(f('a.avif', 'image/avif'), '/thumbs')).toBe('/assets/ab/a.avif');
+    expect(thumbPath({ id: 'ab', name: 'a.jpg' }, '/thumbs')).toBe('/assets/ab/a.jpg');
   });
 });

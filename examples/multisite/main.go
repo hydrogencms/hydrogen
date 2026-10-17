@@ -5,6 +5,7 @@ package main
 
 import (
 	"github.com/hydrogencms/hydrogen"
+	"github.com/hydrogencms/hydrogen/modules/images"
 	"github.com/hydrogencms/hydrogen/modules/overlays"
 	"github.com/hydrogencms/hydrogen/modules/pages"
 	"github.com/hydrogencms/hydrogen/modules/postgres"
@@ -14,5 +15,5 @@ import (
 func main() { hydrogen.Main(configure) }
 
 func configure(h *hydrogen.Builder) {
-	h.Use(sqlite.Module(), postgres.Module(), pages.Module(), overlays.Module())
+	h.Use(sqlite.Module(), postgres.Module(), pages.Module(), overlays.Module(), images.Module())
 }

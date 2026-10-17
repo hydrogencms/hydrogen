@@ -11,6 +11,8 @@ export interface AdminConfig {
     maxUpload?: number;
     /** Where assets are served from: a path or an absolute URL; files live at `<base>/<sha>/<name>`. */
     assetBase?: string;
+    /** Where image thumbnails are served from (`<base>/<sha>/<name>`); absent without the images module. */
+    thumbBase?: string;
   };
 }
 

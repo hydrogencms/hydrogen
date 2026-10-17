@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"slices"
@@ -734,6 +735,12 @@ func (a *App) mountAdmin(mux *http.ServeMux) error {
 			base = media.AssetPath
 		}
 		o.Media = &admin.Media{MaxUpload: s.Media.MaxUpload(), AssetBase: base}
+		o.ImageOrigins = append(o.ImageOrigins, originOf(s.Core.Media.PublicURL))
+		if f := a.reg.adminImages; f != nil {
+			im := f.value()
+			o.Media.ThumbBase = im.ThumbBase
+			o.ImageOrigins = append(o.ImageOrigins, im.Origins...)
+		}
 	}
 	if s.Env == config.DevEnv {
 		o.DevURL = os.Getenv("ADMIN_DEV_URL")
@@ -748,6 +755,15 @@ func (a *App) mountAdmin(mux *http.ServeMux) error {
 		return fmt.Errorf("admin.prefix %q: %w", s.Core.Admin.Prefix, err)
 	}
 	return nil
+}
+
+// originOf is the scheme://host[:port] of a URL, or "".
+func originOf(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // frameOrigins are the origins of the channels' frontends: what the admin may frame and what may read the

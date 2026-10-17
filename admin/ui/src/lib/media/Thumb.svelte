@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from '../ui/Icon.svelte';
-  import { assetPath, objectPosition, previewKind, type FileValue } from './logic';
+  import { thumbPath, objectPosition, previewKind, type FileValue } from './logic';
 
   // A thumbnail: the image itself (cropped around its focal point) or a file icon (also when the image fails to load).
   let { file, cover = true }: { file: FileValue | undefined; cover?: boolean } = $props();
@@ -12,7 +12,7 @@
 
 <span class="h-thumb" class:h-thumb--contain={!cover}>
   {#if file && image}
-    <img src={assetPath(file)} alt="" loading="lazy" decoding="async" draggable="false" style:object-position={objectPosition(file.focal)} onerror={() => (failed = file?.id ?? '')} />
+    <img src={thumbPath(file)} alt="" loading="lazy" decoding="async" draggable="false" style:object-position={objectPosition(file.focal)} onerror={() => (failed = file?.id ?? '')} />
   {:else}
     <span class="h-thumb__icon">
       <Icon name={kind === 'pdf' ? 'file-text' : kind === 'video' || kind === 'audio' ? 'layout' : 'file'} size={28} />

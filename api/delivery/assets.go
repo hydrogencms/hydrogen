@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/hydrogencms/hydrogen/core/channel"
 	"github.com/hydrogencms/hydrogen/core/ids"
 	"github.com/hydrogencms/hydrogen/core/schema"
 )
@@ -21,6 +22,13 @@ import (
 // to focal come from the file). An asset that is not published, not available in the channel or not an upload
 // item is null. The asset is looked up like any item, so the response carries its cache tag and publishing
 // the asset purges every cached response that shows it; for a draft, the asset's draft is shown.
+
+// AssetDecorator adds keys to an asset as a response shows it. It runs once per asset per response; asset
+// holds id, url, name, mime, size, width?, height?, focal? and fields (map[string]any, json.Number values), and
+// file is the upload's file value.
+type AssetDecorator interface {
+	DecorateAsset(ch *channel.Channel, file map[string]any, asset map[string]any)
+}
 
 // DefaultAssetPath is where the media module serves files: /assets/{sha}/{name}.
 const DefaultAssetPath = "/assets"
@@ -240,5 +248,8 @@ func (st *state) buildAsset(x *resolved) (map[string]any, error) {
 		delete(fields, k)
 	}
 	out["fields"] = fields
+	for _, d := range st.a.o.AssetDecorators {
+		d.DecorateAsset(st.m.ch, file, out)
+	}
 	return out, nil
 }

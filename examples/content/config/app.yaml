@@ -13,6 +13,10 @@ manage:
 modules:
   pages:
     sites: [main]
+  images:
+    presets:
+      card: { width: 640, height: 360, fit: cover, widths: [320, 480] }
+      hero: { width: 1600, widths: [640, 1024], format: jpeg, quality: 80 }
 
 delivery:
   # Signs preview tokens: at least 32 characters; required outside dev (dev derives it from manage.token).

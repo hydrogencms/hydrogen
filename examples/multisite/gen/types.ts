@@ -39,6 +39,17 @@ export interface FileValue {
   focal?: FocalPoint;
 }
 
+/** One rendition of a raster image: a configured image preset, sized and encoded by the images module. */
+export interface ImageVariant {
+  url: string;
+  width: number;
+  height: number;
+  /** MIME type of the variant's bytes. */
+  type: string;
+  /** Candidate URLs with width descriptors, for the img srcset attribute. */
+  srcset?: string;
+}
+
 /** An uploaded file as the delivery API shows an asset field: null there when the asset is not published. */
 export interface Asset<F = Record<string, unknown>> {
   /** The id of the upload item. */
@@ -50,6 +61,8 @@ export interface Asset<F = Record<string, unknown>> {
   width?: number;
   height?: number;
   focal?: FocalPoint;
+  /** Renditions by image preset name: present for raster images when the images module is on. */
+  variants?: Record<string, ImageVariant>;
   /** The asset item's own fields (alt, caption, ...) in the response's locale. */
   fields: F;
 }

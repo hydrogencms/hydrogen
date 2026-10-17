@@ -33,6 +33,8 @@ func Dist() fs.FS {
 type Media struct {
 	MaxUpload int64  `json:"maxUpload"` // bytes: media.max_upload
 	AssetBase string `json:"assetBase"` // media.public_url, else "/assets": files are at <assetBase>/<sha>/<name>
+	// ThumbBase is set by an image module: thumbnails are at <thumbBase>/<sha>/<name>.
+	ThumbBase string `json:"thumbBase,omitempty"`
 }
 
 type Options struct {
@@ -51,6 +53,9 @@ type Options struct {
 	ElementsDevURL string
 	// FrameOrigins are the origins the preview pane may frame (the channels' frontends, "scheme://host[:port]").
 	FrameOrigins []string
+	// ImageOrigins are further origins images and media load from (a CDN in front of the files, an image
+	// service): added to img-src and media-src.
+	ImageOrigins []string
 }
 
 // Scripts are 'self' only. Styles allow inline: extension elements written with Svelte inject their component
@@ -58,9 +63,25 @@ type Options struct {
 const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; " +
 	"connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
+// mediaSrc lets images and media load from the extra origins; media-src falls back to default-src otherwise.
+func mediaSrc(base string, origins []string) string {
+	src := originList(origins)
+	if len(src) == 0 {
+		return base
+	}
+	extra := " " + strings.Join(src, " ")
+	base = strings.Replace(base, "img-src 'self' data: blob:", "img-src 'self' data: blob:"+extra, 1)
+	return base + "; media-src 'self'" + extra
+}
+
 // frameSrc lets the preview pane frame the channels' frontends, and nothing else.
 func frameSrc(origins []string) string {
-	src := []string{"'self'"}
+	return "; frame-src " + strings.Join(append([]string{"'self'"}, originList(origins)...), " ")
+}
+
+// originList keeps the valid http(s) origins, deduplicated, in order.
+func originList(origins []string) []string {
+	var src []string
 	for _, o := range origins {
 		u, err := url.Parse(o)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil ||
@@ -71,7 +92,7 @@ func frameSrc(origins []string) string {
 			src = append(src, origin)
 		}
 	}
-	return "; frame-src " + strings.Join(src, " ")
+	return src
 }
 
 type handler struct {
@@ -89,7 +110,7 @@ type handler struct {
 // without stripping the prefix. index.html is served for every path that is not a file in dist (and not under assets/), with its
 // relative asset links ("./assets/…") made absolute under prefix.
 func Handler(prefix string, dist fs.FS, o Options) http.Handler {
-	h := &handler{csp: csp + frameSrc(o.FrameOrigins), prefix: prefix, dist: dist}
+	h := &handler{csp: mediaSrc(csp, o.ImageOrigins) + frameSrc(o.FrameOrigins), prefix: prefix, dist: dist}
 	if o.Extensions == nil {
 		o.Extensions, _ = Compose(prefix, nil, "")
 	}

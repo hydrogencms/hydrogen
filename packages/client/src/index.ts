@@ -193,6 +193,33 @@ export function linkTo(
   return item.links?.[id] ?? fallback?.(id)
 }
 
+export interface ImageVariant { url: string; width: number; height: number; type: string; srcset?: string }
+
+/** The part of a delivery asset that `imageProps` reads; the generated `Asset` fits. */
+export interface ImageAsset {
+  url: string
+  width?: number
+  height?: number
+  focal?: { x: number; y: number }
+  variants?: Record<string, ImageVariant>
+  fields?: unknown
+}
+
+export interface ImageProps { src: string; srcSet?: string; width?: number; height?: number; alt: string }
+
+/** `<img>` attributes for an asset: the preset's variant when it has one, else the original file. */
+export function imageProps(asset: ImageAsset, preset?: string): ImageProps {
+  const v = preset ? asset.variants?.[preset] : undefined
+  const alt = (asset.fields as { alt?: unknown } | null | undefined)?.alt
+  return {
+    src: v ? v.url : asset.url,
+    srcSet: v?.srcset,
+    width: v ? v.width : asset.width,
+    height: v ? v.height : asset.height,
+    alt: typeof alt === 'string' ? alt : '',
+  }
+}
+
 export function createClient<T extends object = Record<string, unknown>>(o: ClientOptions): Client<T> {
   const base = o.baseUrl.replace(/\/+$/, '') + API_PATH
   const doFetch = (u: string, i: RequestInit) => (o.fetch ?? fetch)(u, i)

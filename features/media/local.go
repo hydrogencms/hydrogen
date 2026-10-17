@@ -187,6 +187,11 @@ func (l *Local) List(ctx context.Context, prefix, after string, limit int) ([]En
 			if p == l.tmp {
 				return filepath.SkipDir
 			}
+			if rel, err := filepath.Rel(l.dir, p); err == nil && len(prefix) >= 4 && rel != "." {
+				if shard := filepath.ToSlash(rel); len(shard) <= 5 && shard != (prefix[:2] + "/" + prefix[2:4])[:len(shard)] {
+					return filepath.SkipDir
+				}
+			}
 			if rel, err := filepath.Rel(l.dir, p); err == nil && len(after) >= 4 && rel != "." {
 				if shard := filepath.ToSlash(rel); len(shard) <= 5 && shard < (after[:2] + "/" + after[2:4])[:len(shard)] {
 					return filepath.SkipDir
