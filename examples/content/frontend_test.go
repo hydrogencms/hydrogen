@@ -37,7 +37,7 @@ func TestCheckFrontend(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	for _, want := range []string{"channel default", "ok       page type page", "warning  collection article: no template",
-		"warning  collection person: no template", "frontend ok"} {
+		"warning  collection person: no template", "warning  collection image: no template", "frontend ok"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in\n%s", want, out)
 		}
@@ -46,7 +46,7 @@ func TestCheckFrontend(t *testing.T) {
 		t.Errorf("singleton or redirect reported:\n%s", out)
 	}
 
-	out, err = checkFrontend(t, db, []string{"landing", "article", "person", "settings"})
+	out, err = checkFrontend(t, db, []string{"landing", "article", "person", "image", "settings"})
 	if err == nil || !strings.Contains(err.Error(), "1 page type(s) without a template") ||
 		!strings.Contains(out, "MISSING  page type page: no template") {
 		t.Errorf("no page template: %v\n%s", err, out)

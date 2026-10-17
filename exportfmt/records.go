@@ -57,6 +57,17 @@ type RevisionFile struct {
 	Compiled  json.RawMessage `json:"compiled"`
 }
 
+// UploadRecord is one line of uploads.ndjson: the record of a file stored as files/<sha>.
+type UploadRecord struct {
+	SHA       string    `json:"sha"`
+	MIME      string    `json:"mime"`
+	Size      int64     `json:"size"`
+	Width     int       `json:"width,omitempty"`
+	Height    int       `json:"height,omitempty"`
+	CreatedBy string    `json:"createdBy,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 // MigrationRecord is one line of content_migrations.ndjson.
 type MigrationRecord struct {
 	Name      string    `json:"name"`

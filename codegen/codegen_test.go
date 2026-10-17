@@ -50,7 +50,7 @@ func TestGoGolden(t *testing.T) {
 		}
 	}
 	slices.Sort(names)
-	if want := []string{"article.go", "blog_post.go", "doc.go", "groups.go", "person.go"}; !slices.Equal(names, want) {
+	if want := []string{"article.go", "blog_post.go", "doc.go", "groups.go", "image.go", "person.go"}; !slices.Equal(names, want) {
 		t.Fatalf("files = %v, want %v", names, want)
 	}
 	for _, n := range names {

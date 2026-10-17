@@ -142,3 +142,16 @@ func TestMissingFilesAreFine(t *testing.T) {
 		t.Fatalf("%v %+v", err, h)
 	}
 }
+
+func TestParseSize(t *testing.T) {
+	for in, want := range map[string]int64{"0": 0, "512": 512, "64KB": 64 << 10, "50MB": 50 << 20, "50 mb": 50 << 20, "2GiB": 2 << 30, "1B": 1} {
+		if got, err := ParseSize(in); err != nil || got != want {
+			t.Errorf("ParseSize(%q) = %d, %v; want %d", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"", "MB", "-1", "1.5MB", "5TB", "99999999999GB"} {
+		if _, err := ParseSize(in); err == nil {
+			t.Errorf("ParseSize(%q) accepted", in)
+		}
+	}
+}

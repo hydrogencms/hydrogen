@@ -35,6 +35,42 @@ export interface RichTextNode {
 
 /** A rich text value: a ProseMirror document node. */
 export type RichText = RichTextNode;
+
+/** The part of an image that must stay visible when it is cropped, as fractions (0 to 1) of its size. */
+export interface FocalPoint {
+  x: number;
+  y: number;
+}
+
+/** A stored file (a "file" field). The server fills in everything but name and focal. */
+export interface FileValue {
+  /** SHA-256 of the content. */
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  width?: number;
+  height?: number;
+  focal?: FocalPoint;
+}
+
+/** An uploaded file as the delivery API shows an asset field: null there when the asset is not published. */
+export interface Asset<F = Record<string, unknown>> {
+  /** The id of the upload item. */
+  id: string;
+  url: string;
+  name: string;
+  mime: string;
+  size: number;
+  width?: number;
+  height?: number;
+  focal?: FocalPoint;
+  /** The asset item's own fields (alt, caption, ...) in the response's locale. */
+  fields: F;
+}
+
+/** An upload type's own fields: all but the built-in file, folder and tags. */
+export type UploadFields<T> = Omit<T, "file" | "folder" | "tags">;
 `
 
 const tsEnvelope = `/** An item as the management and delivery APIs return it. */
@@ -72,7 +108,7 @@ func TypeScript(types []*schema.Type, groups []*schema.Group, o TSOptions) ([]by
 		return nil, err
 	}
 	g := &tsGen{
-		names:  newNames("Ref", "ISODate", "ISODateTime", "RichTextNode", "RichText", "ItemView", "HydrogenTypes", "HydrogenTypeName"),
+		names:  newNames("Ref", "ISODate", "ISODateTime", "RichTextNode", "RichText", "FocalPoint", "FileValue", "Asset", "UploadFields", "ItemView", "HydrogenTypes", "HydrogenTypeName"),
 		groups: gm,
 	}
 	if len(o.Blocks) > 0 {
@@ -204,7 +240,12 @@ func (g *tsGen) fieldType(prefix, key string, f *schema.Field, nested *strings.B
 	case schema.BaseBoolean:
 		return "boolean", nil
 	case schema.BaseRef:
+		if f.Shape.Format == "asset" {
+			return assetTSType(f.Shape.To)
+		}
 		return "Ref", nil
+	case schema.BaseFile:
+		return "FileValue", nil
 	case schema.BaseRichText:
 		return "RichText", nil
 	case schema.BaseBlocks:
@@ -256,4 +297,20 @@ func (g *tsGen) fieldType(prefix, key string, f *schema.Field, nested *strings.B
 func tsString(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
+}
+
+// assetTSType is the delivery shape of an asset field: the asset, or null while it is unpublished.
+func assetTSType(to []string) (string, error) {
+	parts := make([]string, 0, len(to))
+	for _, name := range to {
+		n, err := goName(name)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, "UploadFields<"+n+">")
+	}
+	if len(parts) == 0 {
+		return "Asset | null", nil
+	}
+	return "Asset<" + strings.Join(parts, " | ") + "> | null", nil
 }

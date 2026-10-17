@@ -138,6 +138,18 @@ func (s contentStore) ContentMigrationLog(ctx context.Context) ([]store.AppliedC
 	return out, nil
 }
 
+func (s contentStore) ItemTypes(ctx context.Context) ([]string, error) {
+	rows, err := s.tx.Query(ctx, `SELECT DISTINCT type FROM item ORDER BY type`)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: item types: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("postgres: item types: %w", err)
+	}
+	return out, nil
+}
+
 func (s contentStore) CountItems(ctx context.Context) (int, error) {
 	var n int
 	if err := s.tx.QueryRow(ctx, `SELECT count(*) FROM item WHERE deleted_at IS NULL`).Scan(&n); err != nil {

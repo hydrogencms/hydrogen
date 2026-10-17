@@ -49,7 +49,7 @@ func TestRoundTripAndChecksums(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := r.Manifest()
-	if m.Format != 1 || m.SchemaHash != "abc" || len(m.Files) != 2 || m.Files[0].Name != "items.ndjson" || m.Files[0].Records != 50 {
+	if m.Format != FormatVersion || m.SchemaHash != "abc" || len(m.Files) != 2 || m.Files[0].Name != "items.ndjson" || m.Files[0].Records != 50 {
 		t.Fatalf("manifest = %+v", m)
 	}
 	rr, err := r.Records("items.ndjson")
@@ -130,8 +130,8 @@ func TestUnsupportedFormatAndNames(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "out")
 	writeSample(t, dir, 1)
 	b, _ := os.ReadFile(filepath.Join(dir, "manifest.json"))
-	must(t, os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(strings.Replace(string(b), `"format": 1`, `"format": 2`, 1)), 0o644))
-	if _, err := Open(dir); err == nil || !strings.Contains(err.Error(), "format 2") {
+	must(t, os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(strings.Replace(string(b), `"format": 2`, `"format": 3`, 1)), 0o644))
+	if _, err := Open(dir); err == nil || !strings.Contains(err.Error(), "format 3") {
 		t.Fatalf("Open = %v", err)
 	}
 

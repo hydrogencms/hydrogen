@@ -17,6 +17,7 @@ types:
       rating:         { type: number, integer: true, min: 0, max: 5, index: true }
       price:          { type: number, min: 0 }
       featured:       { type: boolean, default: false, index: true }
+      hero:           { type: asset, to: [image], description: "Lead image from the media library." }
       author:         { type: ref, to: [person], on_delete: block, index: true }
       related:        { type: list, of: { type: ref, to: [article], on_delete: nullify }, max: 5 }
       tags:           { type: list, of: { type: string, max: 30 }, max: 10, index: true }

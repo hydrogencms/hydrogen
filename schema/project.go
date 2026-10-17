@@ -45,6 +45,10 @@ func collectRefs(f *Field, v any, path string, out []RefValue) []RefValue {
 	return out
 }
 
+// OnDelete is the delete policy of a reference field (a ref or asset field, or the element field of a list of
+// them): "block", "nullify" or "warn".
+func (s *Schema) OnDelete(f *Field) string { return onDelete(f) }
+
 func onDelete(f *Field) string {
 	if c, ok := f.Config.(*refConfig); ok {
 		return c.onDelete
@@ -132,6 +136,13 @@ func appendIndex(out []IndexValue, name string, f *Field, v any) []IndexValue {
 			return out
 		}
 		iv.Ref = id
+	case BaseFile:
+		m, _ := v.(map[string]any)
+		id, ok := m["id"].(string)
+		if !ok || id == "" {
+			return out
+		}
+		iv.Text = &id
 	default:
 		return out
 	}
@@ -239,6 +250,11 @@ func richInline(children []any, sb *strings.Builder) {
 
 // Name computes the display name: the type's pattern, or the first non-empty top-level string/text field.
 func (s *Schema) Name(t *Type, doc map[string]any) string {
+	if t.NamePattern == "" && t.Upload != nil {
+		file, _ := doc[UploadFile].(map[string]any)
+		name, _ := file["name"].(string)
+		return strings.TrimSpace(name)
+	}
 	if t.NamePattern == "" {
 		for _, f := range t.Fields {
 			if f.Shape.Base == BaseString && (f.Shape.Format == "" || f.Shape.Format == "text") {

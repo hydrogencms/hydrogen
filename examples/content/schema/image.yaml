@@ -1,0 +1,8 @@
+types:
+  image:
+    description: Uploaded images and documents.
+    upload: { accept: [image/*, application/pdf], max_size: 20MB }
+    admin: { group: Media, icon: image }
+    fields:
+      alt:     { type: string, translatable: true, max: 300, description: "Describes the image for screen readers." }
+      caption: { type: text, translatable: true }

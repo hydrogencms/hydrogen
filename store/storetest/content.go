@@ -3,6 +3,7 @@ package storetest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -40,6 +41,9 @@ var contentTests = []struct {
 	{"ContentDeleteCascade", testDeleteCascade},
 	{"ContentMigrations", testContentMigrations},
 	{"ContentItemIDsOfType", testItemIDsOfType},
+	{"ContentItemTypes", testItemTypes},
+	{"ContentFacets", testFacets},
+	{"ContentUnder", testUnder},
 	{"ContentWorkingIndex", testWorkingIndex},
 	{"ContentWorkingSearch", testWorkingSearch},
 	{"ContentWorkingNames", testWorkingNames},
@@ -1636,4 +1640,186 @@ func testQueryAvailable(t *testing.T, db store.DB) {
 	if res.Total != 70 {
 		t.Fatalf("without Available: total %d, want 70", res.Total)
 	}
+}
+
+func testItemTypes(t *testing.T, db store.DB) {
+	ctx := context.Background()
+	g := newIDs()
+	withContent(t, db, func(c store.ContentStore) error {
+		for _, typ := range []string{"zeta", "alpha", "zeta", "gone"} {
+			it := newItem(g.New(), typ, "")
+			if typ == "gone" {
+				at := t0
+				it.DeletedAt, it.DeletedBy = &at, "user:1"
+			}
+			if err := c.InsertItem(ctx, it); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	viewContent(t, db, func(c store.ContentStore) error {
+		ex, ok := c.(store.ExportStore)
+		if !ok {
+			t.Fatal("no export store")
+		}
+		got, err := ex.ItemTypes(ctx)
+		if err != nil || !slices.Equal(got, []string{"alpha", "gone", "zeta"}) {
+			t.Fatalf("item types = %v, %v (trashed items count, each type once, sorted)", got, err)
+		}
+		return nil
+	})
+}
+
+func testFacets(t *testing.T, db store.DB) {
+	cat := seedCatalog(t, db)
+	ctx := context.Background()
+	facet := func(q store.Query, field string, limit int) string {
+		t.Helper()
+		var out []string
+		viewContent(t, db, func(c store.ContentStore) error {
+			got, err := c.Facet(ctx, q, field, limit)
+			for _, f := range got {
+				out = append(out, fmt.Sprintf("%s=%d", f.Value, f.Count))
+			}
+			return err
+		})
+		return strings.Join(out, " ")
+	}
+	art := store.Query{Type: "article", Locale: "en"}
+	// A list field counts each item once per value; most items first, then by value.
+	if got := facet(art, "tags", 100); got != "db=2 go=2 rust=1" {
+		t.Errorf("tags = %q", got)
+	}
+	if got := facet(art, "tags", 2); got != "db=2 go=2" {
+		t.Errorf("limited tags = %q", got)
+	}
+	if got := facet(art, "nothing", 100); got != "" {
+		t.Errorf("unindexed field = %q", got)
+	}
+	// Filters narrow the items counted.
+	q := art
+	q.Where = where("rating", store.ColNum, store.OpGte, 3.0)
+	if got := facet(q, "tags", 100); got != "go=2 db=1 rust=1" {
+		t.Errorf("filtered tags = %q", got)
+	}
+	// The locale picks the values of locale-specific rows, shared rows apply to every locale.
+	de := art
+	de.Locale = "de"
+	if got := facet(de, "title", 100); !strings.Contains(got, "Apfelkuchen=1") || strings.Contains(got, "Apple pie") {
+		t.Errorf("de titles = %q", got)
+	}
+	// A scope limits the counted items like it limits a list.
+	scoped := art
+	scoped.Scoped = true
+	scoped.Scope = []store.ScopeTerm{{Where: where("tags", store.ColText, store.OpContains, "go")}}
+	if got := facet(scoped, "tags", 100); got != "go=2 db=1" {
+		t.Errorf("scoped tags = %q", got)
+	}
+	scoped.Scope = []store.ScopeTerm{{CreatedBy: []string{"user:nobody"}}}
+	if got := facet(scoped, "tags", 100); got != "" {
+		t.Errorf("scope without a match = %q", got)
+	}
+	scoped.Scope = nil
+	if got := facet(scoped, "tags", 100); got != "" {
+		t.Errorf("empty scope = %q", got)
+	}
+	// Trashed items are not counted.
+	withContent(t, db, func(c store.ContentStore) error {
+		at := t0
+		return c.SetDeleted(ctx, cat.ids['B'], &at, "user:1")
+	})
+	if got := facet(art, "tags", 100); got != "db=2 go=1 rust=1" {
+		t.Errorf("tags after trashing B = %q", got)
+	}
+	bad := art
+	var err error
+	viewContent(t, db, func(c store.ContentStore) error {
+		_, err = c.Facet(ctx, bad, "bad field!", 10)
+		return nil
+	})
+	if err == nil {
+		t.Error("an invalid field name was accepted")
+	}
+}
+
+func testUnder(t *testing.T, db store.DB) {
+	ctx := context.Background()
+	g := newIDs()
+	folders := []string{"/", "/a", "/a/b", "/a/b/c", "/ab", "/A", "/b/a", "/100%_x", "/100%_x/y", "/100%5x", "/glob*", "/glob*/z", "/globs"}
+	byFolder := map[ids.UUID]string{}
+	withContent(t, db, func(c store.ContentStore) error {
+		if _, err := c.AddSchemaRev(ctx, "h", []byte(`{}`), t0); err != nil {
+			return err
+		}
+		for _, f := range folders {
+			id := g.New()
+			byFolder[id] = f
+			if err := c.InsertItem(ctx, newItem(id, "asset", "")); err != nil {
+				return err
+			}
+			if err := c.ReplaceIndex(ctx, id, store.ProjectionPublished, []store.IndexRow{txt("", "folder", f)}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	under := func(v string) string {
+		t.Helper()
+		var got []string
+		viewContent(t, db, func(c store.ContentStore) error {
+			res, err := c.Query(ctx, store.Query{Type: "asset", Locale: "en", Limit: 100,
+				Where: where("folder", store.ColText, store.OpUnder, v)})
+			for _, it := range res.Items {
+				got = append(got, byFolder[it.ID])
+			}
+			return err
+		})
+		slices.Sort(got)
+		return strings.Join(got, " ")
+	}
+	tests := []struct{ under, want string }{
+		{"/a", "/a /a/b /a/b/c"},
+		{"/a/", "/a /a/b /a/b/c"},
+		{"/a/b", "/a/b /a/b/c"},
+		{"/ab", "/ab"},
+		{"/A", "/A"},
+		{"/b", "/b/a"},
+		{"/100%_x", "/100%_x /100%_x/y"},
+		{"/glob*", "/glob* /glob*/z"},
+		{"/nothing", ""},
+		{"/", strings.Join(sortedCopy(folders), " ")},
+	}
+	for _, tc := range tests {
+		if got := under(tc.under); got != tc.want {
+			t.Errorf("under %q = %q, want %q", tc.under, got, tc.want)
+		}
+	}
+	// under combines with other filters and drives the same results as the listing's total.
+	var total int
+	viewContent(t, db, func(c store.ContentStore) error {
+		res, err := c.Query(ctx, store.Query{Type: "asset", Locale: "en", Limit: 1, Where: where("folder", store.ColText, store.OpUnder, "/a")})
+		total = res.Total
+		return err
+	})
+	if total != 3 {
+		t.Errorf("total under /a = %d", total)
+	}
+	for _, bad := range []store.Cond{
+		{Field: "folder", Column: store.ColNum, Op: store.OpUnder, Value: "/a"},
+		{Field: "folder", Column: store.ColText, Op: store.OpUnder, Value: 5},
+	} {
+		if err := expectErr(db, func(c store.ContentStore) error {
+			_, err := c.Query(ctx, store.Query{Type: "asset", Where: []store.Cond{bad}})
+			return err
+		}); err == nil {
+			t.Errorf("invalid under %+v accepted", bad)
+		}
+	}
+}
+
+func sortedCopy(s []string) []string {
+	out := slices.Clone(s)
+	slices.Sort(out)
+	return out
 }

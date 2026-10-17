@@ -10,6 +10,8 @@ export interface FieldCtx {
   readonly: boolean;
   /** Locale being edited (reference search shows names in it). */
   locale: string;
+  /** The type being edited (an upload type's file widget checks the file against it). */
+  type?: string;
   /** A new item: slugs follow their source field. */
   isNew: boolean;
   namePattern?: string;

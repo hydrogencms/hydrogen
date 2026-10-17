@@ -113,7 +113,7 @@ func (c *compiler) groupFields(name string) ([]*Field, bool) {
 
 func (c *compiler) compileType(def *typeDef) *Type {
 	t := &Type{
-		Name: def.name, Label: def.label, Description: def.description, Singleton: def.singleton, Page: def.page, Blockset: def.blockset, Review: def.review,
+		Name: def.name, Label: def.label, Description: def.description, Singleton: def.singleton, Page: def.page, Upload: def.upload, Blockset: def.blockset, Review: def.review,
 		NamePattern: def.namePattern.s, Pos: def.pos,
 		Admin: TypeAdmin{Group: def.adminGroup, Icon: def.adminIcon},
 		AI:    TypeAI{Instructions: def.aiInstr},
@@ -427,7 +427,7 @@ func (o *Options) checkPlacement(f *Field) {
 
 func scalarIndexable(f *Field) bool {
 	switch f.Shape.Base {
-	case BaseString, BaseNumber, BaseBoolean, BaseRef:
+	case BaseString, BaseNumber, BaseBoolean, BaseRef, BaseFile:
 		return true
 	}
 	return false

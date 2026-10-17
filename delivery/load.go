@@ -25,8 +25,11 @@ type resolved struct {
 	fallback bool
 	draft    bool // built from the draft, not a snapshot
 	inlined  bool // shared blocks were inlined (or there are none)
-	extra    []byte
-	etag     string // the store's hex SHA-256 of payload; empty for drafts
+	// assetsDone is set once the asset fields were expanded. Items loaded as assets of another item are not
+	// expanded themselves (an asset's own asset fields stay ids), so they never carry it.
+	assetsDone bool
+	extra      []byte
+	etag       string // the store's hex SHA-256 of payload; empty for drafts
 }
 
 func cmpUUID(a, b ids.UUID) int { return bytes.Compare(a[:], b[:]) }

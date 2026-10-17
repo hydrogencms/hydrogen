@@ -7,3 +7,5 @@ coverage.out
 planning/
 /packages/*/dist/
 /packages/node_modules/
+# Local media storage of example projects (media.storage.dir, default data/media)
+examples/*/data/

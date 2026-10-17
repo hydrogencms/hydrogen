@@ -3,7 +3,7 @@ import { expect, type Page } from '@playwright/test';
 export const base = process.env.BASE_URL ?? 'http://127.0.0.1:8080';
 export const adminLogin = process.env.ADMIN_LOGIN ?? 'admin';
 export const adminPassword = process.env.ADMIN_PASSWORD ?? 'e2e-admin-password-1';
-const manageToken = process.env.MANAGE_TOKEN ?? 'dev-token';
+export const manageToken = process.env.MANAGE_TOKEN ?? 'dev-token';
 
 /** A lower-case, URL-safe suffix so reruns on the same database never collide. */
 export const tag = () => Math.random().toString(36).slice(2, 8);

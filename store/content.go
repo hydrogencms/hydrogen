@@ -87,6 +87,17 @@ type ContentStore interface {
 	AppliedContentMigrations(ctx context.Context) ([]string, error)
 	RecordContentMigration(ctx context.Context, name string, at time.Time) error
 	ItemIDsOfType(ctx context.Context, typ string, after ids.UUID, limit int) ([]ids.UUID, error) // id order
+
+	// Facet counts the items matching q per value of an indexed text field (a list field counts an item once
+	// per value), most items first and then by value, at most limit values. Only q's Type, Trashed, Status,
+	// Available, Working, Scoped/Scope, Where and Locale apply; search, sort and paging are ignored.
+	Facet(ctx context.Context, q Query, field string, limit int) ([]FacetCount, error)
+}
+
+// FacetCount is one value of a facet and the number of items that have it.
+type FacetCount struct {
+	Value string
+	Count int
 }
 
 type Item struct {
@@ -187,6 +198,7 @@ const (
 	OpContains Op = "contains" // any value of a list field equals Value
 	OpExists   Op = "exists"   // Value is bool
 	OpPrefix   Op = "prefix"   // text only
+	OpUnder    Op = "under"    // text only: the value itself or a path below it ("/a" matches "/a" and "/a/b", not "/ab")
 )
 
 // Column says which field_index column a condition or sort uses.

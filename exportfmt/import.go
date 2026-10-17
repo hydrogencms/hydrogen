@@ -37,7 +37,10 @@ type ImportOptions struct {
 	// AllowSchemaChange accepts an export made under a different schema than the project's current one.
 	AllowSchemaChange bool
 	Modules           []NamedExporter
-	Progress          io.Writer
+	// Files restores the uploaded files of the export (files/<sha> with their upload records). An export that
+	// holds files cannot be imported without it.
+	Files    FileStorage
+	Progress io.Writer
 	// Batch is the number of items written per transaction (default 100).
 	Batch int
 	// Parallel is the number of batches written at once (default: 1 on a single-node database, 4 on a
@@ -47,8 +50,8 @@ type ImportOptions struct {
 
 // ImportResult are the numbers of records written.
 type ImportResult struct {
-	Items, Versions, Drafts, ContentMigrations int
-	Modules                                    map[string]int
+	Items, Versions, Drafts, ContentMigrations, Uploads int
+	Modules                                             map[string]int
 }
 
 type importedEvent struct {
@@ -100,7 +103,13 @@ func Import(ctx context.Context, o ImportOptions) (*ImportResult, error) {
 		return nil, err
 	}
 
+	if r.Has("uploads.ndjson") && o.Files == nil {
+		return nil, errors.New("exportfmt: the export holds uploaded files, but this project has no media storage")
+	}
 	res := &ImportResult{Modules: map[string]int{}}
+	if err := importUploads(ctx, o, r, res); err != nil {
+		return nil, err
+	}
 	revs, err := importRevisions(ctx, o, r)
 	if err != nil {
 		return nil, err
@@ -356,4 +365,46 @@ func importMigrations(ctx context.Context, o ImportOptions, r *Reader, res *Impo
 			res.ContentMigrations++
 		}
 	})
+}
+
+// importUploads stores the exported files and records them as uploads. They are fresh as far as garbage
+// collection goes, so a file whose item is imported later is not collected in between.
+func importUploads(ctx context.Context, o ImportOptions, r *Reader, res *ImportResult) error {
+	if !r.Has("uploads.ndjson") {
+		return nil
+	}
+	rr, err := r.Records("uploads.ndjson")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rr.Close() }()
+	for {
+		var rec UploadRecord
+		ok, err := rr.Next(&rec)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			break
+		}
+		if err := importUpload(ctx, o, r, rec); err != nil {
+			return fmt.Errorf("exportfmt: import upload %s: %w", rec.SHA, err)
+		}
+		res.Uploads++
+	}
+	progressf(o.Progress, "uploads: %d files", res.Uploads)
+	return nil
+}
+
+func importUpload(ctx context.Context, o ImportOptions, r *Reader, rec UploadRecord) error {
+	if err := checkName("files/" + rec.SHA); err != nil || len(rec.SHA) != 64 {
+		return fmt.Errorf("invalid sha")
+	}
+	f, err := r.OpenFile("files/" + rec.SHA)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	return o.Files.Restore(ctx, store.Upload{SHA: rec.SHA, MIME: rec.MIME, Size: rec.Size, Width: rec.Width,
+		Height: rec.Height, CreatedBy: rec.CreatedBy, CreatedAt: rec.CreatedAt}, f)
 }

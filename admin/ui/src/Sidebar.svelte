@@ -40,7 +40,7 @@
   } = $props();
 
   const typeVisible = (name: string) => channels.showsType(name) && session.can('content.read', { type: name });
-  const contentGroups = $derived(groupTypes(types.listable.filter((x) => typeVisible(x.name))));
+  const contentGroups = $derived(groupTypes(types.listable.filter((x) => !x.upload && typeVisible(x.name))));
   const singletons = $derived(types.singletons.filter((x) => typeVisible(x.name)));
   const visibleSites = $derived(channels.site ? sites.filter((s) => s === channels.site) : sites);
   // Reviews only appear when some type asks for them and the principal takes part.
@@ -158,6 +158,8 @@
           {/if}
         {/each}
       {/each}
+
+      {#if types.all.some((x) => x.upload && typeVisible(x.name))}{@render navlink('/assets', t('nav.assets'), 'image')}{/if}
 
       {#if singletons.length}
         {@render group('single', t('nav.settingsContent'))}

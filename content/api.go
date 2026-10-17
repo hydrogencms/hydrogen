@@ -276,6 +276,23 @@ type ListOptions struct {
 	Fields []string
 }
 
+// FacetOptions asks for the values of indexed text fields with the number of items that have each. Status,
+// Locale and Where narrow the items like in a list.
+type FacetOptions struct {
+	Type   string
+	Locale string
+	Status store.Status
+	Where  []Filter
+	// Fields names the indexed text fields (at most MaxFacetFields).
+	Fields []string
+}
+
+// FacetValue is one value of a facet and the number of items that have it.
+type FacetValue struct {
+	Value string `json:"value"`
+	Count int    `json:"count"`
+}
+
 type ListResult struct {
 	Items []Summary `json:"items"`
 	Total int       `json:"total"`
@@ -313,4 +330,6 @@ type Options struct {
 	Review ReviewHook
 	// Overlays resolves locales that inherit from others (market overlays); nil: every locale is independent.
 	Overlays Overlays
+	// Files looks up the files `file` fields point to (the media module); required when the schema has any.
+	Files Files
 }

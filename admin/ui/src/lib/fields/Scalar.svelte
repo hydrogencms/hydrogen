@@ -84,7 +84,17 @@
   }
 </script>
 
-{#if base === 'ref'}
+{#if field.type === 'asset' || base === 'asset'}
+  {#await import('../media/AssetWidget.svelte') then m}
+    {@const Asset = m.default}
+    <Asset {field} bind:value {path} {readonly} {attrs} />
+  {/await}
+{:else if field.type === 'file' || base === 'file'}
+  {#await import('../media/FileWidget.svelte') then m}
+    {@const FileInput = m.default}
+    <FileInput {field} bind:value {path} {readonly} />
+  {/await}
+{:else if base === 'ref'}
   <Reference {field} bind:value {path} {readonly} {invalid} {attrs} />
 {:else if base === 'richtext'}
   <RichTextEditor

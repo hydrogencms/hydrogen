@@ -13,8 +13,8 @@ func TestWriteGo(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "gen", "content")
 	types, groups := fixture()
 	n, err := WriteGo(dir, types, groups, GoOptions{})
-	if err != nil || n != 5 {
-		t.Fatalf("first write = %d, %v; want 5", n, err)
+	if err != nil || n != 6 {
+		t.Fatalf("first write = %d, %v; want 6", n, err)
 	}
 	past := time.Now().Add(-time.Hour).Truncate(time.Second)
 	for _, f := range []string{"article.go", "doc.go"} {

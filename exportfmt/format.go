@@ -19,8 +19,9 @@ import (
 	"time"
 )
 
-// FormatVersion is the format this package writes and the only one it reads.
-const FormatVersion = 1
+// FormatVersion is the format this package writes. Format 2 added uploaded files (files/<sha> and
+// uploads.ndjson); format 1 exports, which have none, are still read.
+const FormatVersion = 2
 
 const manifestName = "manifest.json"
 
@@ -44,6 +45,7 @@ type Counts struct {
 	SchemaRevisions   int            `json:"schemaRevisions"`
 	ContentMigrations int            `json:"contentMigrations"`
 	Modules           map[string]int `json:"modules,omitempty"`
+	Uploads           int            `json:"uploads,omitempty"`
 }
 
 // File is one exported file. Records counts the lines of an .ndjson file.
@@ -208,8 +210,8 @@ func Open(dir string) (*Reader, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("exportfmt: %s: %w", manifestName, err)
 	}
-	if m.Format != FormatVersion {
-		return nil, fmt.Errorf("exportfmt: export format %d is not supported (this build reads format %d)", m.Format, FormatVersion)
+	if m.Format < 1 || m.Format > FormatVersion {
+		return nil, fmt.Errorf("exportfmt: export format %d is not supported (this build reads formats 1 to %d)", m.Format, FormatVersion)
 	}
 	for i, f := range m.Files {
 		if err := checkName(f.Name); err != nil {
@@ -304,6 +306,18 @@ func (r *Reader) ReadFile(name string) ([]byte, error) {
 		return nil, fmt.Errorf("exportfmt: %w", err)
 	}
 	return data, nil
+}
+
+// OpenFile opens a listed file for streaming; the caller closes it.
+func (r *Reader) OpenFile(name string) (*os.File, error) {
+	if _, ok := r.file(name); !ok {
+		return nil, fmt.Errorf("exportfmt: %s is not part of the export", name)
+	}
+	f, err := os.Open(filepath.Join(r.dir, filepath.FromSlash(name)))
+	if err != nil {
+		return nil, fmt.Errorf("exportfmt: %w", err)
+	}
+	return f, nil
 }
 
 // Records opens an .ndjson file for streaming.

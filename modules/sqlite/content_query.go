@@ -171,6 +171,13 @@ func (c *compiler) cond(cd store.Cond, probe, drive bool) (string, error) {
 				return "", fmt.Errorf("prefix on %q needs a text column and a string", cd.Field)
 			}
 			pred = " AND " + col + " GLOB " + c.bind(globPrefix(s))
+		case store.OpUnder:
+			s, ok := cd.Value.(string)
+			if cd.Column != store.ColText || !ok {
+				return "", fmt.Errorf("under on %q needs a text column and a string", cd.Field)
+			}
+			exact, prefix := storeutil.UnderBounds(s)
+			pred = " AND (" + col + " = " + c.bind(exact) + " OR " + col + " GLOB " + c.bind(globPrefix(prefix)) + ")"
 		default:
 			return "", fmt.Errorf("unknown operator %q", cd.Op)
 		}
@@ -291,7 +298,7 @@ func (c *compiler) itemConds(probes bool) ([]string, error) {
 			switch cd.Op {
 			case store.OpNe:
 			case store.OpExists:
-			case store.OpEq, store.OpIn, store.OpContains, store.OpPrefix:
+			case store.OpEq, store.OpIn, store.OpContains, store.OpPrefix, store.OpUnder:
 				if driver < 0 || !storeutil.Selective(q.Where[driver].Op) {
 					driver = i
 				}
@@ -452,6 +459,41 @@ type queryer interface {
 
 func (s contentStore) Query(ctx context.Context, q store.Query) (store.QueryResult, error) {
 	return runQuery(ctx, s.tx, q)
+}
+
+func (s contentStore) Facet(ctx context.Context, q store.Query, field string, limit int) ([]store.FacetCount, error) {
+	if !storeutil.ValidField(field) {
+		return nil, fmt.Errorf("invalid field name %q", field)
+	}
+	q = storeutil.Normalize(q)
+	if q.Scoped {
+		if q.Scope = storeutil.LiveTerms(q.Scope); len(q.Scope) == 0 {
+			return nil, nil
+		}
+	}
+	c := &compiler{q: q}
+	conds, err := c.itemConds(true)
+	if err != nil {
+		return nil, err
+	}
+	conds = append([]string{"fi.scope = " + c.projection(), "fi.field = " + c.bind(field),
+		"fi.locale IN ('', " + c.locale() + ")", "fi.v_text IS NOT NULL"}, conds...)
+	text := "SELECT fi.v_text, COUNT(DISTINCT fi.item_id) FROM field_index fi CROSS JOIN item ON item.id = fi.item_id WHERE " +
+		strings.Join(conds, " AND ") + " GROUP BY fi.v_text ORDER BY 2 DESC, 1 LIMIT " + c.bind(max(limit, 1))
+	rows, err := s.tx.QueryContext(ctx, text, c.args...)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: facet %q: %w", field, err)
+	}
+	defer rows.Close()
+	var out []store.FacetCount
+	for rows.Next() {
+		var f store.FacetCount
+		if err := rows.Scan(&f.Value, &f.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
 
 // walkDir is the index walk's direction keyword.

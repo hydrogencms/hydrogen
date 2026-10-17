@@ -40,6 +40,9 @@ type Article struct {
 	Legal       SeoGroup          `json:"legal,omitempty"`
 	VideoURL    *string           `json:"videoUrl,omitempty"`
 	UserID      *string           `json:"userId,omitempty"`
+	Hero        *content.Ref      `json:"hero,omitempty"`
+	Gallery     []content.Ref     `json:"gallery,omitempty"`
+	Attachment  *content.File     `json:"attachment,omitempty"`
 	HTMLBody    *string           `json:"html_body,omitempty"`
 }
 

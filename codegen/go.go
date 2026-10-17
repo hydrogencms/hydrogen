@@ -253,6 +253,8 @@ func (g *goGen) fieldType(prefix, key string, f *schema.Field, nested *strings.B
 		return "bool", nil
 	case schema.BaseRef:
 		return "content.Ref", nil
+	case schema.BaseFile:
+		return "content.File", nil
 	case schema.BaseRichText:
 		return "content.RichText", nil
 	case schema.BaseBlocks:

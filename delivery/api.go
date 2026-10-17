@@ -141,6 +141,11 @@ type Options struct {
 	// CORSOrigins are the origins (scheme://host[:port]) that may read the relay event stream, besides the
 	// request's own origin.
 	CORSOrigins []string
+	// AssetBase is the base URL files are served from (the media public URL, or empty for the /assets route of
+	// this server); an asset's url is AssetBase/{sha}/{name}. AssetURL overrides it when a CDN lays files out
+	// differently.
+	AssetBase string
+	AssetURL  func(sha, name string) string
 	// MaxStreamsPerShare and MaxStreams cap the open relay event streams of one share link and of the server
 	// (defaults 20 and 1000).
 	MaxStreamsPerShare, MaxStreams int
@@ -158,6 +163,7 @@ type API struct {
 	oaETag  []string
 	single  *chanMeta           // the only channel, when there is exactly one
 	shared  map[string][]string // type → blocks fields that can hold shared blocks
+	assets  map[string]bool     // types whose documents can hold asset fields
 	shares  shareCache
 	hub     *hub
 	// corsOrigins are Options.CORSOrigins normalized (see normOrigin).
@@ -216,6 +222,7 @@ func New(o Options) (*API, error) {
 		}
 	}
 	a.shared = a.sharedFields()
+	a.assets = a.assetTypes()
 	if a.log == nil {
 		a.log = slog.New(slog.DiscardHandler)
 	}

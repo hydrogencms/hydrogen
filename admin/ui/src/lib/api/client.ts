@@ -69,6 +69,15 @@ export function setHandlers(h: Handlers) {
   handlers = h;
 }
 
+/** The CSRF token the app registered (for calls made outside `request`, such as an upload's XHR). */
+export const csrfToken = (): string | undefined => handlers.csrf?.();
+
+/** The global handling `request` applies to a failed response, for calls made outside it: sign-in on 401, a report on 5xx. */
+export function handleFailure(err: ApiError) {
+  if (err.status === 401) handlers.unauthorized?.();
+  else if (err.status >= 500) handlers.serverError?.(err);
+}
+
 function buildURL(path: string, params?: Record<string, string | number>, query?: object): string {
   let p = path.replace(/\{(\w+)\}/g, (_, k) => {
     const v = params?.[k];

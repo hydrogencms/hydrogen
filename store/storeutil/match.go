@@ -66,6 +66,14 @@ func matchCond(c store.Cond, vals []schema.IndexValue) bool {
 				return true
 			}
 		}
+	case store.OpUnder:
+		want, _ := c.Value.(string)
+		exact, prefix := UnderBounds(want)
+		for _, v := range vals {
+			if v.Text != nil && (*v.Text == exact || strings.HasPrefix(*v.Text, prefix)) {
+				return true
+			}
+		}
 	case store.OpIn:
 		list := reflect.ValueOf(c.Value)
 		for i := 0; list.Kind() == reflect.Slice && i < list.Len(); i++ {

@@ -37,6 +37,8 @@ type Service struct {
 	migrations []Migration                  // sorted by name
 	rev        atomic.Int64                 // schema revision recorded by EnsureSchemaRev
 	review     atomic.Pointer[ReviewHook]   // the review workflow, see SetReview
+	files      map[string]bool              // types whose documents can hold file values
+	registry   atomic.Pointer[Files]        // the file registry, see SetFiles
 }
 
 // New checks the options and returns the service. DB, Schema and Outbox are required; the other options
@@ -74,8 +76,9 @@ func New(o Options) (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("content: encode schema: %w", err)
 	}
-	s := &Service{o: o, compiled: compiled, slugs: slugSources(o.Schema), migrations: migrations}
+	s := &Service{o: o, compiled: compiled, slugs: slugSources(o.Schema), files: fileTypes(o.Schema), migrations: migrations}
 	s.SetReview(o.Review)
+	s.SetFiles(o.Files)
 	return s, nil
 }
 

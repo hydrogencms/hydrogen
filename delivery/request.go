@@ -44,6 +44,10 @@ type state struct {
 	// relays holds the relayed drafts of the items prefetchRelays looked up, by item (none: no entry).
 	relays   map[ids.UUID][]store.RelayDraft
 	relaysOf map[ids.UUID]bool
+	// expanding is set while assets are loaded: an asset's own asset fields stay ids, so references cannot loop.
+	expanding bool
+	// assets remembers the assets this request has built, by item, locale and kind.
+	assets map[assetKey]*builtAsset
 }
 
 // stored is a snapshot payload with the ETag the store holds for it.

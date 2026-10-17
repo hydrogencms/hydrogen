@@ -180,6 +180,13 @@ func (c *compiler) cond(cd store.Cond) (string, error) {
 				return "", fmt.Errorf("prefix on %q needs a text column and a string", cd.Field)
 			}
 			pred = " AND " + col + ` LIKE ` + c.bind(likePrefix(s)) + ` ESCAPE '\'`
+		case store.OpUnder:
+			s, ok := cd.Value.(string)
+			if cd.Column != store.ColText || !ok {
+				return "", fmt.Errorf("under on %q needs a text column and a string", cd.Field)
+			}
+			exact, prefix := storeutil.UnderBounds(s)
+			pred = " AND (" + col + " = " + c.bind(exact) + " OR " + col + ` LIKE ` + c.bind(likePrefix(prefix)) + ` ESCAPE '\')`
 		default:
 			return "", fmt.Errorf("unknown operator %q", cd.Op)
 		}
@@ -404,6 +411,42 @@ type queryer interface {
 
 func (s contentStore) Query(ctx context.Context, q store.Query) (store.QueryResult, error) {
 	return runQuery(ctx, s.tx, q)
+}
+
+func (s contentStore) Facet(ctx context.Context, q store.Query, field string, limit int) ([]store.FacetCount, error) {
+	if !storeutil.ValidField(field) {
+		return nil, fmt.Errorf("invalid field name %q", field)
+	}
+	q = storeutil.Normalize(q)
+	if q.Scoped {
+		if q.Scope = storeutil.LiveTerms(q.Scope); len(q.Scope) == 0 {
+			return nil, nil
+		}
+	}
+	c := &compiler{q: q}
+	conds, err := c.itemConds()
+	if err != nil {
+		return nil, err
+	}
+	conds = append([]string{"fi.scope = " + c.projection(), "fi.field = " + c.bind(field),
+		"fi.locale IN ('', " + c.locale() + ")", "fi.v_text IS NOT NULL"}, conds...)
+	text := "SELECT fi.v_text, COUNT(DISTINCT fi.item_id) FROM field_index fi JOIN item ON item.id = fi.item_id WHERE " +
+		strings.Join(conds, " AND ") + ` GROUP BY fi.v_text ORDER BY 2 DESC, fi.v_text COLLATE "C" LIMIT ` + c.bind(max(limit, 1))
+	rows, err := s.tx.Query(ctx, text, c.args...)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: facet %q: %w", field, err)
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (store.FacetCount, error) {
+		var f store.FacetCount
+		var n int64
+		err := r.Scan(&f.Value, &n)
+		f.Count = int(n)
+		return f, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("postgres: facet %q: %w", field, err)
+	}
+	return out, nil
 }
 
 // walkDir is the index walk's direction keyword.

@@ -58,19 +58,27 @@ func (b *block) item() (ids.UUID, bool) {
 	return id, err == nil
 }
 
-// inline adds the blocks of shared blocks to the resolved items. Items that were inlined already are skipped.
+// inline adds the blocks of shared blocks and the assets of asset fields to the resolved items. Items that were
+// inlined already are skipped.
 func (st *state) inline(ctx context.Context, list []*resolved) error {
+	var assets []*resolved
 	for _, r := range list {
-		names := st.a.shared[r.typ]
-		if r.inlined || len(names) == 0 {
-			continue
+		if !r.inlined {
+			r.inlined = true
+			if names := st.a.shared[r.typ]; len(names) > 0 {
+				if err := st.inlineItem(ctx, r, names); err != nil {
+					return err
+				}
+			}
 		}
-		r.inlined = true
-		if err := st.inlineItem(ctx, r, names); err != nil {
-			return err
+		if st.a.assets[r.typ] && !r.assetsDone && !st.expanding {
+			assets = append(assets, r)
 		}
 	}
-	return nil
+	if len(assets) == 0 {
+		return nil
+	}
+	return st.expandAssets(ctx, assets)
 }
 
 func (st *state) inlineItem(ctx context.Context, r *resolved, names []string) error {

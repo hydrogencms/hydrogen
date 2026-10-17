@@ -1,4 +1,4 @@
-// Package exportfmt reads and writes the portable export format (format 1) and runs export and import.
+// Package exportfmt reads and writes the portable export format (format 2) and runs export and import.
 //
 // An export is a directory:
 //
@@ -8,6 +8,10 @@
 //	items.ndjson               one item per line: item row, versions (with locales and schema hash), draft parts
 //	content_migrations.ndjson  applied content migrations
 //	modules/<name>.ndjson      one file per module exporter, records are the module's own
+//	uploads.ndjson             one record per uploaded file the items refer to (media only)
+//	files/<sha>                the bytes of each of those files, named by their SHA-256
+//
+// Format 1 (no uploads) is still read. An import restores files first, into the project's media storage.
 //
 // Items in the trash are not exported (the store skips them), so an import has no trashed items; module
 // exporters should skip records of trashed items the same way.

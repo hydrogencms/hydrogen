@@ -3,8 +3,10 @@ package exportfmt
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 
 	"github.com/hydrogencms/hydrogen/clock"
@@ -26,6 +28,15 @@ type NamedExporter struct {
 	Exporter Exporter
 }
 
+// FileStorage is the byte store of uploaded files (the media service, keyed by SHA-256 hex).
+type FileStorage interface {
+	// Open streams a stored file; the caller closes it.
+	Open(ctx context.Context, sha string) (io.ReadCloser, error)
+	// Restore stores the file and records its upload. The implementation must verify the bytes against the
+	// record (SHA-256 of the content, size, type) and refuse a file that does not match.
+	Restore(ctx context.Context, rec store.Upload, r io.Reader) error
+}
+
 const defaultBatch = 100
 
 // ExportOptions configure Export.
@@ -39,6 +50,8 @@ type ExportOptions struct {
 	SchemaHash string
 	Schema     []byte
 	Modules    []NamedExporter
+	// Files exports the uploaded files items refer to (files/<sha>, uploads.ndjson); nil exports none.
+	Files FileStorage
 	// PublishedOnly exports only the published version of each published item: no history, no drafts, and
 	// items that were never published are left out.
 	PublishedOnly bool
@@ -77,8 +90,12 @@ func Export(ctx context.Context, o ExportOptions) (*Manifest, error) {
 		if err != nil {
 			return err
 		}
-		used, err := exportItems(ctx, es, w, o, revs, &m)
+		shas := map[string]bool{}
+		used, err := exportItems(ctx, es, w, o, revs, &m, shas)
 		if err != nil {
+			return err
+		}
+		if err := exportUploads(ctx, tx, w, o, shas, &m); err != nil {
 			return err
 		}
 		if err := exportRevisions(w, revs, used, &m); err != nil {
@@ -118,7 +135,7 @@ func Export(ctx context.Context, o ExportOptions) (*Manifest, error) {
 	return &m, nil
 }
 
-func exportItems(ctx context.Context, es store.ExportStore, w *Writer, o ExportOptions, revs []store.SchemaRevision, m *Manifest) (map[int]bool, error) {
+func exportItems(ctx context.Context, es store.ExportStore, w *Writer, o ExportOptions, revs []store.SchemaRevision, m *Manifest, shas map[string]bool) (map[int]bool, error) {
 	hashOf := make(map[int]string, len(revs))
 	for _, r := range revs {
 		hashOf[r.Rev] = r.Hash
@@ -177,6 +194,17 @@ func exportItems(ctx context.Context, es store.ExportStore, w *Writer, o ExportO
 			}
 			if o.PublishedOnly && it.PublishedVersion == 0 {
 				continue
+			}
+			if o.Files != nil {
+				for _, v := range rec.Versions {
+					scanShas(v.Shared, shas)
+					for _, l := range v.Locales {
+						scanShas(l.Data, shas)
+					}
+				}
+				for _, d := range rec.Drafts {
+					scanShas(d.Data, shas)
+				}
 			}
 			if err := f.WriteRecord(rec); err != nil {
 				_ = f.Close()
@@ -259,4 +287,80 @@ func SortedModules(mods []NamedExporter) []NamedExporter {
 	out := slices.Clone(mods)
 	slices.SortFunc(out, func(a, b NamedExporter) int { return cmp.Compare(a.Name, b.Name) })
 	return out
+}
+
+// scanShas adds every string in doc that looks like a SHA-256 (64 lower-case hex digits between quotes): the
+// ids of file values. Whether a file exists is up to the upload records.
+func scanShas(doc []byte, into map[string]bool) {
+	const n = 64
+	for i := 0; i+n+2 <= len(doc); i++ {
+		if doc[i] != '"' || doc[i+n+1] != '"' {
+			continue
+		}
+		s := doc[i+1 : i+1+n]
+		hex := true
+		for _, c := range s {
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+				hex = false
+				break
+			}
+		}
+		if hex {
+			into[string(s)] = true
+			i += n + 1
+		}
+	}
+}
+
+// exportUploads writes the files the exported documents refer to and their upload records. Strings that match no
+// upload record are not files.
+func exportUploads(ctx context.Context, tx store.Tx, w *Writer, o ExportOptions, shas map[string]bool, m *Manifest) error {
+	if o.Files == nil {
+		return nil
+	}
+	var recs []UploadRecord
+	for _, sha := range slices.Sorted(maps.Keys(shas)) {
+		u, err := tx.Uploads().Get(ctx, sha)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("export: upload %s: %w", sha, err)
+		}
+		if err := copyFile(ctx, w, o.Files, sha); err != nil {
+			return err
+		}
+		recs = append(recs, UploadRecord{SHA: u.SHA, MIME: u.MIME, Size: u.Size, Width: u.Width, Height: u.Height,
+			CreatedBy: u.CreatedBy, CreatedAt: u.CreatedAt.UTC()})
+	}
+	f, err := w.Create("uploads.ndjson")
+	if err != nil {
+		return err
+	}
+	for _, r := range recs {
+		if err := f.WriteRecord(r); err != nil {
+			_ = f.Close()
+			return err
+		}
+	}
+	m.Counts.Uploads = len(recs)
+	progressf(o.Progress, "uploads: %d files", len(recs))
+	return f.Close()
+}
+
+func copyFile(ctx context.Context, w *Writer, src FileStorage, sha string) error {
+	rc, err := src.Open(ctx, sha)
+	if err != nil {
+		return fmt.Errorf("export: file %s: %w", sha, err)
+	}
+	defer func() { _ = rc.Close() }()
+	f, err := w.Create("files/" + sha)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, rc); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("export: file %s: %w", sha, err)
+	}
+	return f.Close()
 }

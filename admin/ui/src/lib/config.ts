@@ -5,6 +5,13 @@ export interface AdminConfig {
   deliveryPrefix: string;
   /** Raw `extensions` manifest; parsed by lib/extensions.svelte.ts. */
   extensions?: unknown;
+  /** Present when the project has upload types. */
+  media?: {
+    /** The largest accepted upload, in bytes. */
+    maxUpload?: number;
+    /** Where assets are served from: a path or an absolute URL; files live at `<base>/<sha>/<name>`. */
+    assetBase?: string;
+  };
 }
 
 let current: AdminConfig = {

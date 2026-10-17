@@ -29,11 +29,19 @@ func Dist() fs.FS {
 	return sub
 }
 
+// Media is the media section of config.json.
+type Media struct {
+	MaxUpload int64  `json:"maxUpload"` // bytes: media.max_upload
+	AssetBase string `json:"assetBase"` // media.public_url, else "/assets": files are at <assetBase>/<sha>/<name>
+}
+
 type Options struct {
 	APIPrefix      string // management API, for config.json
 	DeliveryPrefix string // delivery API, for config.json
 	Pages          bool   // the pages module is on
 	Collab         bool   // co-editing is on (collab.enabled)
+	// Media is set when the media service is on: the upload limit and where files are served.
+	Media *Media
 	// DevURL, when set, proxies everything except config.json to a dev server (Vite) instead of serving dist.
 	DevURL string
 	// Extensions are the project's and modules' admin extensions (nil: none), listed in config.json and served
@@ -92,8 +100,9 @@ func Handler(prefix string, dist fs.FS, o Options) http.Handler {
 		Pages          bool        `json:"pages"`
 		Collab         bool        `json:"collab"`
 		DeliveryPrefix string      `json:"deliveryPrefix"`
+		Media          *Media      `json:"media,omitempty"`
 		Extensions     *Extensions `json:"extensions"`
-	}{o.APIPrefix, prefix, o.Pages, o.Collab, o.DeliveryPrefix, o.Extensions})
+	}{o.APIPrefix, prefix, o.Pages, o.Collab, o.DeliveryPrefix, o.Media, o.Extensions})
 	h.proxy = devProxy(o.DevURL)
 	h.xdev = devProxy(o.ElementsDevURL)
 	if b, err := fs.ReadFile(dist, "index.html"); err == nil {

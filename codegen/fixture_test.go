@@ -52,6 +52,9 @@ func fixture() ([]*schema.Type, []*schema.Group) {
 			{Name: "legal", Type: "group", Group: "seo", Required: true, Shape: schema.Shape{Base: schema.BaseGroup}},
 			{Name: "videoUrl", Type: "url", When: &schema.Condition{Field: "kind", Op: "eq", Value: "video"}, Required: true, Shape: schema.Shape{Base: schema.BaseString, Format: "url"}},
 			{Name: "userId", Type: "string", Shape: schema.Shape{Base: schema.BaseString}},
+			{Name: "hero", Type: "asset", Shape: schema.Shape{Base: schema.BaseRef, Format: "asset", To: []string{"image"}}},
+			{Name: "gallery", Type: "list", Shape: schema.Shape{Base: schema.BaseList}, Of: &schema.Field{Type: "asset", Shape: schema.Shape{Base: schema.BaseRef, Format: "asset", To: []string{"image"}}}},
+			{Name: "attachment", Type: "file", Shape: schema.Shape{Base: schema.BaseFile}},
 			{Name: "html_body", Type: "text", Shape: schema.Shape{Base: schema.BaseString, Format: "text"}},
 		},
 	}
@@ -61,6 +64,16 @@ func fixture() ([]*schema.Type, []*schema.Group) {
 			str("fullName", "", true),
 		},
 	}
+	image := &schema.Type{
+		Name:   "image",
+		Upload: &schema.Upload{Accept: []string{"image/*"}},
+		Fields: []*schema.Field{
+			{Name: "file", Type: "file", Required: true, Shape: schema.Shape{Base: schema.BaseFile}},
+			{Name: "folder", Type: "string", Shape: schema.Shape{Base: schema.BaseString}},
+			{Name: "tags", Type: "list", Shape: schema.Shape{Base: schema.BaseList}, Of: &schema.Field{Type: "string", Shape: schema.Shape{Base: schema.BaseString}}},
+			str("alt", "", false),
+		},
+	}
 	home := &schema.Type{
 		Name:      "blogPost",
 		Singleton: true,
@@ -68,5 +81,5 @@ func fixture() ([]*schema.Type, []*schema.Group) {
 			{Name: "seo", Type: "group", Group: "seo", Shape: schema.Shape{Base: schema.BaseGroup}},
 		},
 	}
-	return []*schema.Type{person, home, article}, []*schema.Group{seo}
+	return []*schema.Type{person, home, article, image}, []*schema.Group{seo}
 }

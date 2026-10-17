@@ -235,7 +235,7 @@ func parameters(collections, singletons []*schema.Type) obj {
 		"Offset": obj{"name": "offset", "in": "query", "schema": obj{"type": "integer", "minimum": 0, "maximum": maxOffset, "default": 0}},
 		"Where": obj{"name": "where", "in": "query", "style": "deepObject", "explode": true,
 			"schema": obj{"type": "object", "additionalProperties": obj{"type": "object", "additionalProperties": openapi.Str("")}},
-			"description": "Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix; " +
+			"description": "Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); " +
 				"repeated filters are ANDed; in takes comma-separated values."},
 		"IfMatch": obj{"name": "If-Match", "in": "header", "schema": openapi.Str(""),
 			"description": "The ETag of the item as read (GET returns it, writes return the new one). A mismatch answers 412; without the header nothing is checked."},
@@ -346,6 +346,15 @@ func genericPaths(paths obj, collections, singletons []*schema.Type) {
 				responses(obj{"201": obj{"description": "The new draft.", "headers": obj{"Location": obj{"schema": openapi.Str("")}},
 					"content": openapi.JSONContent(openapi.SchemaRef("ItemView"))}}, "400", "401", "403", "404", "409", "413", "415", "422")),
 		}
+	}
+	if len(collections) > 0 {
+		paths["/collections/{type}/facets"] = obj{"get": operation("facets", "Count items per value of indexed text fields",
+			append(openapi.Params("CollectionType", "Locale", "Status", "Where"), obj{"name": "fields", "in": "query", "required": true, "schema": openapi.Str(""),
+				"description": "Comma-separated indexed text fields (at most 5), e.g. folder,tags."}), nil,
+			responses(obj{"200": openapi.OKResp("For each requested field the values with the number of items that have each, most items first "+
+				"then by value, at most 1000 per field. A list field counts an item once per value. Only items the principal may read are counted.",
+				obj{"type": "object", "additionalProperties": obj{"type": "array", "items": obj{"type": "object", "required": []any{"value", "count"},
+					"properties": obj{"value": openapi.Str(""), "count": obj{"type": "integer"}}}}})}, "400", "401", "403", "404"))}
 	}
 	paths["/items/{id}"] = obj{
 		"get": operation("getItem", "Read an item", openapi.Params("ItemId", "Locale", "Draft", "Trashed"), nil,

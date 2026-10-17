@@ -31,6 +31,7 @@ import (
 	"github.com/hydrogencms/hydrogen/ids"
 	"github.com/hydrogencms/hydrogen/jobs"
 	"github.com/hydrogencms/hydrogen/manage"
+	"github.com/hydrogencms/hydrogen/media"
 	"github.com/hydrogencms/hydrogen/outbox"
 	"github.com/hydrogencms/hydrogen/release"
 	"github.com/hydrogencms/hydrogen/review"
@@ -163,6 +164,7 @@ type CoreConfig struct {
 	Delivery DeliveryConfig
 	Admin    AdminConfig
 	Collab   CollabConfig
+	Media    MediaConfig
 	// Webhooks deliver outbox events to HTTP endpoints, by name.
 	Webhooks map[string]webhook.Config
 }
@@ -187,6 +189,8 @@ type Services struct {
 	Review *review.Service
 	// Collab is the co-editing session service; nil when collab.enabled is false.
 	Collab *collab.Service
+	// Media stores and serves uploaded files; nil when the schema has no upload type.
+	Media *media.Service
 	// Channels are the compiled delivery channels (config/channels.yaml); one implicit "default" channel when
 	// none are configured.
 	Channels *channel.Set
@@ -300,13 +304,17 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 		var admin *access.Admin
 		admin, err = access.NewAdmin(access.AdminOptions{DB: db, Outbox: ob, Audit: al, Clock: o.Clock, IDs: gen,
 			Rand: o.Rand, Catalog: catalog, Checker: checker, Log: log, PasswordIterations: o.PasswordIterations})
+		var med *media.Service
+		if err == nil {
+			med, err = newMedia(&core, p.schema, db, o.Clock, log, al, ob, checker)
+		}
 		if err == nil {
 			svc, err = content.New(content.Options{DB: db, Schema: p.schema, Hooks: hookReg, Outbox: ob, Audit: al,
-				Clock: o.Clock, IDs: gen, DefaultLocale: core.Content.DefaultLocale, Migrations: migrations, Access: checker, Overlays: overlays})
+				Clock: o.Clock, IDs: gen, DefaultLocale: core.Content.DefaultLocale, Migrations: migrations, Access: checker, Overlays: overlays, Files: files(med)})
 			a.services = &Services{
 				Env: cfg.Env(), Config: cfg, Core: core, Log: log, Clock: o.Clock, IDs: gen, DB: db, Outbox: ob,
 				Audit: al, Schema: p.schema, Hooks: hookReg, Content: svc, Channels: p.chans, Catalog: catalog,
-				Access: checker, Auth: authn, Admin: admin, reg: reg, mappers: mappers,
+				Access: checker, Auth: authn, Admin: admin, Media: med, reg: reg, mappers: mappers,
 			}
 		}
 	}
@@ -405,7 +413,7 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 			path   string
 			target any
 		}{{"http", &core.HTTP}, {"database", &core.Database}, {"log", &core.Log}, {"outbox", &core.Outbox}, {"jobs", &core.Jobs},
-			{"manage", &core.Manage}, {"auth", &core.Auth}, {"delivery", &core.Delivery}, {"admin", &core.Admin}, {"collab", &core.Collab}, {"webhooks", &core.Webhooks}}...)
+			{"manage", &core.Manage}, {"auth", &core.Auth}, {"delivery", &core.Delivery}, {"admin", &core.Admin}, {"collab", &core.Collab}, {"media", &core.Media}, {"webhooks", &core.Webhooks}}...)
 	}
 	for _, d := range sections {
 		if err := cfg.Decode(d.path, d.target); err != nil {
@@ -495,6 +503,11 @@ func (p *plan) checkRuntime(cfg *config.Config) error {
 	}
 	if err := p.core.Admin.check(); err != nil {
 		return err
+	}
+	if mediaEnabled(p.schema) {
+		if err := p.core.Media.check(); err != nil {
+			return err
+		}
 	}
 	if _, err := trustedProxies(p.core.HTTP.TrustedProxies); err != nil {
 		return err
@@ -587,6 +600,11 @@ func Warnings(cfg *config.Config, mods ...Module) ([]string, error) {
 }
 
 func (p *plan) warnings() []string {
+	out := mediaWarnings(&p.core.Media, p.schema)
+	return append(out, p.overlayWarnings()...)
+}
+
+func (p *plan) overlayWarnings() []string {
 	if p.reg.overlays != nil || p.chans == nil {
 		return nil
 	}
@@ -676,7 +694,7 @@ func (a *App) Handler() (http.Handler, error) {
 		api, err := manage.New(manage.Options{Content: a.services.Content, Auth: a.services.Auth, Gate: a.services.Access,
 			Admin: a.services.Admin, Catalog: a.services.Catalog,
 			Channels: a.services.Channels, Log: a.services.Log, Prefix: prefix,
-			Routes: slices.Concat(a.reg.manageRts, a.services.Delivery.ManageRoutes(), a.services.Releases.ManageRoutes(), a.services.Review.ManageRoutes(), a.services.Collab.ManageRoutes())})
+			Routes: slices.Concat(a.reg.manageRts, a.services.Delivery.ManageRoutes(), a.services.Releases.ManageRoutes(), a.services.Review.ManageRoutes(), a.services.Collab.ManageRoutes(), a.services.mediaRoutes())})
 		if err != nil {
 			return nil, err
 		}
@@ -684,6 +702,9 @@ func (a *App) Handler() (http.Handler, error) {
 	}
 	if len(a.services.Schema.Types()) > 0 {
 		mux.Handle(delivery.Prefix+"/", http.StripPrefix(delivery.Prefix, a.services.Delivery.Handler()))
+	}
+	if a.services.Media != nil {
+		mux.Handle(media.AssetPattern, a.services.Media.Handler())
 	}
 	if err := a.mountAdmin(mux); err != nil {
 		return nil, err
@@ -707,6 +728,13 @@ func (a *App) mountAdmin(mux *http.ServeMux) error {
 	}
 	o := admin.Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: delivery.Prefix, Pages: slices.Contains(a.Modules(), "pages"), Collab: s.Collab != nil}
 	o.FrameOrigins = frameOrigins(s, a.reg)
+	if s.Media != nil {
+		base := s.Media.PublicBase()
+		if base == "" {
+			base = media.AssetPath
+		}
+		o.Media = &admin.Media{MaxUpload: s.Media.MaxUpload(), AssetBase: base}
+	}
 	if s.Env == config.DevEnv {
 		o.DevURL = os.Getenv("ADMIN_DEV_URL")
 		o.ElementsDevURL = os.Getenv("ADMIN_ELEMENTS_DEV_URL")
@@ -922,6 +950,9 @@ func newRunner(s *Services, reg *Registry, hold time.Duration) (*jobs.Runner, er
 	list = append(list, releaseJob(s))
 	list = append(list, jobs.Job{Name: "preview.cleanup", Schedule: "@every 10m",
 		Run: func(ctx context.Context) error { return s.Delivery.CleanupPreview(ctx) }})
+	if s.Media != nil {
+		list = append(list, mediaJob(s))
+	}
 	if s.Collab != nil {
 		list = append(list, jobs.Job{Name: collab.JobName, Schedule: collab.CleanupSchedule, Run: s.Collab.Cleanup})
 	}

@@ -402,6 +402,44 @@ func TestBodyRules(t *testing.T) {
 	}
 }
 
+func TestFacetsQuery(t *testing.T) {
+	tests := []struct {
+		name, query string
+		want        content.FacetOptions
+		bad         bool
+	}{
+		{name: "fields", query: "fields=tags,author", want: content.FacetOptions{Type: "article", Fields: []string{"tags", "author"}}},
+		{name: "narrowed", query: "fields=tags&status=published&locale=de&where[rating][gte]=3&where[tags][under]=/a",
+			want: content.FacetOptions{Type: "article", Fields: []string{"tags"}, Status: store.StatusPublished, Locale: "de", Where: []content.Filter{
+				{Field: "rating", Op: store.OpGte, Value: "3"}, {Field: "tags", Op: store.OpUnder, Value: "/a"}}}},
+		{name: "no fields", query: "", bad: true},
+		{name: "empty name", query: "fields=tags,", bad: true},
+		{name: "6 fields", query: "fields=a,b,c,d,e,f", bad: true},
+		{name: "unknown param", query: "fields=tags&limit=3", bad: true},
+		{name: "repeated", query: "fields=tags&fields=author", bad: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFake(t)
+			f.facets = map[string][]content.FacetValue{"tags": {{Value: "x", Count: 2}}}
+			h := newAPI(t, f)
+			w := do(h, "GET", "/collections/article/facets?"+tc.query, "")
+			if tc.bad {
+				if w.Code != 400 || len(f.calls) != 0 {
+					t.Fatalf("%d %s calls=%v", w.Code, w.Body, f.calls)
+				}
+				return
+			}
+			if w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"tags":[{"value":"x","count":2}]}` {
+				t.Fatalf("%d %s", w.Code, w.Body)
+			}
+			if got := f.last().arg; !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("got  %+v\nwant %+v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestListQuery(t *testing.T) {
 	tests := []struct {
 		name, query string

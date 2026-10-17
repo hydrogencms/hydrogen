@@ -145,8 +145,7 @@ func (s *Service) nullifyRef(ctx context.Context, tx store.Tx, id, target ids.UU
 // target is deleted (warn fields keep the dangling id, block fields prevented the delete).
 func nullifies(sc *schema.Schema) func(*schema.Field) bool {
 	return func(f *schema.Field) bool {
-		v, ok := sc.Option(f, "on_delete")
-		return ok && v == "nullify"
+		return sc.OnDelete(f) == "nullify"
 	}
 }
 

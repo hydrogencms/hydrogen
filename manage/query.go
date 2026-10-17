@@ -18,7 +18,7 @@ const (
 )
 
 var ops = []store.Op{store.OpEq, store.OpNe, store.OpLt, store.OpLte, store.OpGt, store.OpGte,
-	store.OpIn, store.OpContains, store.OpExists, store.OpPrefix}
+	store.OpIn, store.OpContains, store.OpExists, store.OpPrefix, store.OpUnder}
 
 // single returns the one value of a query parameter; repeating it is an error.
 func single(q url.Values, key string) (string, error) {
@@ -133,6 +133,48 @@ func splitWhereKey(k string) (string, store.Op, error) {
 		}
 	}
 	return field, op, nil
+}
+
+func parseFacets(typ string, q url.Values) (content.FacetOptions, error) {
+	o := content.FacetOptions{Type: typ}
+	for k := range q {
+		switch k {
+		case "locale", "status", "fields":
+		default:
+			if !strings.HasPrefix(k, "where[") {
+				return o, BadRequest("unknown query parameter %q", k)
+			}
+		}
+	}
+	var err error
+	if o.Locale, err = single(q, "locale"); err != nil {
+		return o, err
+	}
+	st, err := single(q, "status")
+	if err != nil {
+		return o, err
+	}
+	if o.Status, err = parseStatus(st); err != nil {
+		return o, err
+	}
+	fields, err := single(q, "fields")
+	if err != nil {
+		return o, err
+	}
+	if fields == "" {
+		return o, BadRequest("fields is required: comma-separated indexed text fields")
+	}
+	for _, f := range strings.Split(fields, ",") {
+		if f = strings.TrimSpace(f); f == "" {
+			return o, BadRequest("fields must be a comma-separated list of field names")
+		}
+		o.Fields = append(o.Fields, f)
+	}
+	if len(o.Fields) > content.MaxFacetFields {
+		return o, BadRequest("too many fields: %d (at most %d)", len(o.Fields), content.MaxFacetFields)
+	}
+	o.Where, err = parseWhere(q)
+	return o, err
 }
 
 func parseList(typ string, q url.Values) (content.ListOptions, error) {

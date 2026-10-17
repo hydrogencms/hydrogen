@@ -67,6 +67,69 @@ func (s *Service) List(ctx context.Context, o ListOptions) (*ListResult, error) 
 	return out, nil
 }
 
+// Facet limits.
+const (
+	MaxFacetFields = 5
+	MaxFacetValues = 1000 // values returned per field, most items first
+)
+
+// Facets counts the items of a type per value of indexed text fields (a list field counts an item once per
+// value), in one grouped query per field over the index rows. Like List it covers only what the principal may
+// read: a limited read scope is applied inside the query, so the counts are those of the readable items.
+func (s *Service) Facets(ctx context.Context, o FacetOptions) (map[string][]FacetValue, error) {
+	if o.Type == "" {
+		return nil, badRequest("a content type is required")
+	}
+	if len(o.Fields) == 0 || len(o.Fields) > MaxFacetFields {
+		return nil, badRequest("fields needs 1 to %d field names", MaxFacetFields)
+	}
+	q, err := s.query(ListOptions{Type: o.Type, Locale: o.Locale, Status: o.Status, Where: o.Where})
+	if err != nil {
+		return nil, err
+	}
+	t, err := s.typeOf(o.Type)
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range o.Fields {
+		if _, col, err := indexedField(t, name); err != nil {
+			return nil, err
+		} else if col != store.ColText {
+			return nil, badRequest("field %q is not a text field", name)
+		}
+	}
+	q.Working = o.Status != store.StatusPublished
+	if s.guarded(ctx) {
+		if err := s.o.Access.Prepare(ctx); err != nil {
+			return nil, err
+		}
+		scoped, terms, err := s.o.Access.ListScope(ctx, access.PolicyContentRead, o.Type)
+		if err != nil {
+			return nil, err
+		}
+		q.Scoped, q.Scope = scoped, terms
+	}
+	out := make(map[string][]FacetValue, len(o.Fields))
+	err = s.o.DB.View(ctx, func(tx store.Tx) error {
+		for _, name := range o.Fields {
+			counts, err := tx.Content().Facet(ctx, q, name, MaxFacetValues)
+			if err != nil {
+				return err
+			}
+			vals := make([]FacetValue, len(counts))
+			for i, c := range counts {
+				vals[i] = FacetValue{Value: c.Value, Count: c.Count}
+			}
+			out[name] = vals
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("content: facets: %w", err)
+	}
+	return out, nil
+}
+
 // MaxListFields is the most fields one list asks for.
 const MaxListFields = 10
 
@@ -243,6 +306,8 @@ func indexedField(t *schema.Type, name string) (*schema.Field, store.Column, err
 
 func columnOf(sh schema.Shape) (store.Column, bool) {
 	switch sh.Base {
+	case schema.BaseFile:
+		return store.ColText, true
 	case schema.BaseString:
 		if sh.Format == "date" || sh.Format == "datetime" {
 			return store.ColTime, true
@@ -281,9 +346,9 @@ func condOf(t *schema.Type, f Filter) (store.Cond, error) {
 		if !isList {
 			return store.Cond{}, badRequest("contains needs a list field, %q is not one", f.Field)
 		}
-	case store.OpPrefix:
+	case store.OpPrefix, store.OpUnder:
 		if col != store.ColText {
-			return store.Cond{}, badRequest("prefix needs a text field, %q is not one", f.Field)
+			return store.Cond{}, badRequest("%s needs a text field, %q is not one", f.Op, f.Field)
 		}
 	case store.OpLt, store.OpLte, store.OpGt, store.OpGte:
 		if col == store.ColBool || col == store.ColRef {

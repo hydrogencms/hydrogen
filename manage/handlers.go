@@ -91,6 +91,23 @@ func (a *api) listItems(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (a *api) facets(w http.ResponseWriter, r *http.Request) error {
+	t, err := a.typeOf(r, false)
+	if err != nil {
+		return err
+	}
+	o, err := parseFacets(t.Name, r.URL.Query())
+	if err != nil {
+		return err
+	}
+	res, err := a.c.Facets(r.Context(), o)
+	if err != nil {
+		return err
+	}
+	WriteJSON(w, http.StatusOK, res)
+	return nil
+}
+
 func (a *api) createItem(w http.ResponseWriter, r *http.Request) error {
 	t, err := a.typeOf(r, false)
 	if err != nil {

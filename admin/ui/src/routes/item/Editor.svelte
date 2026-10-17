@@ -392,6 +392,9 @@
     get locale() {
       return locale;
     },
+    get type() {
+      return type?.name;
+    },
     get isNew() {
       return isNew;
     },

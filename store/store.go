@@ -68,6 +68,7 @@ type Tx interface {
 	Releases() ReleaseStore
 	Reviews() ReviewStore
 	Collab() CollabStore
+	Uploads() UploadStore
 	// SQL runs a module's own statements in this transaction.
 	SQL() SQL
 	// Notify queues a notification on channel, sent after commit.

@@ -29,6 +29,8 @@ export async function publishedArticle(label: string) {
 
 /** Serious and critical axe violations (WCAG 2.x A/AA and best practices), formatted for the assertion. */
 export async function axeViolations(page: Page) {
+  // Fading dialogs and toasts are measured mid-animation otherwise (colours blend with what's behind them).
+  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'));
   const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice']).analyze();
   expect(result.passes.length, 'axe ran').toBeGreaterThan(10);
   return result.violations

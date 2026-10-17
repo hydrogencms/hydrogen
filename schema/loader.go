@@ -28,6 +28,8 @@ type typeDef struct {
 	page        bool
 	blockset    bool
 	review      bool
+	upload      *Upload
+	uploadPos   Pos
 	namePattern located
 	adminList   []located
 	adminGroup  string
@@ -79,6 +81,8 @@ func parseType(s src, reg *Registry, k, v *yaml.Node) *typeDef {
 			s.setBool(&def.page, e)
 		case "blockset":
 			s.setBool(&def.blockset, e)
+		case "upload":
+			s.uploadSpec(def, e)
 		case "review":
 			s.setBool(&def.review, e)
 		case "name":
@@ -108,6 +112,7 @@ func parseType(s src, reg *Registry, k, v *yaml.Node) *typeDef {
 			def.options[e.key] = optionDef{value: v, pos: s.pos(e.k)}
 		}
 	}
+	s.prepareUpload(def)
 	return def
 }
 

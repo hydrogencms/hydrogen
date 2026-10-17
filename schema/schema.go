@@ -55,9 +55,10 @@ type Type struct {
 	Description string
 	Singleton   bool
 	Page        bool
-	Review      bool   // publishing needs an approved review (the review workflow)
-	Blockset    bool   // its single blocks field can be embedded with the built-in shared block
-	NamePattern string // e.g. "{title}"; "" means the first string field
+	Review      bool    // publishing needs an approved review (the review workflow)
+	Upload      *Upload // non-nil for upload types (assets)
+	Blockset    bool    // its single blocks field can be embedded with the built-in shared block
+	NamePattern string  // e.g. "{title}"; "" means the first string field
 	Admin       TypeAdmin
 	AI          TypeAI
 	Fields      []*Field       // file order
@@ -144,11 +145,12 @@ const (
 	BaseGroup    Base = "group"
 	BaseJSON     Base = "json"
 	BaseBlocks   Base = "blocks" // a tree of blocks
+	BaseFile     Base = "file"   // a stored file: {id, name, mime, size, width?, height?, focal?}
 )
 
 type Shape struct {
 	Base    Base
-	Format  string   // strings: "", "text", "slug", "email", "url", "date", "datetime", "enum", "token"
+	Format  string   // strings: "", "text", "slug", "email", "url", "date", "datetime", "enum", "token"; refs: "" or "asset"
 	Integer bool     // numbers
 	Enum    []string // Format "enum" or "token"
 	Set     string   // Format "token": the token set

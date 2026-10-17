@@ -38,6 +38,8 @@ export interface CompiledType {
   /** Publishing needs an approved review. */
   review?: boolean;
   namePattern?: string;
+  /** An upload type: its items are media assets (built-in `file`, `folder` and `tags` fields). */
+  upload?: { accept?: string[]; max_size?: number | string };
   admin?: { group?: string; icon?: string; list?: string[] };
   options?: Record<string, unknown>;
   fields: CompiledField[];

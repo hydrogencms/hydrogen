@@ -410,6 +410,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/collections/{type}/facets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Count items per value of indexed text fields */
+        get: operations["facets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/collections/{type}/items": {
         parameters: {
             query?: never;
@@ -2361,7 +2378,7 @@ export interface components {
         Trashed: boolean;
         UserId: string;
         VersionNumber: number;
-        /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix; repeated filters are ANDed; in takes comma-separated values. */
+        /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
         Where: {
             [key: string]: {
                 [key: string]: string;
@@ -2982,7 +2999,7 @@ export interface operations {
                 sort?: components["parameters"]["Sort"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
-                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix; repeated filters are ANDed; in takes comma-separated values. */
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
                 where?: components["parameters"]["Where"];
                 /** @description Comma-separated top-level fields (at most 10) to return in each item's fields. */
                 fields?: components["parameters"]["Fields"];
@@ -3051,7 +3068,7 @@ export interface operations {
                 sort?: components["parameters"]["Sort"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
-                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix; repeated filters are ANDed; in takes comma-separated values. */
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
                 where?: components["parameters"]["Where"];
                 /** @description Comma-separated top-level fields (at most 10) to return in each item's fields. */
                 fields?: components["parameters"]["Fields"];
@@ -3120,7 +3137,7 @@ export interface operations {
                 sort?: components["parameters"]["Sort"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
-                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix; repeated filters are ANDed; in takes comma-separated values. */
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
                 where?: components["parameters"]["Where"];
                 /** @description Comma-separated top-level fields (at most 10) to return in each item's fields. */
                 fields?: components["parameters"]["Fields"];
@@ -3189,7 +3206,7 @@ export interface operations {
                 sort?: components["parameters"]["Sort"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
-                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix; repeated filters are ANDed; in takes comma-separated values. */
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
                 where?: components["parameters"]["Where"];
                 /** @description Comma-separated top-level fields (at most 10) to return in each item's fields. */
                 fields?: components["parameters"]["Fields"];
@@ -3258,7 +3275,7 @@ export interface operations {
                 sort?: components["parameters"]["Sort"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
-                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix; repeated filters are ANDed; in takes comma-separated values. */
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
                 where?: components["parameters"]["Where"];
                 /** @description Comma-separated top-level fields (at most 10) to return in each item's fields. */
                 fields?: components["parameters"]["Fields"];
@@ -3315,6 +3332,45 @@ export interface operations {
             422: components["responses"]["Invalid"];
         };
     };
+    facets: {
+        parameters: {
+            query: {
+                /** @description Locale; default the item's main locale (reads) or the service default (writes). */
+                locale?: components["parameters"]["Locale"];
+                status?: components["parameters"]["Status"];
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
+                where?: components["parameters"]["Where"];
+                /** @description Comma-separated indexed text fields (at most 5), e.g. folder,tags. */
+                fields: string;
+            };
+            header?: never;
+            path: {
+                type: components["parameters"]["CollectionType"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description For each requested field the values with the number of items that have each, most items first then by value, at most 1000 per field. A list field counts an item once per value. Only items the principal may read are counted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: {
+                            count: number;
+                            value: string;
+                        }[];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listItems: {
         parameters: {
             query?: {
@@ -3327,7 +3383,7 @@ export interface operations {
                 sort?: components["parameters"]["Sort"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
-                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix; repeated filters are ANDed; in takes comma-separated values. */
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
                 where?: components["parameters"]["Where"];
                 /** @description Comma-separated top-level fields (at most 10) to return in each item's fields. */
                 fields?: components["parameters"]["Fields"];

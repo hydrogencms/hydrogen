@@ -69,6 +69,7 @@ type fake struct {
 
 	view     *content.View
 	list     *content.ListResult
+	facets   map[string][]content.FacetValue
 	versions []store.VersionMeta
 	ver      *content.VersionView
 	refs     []content.Referrer
@@ -139,6 +140,10 @@ func (f *fake) ListTrash(_ context.Context, o content.TrashOptions) (*content.Tr
 
 func (f *fake) List(_ context.Context, o content.ListOptions) (*content.ListResult, error) {
 	return f.list, f.rec(call{name: "List", arg: o})
+}
+
+func (f *fake) Facets(_ context.Context, o content.FacetOptions) (map[string][]content.FacetValue, error) {
+	return f.facets, f.rec(call{name: "Facets", arg: o})
 }
 
 func (f *fake) Versions(_ context.Context, id ids.UUID) ([]store.VersionMeta, error) {

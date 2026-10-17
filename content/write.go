@@ -332,7 +332,12 @@ func (s *Service) prepareDraft(ctx context.Context, tx store.Tx, st *itemState, 
 	if err != nil {
 		return err
 	}
-	if errs = append(errs, rep.Errors()...); len(errs) > 0 {
+	if errs = append(errs, rep.Errors()...); len(errs) == 0 {
+		if errs, err = s.resolveFiles(ctx, st.typ, doc); err != nil {
+			return err
+		}
+	}
+	if len(errs) > 0 {
 		return &ValidationError{Locale: locale, Errors: errs}
 	}
 	_, err = s.runHooks(ctx, tx, st.item, hooks.BeforeSave, locale, doc)

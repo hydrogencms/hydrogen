@@ -56,14 +56,14 @@ func (a *App) Export(ctx context.Context, dir string, o ExportOptions) (*exportf
 		return nil, err
 	}
 	return exportfmt.Export(ctx, exportfmt.ExportOptions{DB: s.DB, Dir: dir, Clock: s.Clock, Version: o.Version,
-		SchemaHash: s.Schema.Hash(), Schema: compiled, Modules: a.Exporters(), PublishedOnly: o.PublishedOnly, Progress: o.Progress})
+		SchemaHash: s.Schema.Hash(), Schema: compiled, Modules: a.Exporters(), PublishedOnly: o.PublishedOnly, Progress: o.Progress, Files: mediaFiles(s.Media)})
 }
 
 // Import restores an export into the empty content database (see exportfmt.Import).
 func (a *App) Import(ctx context.Context, dir string, o ImportOptions) (*exportfmt.ImportResult, error) {
 	s := a.services
 	res, err := exportfmt.Import(ctx, exportfmt.ImportOptions{DB: s.DB, Content: s.Content, Outbox: s.Outbox, Clock: s.Clock, Dir: dir,
-		AllowSchemaChange: o.AllowSchemaChange, Modules: a.Exporters(), Progress: o.Progress})
+		AllowSchemaChange: o.AllowSchemaChange, Modules: a.Exporters(), Progress: o.Progress, Files: mediaFiles(s.Media)})
 	if err != nil {
 		return res, err
 	}

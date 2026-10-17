@@ -95,8 +95,18 @@ p = sys.argv[1]
 s = open(p).read()
 old = "  article:\n"
 assert old in s
-open(p, "w").write(s.replace(old, old + "    review: true\n", 1))
+open(p, "w").write(s.replace(old, old + "    review: true\n", 1).rstrip("\n") + "\n      hero: { type: asset, to: [image] }\n")
 PY
+
+# H9a media: an upload type (media.spec.ts); the article's asset field is added above.
+cat >"$work/schema/image.yaml" <<'YAML'
+types:
+  image:
+    upload: { accept: ["image/*", application/pdf], max_size: 5MB }
+    fields:
+      alt: { type: string, translatable: true, max: 300 }
+      caption: { type: text, translatable: true }
+YAML
 
 # The careers channel also delivers German, so an editor confined to careers_en can translate and publish two
 # languages.
@@ -107,6 +117,9 @@ p = sys.argv[1]
 s = open(p).read()
 s, n = re.subn(r"(  careers_en:\n    site: careers\n    languages: )\[en\]", r"\1[en, de]", s)
 assert n == 1, "careers_en languages not found"
+# Assets show in delivery only where the channel delivers their type (media.spec.ts).
+s, n = re.subn(r"(    collections: \[page, landing, article, product)\]", r"\1, image]", s)
+assert n == 1, "corporate_web collections not found"
 open(p, "w").write(s)
 PY
 

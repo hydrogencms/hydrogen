@@ -61,10 +61,18 @@ func (s *Schema) typeJSON(t *Type) map[string]any {
 	put(m, "singleton", t.Singleton)
 	put(m, "page", t.Page)
 	put(m, "blockset", t.Blockset)
+	if t.Upload != nil {
+		up := map[string]any{}
+		if len(t.Upload.Accept) > 0 {
+			up["accept"] = t.Upload.Accept
+		}
+		put(up, "max_size", t.Upload.MaxSize)
+		m["upload"] = up
+	}
 	put(m, "review", t.Review)
 	put(m, "namePattern", t.NamePattern)
-	if len(t.Options) > 0 {
-		m["options"] = t.Options
+	if opts := t.moduleOptions(); len(opts) > 0 {
+		m["options"] = opts
 	}
 	admin := map[string]any{}
 	put(admin, "group", t.Admin.Group)

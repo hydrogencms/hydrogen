@@ -26,12 +26,14 @@ type Article struct {
 	Rating      *int64            `json:"rating,omitempty"`
 	Price       *float64          `json:"price,omitempty"`
 	Featured    *bool             `json:"featured,omitempty"`
-	Author      *content.Ref      `json:"author,omitempty"`
-	Related     []content.Ref     `json:"related,omitempty"`
-	Tags        []string          `json:"tags,omitempty"`
-	Address     *ArticleAddress   `json:"address,omitempty"`
-	Contact     *string           `json:"contact,omitempty"`
-	Extra       json.RawMessage   `json:"extra,omitempty"`
+	// Lead image from the media library.
+	Hero    *content.Ref    `json:"hero,omitempty"`
+	Author  *content.Ref    `json:"author,omitempty"`
+	Related []content.Ref   `json:"related,omitempty"`
+	Tags    []string        `json:"tags,omitempty"`
+	Address *ArticleAddress `json:"address,omitempty"`
+	Contact *string         `json:"contact,omitempty"`
+	Extra   json.RawMessage `json:"extra,omitempty"`
 	// Set by a hook.
 	ReadingMinutes *int64 `json:"readingMinutes,omitempty"`
 }

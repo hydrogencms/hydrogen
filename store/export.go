@@ -25,6 +25,8 @@ type ExportStore interface {
 	DraftPartsFor(ctx context.Context, items []ids.UUID) ([]DraftPart, error)
 	// ContentMigrationLog lists the applied content migrations by name.
 	ContentMigrationLog(ctx context.Context) ([]AppliedContentMigration, error)
+	// ItemTypes lists the distinct types of all items, trashed ones included, sorted.
+	ItemTypes(ctx context.Context) ([]string, error)
 	// CountItems returns the number of items that are not in the trash.
 	CountItems(ctx context.Context) (int, error)
 }

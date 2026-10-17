@@ -571,7 +571,7 @@ func TestJSONSchemaFile(t *testing.T) {
 		}
 	}
 	types := field["type"].(map[string]any)["enum"].([]string)
-	if len(types) != 17 {
+	if len(types) != 19 {
 		t.Fatalf("types = %v", types)
 	}
 	reg := NewRegistry()

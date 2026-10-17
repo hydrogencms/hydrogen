@@ -23,11 +23,13 @@ func openAPI(s *schema.Schema, extra []Route) obj {
 				"collections": obj{"type": "array", "items": openapi.Str("")},
 				"options":     obj{"type": "object", "additionalProperties": true, "description": "Public channel options of modules."}}},
 	}
+	schemas["Asset"] = assetSchema()
 	var itemRefs []any
 	paths := obj{}
 	for _, t := range s.Types() {
 		fields := s.JSONSchema(t)
 		delete(fields, "$schema")
+		expandAssetSchemas(fields)
 		openapi.HoistDefs(schemas, fields)
 		schemas["Fields_"+t.Name] = fields
 		schemas["Item_"+t.Name] = itemSchema(t.Name, openapi.SchemaRef("Fields_"+t.Name))
@@ -232,4 +234,43 @@ func pathWords(p string) string {
 		sb.WriteString(openapi.Pascal(w))
 	}
 	return sb.String()
+}
+
+func assetSchema() obj {
+	focal := obj{"type": "object", "required": []any{"x", "y"},
+		"properties": obj{"x": obj{"type": "number", "minimum": 0, "maximum": 1}, "y": obj{"type": "number", "minimum": 0, "maximum": 1}}}
+	return obj{"type": "object", "required": []any{"id", "url", "name", "mime", "size", "fields"},
+		"description": "An uploaded file as an asset field shows it. The field is null when the asset is not published.",
+		"properties": obj{"id": openapi.Str("uuid"), "url": openapi.Str("uri-reference"), "name": openapi.Str(""), "mime": openapi.Str(""),
+			"size": obj{"type": "integer"}, "width": obj{"type": "integer"}, "height": obj{"type": "integer"}, "focal": focal,
+			"fields": obj{"type": "object", "additionalProperties": true, "description": "The asset item's own fields (alt, caption, …) in the response's locale."}}}
+}
+
+// expandAssetSchemas rewrites the schema of every asset field in v (the stored id) to the expanded asset or null.
+func expandAssetSchemas(v any) {
+	switch x := v.(type) {
+	case map[string]any:
+		if x["x-hydrogen-asset"] == true {
+			keep := map[string]any{}
+			for _, k := range []string{"title", "description", "default"} {
+				if val, ok := x[k]; ok {
+					keep[k] = val
+				}
+			}
+			clear(x)
+			for k, val := range keep {
+				x[k] = val
+			}
+			x["oneOf"] = []any{openapi.SchemaRef("Asset"), obj{"type": "null"}}
+			delete(x, "default")
+			return
+		}
+		for _, e := range x {
+			expandAssetSchemas(e)
+		}
+	case []any:
+		for _, e := range x {
+			expandAssetSchemas(e)
+		}
+	}
 }

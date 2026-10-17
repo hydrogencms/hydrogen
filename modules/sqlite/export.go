@@ -161,6 +161,23 @@ func (s contentStore) ContentMigrationLog(ctx context.Context) ([]store.AppliedC
 	return out, rows.Err()
 }
 
+func (s contentStore) ItemTypes(ctx context.Context) ([]string, error) {
+	rows, err := s.tx.QueryContext(ctx, `SELECT DISTINCT type FROM item ORDER BY type`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: item types: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 func (s contentStore) CountItems(ctx context.Context) (int, error) {
 	var n int
 	err := s.tx.QueryRowContext(ctx, `SELECT count(*) FROM item WHERE deleted_at IS NULL`).Scan(&n)

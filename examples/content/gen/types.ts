@@ -21,6 +21,42 @@ export interface RichTextNode {
 /** A rich text value: a ProseMirror document node. */
 export type RichText = RichTextNode;
 
+/** The part of an image that must stay visible when it is cropped, as fractions (0 to 1) of its size. */
+export interface FocalPoint {
+  x: number;
+  y: number;
+}
+
+/** A stored file (a "file" field). The server fills in everything but name and focal. */
+export interface FileValue {
+  /** SHA-256 of the content. */
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  width?: number;
+  height?: number;
+  focal?: FocalPoint;
+}
+
+/** An uploaded file as the delivery API shows an asset field: null there when the asset is not published. */
+export interface Asset<F = Record<string, unknown>> {
+  /** The id of the upload item. */
+  id: string;
+  url: string;
+  name: string;
+  mime: string;
+  size: number;
+  width?: number;
+  height?: number;
+  focal?: FocalPoint;
+  /** The asset item's own fields (alt, caption, ...) in the response's locale. */
+  fields: F;
+}
+
+/** An upload type's own fields: all but the built-in file, folder and tags. */
+export type UploadFields<T> = Omit<T, "file" | "folder" | "tags">;
+
 /** An item as the management and delivery APIs return it. */
 export interface ItemView<T> {
   id: string;
@@ -67,6 +103,8 @@ export interface Article {
   rating?: number;
   price?: number;
   featured?: boolean;
+  /** Lead image from the media library. */
+  hero?: Asset<UploadFields<Image>> | null;
   author?: Ref;
   related?: Ref[];
   tags?: string[];
@@ -81,6 +119,20 @@ export interface Article {
 export interface ArticleAddress {
   street?: string;
   city?: string;
+}
+
+/**
+ * The "image" content type.
+ *
+ * Uploaded images and documents.
+ */
+export interface Image {
+  file: FileValue;
+  folder?: string;
+  tags?: string[];
+  /** Describes the image for screen readers. */
+  alt?: string;
+  caption?: string;
 }
 
 /** The "landing" content type. */
@@ -135,6 +187,7 @@ export interface Settings {
 /** Field types by content type name. */
 export interface HydrogenTypes {
   article: Article;
+  image: Image;
   landing: Landing;
   page: Page;
   person: Person;

@@ -15,6 +15,8 @@ export const routes: Route[] = [
   { path: '/items/:id', title: 'nav.content', load: () => import('./routes/item/Item.svelte') },
   { path: '/singletons/:type', title: 'nav.settingsContent', load: () => import('./routes/singleton/Singleton.svelte') },
 
+  { path: '/assets', title: 'nav.assets', load: () => import('./routes/assets/Assets.svelte') },
+
   { path: '/pages/:site', title: 'nav.pages', load: () => import('./routes/pages/Pages.svelte') },
 
   // One lazy entry for both: the list at `/x`, the detail at `/x/:id` (params.rest).

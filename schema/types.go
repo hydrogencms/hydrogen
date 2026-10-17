@@ -24,7 +24,7 @@ func coreTypes() []FieldType {
 	return []FieldType{
 		stringType{name: "string"}, stringType{name: "text", multiline: true},
 		richtextType{}, numberType{}, booleanType{}, enumType{}, dateType{name: "date"},
-		dateType{name: "datetime", datetime: true}, slugType{}, emailType{}, urlType{}, refType{}, listType{},
+		dateType{name: "datetime", datetime: true}, slugType{}, emailType{}, urlType{}, refType{}, listType{}, fileType{}, assetType{},
 		groupType{}, jsonType{}, blocksType{}, tokenType{},
 	}
 }
@@ -590,6 +590,7 @@ func (refType) Compile(o *Options) (Shape, Config, error) {
 type refConfig struct {
 	to       []string
 	onDelete string
+	asset    bool // an `asset` field: delivery expands it
 }
 
 func (c *refConfig) Validate(v any, _ Mode, r *Report) {
@@ -606,7 +607,11 @@ func (c *refConfig) Validate(v any, _ Mode, r *Report) {
 func (c *refConfig) IsEmpty(v any) bool { return v == "" }
 
 func (c *refConfig) JSONSchema() map[string]any {
-	return map[string]any{"type": "string", "format": "uuid", "x-hydrogen-to": append([]string(nil), c.to...)}
+	m := map[string]any{"type": "string", "format": "uuid", "x-hydrogen-to": append([]string(nil), c.to...)}
+	if c.asset {
+		m["x-hydrogen-asset"] = true
+	}
+	return m
 }
 
 // ---- json

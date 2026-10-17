@@ -283,9 +283,19 @@ func IndexWalk(q store.Query) bool {
 	return true
 }
 
+// UnderBounds splits an OpUnder value into the exact path and the prefix of its descendants: "/a" and "/a/",
+// "/" and "/" (the trailing slash is dropped first, so "/a/" means "/a").
+func UnderBounds(v string) (exact, prefix string) {
+	base := strings.TrimRight(v, "/")
+	if base == "" {
+		return "/", "/"
+	}
+	return base, base + "/"
+}
+
 // Selective reports whether an operator usually matches few items.
 func Selective(op store.Op) bool {
-	return op == store.OpEq || op == store.OpIn || op == store.OpContains || op == store.OpPrefix
+	return op == store.OpEq || op == store.OpIn || op == store.OpContains || op == store.OpPrefix || op == store.OpUnder
 }
 
 // WalkPhases are the statements an index-ordered query runs. Items with a value for the sort field come in

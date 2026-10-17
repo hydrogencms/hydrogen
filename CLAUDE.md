@@ -115,6 +115,12 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   snapshots, projections and pages routes. Views carry `inherits`, `overrides`, `inheritedFrom`, `availableLocales`.
   Without the module `inherits` is ignored (config:check warns). `examples/multisite` registers it. Docs:
   `docs/locales.md`. Contract: `planning/design/overlays-h8d.md`.
+- Media (H9a): `media/` stores files by SHA-256 (`media.Storage`: local, or S3-compatible with in-house SigV4),
+  records them in `media_upload`, serves `/assets/{sha}/{name}` with hardening headers and runs the `media.gc` job.
+  Types marked `upload:` are asset collections (built-in `file`, `folder`, `tags`); `asset` fields reference them and
+  delivery expands them (`delivery/assets.go`); `content` reads server-owned file metadata through `content.Files`.
+  The admin library is `/assets` (`admin/ui/src/lib/media`). Docs: `docs/media.md`. Contract:
+  `planning/design/media-h9a.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
@@ -213,6 +219,10 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - With overlays on, per-locale documents for reading, validating, snapshotting and projecting come from the
   resolved parts (`itemState.publishedParts`/`workingParts`); stored parts are sparse (`rawâ€¦Parts`). New code that
   reads a locale's document must use the resolved ones, and writes must stay sparse.
+- A `file` value's `id`, `mime`, `size`, `width` and `height` are the server's: every item write re-reads them by
+  sha through `content.Files`, so clients only choose `name` and `focal`. An asset is `null` in delivery unless it is
+  published (or a draft in preview), not trashed, and its upload type is in the channel's `collections`. Uploads are
+  deduped by hash: e2e fixtures need unique bytes per run (`ADMIN_E2E_ONLY` runs keep the previous database).
 - Release publishing goes through `content.Service.PublishTx/UnpublishTx` inside one `store.Tx`: call the service's
   grant preparation before opening the transaction (small pools deadlock otherwise), and change release status only
   through the store's conditional transition, never a blind update (several nodes run the `releases` job and the API).
