@@ -77,6 +77,10 @@ type ContentStore interface {
 	// published version; management listings). Both replace only the content rows of that projection.
 	ReplaceIndex(ctx context.Context, item ids.UUID, p Projection, rows []IndexRow) error
 	ReplaceSearch(ctx context.Context, item ids.UUID, p Projection, docs []SearchDoc) error
+	// SearchIndexEmpty reports whether items exist but a projection has no search rows at all: published
+	// ones for a published item, working ones for any item (a lost index, or the state after a migration that
+	// dropped it).
+	SearchIndexEmpty(ctx context.Context) (bool, error)
 	// ReplaceModuleIndex replaces a module's index rows of an item. Field names are "<module>.<name>"; the rows
 	// apply to both projections.
 	ReplaceModuleIndex(ctx context.Context, item ids.UUID, module string, rows []IndexRow) error
@@ -89,8 +93,9 @@ type ContentStore interface {
 	ItemIDsOfType(ctx context.Context, typ string, after ids.UUID, limit int) ([]ids.UUID, error) // id order
 
 	// Facet counts the items matching q per value of an indexed text field (a list field counts an item once
-	// per value), most items first and then by value, at most limit values. Only q's Type, Trashed, Status,
-	// Available, Working, Scoped/Scope, Where and Locale apply; search, sort and paging are ignored.
+	// per value), most items first and then by value, at most limit values. Only q's Type, Types, Trashed,
+	// Status, Available, Working, Scoped/Scope, Where, Locale, Search and SearchFallback apply; sort and paging
+	// are ignored.
 	Facet(ctx context.Context, q Query, field string, limit int) ([]FacetCount, error)
 }
 
@@ -239,7 +244,9 @@ const (
 )
 
 type Query struct {
-	Type   string
+	Type string
+	// Types narrows Type: an item must match Type (when set) and be of one of these types; empty adds no filter.
+	Types  []string
 	Locale string // for names, locale-specific index rows and search
 	Status Status
 	// Trashed selects trashed items; the default excludes them from lists, counts, search and scoped queries.
@@ -255,9 +262,16 @@ type Query struct {
 	Scope  []ScopeTerm
 	Where  []Cond
 	Search string
-	Sort   []Sort
-	Limit  int // 1..500
-	Offset int
+	// SearchFallback also matches the main-locale search document of an always available item that has none
+	// in Locale; rank and snippet then come from that document.
+	SearchFallback bool
+	// NoTotal skips the total count: QueryResult.Total is then only the page's count plus Offset.
+	NoTotal bool
+	// Highlight fills ItemSummary.Snippet for a query with Search.
+	Highlight bool
+	Sort      []Sort
+	Limit     int // 1..500
+	Offset    int
 }
 
 // ScopeTerm ANDs its parts: CreatedBy (any of these actors; empty = any) and Where.
@@ -285,6 +299,9 @@ type ItemSummary struct {
 	Drafts   []string // draft part names ("" = shared)
 	Locales  []string // locales in the published version
 	Searched float64  // search rank, when Search is set
+	// Snippet is a fragment of the best matching search text with each match wrapped in \x02 and \x03 (raw
+	// text, not escaped); set when Query.Highlight and Query.Search are.
+	Snippet string
 }
 
 // Snapshot is the delivery JSON of one item in one locale, built when a version is written. Payload is stored

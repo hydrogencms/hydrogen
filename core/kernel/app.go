@@ -34,6 +34,7 @@ import (
 	"github.com/hydrogencms/hydrogen/core/jobs"
 	"github.com/hydrogencms/hydrogen/core/outbox"
 	"github.com/hydrogencms/hydrogen/core/schema"
+	"github.com/hydrogencms/hydrogen/core/search"
 	"github.com/hydrogencms/hydrogen/core/store"
 	"github.com/hydrogencms/hydrogen/features/collab"
 	"github.com/hydrogencms/hydrogen/features/media"
@@ -195,6 +196,9 @@ type Services struct {
 	// Channels are the compiled delivery channels (config/channels.yaml); one implicit "default" channel when
 	// none are configured.
 	Channels *channel.Set
+	// Search answers searches: the engine a module registered (Registry.SearchEngine), else the database's
+	// full-text search.
+	Search search.Engine
 	// Delivery is the delivery API (/api/deliver/v1): response cache, purge listener and preview tokens. It is
 	// built after every module booted, so it is nil in Boot.
 	Delivery *delivery.API
@@ -281,6 +285,9 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 		consumers = append(consumers, collabConsumer(func() *collab.Service { return colSvc }))
 	}
 	consumers = append(consumers, purgeConsumer(db, mappers))
+	if idx, ok := reg.searchIndex(); ok {
+		consumers = append(consumers, searchConsumer(idx, db, p.schema))
+	}
 	consumers = append(consumers, webhookConsumers(core.Webhooks, o.Clock,
 		func(topic string, payload json.RawMessage) []string { return cachetag.Tags(mappers, topic, payload) })...)
 	ob, err := outbox.New(db, o.Clock, log, consumers, outbox.Options{Poll: core.Outbox.Poll, Lease: core.Outbox.Lease})
@@ -322,6 +329,11 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 	if err != nil {
 		a.closeDB(db)
 		return nil, err
+	}
+	if reg.engine != nil {
+		a.services.Search = reg.engine.value
+	} else {
+		a.services.Search = search.Database(db, search.WithSchema(p.schema))
 	}
 	if a.services.Releases, err = newReleases(a.services); err != nil {
 		a.closeDB(db)
@@ -432,6 +444,9 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 			return nil, err
 		}
 		if err := reg.Job("content.trash", "@hourly", purgeTrash(core.Content.TrashRetention)); err != nil {
+			return nil, err
+		}
+		if err := reg.Command(searchReindexCommand()); err != nil {
 			return nil, err
 		}
 	}
@@ -889,6 +904,12 @@ func (a *App) Run(ctx context.Context, listening func(addr string)) error {
 			return fmt.Errorf("collab: %w", err)
 		}
 	}
+	wg.Go(func() { s.startSearch(ctx) })
+	wg.Go(func() {
+		if _, err := s.HealSearchRows(ctx); err != nil && ctx.Err() == nil {
+			s.Log.Error("search: reindexing the content failed", "err", err)
+		}
+	})
 	if s.Core.Jobs.Enabled {
 		wg.Go(func() {
 			if err := a.runner.Run(ctx); err != nil {

@@ -16,3 +16,7 @@ func ParseListQuery(typ string, q url.Values) (content.ListOptions, error) { ret
 func ErrorEnvelope(e *Error) any {
 	return envelope(errorBody{Code: e.Code, Message: e.Message, Fields: e.Fields})
 }
+
+// ParseWhere reads the where[field][op]=value parameters of q (ops as in lists) into filters; other
+// parameters are ignored.
+func ParseWhere(q url.Values) ([]content.Filter, error) { return parseWhere(q) }

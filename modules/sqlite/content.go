@@ -710,3 +710,16 @@ func (s contentStore) ItemIDsOfType(ctx context.Context, typ string, after ids.U
 	}
 	return out, rows.Err()
 }
+
+func (s contentStore) SearchIndexEmpty(ctx context.Context) (bool, error) {
+	var empty bool
+	err := s.tx.QueryRowContext(ctx, `SELECT
+		(EXISTS (SELECT 1 FROM item WHERE published_version > 0 AND deleted_at IS NULL)
+			AND NOT EXISTS (SELECT 1 FROM content_search_doc WHERE scope = 'p'))
+		OR (EXISTS (SELECT 1 FROM item WHERE deleted_at IS NULL)
+			AND NOT EXISTS (SELECT 1 FROM content_search_doc WHERE scope = 'w'))`).Scan(&empty)
+	if err != nil {
+		return false, fmt.Errorf("sqlite: search index empty: %w", err)
+	}
+	return empty, nil
+}

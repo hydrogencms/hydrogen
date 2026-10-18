@@ -36,6 +36,7 @@ type Content interface {
 	ListTrash(ctx context.Context, o content.TrashOptions) (*content.TrashResult, error)
 	List(ctx context.Context, o content.ListOptions) (*content.ListResult, error)
 	Facets(ctx context.Context, o content.FacetOptions) (map[string][]content.FacetValue, error)
+	Search(ctx context.Context, o content.SearchOptions) (*content.SearchResult, error)
 	Versions(ctx context.Context, id ids.UUID) ([]store.VersionMeta, error)
 	VersionContent(ctx context.Context, id ids.UUID, version int) (*content.VersionView, error)
 	RestoreVersion(ctx context.Context, id ids.UUID, version int, locales []string) (*content.View, error)
@@ -183,6 +184,7 @@ var coreRoutes = []route{
 	{"POST", "/items/{id}/unpublish", access.PolicyContentPublish, (*api).unpublishItem},
 	{"DELETE", "/items/{id}", access.PolicyContentDelete, (*api).deleteItem},
 	{"POST", "/items/{id}/restore", access.PolicyContentDelete, (*api).restoreItem},
+	{"GET", "/search", access.PolicyContentRead, (*api).search},
 	{"GET", "/trash", access.PolicyContentRead, (*api).listTrash},
 	{"GET", "/items/{id}/versions", access.PolicyContentRead, (*api).versions},
 	{"GET", "/items/{id}/versions/{n}", access.PolicyContentRead, (*api).version},

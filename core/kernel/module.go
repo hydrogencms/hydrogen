@@ -24,6 +24,7 @@ import (
 	"github.com/hydrogencms/hydrogen/core/hooks"
 	"github.com/hydrogencms/hydrogen/core/outbox"
 	"github.com/hydrogencms/hydrogen/core/schema"
+	"github.com/hydrogencms/hydrogen/core/search"
 	"github.com/hydrogencms/hydrogen/core/store"
 )
 
@@ -103,6 +104,7 @@ type Registry struct {
 	catalog      *access.Catalog
 	adminExts    []registered[AdminExtension]
 	overlays     *registered[func(*channel.Set) content.Overlays]
+	engine       *registered[search.Engine]
 }
 
 type registered[T any] struct {

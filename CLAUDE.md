@@ -132,6 +132,13 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   WebP/AVIF. Delivery adds `variants` to assets through `delivery.AssetDecorator` (`Registry.AssetDecorator`); the
   admin gets `media.thumbBase` through `Registry.AdminImages`. SDK: `imageProps` (client), `Image` (react). Docs:
   `docs/images.md`. Contract: `planning/design/images-h9b.md`.
+- Search (H9c): `core/search` (Engine, Index, Doc, BuildDocs, the default `Database` engine on the adapters'
+  full-text search with `\x02`/`\x03` snippet markers turned into `<mark>`), schema type option `search:`,
+  `Registry.SearchEngine`, `Services.Search`, the `search.index` outbox consumer, Start-time Sync/Rebuild with
+  catch-up, `search:reindex`, and `Services.HealSearchRows` (reindexes when search rows are missing). Endpoints:
+  delivery `GET /search` (the engine; channel collections) and manage `GET /search` (always the database: drafts and
+  access scopes). `modules/meilisearch` is the first external engine (net/http only). Docs: `docs/search.md`,
+  `docs/meilisearch.md`. Contract: `planning/design/search-h9c.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
@@ -230,6 +237,10 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - With overlays on, per-locale documents for reading, validating, snapshotting and projecting come from the
   resolved parts (`itemState.publishedParts`/`workingParts`); stored parts are sparse (`rawâ€¦Parts`). New code that
   reads a locale's document must use the resolved ones, and writes must stay sparse.
+- An external search index is a copy: anything that changes what an item publishes (publish, unpublish, trash,
+  restore, purge, `item.updated` with `draft: false`) must reach the `search.index` consumer, and its handlers must
+  re-read the item's snapshots (all locales, overlay-derived ones included), never apply event payloads. Manage
+  search never uses an external engine (it cannot apply access scopes or see drafts).
 - Image URLs must stay bounded: `/images` serves only configured presets, allowed widths and focal points that
   some item holding the file really has (checked on a cache miss). Never add a free-form size or crop parameter.
   Anything in a variant's output must be in its URL (preset version, width, focal), or immutable caching breaks.

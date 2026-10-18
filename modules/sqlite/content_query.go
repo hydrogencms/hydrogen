@@ -264,6 +264,13 @@ func (c *compiler) itemConds(probes bool) ([]string, error) {
 	if q.Type != "" {
 		conds = append(conds, "item.type = "+c.bind(q.Type))
 	}
+	if len(q.Types) > 0 {
+		marks := make([]string, len(q.Types))
+		for i, t := range q.Types {
+			marks[i] = c.bind(t)
+		}
+		conds = append(conds, "item.type IN ("+strings.Join(marks, ",")+")")
+	}
 	switch q.Trashed {
 	case store.TrashedExclude:
 		conds = append(conds, "item.deleted_at IS NULL")
@@ -344,14 +351,7 @@ func (c *compiler) filter() (from, where string, err error) {
 	from = c.itemFrom()
 	if terms := storeutil.SearchTerms(q.Search); len(terms) > 0 {
 		c.searching = true
-		// The rank column is bm25 with default weights (lower is better). The bm25() function itself cannot
-		// be used through this join, and the inner select keeps the aggregate away from the FTS cursor.
-		from += ` JOIN (
-		SELECT item_id, MIN(rank) AS rank FROM (
-			SELECT sd.item_id AS item_id, content_search.rank AS rank
-			FROM content_search JOIN content_search_doc sd ON sd.id = content_search.rowid
-			WHERE content_search MATCH ` + c.bind(match(terms)) + ` AND sd.scope = ` + c.projection() + ` AND sd.locale IN ('', ` + c.locale() + `))
-		GROUP BY item_id) srch ON srch.item_id = item.id`
+		from += " JOIN " + c.searchJoin(terms) + " srch ON srch.item_id = item.id"
 	} else if strings.TrimSpace(q.Search) != "" {
 		conds = append(conds, "0") // only punctuation: nothing can match
 	}
@@ -359,6 +359,31 @@ func (c *compiler) filter() (from, where string, err error) {
 		where = " WHERE " + strings.Join(conds, " AND ")
 	}
 	return from, where, nil
+}
+
+// searchLocale is the predicate on a content_search_doc row sd (joined to item it) that picks the documents a
+// query may match: the shared and the query locale's, and with SearchFallback the main-locale document of an
+// always available item that has none in the locale.
+func (c *compiler) searchLocale() string {
+	loc := c.locale()
+	p := "sd.locale IN ('', " + loc + ")"
+	if c.q.SearchFallback {
+		p = "(" + p + " OR (it.always_available = 1 AND sd.locale = it.main_locale AND NOT EXISTS (" +
+			"SELECT 1 FROM content_search_doc o WHERE o.item_id = sd.item_id AND o.scope = sd.scope AND o.locale = " + loc + ")))"
+	}
+	return p
+}
+
+// searchJoin is the subquery of (item_id, rank) for the items matching the search terms.
+// The rank column is bm25 with default weights (lower is better). The bm25() function itself cannot be used
+// through this join, and the inner select keeps the aggregate away from the FTS cursor.
+func (c *compiler) searchJoin(terms []string) string {
+	return `(
+		SELECT item_id, MIN(rank) AS rank FROM (
+			SELECT sd.item_id AS item_id, content_search.rank AS rank
+			FROM content_search JOIN content_search_doc sd ON sd.id = content_search.rowid JOIN item it ON it.id = sd.item_id
+			WHERE content_search MATCH ` + c.bind(match(terms)) + ` AND sd.scope = ` + c.projection() + ` AND ` + c.searchLocale() + `)
+		GROUP BY item_id)`
 }
 
 func (c *compiler) nameExpr() string {
@@ -385,6 +410,8 @@ func (c *compiler) sortKey(s store.Sort) (string, error) {
 			return "item.created_at" + dir, nil
 		case "updatedAt":
 			return "item.updated_at" + dir, nil
+		case "publishedAt":
+			return "(SELECT MAX(ps.published_at) FROM published_snapshot ps WHERE ps.item_id = item.id)" + dir + " NULLS LAST", nil
 		case "deletedAt":
 			return "item.deleted_at" + dir + " NULLS LAST", nil
 		case "key":
@@ -451,6 +478,49 @@ func selectSQL(q store.Query) (text string, args []any, err error) {
 	return text, c.args, nil
 }
 
+// fillSnippets sets Snippet on a page of a searched query: snippet() only works on the FTS cursor, so the
+// page's matching rows are read again, best rank first, and each item keeps its best one.
+func fillSnippets(ctx context.Context, db queryer, q store.Query, items []store.ItemSummary) error {
+	terms := storeutil.SearchTerms(q.Search)
+	if !q.Highlight || len(terms) == 0 || len(items) == 0 {
+		return nil
+	}
+	c := &compiler{q: q}
+	marks := make([]string, len(items))
+	for i, it := range items {
+		marks[i] = c.bind(uid(it.ID))
+	}
+	text := `SELECT sd.item_id, snippet(content_search, 0, char(2), char(3), '…', 20)
+		FROM content_search JOIN content_search_doc sd ON sd.id = content_search.rowid JOIN item it ON it.id = sd.item_id
+		WHERE content_search MATCH ` + c.bind(match(terms)) + ` AND sd.scope = ` + c.projection() +
+		` AND ` + c.searchLocale() + ` AND sd.item_id IN (` + strings.Join(marks, ",") + `)
+		ORDER BY content_search.rank`
+	rows, err := db.QueryContext(ctx, text, c.args...)
+	if err != nil {
+		return err
+	}
+	best := map[ids.UUID]string{}
+	for rows.Next() {
+		var id []byte
+		var snip string
+		if err := rows.Scan(&id, &snip); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		k := ids.UUID(id)
+		if _, ok := best[k]; !ok {
+			best[k] = snip
+		}
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return err
+	}
+	for i := range items {
+		items[i].Snippet = best[items[i].ID]
+	}
+	return nil
+}
+
 // queryer is what the page queries need of a connection: a transaction or a pool.
 type queryer interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
@@ -475,6 +545,11 @@ func (s contentStore) Facet(ctx context.Context, q store.Query, field string, li
 	conds, err := c.itemConds(true)
 	if err != nil {
 		return nil, err
+	}
+	if terms := storeutil.SearchTerms(q.Search); len(terms) > 0 {
+		conds = append(conds, "item.id IN (SELECT item_id FROM "+c.searchJoin(terms)+")")
+	} else if strings.TrimSpace(q.Search) != "" {
+		return nil, nil
 	}
 	conds = append([]string{"fi.scope = " + c.projection(), "fi.field = " + c.bind(field),
 		"fi.locale IN ('', " + c.locale() + ")", "fi.v_text IS NOT NULL"}, conds...)
@@ -617,8 +692,15 @@ func runQuery(ctx context.Context, db queryer, q store.Query) (store.QueryResult
 	if err != nil {
 		return store.QueryResult{}, fmt.Errorf("sqlite: query: %w", err)
 	}
+	if err := fillSnippets(ctx, db, q, res.Items); err != nil {
+		return store.QueryResult{}, fmt.Errorf("sqlite: query: %w", err)
+	}
 	if err := decorate(ctx, db, q, res.Items); err != nil {
 		return store.QueryResult{}, err
+	}
+	if q.NoTotal {
+		res.Total = q.Offset + len(res.Items)
+		return res, nil
 	}
 	if res.Total, err = total(ctx, db, q, len(res.Items)); err != nil {
 		return store.QueryResult{}, err

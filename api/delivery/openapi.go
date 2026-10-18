@@ -13,7 +13,7 @@ type obj = openapi.Obj
 
 // openAPI builds the OpenAPI 3.1 document of the delivery API with per-type payload schemas. Marshal it with
 // encoding/json for a deterministic result.
-func openAPI(s *schema.Schema, extra []Route) obj {
+func openAPI(s *schema.Schema, extra []Route, withSearch bool) obj {
 	schemas := obj{
 		"Error": obj{"type": "object", "required": []any{"error"}, "properties": obj{"error": obj{
 			"type": "object", "required": []any{"code", "message"},
@@ -65,6 +65,29 @@ func openAPI(s *schema.Schema, extra []Route) obj {
 	paths["/items/by-key/{key}"] = obj{"get": obj{"operationId": "getItemByKey", "summary": "Read an item by its key",
 		"parameters": append([]any{openapi.Ref("parameters", "ItemKey")}, openapi.Params("Channel", "Locale", "Include", "Preview")...),
 		"responses":  responses(openapi.OKResp("The item.", openapi.SchemaRef("ItemResponse")), "400", "401", "404")}}
+	if withSearch {
+		schemas["SearchResponse"] = searchResponse()
+		paths["/search"] = obj{"get": obj{"operationId": "searchItems", "summary": "Search the channel's content by text",
+			"description": "Full-text search over the searchable collection types of the channel (types marked search: false are not " +
+				"searched), in the requested locale (an always-available item without a document in it is found in its main locale). " +
+				"items and hits are parallel arrays: hits[i] describes items[i]; hits whose item the channel cannot show are left out of " +
+				"both while total stays the engine's. Preview tokens search the published content only. Responses are purged when any " +
+				"searched type publishes. " + "Indexed fields for where and facets are those declared with index: true.",
+			"parameters": append(openapi.Params("Channel", "Locale", "Include", "Preview", "Where"),
+				obj{"name": "q", "in": "query", "required": true, "schema": obj{"type": "string", "minLength": 1, "maxLength": maxSearchText},
+					"description": "The words to find."},
+				obj{"name": "type", "in": "query", "schema": openapi.Str(""),
+					"description": "Comma-separated collection types to search; default every searchable collection of the channel."},
+				obj{"name": "facets", "in": "query", "schema": openapi.Str(""),
+					"description": "Comma-separated indexed text fields (at most 5) to count over all matches; a list field counts an item once per value."},
+				obj{"name": "sort", "in": "query", "schema": openapi.Str(""),
+					"description": "Comma-separated indexed scalar fields or publishedAt, - for descending; default relevance."},
+				obj{"name": "limit", "in": "query", "schema": obj{"type": "integer", "minimum": 1, "maximum": maxSearchPage, "default": defaultSearchPage}},
+				obj{"name": "offset", "in": "query", "schema": obj{"type": "integer", "minimum": 0, "maximum": maxSearchOffset, "default": 0}},
+				obj{"name": "highlight", "in": "query", "schema": obj{"type": "boolean", "default": true},
+					"description": "Return highlights: HTML-escaped fragments with each match in <mark>."}),
+			"responses": responses(openapi.OKResp("The matches.", openapi.SchemaRef("SearchResponse")), "400", "401", "404")}}
+	}
 	paths["/channels/{name}"] = obj{"get": obj{"operationId": "getChannel", "summary": "Public information about a channel",
 		"parameters": []any{obj{"name": "name", "in": "path", "required": true, "schema": openapi.Str("")}},
 		"responses":  responses(openapi.OKResp("The channel.", openapi.SchemaRef("ChannelInfo")), "401", "404")}}
@@ -124,6 +147,24 @@ func listResponse(item obj) obj {
 		"items": obj{"type": "array", "items": item}, "hasMore": obj{"type": "boolean",
 			"description": "Whether another page follows."},
 		"total":    obj{"type": "integer", "description": "Matches in all; only with total=true, which costs a count."},
+		"included": obj{"type": "object", "additionalProperties": openapi.SchemaRef("Item")}}}
+}
+
+func searchResponse() obj {
+	facet := obj{"type": "object", "required": []any{"value", "count"},
+		"properties": obj{"value": openapi.Str(""), "count": obj{"type": "integer"}}}
+	return obj{"type": "object", "required": []any{"items", "hits", "total", "estimated"}, "properties": obj{
+		"items": obj{"type": "array", "items": openapi.SchemaRef("Item")},
+		"hits": obj{"type": "array", "description": "hits[i] belongs to items[i].", "items": obj{"type": "object",
+			"required": []any{"id", "type", "locale", "score"},
+			"properties": obj{"id": openapi.Str("uuid"), "type": openapi.Str(""), "locale": openapi.Str(""),
+				"score": obj{"type": "number", "description": "Engine specific, higher is better; 0 when sorted."},
+				"highlights": obj{"type": "object", "additionalProperties": openapi.Str(""),
+					"description": "name and text fragments as HTML: escaped, matches in <mark>."}}}},
+		"total":     obj{"type": "integer", "description": "Matching documents."},
+		"estimated": obj{"type": "boolean", "description": "Whether total is only an estimate."},
+		"facets": obj{"type": "object", "additionalProperties": obj{"type": "array", "items": facet},
+			"description": "For each requested field its values with the number of matches, most first."},
 		"included": obj{"type": "object", "additionalProperties": openapi.SchemaRef("Item")}}}
 }
 

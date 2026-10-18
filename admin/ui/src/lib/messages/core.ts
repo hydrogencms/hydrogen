@@ -152,6 +152,8 @@ export const core: Record<string, string> = {
   'search.title': 'Search',
   'search.results': 'Results for "{q}"',
   'search.placeholder': 'Search results will appear here.',
+  'search.none': 'No results for "{q}"',
+  'search.failed': 'The search failed. Try again.',
 
   'account.title': 'Account',
 

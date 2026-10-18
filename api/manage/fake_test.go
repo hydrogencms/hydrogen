@@ -134,6 +134,10 @@ func (f *fake) Purge(_ context.Context, id ids.UUID) error {
 	return f.rec(call{name: "Purge", id: id})
 }
 
+func (f *fake) Search(_ context.Context, o content.SearchOptions) (*content.SearchResult, error) {
+	return &content.SearchResult{Snippets: map[ids.UUID]string{}}, f.rec(call{name: "Search", arg: o})
+}
+
 func (f *fake) ListTrash(_ context.Context, o content.TrashOptions) (*content.TrashResult, error) {
 	return &content.TrashResult{}, f.rec(call{name: "ListTrash", arg: o})
 }

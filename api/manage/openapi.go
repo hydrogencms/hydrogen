@@ -106,6 +106,9 @@ func baseSchemas() obj {
 				"fields": obj{"type": "object", "description": "The fields named by the fields parameter (working document, requested locale with main-locale fallback); absent fields are left out."}}},
 		"ListResult": obj{"type": "object", "required": []any{"items", "total"},
 			"properties": obj{"items": openapi.ArrayOf(openapi.SchemaRef("Summary")), "total": obj{"type": "integer"}}},
+		"SearchResult": obj{"type": "object", "required": []any{"items", "snippets"},
+			"properties": obj{"items": openapi.ArrayOf(openapi.SchemaRef("Summary")),
+				"snippets": obj{"type": "object", "additionalProperties": openapi.Str(""), "description": "HTML fragments by item id."}}},
 		"TrashSummary": obj{"type": "object",
 			"required":    []any{"id", "type", "name", "status", "version", "locales", "draftParts", "createdAt", "updatedAt", "deletedAt", "deletedBy", "deletedByName"},
 			"description": "A trashed item: the summary fields plus who trashed it and when.",
@@ -369,6 +372,16 @@ func genericPaths(paths obj, collections, singletons []*schema.Type) {
 		responses(obj{"200": view}, "400", "401", "403", "404", "409", "412", "422"))}
 	paths["/items/{id}/restore"] = obj{"post": operation("restoreItem", "Restore an item from the trash (it comes back unpublished)", openapi.Params("ItemId", "IfMatch"), nil,
 		responses(obj{"200": view}, "401", "403", "404", "409", "412"))}
+	paths["/search"] = obj{"get": operation("search", "Search items of several types by text",
+		append(openapi.Params("Locale"),
+			obj{"name": "q", "in": "query", "required": true, "schema": obj{"type": "string", "minLength": 1, "maxLength": maxSearchText},
+				"description": "The words to find in names and text fields."},
+			obj{"name": "type", "in": "query", "schema": openapi.Str(""),
+				"description": "Comma-separated collection types; default every one the principal may read."},
+			obj{"name": "limit", "in": "query", "schema": obj{"type": "integer", "minimum": 1, "maximum": maxSearchLimit, "default": defaultSearchLimit}}), nil,
+		responses(obj{"200": openapi.OKResp("The best matches of the working content (drafts included) the principal may read, merged by "+
+			"rank across types (ties: most recently updated first). snippets maps item ids to a fragment of the matched text as HTML: escaped, "+
+			"with each match in <mark>. Always answered by the database.", openapi.SchemaRef("SearchResult"))}, "400", "401", "403"))}
 	paths["/trash"] = obj{"get": operation("listTrash", "List trashed items, newest deletion first", openapi.Params("TrashType", "Locale", "Limit", "Offset"), nil,
 		responses(obj{"200": openapi.OKResp("A page of trashed items.", openapi.SchemaRef("TrashList"))}, "400", "401", "403", "404"))}
 	paths["/items/{id}/publish"] = obj{"post": operation("publishItem", "Publish draft parts", openapi.Params("ItemId", "IfMatch"),

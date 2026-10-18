@@ -1396,3 +1396,12 @@ a.h-name__title:hover {
   text-decoration: none;
   filter: brightness(0.95);
 }
+
+/* Search match highlight */
+.h-mark {
+  padding: 0 0.125em;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--h-warning) 28%, var(--h-surface));
+  color: var(--h-text);
+  font-weight: 600;
+}

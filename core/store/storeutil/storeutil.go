@@ -152,7 +152,7 @@ func SearchTexts(docs []store.SearchDoc) (locales, texts []string) {
 		if prev, ok := by[d.Locale]; ok {
 			d.Text = prev + "\n" + d.Text
 		}
-		by[d.Locale] = capChars(d.Text, MaxSearchChars)
+		by[d.Locale] = capChars(StripControls(d.Text), MaxSearchChars)
 	}
 	locales = make([]string, 0, len(by))
 	for l := range by {
@@ -164,6 +164,42 @@ func SearchTexts(docs []store.SearchDoc) (locales, texts []string) {
 		texts[i] = by[l]
 	}
 	return locales, texts
+}
+
+// StripControls removes C0 control characters other than tab, newline and carriage return, so indexed text can
+// never carry the snippet markers (\x02, \x03).
+func StripControls(s string) string {
+	if !strings.ContainsFunc(s, isControl) {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if isControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+func isControl(r rune) bool { return r < 0x20 && r != '\t' && r != '\n' && r != '\r' }
+
+// CapSearchText strips control characters and truncates text to MaxSearchChars characters at a word boundary.
+func CapSearchText(text string) string {
+	text = StripControls(text)
+	if utf8.RuneCountInString(text) <= MaxSearchChars {
+		return text
+	}
+	cut := 0
+	for i := range text {
+		if cut == MaxSearchChars {
+			text = text[:i]
+			break
+		}
+		cut++
+	}
+	if i := strings.LastIndexAny(text, " \t\n"); i > 0 {
+		text = text[:i]
+	}
+	return text
 }
 
 func capChars(s string, n int) string {

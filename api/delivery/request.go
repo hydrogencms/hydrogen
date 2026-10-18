@@ -15,6 +15,7 @@ import (
 	"github.com/hydrogencms/hydrogen/core/channel"
 	"github.com/hydrogencms/hydrogen/core/content"
 	"github.com/hydrogencms/hydrogen/core/ids"
+	"github.com/hydrogencms/hydrogen/core/search"
 	"github.com/hydrogencms/hydrogen/core/store"
 )
 
@@ -149,6 +150,8 @@ func Fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.As(err, &me):
 	case errors.Is(err, content.ErrNotFound), errors.Is(err, content.ErrUnknownType), errors.Is(err, store.ErrNotFound):
 		me = manage.NotFound("%s", unavailable)
+	case errors.Is(err, search.ErrInvalid):
+		me = manage.BadRequest("%s", strings.TrimPrefix(err.Error(), search.ErrInvalid.Error()+": "))
 	case errors.Is(err, content.ErrBadRequest):
 		me = manage.BadRequest("%s", strings.TrimPrefix(err.Error(), content.ErrBadRequest.Error()+": "))
 	default:

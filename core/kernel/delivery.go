@@ -121,7 +121,7 @@ func newDelivery(s *Services, reg *Registry) (*delivery.API, error) {
 		PreviewSecret: secret, Varies: reg.varies, DB: s.DB, Audit: s.Audit, IDs: s.IDs,
 		ShareLinks: s.Core.Delivery.ShareLinks, ShareDefaultTTL: s.Core.Delivery.ShareDefaultTTL,
 		ShareMaxTTL: s.Core.Delivery.ShareMaxTTL, CORSOrigins: frameOrigins(s, reg), AssetBase: s.Core.Media.PublicURL,
-		AssetDecorators: reg.assetDecs}
+		AssetDecorators: reg.assetDecs, Search: s.Search}
 	for _, rt := range reg.deliveryRts {
 		o.Routes = append(o.Routes, rt.value)
 	}

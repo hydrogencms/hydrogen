@@ -41,6 +41,7 @@ import (
 	"github.com/hydrogencms/hydrogen/core/content"
 	"github.com/hydrogencms/hydrogen/core/ids"
 	"github.com/hydrogencms/hydrogen/core/schema"
+	"github.com/hydrogencms/hydrogen/core/search"
 	"github.com/hydrogencms/hydrogen/core/store"
 )
 
@@ -108,7 +109,10 @@ type PatternURLer func(ch *channel.Channel, path string) (rel, abs string, ok bo
 
 // Options configures New.
 type Options struct {
-	Content  *content.Service
+	Content *content.Service
+	// Search answers GET /search; the kernel sets it (the configured engine, else the database's). Without
+	// one the route does not exist.
+	Search   search.Engine
 	Schema   *schema.Schema
 	Channels *channel.Set
 	Reader   store.Reader
@@ -235,6 +239,9 @@ func New(o Options) (*API, error) {
 		return nil, err
 	}
 	routes := a.coreRoutes()
+	if o.Search != nil {
+		routes = append(routes, route{Route: Route{Method: "GET", Path: "/search", Handler: a.searchItems}})
+	}
 	for _, rt := range o.Routes {
 		if rt.Method != http.MethodGet || !strings.HasPrefix(rt.Path, "/") || strings.ContainsAny(rt.Path, " \t") || rt.Handler == nil {
 			return nil, fmt.Errorf("delivery: %s: a route needs method GET, a path starting with / and a handler", describe(rt))
@@ -251,7 +258,7 @@ func New(o Options) (*API, error) {
 		a.plainError(w, &manage.Error{Status: http.StatusNotFound, Code: "not_found", Message: "no such endpoint"})
 	})
 	a.handler = mux
-	doc, err := marshal(openAPI(o.Schema, o.Routes))
+	doc, err := marshal(openAPI(o.Schema, o.Routes, o.Search != nil))
 	if err != nil {
 		return nil, fmt.Errorf("delivery: encode openapi: %w", err)
 	}

@@ -115,7 +115,7 @@
     if (active >= flat.length) active = Math.max(0, flat.length - 1);
   });
 
-  // Items by name across the collections the principal can read: one request per type, newest first.
+  // Items matching the text across the collections the principal can read: one request, best match first.
   $effect(() => {
     const text = q.trim();
     clearTimeout(timer);
@@ -126,19 +126,14 @@
       return;
     }
     busy = true;
-    const names = readable.slice(0, 10).map((x) => x.name);
     timer = setTimeout(async () => {
       const c = (ctl = new AbortController());
-      const lists = await Promise.all(
-        names.map((type) =>
-          api
-            .get('/collections/{type}/items', { params: { type }, query: { q: text, limit: 4 }, signal: c.signal })
-            .then((r) => r.items.map((i) => ({ id: i.id, name: i.name || i.id, type })))
-            .catch(() => [] as Hit[]),
-        ),
-      );
+      const found = await api
+        .get('/search', { query: { q: text.slice(0, 200), limit: 8 }, signal: c.signal })
+        .then((r) => r.items.map((i) => ({ id: i.id, name: i.name || i.id, type: i.type })))
+        .catch(() => [] as Hit[]);
       if (c.signal.aborted) return;
-      hits = lists.flat().slice(0, 8);
+      hits = found;
       busy = false;
     }, 200);
     return () => {

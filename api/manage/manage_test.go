@@ -232,6 +232,23 @@ func TestRoutes(t *testing.T) {
 				t.Errorf("options = %+v", c.arg)
 			}
 		}},
+		{"search", "GET", "/search?q=solar&type=article&locale=de&limit=5", "", 200, "Search", func(t *testing.T, w *httptest.ResponseRecorder, c call) {
+			if o, _ := c.arg.(content.SearchOptions); o.Text != "solar" || len(o.Types) != 1 || o.Types[0] != "article" || o.Locale != "de" || o.Limit != 5 {
+				t.Errorf("options = %+v", c.arg)
+			}
+			if w.Body.String() != `{"items":[],"snippets":{}}`+"\n" {
+				t.Errorf("body = %q", w.Body.String())
+			}
+		}},
+		{"search defaults to every collection", "GET", "/search?q=solar", "", 200, "Search", func(t *testing.T, _ *httptest.ResponseRecorder, c call) {
+			if o, _ := c.arg.(content.SearchOptions); len(o.Types) != 2 || o.Limit != 20 {
+				t.Errorf("options = %+v", c.arg)
+			}
+		}},
+		{"search needs q", "GET", "/search", "", 400, "", nil},
+		{"search limit", "GET", "/search?q=a&limit=51", "", 400, "", nil},
+		{"search singleton", "GET", "/search?q=a&type=settings", "", 400, "", nil},
+		{"search unknown parameter", "GET", "/search?q=a&offset=1", "", 400, "", nil},
 		{"trash list unknown parameter", "GET", "/trash?bogus=1", "", 400, "", nil},
 		{"versions", "GET", "/items/" + id + "/versions", "", 200, "Versions", func(t *testing.T, w *httptest.ResponseRecorder, _ call) {
 			var m struct {

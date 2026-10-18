@@ -21,7 +21,8 @@ type compiler struct {
 	args []any
 	loc  string // placeholder of q.Locale, bound on first use
 
-	searching bool // the FROM clause joins the search results as srch
+	tsq       string // placeholder of the search tsquery, once bound
+	searching bool   // the FROM clause joins the search results as srch
 }
 
 func (c *compiler) bind(v any) string {
@@ -249,6 +250,9 @@ func (c *compiler) itemConds() ([]string, error) {
 	if q.Type != "" {
 		conds = append(conds, "item.type = "+c.bind(q.Type))
 	}
+	if len(q.Types) > 0 {
+		conds = append(conds, "item.type = ANY("+c.bind(q.Types)+"::text[])")
+	}
 	switch q.Trashed {
 	case store.TrashedExclude:
 		conds = append(conds, "item.deleted_at IS NULL")
@@ -297,11 +301,8 @@ func (c *compiler) filter() (from, where string, err error) {
 	}
 	if terms := storeutil.SearchTerms(q.Search); len(terms) > 0 {
 		c.searching = true
-		from += ` JOIN (
-		SELECT cs.item_id, MAX(ts_rank(cs.tsv, query.q))::float8 AS rank
-		FROM content_search cs, to_tsquery('simple', ` + c.bind(tsquery(terms)) + `) AS query(q)
-		WHERE cs.scope = ` + c.projection() + ` AND cs.tsv @@ query.q AND cs.locale IN ('', ` + c.locale() + `)
-		GROUP BY cs.item_id) srch ON srch.item_id = item.id`
+		c.tsq = c.bind(tsquery(terms))
+		from += " JOIN " + c.searchJoin() + " srch ON srch.item_id = item.id"
 	} else if strings.TrimSpace(q.Search) != "" {
 		conds = append(conds, "false") // only punctuation: nothing can match
 	}
@@ -337,6 +338,8 @@ func (c *compiler) sortKey(s store.Sort) (string, error) {
 			return "item.created_at" + dir, nil
 		case "updatedAt":
 			return "item.updated_at" + dir, nil
+		case "publishedAt":
+			return "(SELECT max(ps.published_at) FROM published_snapshot ps WHERE ps.item_id = item.id)" + dir + " NULLS LAST", nil
 		case "deletedAt":
 			return "item.deleted_at" + dir + " NULLS LAST", nil
 		case "key":
@@ -383,24 +386,63 @@ func (c *compiler) order() (string, error) {
 	return " ORDER BY " + strings.Join(keys, ", "), nil
 }
 
-// selectSQL compiles the page query; the last selected column is the search rank (0 without a search).
-func selectSQL(q store.Query) (text string, args []any, err error) {
+// searchLocale is the predicate on a content_search row cs, joined to item it, that picks the documents a query
+// may match: the shared and the query locale's, and with SearchFallback the main-locale document of an always
+// available item that has none in the locale.
+func (c *compiler) searchLocale() string {
+	loc := c.locale()
+	p := "cs.locale IN ('', " + loc + ")"
+	if c.q.SearchFallback {
+		p = "(" + p + " OR (it.always_available AND cs.locale = it.main_locale AND NOT EXISTS (" +
+			"SELECT 1 FROM content_search o WHERE o.item_id = cs.item_id AND o.scope = cs.scope AND o.locale = " + loc + ")))"
+	}
+	return p
+}
+
+// searchJoin is the subquery of (item_id, rank) for the items matching c.tsq.
+func (c *compiler) searchJoin() string {
+	return `(
+		SELECT cs.item_id, MAX(ts_rank(cs.tsv, query.q))::float8 AS rank
+		FROM content_search cs JOIN item it ON it.id = cs.item_id, to_tsquery('simple', ` + c.tsq + `) AS query(q)
+		WHERE cs.scope = ` + c.projection() + ` AND cs.tsv @@ query.q AND ` + c.searchLocale() + `
+		GROUP BY cs.item_id)`
+}
+
+// headlineOptions makes ts_headline mark matches with \x02 and \x03 and cut a fragment of about 20 words.
+const headlineOptions = "StartSel=\x02, StopSel=\x03, MaxWords=20, MinWords=10, ShortWord=0, HighlightAll=false"
+
+// snippet compiles the headline of the best matching search text; the page's rows alone evaluate it.
+func (c *compiler) snippet() string {
+	return `ts_headline('simple', (SELECT cs.plain FROM content_search cs JOIN item it ON it.id = cs.item_id
+		WHERE cs.item_id = item.id AND cs.scope = ` + c.projection() + ` AND ` + c.searchLocale() + `
+		AND cs.tsv @@ to_tsquery('simple', ` + c.tsq + `)
+		ORDER BY ts_rank(cs.tsv, to_tsquery('simple', ` + c.tsq + `)) DESC, cs.locale DESC LIMIT 1),
+		to_tsquery('simple', ` + c.tsq + `), ` + c.bind(headlineOptions) + `)`
+}
+
+// selectSQL compiles the page query; the last selected columns are the search rank (0 without a search) and,
+// when snippets is true, the snippet.
+func selectSQL(q store.Query) (text string, args []any, snippets bool, err error) {
 	c := &compiler{q: q}
 	from, where, err := c.filter()
 	if err != nil {
-		return "", nil, err
+		return "", nil, false, err
 	}
 	order, err := c.order()
 	if err != nil {
-		return "", nil, err
+		return "", nil, false, err
 	}
 	rank := "0::float8"
 	if c.searching {
 		rank = "srch.rank"
+		if q.Highlight {
+			rank += ", " + c.snippet()
+			snippets = true
+		}
 	}
 	text = "SELECT " + itemColumns + ", " + rank + " FROM " + from + where + order +
 		" LIMIT " + c.bind(q.Limit) + " OFFSET " + c.bind(q.Offset)
-	return text, c.args, nil
+	return text, c.args, snippets, nil
 }
 
 // queryer is what the page queries need of a connection: a transaction or a pool.
@@ -427,6 +469,12 @@ func (s contentStore) Facet(ctx context.Context, q store.Query, field string, li
 	conds, err := c.itemConds()
 	if err != nil {
 		return nil, err
+	}
+	if terms := storeutil.SearchTerms(q.Search); len(terms) > 0 {
+		c.tsq = c.bind(tsquery(terms))
+		conds = append(conds, "item.id IN (SELECT item_id FROM "+c.searchJoin()+")")
+	} else if strings.TrimSpace(q.Search) != "" {
+		return nil, nil
 	}
 	conds = append([]string{"fi.scope = " + c.projection(), "fi.field = " + c.bind(field),
 		"fi.locale IN ('', " + c.locale() + ")", "fi.v_text IS NOT NULL"}, conds...)
@@ -545,7 +593,7 @@ func runQuery(ctx context.Context, db queryer, q store.Query) (store.QueryResult
 				if err != nil {
 					return nil, err
 				}
-				return pageRows(ctx, db, text, c.args)
+				return pageRows(ctx, db, text, c.args, false)
 			},
 			Missing: func(limit, offset int) ([]store.ItemSummary, error) {
 				c := &compiler{q: q}
@@ -553,7 +601,7 @@ func runQuery(ctx context.Context, db queryer, q store.Query) (store.QueryResult
 				if err != nil {
 					return nil, err
 				}
-				return pageRows(ctx, db, text, c.args)
+				return pageRows(ctx, db, text, c.args, false)
 			},
 			CountOrdered: func() (n int, err error) {
 				c := &compiler{q: q}
@@ -568,8 +616,9 @@ func runQuery(ctx context.Context, db queryer, q store.Query) (store.QueryResult
 	} else {
 		var sqlText string
 		var args []any
-		if sqlText, args, err = selectSQL(q); err == nil {
-			res.Items, err = pageRows(ctx, db, sqlText, args)
+		var snippets bool
+		if sqlText, args, snippets, err = selectSQL(q); err == nil {
+			res.Items, err = pageRows(ctx, db, sqlText, args, snippets)
 		}
 	}
 	if err != nil {
@@ -578,22 +627,35 @@ func runQuery(ctx context.Context, db queryer, q store.Query) (store.QueryResult
 	if err := decorate(ctx, db, q, res.Items); err != nil {
 		return store.QueryResult{}, err
 	}
+	if q.NoTotal {
+		res.Total = q.Offset + len(res.Items)
+		return res, nil
+	}
 	if res.Total, err = total(ctx, db, q, len(res.Items)); err != nil {
 		return store.QueryResult{}, err
 	}
 	return res, nil
 }
 
-// pageRows runs a page statement whose last column is the search rank.
-func pageRows(ctx context.Context, db queryer, text string, args []any) ([]store.ItemSummary, error) {
+// pageRows runs a page statement whose last columns are the search rank and, with snippets, the snippet.
+func pageRows(ctx context.Context, db queryer, text string, args []any, snippets bool) ([]store.ItemSummary, error) {
 	rows, err := db.Query(ctx, text, args...)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (store.ItemSummary, error) {
 		var searched float64
-		it, err := scanItem(r, &searched)
-		return store.ItemSummary{Item: it, Searched: searched}, err
+		var snippet *string
+		extra := []any{&searched}
+		if snippets {
+			extra = append(extra, &snippet)
+		}
+		it, err := scanItem(r, extra...)
+		sum := store.ItemSummary{Item: it, Searched: searched}
+		if snippet != nil {
+			sum.Snippet = *snippet
+		}
+		return sum, err
 	})
 }
 

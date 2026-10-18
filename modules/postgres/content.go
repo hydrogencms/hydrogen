@@ -666,3 +666,16 @@ func (s contentStore) ItemIDsOfType(ctx context.Context, typ string, after ids.U
 	}
 	return out, nil
 }
+
+func (s contentStore) SearchIndexEmpty(ctx context.Context) (bool, error) {
+	var empty bool
+	err := s.tx.QueryRow(ctx, `SELECT
+		(EXISTS (SELECT 1 FROM item WHERE published_version > 0 AND deleted_at IS NULL)
+			AND NOT EXISTS (SELECT 1 FROM content_search WHERE scope = 'p'))
+		OR (EXISTS (SELECT 1 FROM item WHERE deleted_at IS NULL)
+			AND NOT EXISTS (SELECT 1 FROM content_search WHERE scope = 'w'))`).Scan(&empty)
+	if err != nil {
+		return false, fmt.Errorf("postgres: search index empty: %w", err)
+	}
+	return empty, nil
+}

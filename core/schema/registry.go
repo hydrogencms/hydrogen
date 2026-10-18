@@ -34,6 +34,9 @@ func NewRegistry() *Registry {
 			panic(err) // core names are distinct
 		}
 	}
+	if err := r.TypeOption(SearchOption, checkSearchOption); err != nil {
+		panic(err)
+	}
 	return r
 }
 

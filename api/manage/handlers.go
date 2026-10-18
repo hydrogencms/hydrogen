@@ -5,12 +5,15 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hydrogencms/hydrogen/core/content"
 	"github.com/hydrogencms/hydrogen/core/schema"
+	"github.com/hydrogencms/hydrogen/core/store/storeutil"
 )
 
 type createBody struct {
@@ -88,6 +91,87 @@ func (a *api) listItems(w http.ResponseWriter, r *http.Request) error {
 		items = []content.Summary{}
 	}
 	WriteJSON(w, http.StatusOK, content.ListResult{Items: items, Total: res.Total})
+	return nil
+}
+
+// searchParams are the query parameters of GET /search.
+const (
+	defaultSearchLimit = 20
+	maxSearchLimit     = content.MaxSearchLimit
+	maxSearchText      = 200
+)
+
+// search finds items by text across types, as the principal may read them (working projection, drafts
+// included): {"items":[summaries],"snippets":{id: html}}.
+func (a *api) search(w http.ResponseWriter, r *http.Request) error {
+	q := r.URL.Query()
+	for k := range q {
+		switch k {
+		case "q", "type", "locale", "limit":
+		default:
+			return BadRequest("unknown query parameter %q", k)
+		}
+	}
+	o := content.SearchOptions{}
+	var err error
+	if o.Text, err = single(q, "q"); err != nil {
+		return err
+	}
+	if strings.TrimSpace(o.Text) == "" {
+		return BadRequest("q is required")
+	}
+	if utf8.RuneCountInString(o.Text) > maxSearchText {
+		return BadRequest("q is too long (at most %d characters)", maxSearchText)
+	}
+	if n := len(storeutil.SearchTerms(o.Text)); n > content.MaxSearchTerms {
+		return BadRequest("too many search terms: %d (at most %d)", n, content.MaxSearchTerms)
+	}
+	if o.Locale, err = single(q, "locale"); err != nil {
+		return err
+	}
+	if o.Limit, err = parseInt(q, "limit", defaultSearchLimit, 1, maxSearchLimit); err != nil {
+		return err
+	}
+	raw, err := single(q, "type")
+	if err != nil {
+		return err
+	}
+	if raw == "" {
+		for _, t := range a.sc.Types() {
+			if !t.Singleton {
+				o.Types = append(o.Types, t.Name)
+			}
+		}
+	} else {
+		for _, name := range strings.Split(raw, ",") {
+			name = strings.TrimSpace(name)
+			t, ok := a.sc.Type(name)
+			if !ok || t.Singleton {
+				return BadRequest("unknown collection type %q", name)
+			}
+			if !slices.Contains(o.Types, name) {
+				o.Types = append(o.Types, name)
+			}
+		}
+	}
+	res := &content.SearchResult{}
+	if len(o.Types) > 0 {
+		if res, err = a.c.Search(r.Context(), o); err != nil {
+			return err
+		}
+	}
+	items := res.Items
+	if items == nil {
+		items = []content.Summary{}
+	}
+	snippets := make(map[string]string, len(res.Snippets))
+	for id, s := range res.Snippets {
+		snippets[id.String()] = s
+	}
+	WriteJSON(w, http.StatusOK, struct {
+		Items    []content.Summary `json:"items"`
+		Snippets map[string]string `json:"snippets"`
+	}{items, snippets})
 	return nil
 }
 

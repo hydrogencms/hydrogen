@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/hydrogencms/hydrogen/core/ids"
 	"github.com/hydrogencms/hydrogen/core/schema"
@@ -276,21 +275,4 @@ func refProblem(r schema.RefValue, found map[ids.UUID]string) string {
 // adapters' own bound (storeutil.MaxSearchChars).
 const maxSearchRunes = storeutil.MaxSearchChars
 
-// capSearchText truncates text to maxSearchRunes at a word boundary.
-func capSearchText(text string) string {
-	if utf8.RuneCountInString(text) <= maxSearchRunes {
-		return text
-	}
-	cut := 0
-	for i := range text {
-		if maxSearchRunes == cut {
-			text = text[:i]
-			break
-		}
-		cut++
-	}
-	if i := strings.LastIndexAny(text, " \t\n"); i > 0 {
-		text = text[:i]
-	}
-	return text
-}
+func capSearchText(text string) string { return storeutil.CapSearchText(text) }

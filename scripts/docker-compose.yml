@@ -16,5 +16,19 @@ services:
       timeout: 3s
       retries: 30
 
+  # Meilisearch for modules/meilisearch: docker compose -f scripts/docker-compose.yml --profile search up -d meilisearch
+  meilisearch:
+    profiles: ["search"]
+    image: getmeili/meilisearch:v1.12
+    environment:
+      MEILI_ENV: development
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-dev-master-key-0123456789}
+      MEILI_NO_ANALYTICS: "true"
+    ports:
+      - "127.0.0.1:7701:7700"
+    volumes:
+      - meilisearch:/meili_data
+
 volumes:
   postgres:
+  meilisearch:
