@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -228,6 +229,12 @@ type Options struct {
 	// PasswordIterations lowers the PBKDF2 cost of password hashes so tests run fast (0 = 600 000). Never read
 	// from configuration.
 	PasswordIterations int
+	// BuildInfo replaces runtime/debug.ReadBuildInfo when describing modules and checking RequiresCore (tests).
+	BuildInfo BuildInfo
+	// SkipCompat skips the RequiresCore check, as HYDROGEN_SKIP_COMPAT=1 does.
+	SkipCompat bool
+	// Stdout is where the modules command prints (default os.Stdout).
+	Stdout io.Writer
 }
 
 type App struct {
@@ -236,6 +243,10 @@ type App struct {
 	reg      *Registry
 	ownDB    bool
 	runner   *jobs.Runner
+
+	info        []ModuleInfo
+	coreVersion string
+	stdout      io.Writer
 }
 
 func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
@@ -248,7 +259,14 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 	if o.Stderr == nil {
 		o.Stderr = os.Stderr
 	}
-	p, err := prepare(o.Config, mods, true)
+	if o.Stdout == nil {
+		o.Stdout = os.Stdout
+	}
+	if o.BuildInfo == nil {
+		o.BuildInfo = debug.ReadBuildInfo
+	}
+	bi, _ := o.BuildInfo()
+	p, err := prepareWith(o.Config, mods, true, buildEnv{bi: bi, skipCompat: skipCompat(&o)})
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +286,7 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 	if reg.overlays != nil {
 		overlays = reg.overlays.value(p.chans)
 	}
-	a := &App{modules: ordered, reg: reg}
+	a := &App{modules: ordered, reg: reg, info: describe(ordered, bi), coreVersion: coreVersionOf(bi), stdout: o.Stdout}
 	db := o.DB
 	if db == nil {
 		if db, err = a.open(ctx, core.Database.URL, store.OpenOptions{Clock: o.Clock, Log: log}); err != nil {
@@ -403,8 +421,22 @@ type plan struct {
 // opens nothing. With runtime false (code generation) it decodes only what the schema needs, so runtime
 // settings and their secrets don't have to be present.
 func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
+	bi, _ := debug.ReadBuildInfo()
+	return prepareWith(cfg, mods, runtime, buildEnv{bi: bi, skipCompat: skipCompat(&Options{})})
+}
+
+// buildEnv is what prepare knows about the binary: its build information and whether to skip compatibility checks.
+type buildEnv struct {
+	bi         *debug.BuildInfo
+	skipCompat bool
+}
+
+func prepareWith(cfg *config.Config, mods []Module, runtime bool, env buildEnv) (*plan, error) {
 	ordered, err := order(mods)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkCompat(ordered, describe(ordered, env.bi), coreVersionOf(env.bi), env.skipCompat); err != nil {
 		return nil, err
 	}
 	core := CoreConfig{
@@ -447,6 +479,9 @@ func prepare(cfg *config.Config, mods []Module, runtime bool) (*plan, error) {
 			return nil, err
 		}
 		if err := reg.Command(searchReindexCommand()); err != nil {
+			return nil, err
+		}
+		if err := reg.Command(modulesCommand()); err != nil {
 			return nil, err
 		}
 	}
@@ -645,14 +680,6 @@ func (a *App) closeDB(db store.DB) {
 
 func (a *App) Services() *Services { return a.services }
 
-func (a *App) Modules() []string {
-	names := make([]string, len(a.modules))
-	for i, m := range a.modules {
-		names[i] = m.Name()
-	}
-	return names
-}
-
 func (a *App) Command(name string) (Command, bool) {
 	c, ok := a.reg.commands[name]
 	return c.value, ok
@@ -710,7 +737,7 @@ func (a *App) Handler() (http.Handler, error) {
 		api, err := manage.New(manage.Options{Content: a.services.Content, Auth: a.services.Auth, Gate: a.services.Access,
 			Admin: a.services.Admin, Catalog: a.services.Catalog,
 			Channels: a.services.Channels, Log: a.services.Log, Prefix: prefix,
-			Routes: slices.Concat(a.reg.manageRts, a.services.Delivery.ManageRoutes(), a.services.Releases.ManageRoutes(), a.services.Review.ManageRoutes(), a.services.Collab.ManageRoutes(), a.services.mediaRoutes())})
+			Routes: slices.Concat(a.reg.manageRts, a.services.Delivery.ManageRoutes(), a.services.Releases.ManageRoutes(), a.services.Review.ManageRoutes(), a.services.Collab.ManageRoutes(), a.services.mediaRoutes(), a.systemRoutes())})
 		if err != nil {
 			return nil, err
 		}
@@ -742,7 +769,7 @@ func (a *App) mountAdmin(mux *http.ServeMux) error {
 	if !s.Core.Admin.Enabled {
 		return nil
 	}
-	o := admin.Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: delivery.Prefix, Pages: slices.Contains(a.Modules(), "pages"), Collab: s.Collab != nil}
+	o := admin.Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: delivery.Prefix, Pages: slices.Contains(a.ModuleNames(), "pages"), Collab: s.Collab != nil}
 	o.FrameOrigins = frameOrigins(s, a.reg)
 	if s.Media != nil {
 		base := s.Media.PublicBase()
@@ -929,7 +956,7 @@ func (a *App) Run(ctx context.Context, listening func(addr string)) error {
 		ErrorLog: slog.NewLogLogger(s.Log.Handler(), slog.LevelWarn)}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
-	s.Log.Info("serving", "addr", ln.Addr().String(), "env", s.Env, "db", s.DB.Dialect(), "modules", a.Modules())
+	s.Log.Info("serving", "addr", ln.Addr().String(), "env", s.Env, "db", s.DB.Dialect(), "modules", a.ModuleNames())
 	if s.Core.Manage.Token == DevManageToken {
 		s.Log.Warn("the config token is the dev token, which has every right; set manage.token before exposing this server")
 	}

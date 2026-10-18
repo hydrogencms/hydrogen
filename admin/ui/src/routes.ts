@@ -31,6 +31,7 @@ export const routes: Route[] = [
   { path: '/settings/roles', title: 'nav.roles', load: () => import('./routes/settings/Roles.svelte') },
   { path: '/settings/roles/:id', title: 'nav.roles', load: () => import('./routes/settings/RoleEdit.svelte') },
   { path: '/settings/tokens', title: 'nav.tokens', load: () => import('./routes/settings/Tokens.svelte') },
+  { path: '/settings/system', title: 'nav.system', load: () => import('./routes/settings/System.svelte') },
   { path: '/settings/audit', title: 'nav.audit', load: () => import('./routes/settings/Audit.svelte') },
 
   { path: '/account', title: 'account.title', load: () => import('./routes/account/Account.svelte') },

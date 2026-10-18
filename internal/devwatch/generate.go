@@ -12,11 +12,16 @@ import (
 
 	"github.com/hydrogencms/hydrogen/core/schema"
 	"github.com/hydrogencms/hydrogen/internal/codegen"
+	"github.com/hydrogencms/hydrogen/internal/projectfile"
 )
 
-// Prepare builds the project. If the build fails, it regenerates gen/ from the schema files alone (stale
+// Prepare builds the project, after refreshing modules_gen.go from hydrogen.yaml. If the build fails, it regenerates gen/ from the schema files alone (stale
 // generated code is the usual cause after a schema change) and builds again.
 func Prepare(ctx context.Context, dir, bin string, stderr io.Writer) error {
+	if _, err := projectfile.Sync(dir); err != nil {
+		fmt.Fprintln(stderr, err)
+		return err
+	}
 	var out bytes.Buffer
 	if err := Build(ctx, dir, bin, &out); err == nil {
 		return nil

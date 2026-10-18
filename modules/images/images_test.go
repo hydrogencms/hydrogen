@@ -730,7 +730,10 @@ func TestMadeUpFocalCostsOneLoad(t *testing.T) {
 		t.Fatalf("after the TTL: %d loads, Cache-Control %q", loads, r.Header().Get("Cache-Control"))
 	}
 	// a focal point just set is accepted after focalRefresh, not focalTTL
-	m.focals = func(context.Context, string) (map[string]bool, error) { loads++; return map[string]bool{"7777": true}, nil }
+	m.focals = func(context.Context, string) (map[string]bool, error) {
+		loads++
+		return map[string]bool{"7777": true}, nil
+	}
 	if get(h, "GET", path); loads != 2 {
 		t.Fatalf("reloaded within focalRefresh: %d", loads)
 	}

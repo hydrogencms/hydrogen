@@ -274,7 +274,7 @@ func TestCatalogRegistration(t *testing.T) {
 		names = append(names, p.Name)
 	}
 	if !reflect.DeepEqual(names, []string{"audit.read", "content.create", "content.delete", "content.edit", "content.preview", "content.preview.share",
-		"content.publish", "content.read", "release.manage", "review.approve", "review.bypass", "review.submit", "role.manage", "token.manage", "user.manage"}) {
+		"content.publish", "content.read", "release.manage", "review.approve", "review.bypass", "review.submit", "role.manage", "system.read", "token.manage", "user.manage"}) {
 		t.Errorf("%v", names)
 	}
 	var lims []string

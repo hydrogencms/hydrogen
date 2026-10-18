@@ -122,6 +122,9 @@ type project struct{ b *Builder }
 
 func (project) Name() string { return "project" }
 
+// Origin reports the project under its own Go module rather than the core's ("main" maps to the main module).
+func (project) Origin() string { return "main" }
+
 func (p project) Requires() []string {
 	names := make([]string, len(p.b.modules))
 	for i, m := range p.b.modules {
@@ -243,6 +246,8 @@ func Run(ctx context.Context, args []string, configure func(*Builder), o RunOpti
 	case "version":
 		_, err := fmt.Fprintln(o.Stdout, "hydrogen", Version())
 		return err
+	case "modules":
+		return modulesList(b, o, rest)
 	case "config:check":
 		return configCheck(ctx, b, o, rest)
 	case "generate":
@@ -304,7 +309,7 @@ func newApp(ctx context.Context, b *Builder, o RunOptions) (*kernel.App, error) 
 	if err != nil {
 		return nil, err
 	}
-	return kernel.New(ctx, kernel.Options{Config: cfg, DB: o.DB, Stderr: o.Stderr, PasswordIterations: o.PasswordIterations}, b.all()...)
+	return kernel.New(ctx, kernel.Options{Config: cfg, DB: o.DB, Stderr: o.Stderr, Stdout: o.Stdout, PasswordIterations: o.PasswordIterations}, b.all()...)
 }
 
 func serve(ctx context.Context, app *kernel.App, o RunOptions) error {
@@ -565,4 +570,23 @@ func versionOrDevel(v string) string {
 		return "devel"
 	}
 	return v
+}
+
+// modulesList prints the modules before anything is opened, so it works when the app can't start; a core
+// compatibility mismatch is a warning here.
+func modulesList(b *Builder, o RunOptions, args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("modules takes no arguments")
+	}
+	infos, compat, err := kernel.DescribeModules(b.all(), nil)
+	if err != nil {
+		return err
+	}
+	if err := kernel.WriteModules(o.Stdout, infos); err != nil {
+		return err
+	}
+	if compat != nil {
+		fmt.Fprintf(o.Stderr, "warning: %v\n", compat)
+	}
+	return nil
 }

@@ -1334,6 +1334,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the system report
+         * @description The core version and Go toolchain, the registered modules in registration order with the Go module and version each was built from ("devel" for a local build), and what the build uses.
+         */
+        get: operations["getSystem"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tokens": {
         parameters: {
             query?: never;
@@ -7011,6 +7031,49 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getSystem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The system report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        core: {
+                            /** @description The Go toolchain version. */
+                            go: string;
+                            /** @description The core version, "devel" for a local build. */
+                            version: string;
+                        };
+                        /** @description The database adapter: sqlite or postgres. */
+                        database: string;
+                        /** @description Whether uploads are enabled. */
+                        media: boolean;
+                        modules: {
+                            /** @description The Go module path; empty when unknown. */
+                            module: string;
+                            name: string;
+                            package: string;
+                            requires: string[];
+                            version: string;
+                        }[];
+                        /** @description The search engine's name. */
+                        search: string;
+                    };
+                };
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
         };

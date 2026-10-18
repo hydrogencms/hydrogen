@@ -167,6 +167,8 @@ const (
 	PolicyRoleManage    = "role.manage"
 	PolicyTokenManage   = "token.manage"
 	PolicyAuditRead     = "audit.read"
+	// PolicySystemRead reads the system report: versions of the core and the modules, and what the build uses.
+	PolicySystemRead = "system.read"
 )
 
 // NotifyChannel carries auth changes; listeners drop cached grants (empty payload: all).

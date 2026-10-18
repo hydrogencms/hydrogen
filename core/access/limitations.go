@@ -37,6 +37,7 @@ func CorePolicies() []Policy {
 		{Name: PolicyRoleManage, Description: "Manage roles and assignments"},
 		{Name: PolicyTokenManage, Description: "Manage API tokens"},
 		{Name: PolicyAuditRead, Description: "Read the audit log"},
+		{Name: PolicySystemRead, Description: "Read the system report: versions and modules"},
 	}
 }
 

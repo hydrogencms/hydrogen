@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/hydrogencms/hydrogen/internal/projectfile"
 )
 
 type Options struct {
@@ -87,6 +89,16 @@ func Run(ctx context.Context, o Options) error {
 	bin := filepath.Join(o.Dir, ".work", "bin", "app")
 	logf := func(format string, args ...any) { fmt.Fprintf(o.Stderr, "hydrogen dev: "+format+"\n", args...) }
 
+	// Keep modules_gen.go in step with hydrogen.yaml first, so the baseline already contains it and an edit
+	// restarts once. A bad hydrogen.yaml is reported here, once per edit.
+	syncModules := func() error {
+		if _, err := projectfile.Sync(o.Dir); err != nil {
+			fmt.Fprintln(o.Stderr, err)
+			return err
+		}
+		return nil
+	}
+	syncErr := syncModules()
 	// The baseline is taken before building, so a file saved during a build still counts as a change.
 	state, err := scan(o.Dir)
 	if err != nil {
@@ -121,7 +133,9 @@ func Run(ctx context.Context, o Options) error {
 	}
 	defer stop()
 
-	if err := prepareAndGenerate(ctx, o.Dir, bin, o.Stderr); err != nil {
+	if syncErr != nil {
+		logf("build failed; waiting for changes")
+	} else if err := prepareAndGenerate(ctx, o.Dir, bin, o.Stderr); err != nil {
 		logf("build failed; waiting for changes")
 	} else {
 		start()
@@ -152,8 +166,16 @@ func Run(ctx context.Context, o Options) error {
 			}
 			next = again
 		}
-		state = next
 		logf("change detected; rebuilding")
+		syncErr := syncModules()
+		if rescanned, err := scan(o.Dir); err == nil {
+			next = rescanned
+		}
+		state = next
+		if syncErr != nil {
+			logf("build failed; waiting for changes")
+			continue
+		}
 		if err := prepareAndGenerate(ctx, o.Dir, bin, o.Stderr); err != nil {
 			if proc != nil {
 				logf("build failed; the previous server keeps running")

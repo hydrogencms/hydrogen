@@ -71,7 +71,9 @@
           ? '/settings/tokens'
           : session.can('audit.read')
             ? '/settings/audit'
-            : '',
+            : session.can('system.read')
+              ? '/settings/system'
+              : '',
   );
   const actions = $derived<Cmd[]>([
     ...readable

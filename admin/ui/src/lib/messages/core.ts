@@ -65,6 +65,7 @@ export const core: Record<string, string> = {
   'nav.roles': 'Roles',
   'nav.tokens': 'API tokens',
   'nav.audit': 'Audit',
+  'nav.system': 'System',
   'nav.account': 'Account',
   'nav.loadFailed': 'Navigation could not be loaded',
   'nav.breadcrumb': 'Breadcrumb',

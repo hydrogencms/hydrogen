@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Skeleton smoke test: hydrogen new → config:check → migrate → serve, plus the D0 budgets H0 introduces
+# Skeleton smoke test: hydrogen new → add images → config:check → migrate → build → serve, plus the D0 budgets H0 introduces
 # (binary size, cold start, idle memory). Run from the repo root: make smoke.
 set -euo pipefail
 
@@ -18,6 +18,9 @@ rm -rf "$work"
 "$hydrogen" new -module example.com/smoke -core "$root" "$work" >/dev/null
 cd "$work"
 
+grep -q '  - sqlite' hydrogen.yaml || { echo "FAIL: scaffold lacks its module list"; exit 1; }
+"$hydrogen" add images >/dev/null
+grep -q '  - images' hydrogen.yaml && grep -q 'images.Module()' modules_gen.go || { echo "FAIL: hydrogen add images did not wire the module"; exit 1; }
 for f in admin/package.json admin/vite.config.ts admin/src/elements.ts admin/src/Hello.svelte admin/logo.svg admin/theme.css admin/strings.json; do
   [ -f "$f" ] || { echo "FAIL: scaffold lacks $f"; exit 1; }
 done
@@ -25,14 +28,19 @@ done
 "$hydrogen" migrate
 "$hydrogen" migrate | grep -q "up to date"
 
-# Production-style binary for the budgets.
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o .work/bin/smoke .
+# Production-style binary for the budgets, built the way a user builds it (images included).
+"$hydrogen" build -o .work/bin/smoke -ldflags="-s -w" | sed 's/^/build: /'
 size_kb=$(du -k .work/bin/smoke | cut -f1)
 echo "binary: $((size_kb / 1024)) MB (budget $max_binary_mb MB)"
 [ "$size_kb" -le $((max_binary_mb * 1024)) ] || { echo "FAIL: binary over budget"; exit 1; }
 
 # Run once first: macOS scans a newly built binary on its first launch, which isn't Hydrogen's start-up time.
 .work/bin/smoke version >/dev/null
+if .work/bin/smoke modules >.work/modules.txt 2>&1; then
+  grep -q images .work/modules.txt || { cat .work/modules.txt; echo "FAIL: modules does not list images"; exit 1; }
+else
+  grep -q 'unknown command' .work/modules.txt || { cat .work/modules.txt; echo "FAIL: modules command failed"; exit 1; }
+fi
 
 start=$(perl -MTime::HiRes=time -e 'printf "%d", time*1000')
 LISTEN_ADDR="127.0.0.1:$port" .work/bin/smoke serve 2>.work/serve.log &

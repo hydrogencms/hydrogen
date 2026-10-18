@@ -139,6 +139,12 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   delivery `GET /search` (the engine; channel collections) and manage `GET /search` (always the database: drafts and
   access scopes). `modules/meilisearch` is the first external engine (net/http only). Docs: `docs/search.md`,
   `docs/meilisearch.md`. Contract: `planning/design/search-h9c.md`.
+- Modules in projects (H10a): `hydrogen.yaml` lists a project's modules (catalog names or Go package paths); the CLI
+  (`internal/projectfile`, catalog `internal/modcat`) generates `modules_gen.go` (`useModules(h)`) and runs
+  `add`/`remove`/`build`/`modules`. At runtime `kernel.ModuleInfo` gives each module's Go module and version from
+  build info, `kernel.CoreRequirer` ranges (`internal/semver`) are checked at start, and `modules` (app command) and
+  `GET /api/manage/v1/system` (policy `system.read`; admin Settings â†’ System) report them. Docs: `docs/modules.md`,
+  `docs/module-versions.md`. Contract: `planning/design/modules-h10a.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field

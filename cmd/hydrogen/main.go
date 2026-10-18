@@ -16,6 +16,7 @@ import (
 
 	"github.com/hydrogencms/hydrogen"
 	"github.com/hydrogencms/hydrogen/internal/devwatch"
+	"github.com/hydrogencms/hydrogen/internal/projectfile"
 	"github.com/hydrogencms/hydrogen/internal/scaffold"
 )
 
@@ -23,6 +24,14 @@ const usage = `Usage:
   hydrogen new [-module path] [-core dir] [-no-tidy] <dir>   create a project
   hydrogen dev [command args]                                 run with live reload (default: serve)
   hydrogen generate [-go dir] [-ts file]                      write typed Go and TypeScript from the schema
+                                                              (and modules_gen.go from hydrogen.yaml)
+  hydrogen add <module|path[@version]>…                       add modules to hydrogen.yaml and go.mod
+  hydrogen remove <module|path>…                              remove modules
+  hydrogen build [-o path] [go build flags]                   compile the project into bin/<name> (no cgo)
+  hydrogen modules                                            list the catalog; * marks this project's modules
+  hydrogen modules -versions                                  build and run the project's modules command
+  hydrogen modules init <module|path>…                        create hydrogen.yaml for a project that wires
+                                                              modules by hand
   hydrogen version                                            print the version
   hydrogen <command> [args]                                   build the project here and run one of its
                                                               commands: serve, migrate, config:check, …
@@ -59,6 +68,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		err = dev(ctx, args[1:], stdout, stderr)
 	case "generate":
 		err = generate(ctx, args[1:], stdout, stderr)
+	case "add":
+		err = addModules(ctx, args[1:], stdout, stderr)
+	case "remove":
+		err = removeModules(ctx, args[1:], stdout, stderr)
+	case "build":
+		err = buildCmd(ctx, args[1:], stdout, stderr)
+	case "modules":
+		err = modulesCmd(ctx, args[1:], stdout, stderr)
 	default:
 		var code int
 		code, err = passthrough(ctx, args, stdout, stderr)
@@ -141,6 +158,9 @@ func passthrough(ctx context.Context, args []string, stdout, stderr io.Writer) (
 		return 1, err
 	}
 	bin := filepath.Join(dir, ".work", "bin", "app")
+	if _, err := projectfile.Sync(dir); err != nil {
+		return 1, err
+	}
 	if err := devwatch.Build(ctx, dir, bin, stderr); err != nil {
 		return 1, fmt.Errorf("build failed")
 	}

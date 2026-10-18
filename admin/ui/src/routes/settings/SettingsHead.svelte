@@ -7,7 +7,7 @@
   import PageHeader from '../../lib/ui/PageHeader.svelte';
   import Tabs from '../../lib/ui/Tabs.svelte';
 
-  type Section = 'users' | 'groups' | 'roles' | 'tokens' | 'audit';
+  type Section = 'users' | 'groups' | 'roles' | 'tokens' | 'audit' | 'system';
 
   let { section, primary }: { section: Section; primary?: Snippet } = $props();
 
@@ -17,6 +17,7 @@
     { id: 'roles', label: () => t('nav.roles'), policy: 'role.manage' },
     { id: 'tokens', label: () => t('nav.tokens'), policy: 'token.manage' },
     { id: 'audit', label: () => t('nav.audit'), policy: 'audit.read' },
+    { id: 'system', label: () => t('nav.system'), policy: 'system.read' },
   ];
   const tabs = $derived(all.filter((s) => session.can(s.policy)).map((s) => ({ id: s.id, label: s.label() })));
   const current = $derived(all.find((s) => s.id === section)!.label());

@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+
+	"github.com/hydrogencms/hydrogen/internal/projectfile"
 )
 
 //go:embed all:template
@@ -73,6 +75,9 @@ func Write(o Options) error {
 		d.SDK = "file:" + filepath.ToSlash(sdk)
 	}
 
+	if err := writeModules(abs); err != nil {
+		return err
+	}
 	return fs.WalkDir(files, "template", func(p string, e fs.DirEntry, err error) error {
 		if err != nil || e.IsDir() {
 			return err
@@ -103,4 +108,21 @@ func Write(o Options) error {
 		}
 		return os.WriteFile(out, b, 0o644)
 	})
+}
+
+// defaultModules are the modules a new project lists in hydrogen.yaml.
+func defaultModules() []string { return []string{"sqlite", "postgres"} }
+
+func writeModules(dir string) error {
+	gen, err := projectfile.Generate(defaultModules())
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, projectfile.FileName), projectfile.Marshal(defaultModules()), 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, projectfile.GenName), gen, 0o644)
 }

@@ -52,6 +52,7 @@
       { to: '/settings/roles', label: t('nav.roles'), icon: 'shield', ok: session.can('role.manage') },
       { to: '/settings/tokens', label: t('nav.tokens'), icon: 'key', ok: session.can('token.manage') },
       { to: '/settings/audit', label: t('nav.audit'), icon: 'history', ok: session.can('audit.read') },
+      { to: '/settings/system', label: t('nav.system'), icon: 'cpu', ok: session.can('system.read') },
     ].filter((x) => x.ok),
   );
 
