@@ -54,6 +54,7 @@ func decodeMatch(n *config.Node) (any, error) {
 		return nil, n.Errorf("match must be a map with host, prefix and/or header")
 	}
 	var m matcher
+	all := false // prefix: / serves every path; with nothing else the channel serves every URL
 	var errs []error
 	for _, k := range n.Keys() {
 		v := n.Get(k)
@@ -63,6 +64,7 @@ func decodeMatch(n *config.Node) (any, error) {
 			m.Host, err = decodeHost(v)
 		case "prefix":
 			m.Prefix, err = decodePrefix(v)
+			all = all || (err == nil && m.Prefix == "")
 		case "header":
 			m.Header, err = decodeHeader(v)
 		default:
@@ -73,8 +75,8 @@ func decodeMatch(n *config.Node) (any, error) {
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	if m.parts() == 0 {
-		return nil, n.Errorf("match needs at least one of host, prefix, header")
+	if m.parts() == 0 && !all {
+		return nil, n.Errorf("match needs at least one of host, prefix, header (prefix: / serves every URL)")
 	}
 	return m, nil
 }
@@ -101,8 +103,11 @@ func decodePrefix(n *config.Node) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := route.Clean(s); err != nil || s == "/" {
-		return "", n.Errorf("prefix %q must be a clean path such as /en, not /", s)
+	if s == "/" {
+		return "", nil
+	}
+	if _, err := route.Clean(s); err != nil {
+		return "", n.Errorf("prefix %q must be a clean path such as /en, or / for every path", s)
 	}
 	return s, nil
 }

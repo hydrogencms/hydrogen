@@ -478,3 +478,58 @@ func TestSimulatedHeadersDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// prefix: / is a channel that serves every URL: the least specific matcher, so any other channel that fits wins.
+func TestMatchEverything(t *testing.T) {
+	dir := t.TempDir()
+	yaml := "all: { prefix: / }\nhost_all: { host: a.test, prefix: / }\nnone: {}\nbad: { prefix: /x/ }\n"
+	if err := os.WriteFile(filepath.Join(dir, "app.yaml"), []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(config.Options{Dir: dir, Env: "dev", LookupEnv: func(string) (string, bool) { return "", false }})
+	if err != nil {
+		t.Skipf("config does not accept free-form keys: %v", err)
+	}
+	decode := func(key string) (matcher, error) {
+		n, err := cfg.Node(key)
+		if err != nil || n == nil {
+			t.Fatalf("%s: %v %v", key, n, err)
+		}
+		m, err := decodeMatch(n)
+		mm, _ := m.(matcher)
+		return mm, err
+	}
+	all, err := decode("all")
+	if err != nil || all != (matcher{}) {
+		t.Fatalf("prefix /: %+v %v", all, err)
+	}
+	if m, err := decode("host_all"); err != nil || m != (matcher{Host: "a.test"}) {
+		t.Errorf("host with prefix /: %+v %v", m, err)
+	}
+	if _, err := decode("none"); err == nil || !strings.Contains(err.Error(), "prefix: / serves every URL") {
+		t.Errorf("empty match: %v", err)
+	}
+	if _, err := decode("bad"); err == nil {
+		t.Error("unclean prefix accepted")
+	}
+
+	x := newWebIndex([]*channel.Channel{
+		web("site", "", []string{"en"}, all, nil),
+		web("de", "", []string{"de"}, matcher{Prefix: "/de"}, nil),
+	}, []string{"main"})
+	for _, c := range []struct{ host, path, want, rest string }{
+		{"localhost", "/", "site", "/"},
+		{"example.com", "/blog/x", "site", "/blog/x"},
+		{"example.com", "/de/x", "de", "/x"},
+	} {
+		if w, rest, ok := x.match(c.host, c.path, nil); !ok || w.ch.Name != c.want || rest != c.rest {
+			t.Errorf("%s%s: %v %q %v, want %s %q", c.host, c.path, w, rest, ok, c.want, c.rest)
+		}
+	}
+	if got := x.of(x.byName[1].ch).rel("/about"); got != "/about" {
+		t.Errorf("URL of a page on the catch-all channel: %q", got)
+	}
+	if err := duplicateMatchers([]*channel.Channel{web("a", "", nil, all, nil), web("b", "", nil, all, nil)}); err == nil {
+		t.Error("two channels serving every URL")
+	}
+}

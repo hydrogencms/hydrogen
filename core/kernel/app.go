@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -333,7 +334,8 @@ func New(ctx context.Context, o Options, mods ...Module) (*App, error) {
 	if err == nil {
 		var admin *access.Admin
 		admin, err = access.NewAdmin(access.AdminOptions{DB: db, Outbox: ob, Audit: al, Clock: o.Clock, IDs: gen,
-			Rand: o.Rand, Catalog: catalog, Checker: checker, Log: log, PasswordIterations: o.PasswordIterations})
+			Rand: o.Rand, Catalog: catalog, Checker: checker, Log: log, PasswordIterations: o.PasswordIterations,
+			SetupSeed: devSetupSeed(core.Manage.Token)})
 		var med *media.Service
 		if err == nil {
 			med, err = newMedia(&core, p.schema, db, o.Clock, log, al, ob, checker)
@@ -964,6 +966,7 @@ func (a *App) Run(ctx context.Context, listening func(addr string)) error {
 	if s.Core.Manage.Token == DevManageToken {
 		s.Log.Warn("the config token is the dev token, which has every right; set manage.token before exposing this server")
 	}
+	a.announceSetup(ctx, ln.Addr())
 	if listening != nil {
 		listening(ln.Addr().String())
 	}
@@ -978,6 +981,44 @@ func (a *App) Run(ctx context.Context, listening func(addr string)) error {
 	defer scancel()
 	cancel()
 	return srv.Shutdown(sctx)
+}
+
+// devSetupSeed keeps the setup link stable across dev restarts; the dev token already has every right from loopback.
+func devSetupSeed(token string) string {
+	if token == DevManageToken {
+		return token
+	}
+	return ""
+}
+
+// announceSetup prints the link that creates the first administrator while no user exists.
+func (a *App) announceSetup(ctx context.Context, addr net.Addr) {
+	s := a.services
+	if s.Admin == nil {
+		return
+	}
+	token, err := s.Admin.SetupToken(ctx)
+	if err != nil {
+		s.Log.Error("setup: checking for users failed", "err", err)
+		return
+	}
+	if token == "" {
+		return
+	}
+	if !s.Core.Admin.Enabled {
+		s.Log.Warn("no administrator yet: create one with the users:create-admin command")
+		return
+	}
+	host := "localhost"
+	if t, ok := addr.(*net.TCPAddr); ok && !t.IP.IsUnspecified() {
+		host = t.IP.String()
+	}
+	port := ""
+	if t, ok := addr.(*net.TCPAddr); ok {
+		port = strconv.Itoa(t.Port)
+	}
+	link := "http://" + net.JoinHostPort(host, port) + strings.TrimRight(s.Core.Admin.Prefix, "/") + "/login#setup=" + token
+	s.Log.Warn("no administrator yet: open this link to create the first one", "url", link)
 }
 
 func (a *App) Close() error {

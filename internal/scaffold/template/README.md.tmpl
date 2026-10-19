@@ -4,9 +4,11 @@ A [Hydrogen](https://github.com/hydrogencms/hydrogen) project.
 
 ```sh
 hydrogen dev            # serve on :8080 with live reload (SQLite in .work/, no setup)
-hydrogen migrate        # apply database migrations
-hydrogen config:check   # validate configuration
+hydrogen config:check   # validate configuration and schema
 ```
+
+On the first start `hydrogen dev` prints a link that creates the first administrator in the admin. Content types live
+in `schema/` (`article.yaml` is an example); `hydrogen dev` regenerates the typed code in `gen/` when they change.
 
 Admin extensions live in `admin/` (Svelte custom elements on `@hydrogencms/admin-sdk`; Node is only needed
 here, not for the Go server). `cd admin && npm install && npm run build` writes `admin/dist/elements.js`; then
@@ -17,9 +19,6 @@ string field `admin: { widget: hello }` in the schema. For hot reload, run `npm 
 if you changed `admin.prefix`.
 {{if .Core}}
 `@hydrogencms/admin-sdk` is installed from your hydrogen checkout (`file:` dependency in `admin/package.json`).
-{{else}}
-`@hydrogencms/admin-sdk` is not published yet: until it is, install it from a hydrogen checkout with
-`npm install <path>/packages/admin-sdk` (or create the project with `hydrogen new -core <path>`).
 {{end}}
 
 Configuration lives in `config/`; set `DATABASE_URL` to use Postgres.

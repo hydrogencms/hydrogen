@@ -1,0 +1,13 @@
+# An example content type, so the admin has something to edit: change it, add types next to it, or delete it.
+# `hydrogen dev` picks up every change and regenerates the typed code in gen/. Field types and options:
+# https://hydrogencms.github.io/website/docs/schema/
+types:
+  article:
+    label: Article
+    admin: { list: [title, publishedOn] }
+    fields:
+      title:       { type: string, required: true, max: 120, translatable: true }
+      slug:        { type: slug, from: title, index: true }
+      summary:     { type: text, max: 300, translatable: true }
+      body:        { type: richtext, translatable: true }
+      publishedOn: { type: date, index: true }

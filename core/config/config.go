@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -119,7 +120,7 @@ func (c *Config) parseFile(path string) (*yaml.Node, error) {
 	}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(b, &doc); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w%s", path, err, flowHint(b, err))
 	}
 	if doc.Kind == 0 || len(doc.Content) == 0 {
 		return nil, nil
@@ -331,4 +332,28 @@ func (c *Config) errorf(n *yaml.Node, format string, args ...any) error {
 	default:
 		return fmt.Errorf("%s:%d: %s", file, n.Line, msg)
 	}
+}
+
+var (
+	yamlErrLine = regexp.MustCompile(`line (\d+):`)
+	// a ${...} value that is not quoted, inside { } or [ ] on the same line
+	bareSubstInFlow = regexp.MustCompile(`[{\[][^"'\n]*[:,\[]\s*\$\{`)
+)
+
+// flowHint explains the most common YAML error in config files: braces of ${env:...} inside a flow mapping or
+// sequence end it early unless the value is quoted.
+func flowHint(src []byte, err error) string {
+	m := yamlErrLine.FindStringSubmatch(err.Error())
+	if m == nil {
+		return ""
+	}
+	n, _ := strconv.Atoi(m[1])
+	lines := strings.Split(string(src), "\n")
+	// the parser may report a line next to the one at fault
+	for _, i := range []int{n - 1, n, n - 2} {
+		if i >= 0 && i < len(lines) && bareSubstInFlow.MatchString(lines[i]) {
+			return fmt.Sprintf(` (line %d: quote ${...} values inside { } or [ ], e.g. host: "${env:HOST:-localhost}")`, i+1)
+		}
+	}
+	return ""
 }

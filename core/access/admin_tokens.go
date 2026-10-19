@@ -244,6 +244,12 @@ var errSeeded = errors.New("access: templates already seeded")
 // users:create-admin command). It is a system operation: the caller is the operator with database access. The
 // user is enabled, and an existing user's sessions end.
 func (a *Admin) EnsureAdmin(ctx context.Context, login, password string) (User, error) {
+	return a.ensureAdmin(ctx, login, password, false)
+}
+
+// ensureAdmin is EnsureAdmin; with first it fails with ErrSetupDone when any user exists (checked in the
+// transaction that creates the user).
+func (a *Admin) ensureAdmin(ctx context.Context, login, password string, first bool) (User, error) {
 	login = strings.ToLower(strings.TrimSpace(login))
 	if err := checkLogin(login); err != nil {
 		return User{}, err
@@ -264,6 +270,13 @@ func (a *Admin) EnsureAdmin(ctx context.Context, login, password string) (User, 
 	}
 	var out store.User
 	err = a.mutateAs(ctx, audit.System, action, login, func(tx store.Tx) (any, error) {
+		if first {
+			if _, n, err := tx.Auth().ListUsers(ctx, store.Page{Limit: 1}, ""); err != nil {
+				return nil, err
+			} else if n > 0 {
+				return nil, ErrSetupDone
+			}
+		}
 		role, err := tx.Auth().RoleByName(ctx, "administrator")
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, fmt.Errorf("access: the administrator role does not exist; create it, then run this again")

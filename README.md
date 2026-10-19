@@ -30,28 +30,12 @@ You need Go 1.26 or later.
 
 ```sh
 go install github.com/hydrogencms/hydrogen/cmd/hydrogen@latest
-
-hydrogen new -module example.com/mysite mysite
-cd mysite
+hydrogen new mysite && cd mysite
+hydrogen dev                    # SQLite in .work/, live reload; prints a link to create your admin account
 ```
 
-Describe a type in `schema/article.yaml`:
-
-```yaml
-types:
-  article:
-    fields:
-      title: { type: string, required: true, translatable: true }
-      body:  { type: richtext, translatable: true }
-```
-
-```sh
-hydrogen migrate
-echo "a long passphrase" | hydrogen users:create-admin admin
-hydrogen dev                    # http://localhost:8080/admin/, live reload, SQLite in .work/
-```
-
-Write and publish an article in the admin, then read it:
+Open the link, create your account, then write and publish an article (the project starts with an example `article`
+type in `schema/article.yaml`) and read it:
 
 ```sh
 curl -s localhost:8080/api/deliver/v1/collections/article/items

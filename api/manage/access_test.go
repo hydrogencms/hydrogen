@@ -218,3 +218,13 @@ func TestSessionRoute(t *testing.T) {
 		t.Errorf("super: %s", w.Body)
 	}
 }
+
+func TestSetupRoutesArePublic(t *testing.T) {
+	h := accessAPI(t, newFake(t), nil, fakeAuth{})
+	if w := do(h, "GET", "/auth/setup", "", "Authorization", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"required":false`) {
+		t.Errorf("setup state without an admin service: %d %s", w.Code, w.Body)
+	}
+	if w := do(h, "POST", "/auth/setup", `{"token":"x","login":"a","password":"b"}`, "Authorization", ""); w.Code != 404 {
+		t.Errorf("setup without an admin service: %d %s", w.Code, w.Body)
+	}
+}

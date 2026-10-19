@@ -48,7 +48,8 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   (`check-frontend`). Pages adds `/route` and `/tree`. Contract: `planning/design/delivery-h4.md`.
 - Access (H5a): `core/access/` (principals, RBAC policies and limitations, code access rules, passwords, sessions, API
   tokens, `Authenticator`, `Checker`, `Admin` for users/groups/roles/tokens/audit), `store.AuthStore` (migration
-  0004), working projections (0005). `content.Service` checks the principal in the context (HTTP entry points
+  0004), working projections (0005). First run: with no user, the server logs `<admin>/login#setup=<token>`
+  (`Admin.SetupToken`; stable in dev) and `POST /auth/setup` creates the first administrator. `content.Service` checks the principal in the context (HTTP entry points
   always set one; no principal = the system, unchecked); the management API authenticates every request.
   Contract: `planning/design/auth-h5a.md`.
 - Admin (H5b): `admin/` serves the Svelte 5 app (`admin/ui`, built into `admin/dist`, committed and embedded;

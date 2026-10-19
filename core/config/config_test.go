@@ -155,3 +155,24 @@ func TestParseSize(t *testing.T) {
 		}
 	}
 }
+
+func TestFlowMappingSubstitutionHint(t *testing.T) {
+	for name, c := range map[string]struct {
+		yaml string
+		hint bool
+	}{
+		"unquoted in braces":   {"web:\n  match: { host: ${env:HOST:-localhost} }\n", true},
+		"default with a colon": {"web:\n  site: main\n  frontend: { url: ${env:SITE_URL:-http://localhost:4321} }\n", true},
+		"quoted":               {"web:\n  match: { host: \"${env:HOST:-localhost}\" }\n", false},
+		"block style":          {"web:\n  match:\n    host: ${env:HOST:-localhost}\n", false},
+		"other error":          {"web:\n  a: [1, 2\n", false},
+	} {
+		dir := t.TempDir()
+		write(t, dir, "app.yaml", c.yaml)
+		_, err := Load(Options{Dir: dir})
+		got := err != nil && strings.Contains(err.Error(), "quote ${...} values inside { } or [ ]")
+		if got != c.hint {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

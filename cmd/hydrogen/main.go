@@ -125,7 +125,7 @@ func newProject(ctx context.Context, args []string, stdout, stderr io.Writer) er
 			return fmt.Errorf("go mod tidy failed (%v); fix and rerun it in %s", err, dir)
 		}
 	}
-	fmt.Fprintf(stdout, "Created %s. Next:\n  cd %s\n  hydrogen dev\n", dir, dir)
+	fmt.Fprintf(stdout, "Created %s. Next:\n  cd %s\n  hydrogen dev    # then open the link it prints to create your admin account\n", dir, dir)
 	return nil
 }
 

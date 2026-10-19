@@ -56,6 +56,14 @@
   });
 
   const rootErrors = $derived([...model.routed.root, ...(ctx.error(path) && !model.routed.root.includes(ctx.error(path)!) ? [ctx.error(path)!] : [])]);
+
+  // Top-level blocks, with the ones nested in slots apart: "18 blocks" for six sections misled editors.
+  const countLabel = $derived.by(() => {
+    const top = (value ?? []).length;
+    const nested = model.total - top;
+    if (nested <= 0) return top === 1 ? t('blocks.count1') : t('blocks.count', { n: top });
+    return top === 1 ? t('blocks.count1Nested', { nested }) : t('blocks.countNested', { n: top, nested });
+  });
 </script>
 
 <fieldset class="h-fieldset h-blocks" disabled={readonly} data-blocks={path}>
@@ -75,7 +83,7 @@
     <div role="status" aria-busy="true" aria-label={t('blocks.loading')}><Skeleton lines={3} /></div>
   {:else}
     <div class="h-blocks__bar">
-      <span class="h-muted h-num">{model.total === 1 ? t('blocks.count1') : t('blocks.count', { n: model.total })}</span>
+      <span class="h-muted h-num">{countLabel}</span>
       <span class="h-spacer"></span>
       {#if model.total > 0}
         <Button size="sm" variant="ghost" onclick={() => model.setAll(!model.allOpen)}>{model.allOpen ? t('blocks.collapseAll') : t('blocks.expandAll')}</Button>

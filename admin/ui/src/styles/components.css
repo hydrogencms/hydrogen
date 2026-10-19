@@ -1294,6 +1294,10 @@ a.h-name__title:hover {
   color: var(--h-danger);
   font-size: var(--h-text-md);
 }
+.h-alert--info {
+  background: var(--h-info-soft);
+  color: var(--h-info);
+}
 .h-list {
   display: flex;
   flex-direction: column;

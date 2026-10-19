@@ -12,7 +12,7 @@ func TestWrite(t *testing.T) {
 	if err := Write(Options{Dir: dir, Module: "example.com/acme", Core: "../.."}); err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{"go.mod", "main.go", "hydrogen.go", "hydrogen.yaml", "modules_gen.go", "config/app.yaml", "schema/.gitkeep", ".gitignore", "README.md",
+	for _, f := range []string{"go.mod", "main.go", "hydrogen.go", "hydrogen.yaml", "modules_gen.go", "config/app.yaml", "schema/article.yaml", ".gitignore", "README.md",
 		"admin/package.json", "admin/svelte.config.js", "admin/vite.config.ts", "admin/tsconfig.json", "admin/src/elements.ts", "admin/src/Hello.svelte",
 		"admin/logo.svg", "admin/theme.css", "admin/strings.json"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
@@ -70,7 +70,8 @@ func TestWriteAdminStarter(t *testing.T) {
 		t.Errorf("package.json:\n%s", pkg)
 	}
 	readme, _ := os.ReadFile(filepath.Join(dir, "README.md"))
-	if !strings.Contains(string(readme), "not published yet") || !strings.Contains(string(readme), "ADMIN_PREFIX") {
+	if strings.Contains(string(readme), "not published yet") || !strings.Contains(string(readme), "ADMIN_PREFIX") ||
+		!strings.Contains(string(readme), "first administrator") {
 		t.Errorf("README:\n%s", readme)
 	}
 
@@ -83,7 +84,7 @@ func TestWriteAdminStarter(t *testing.T) {
 		t.Errorf("package.json with -core:\n%s", pkg)
 	}
 	readme, _ = os.ReadFile(filepath.Join(local, "README.md"))
-	if strings.Contains(string(readme), "not published yet") {
+	if !strings.Contains(string(readme), "installed from your hydrogen checkout") {
 		t.Errorf("README with -core:\n%s", readme)
 	}
 }

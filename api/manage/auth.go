@@ -18,6 +18,8 @@ import (
 // access.Admin checks the caller again, including what it may grant.
 var authRoutes = []route{
 	{"POST", "/auth/login", Public, (*api).login},
+	{"GET", "/auth/setup", Public, (*api).setupState},
+	{"POST", "/auth/setup", Public, (*api).setup},
 	{"POST", "/auth/logout", Authenticated, (*api).logout},
 	{"GET", "/auth/session", Authenticated, (*api).session},
 	{"POST", "/auth/password", Authenticated, (*api).changePassword},
@@ -108,6 +110,50 @@ func (a *api) login(w http.ResponseWriter, r *http.Request) error {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxCredentialBody)
 	if err := decodeBody(w, r, &b, false); err != nil {
+		return err
+	}
+	res, err := a.auth.Login(w, r, b.Login, b.Password)
+	if err != nil {
+		return busy(err)
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"user": access.ViewUser(res.User), "csrf": res.CSRF, "expiresAt": res.ExpiresAt})
+	return nil
+}
+
+// setupState tells the admin app whether the first administrator is still to be created.
+func (a *api) setupState(w http.ResponseWriter, r *http.Request) error {
+	need := false
+	if a.admin != nil {
+		var err error
+		if need, err = a.admin.NeedsSetup(r.Context()); err != nil {
+			return err
+		}
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"required": need})
+	return nil
+}
+
+// setup creates the first administrator with the setup token the server printed, then signs them in.
+func (a *api) setup(w http.ResponseWriter, r *http.Request) error {
+	adm, err := a.adminOrNotFound()
+	if err != nil {
+		return err
+	}
+	var b struct {
+		Token    string `json:"token"`
+		Login    string `json:"login"`
+		Password string `json:"password"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxCredentialBody)
+	if err := decodeBody(w, r, &b, false); err != nil {
+		return err
+	}
+	switch _, err := adm.CompleteSetup(r.Context(), b.Token, b.Login, b.Password); {
+	case errors.Is(err, access.ErrSetupToken):
+		return &Error{Status: http.StatusForbidden, Code: "setup_link", Message: "the setup link is not valid; use the one the server printed at its last start"}
+	case errors.Is(err, access.ErrSetupDone):
+		return Conflict("setup_done", "an administrator already exists; sign in instead")
+	case err != nil:
 		return err
 	}
 	res, err := a.auth.Login(w, r, b.Login, b.Password)

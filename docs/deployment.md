@@ -64,11 +64,15 @@ until the database is migrated, so a load balancer holds traffic back from a nod
 once per release, from a release step or an init container, before starting the new version. After a schema change
 that alters what is published and needs no migration, run `content:reindex` once.
 
-The first administrator is created with a command, not an HTTP call:
+Create the first administrator with a command:
 
 ```sh
 echo "a long passphrase" | bin/mysite users:create-admin alice
 ```
+
+Until a user exists, the server also logs a one-time setup link at start (`no administrator yet`). Anyone holding it
+can create the first administrator, so keep the log private or run `users:create-admin` before you expose the
+server.
 
 ## Docker
 

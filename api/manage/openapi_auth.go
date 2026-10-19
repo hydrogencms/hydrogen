@@ -122,6 +122,17 @@ func authPaths(paths obj) {
 		"X-CSRF-Token on unsafe requests made with the cookie. Bearer requests need no CSRF token."
 	login["security"] = []any{}
 	paths["/auth/login"] = obj{"post": login}
+	setupState := operation("getSetup", "Whether the first administrator is still to be created", nil, nil,
+		resp(obj{"200": openapi.OKResp("OK.", obj{"type": "object", "required": []any{"required"},
+			"properties": obj{"required": obj{"type": "boolean"}}})}))
+	setupState["security"] = []any{}
+	setup := operation("setup", "Create the first administrator with the setup token, and sign in",
+		nil, jsonBody(obj{"token": openapi.Str(""), "login": openapi.Str(""), "password": openapi.Str("password")}, "token", "login", "password"),
+		resp(ok("LoginResult"), "400", "403", "404", "409", "413", "415"))
+	setup["description"] = "While no user exists, the server prints a link with a setup token at start. The token works " +
+		"once and only in that process; the response is the same as login's."
+	setup["security"] = []any{}
+	paths["/auth/setup"] = obj{"get": setupState, "post": setup}
 	paths["/auth/logout"] = obj{"post": operation("logout", "End the session", nil, nil, resp(noContent, "401", "403"))}
 	paths["/auth/session"] = obj{"get": operation("getSession", "Who is calling, and what they may do", nil, nil,
 		resp(ok("Session"), "401"))}

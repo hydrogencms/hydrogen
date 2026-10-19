@@ -54,6 +54,18 @@ class Session {
     await this.load();
   }
 
+  /** Whether the first administrator is still to be created (no user exists). */
+  async setupRequired(): Promise<boolean> {
+    return (await api.get('/auth/setup', { noRedirect: true })).required;
+  }
+
+  /** Creates the first administrator with the setup token the server printed, and signs them in. */
+  async setup(token: string, login: string, password: string): Promise<void> {
+    const r = await api.post('/auth/setup', { body: { token, login, password }, noRedirect: true });
+    this.csrf = r.csrf;
+    await this.load();
+  }
+
   async logout(): Promise<void> {
     try {
       await api.post('/auth/logout', { noRedirect: true });

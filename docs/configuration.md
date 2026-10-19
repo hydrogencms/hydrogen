@@ -231,7 +231,8 @@ Channel names are lower-case letters, digits and `_`. Once `channels.yaml` defin
 | `tokens` | For `access: token`: a mapping of name to secret. Secrets must come from `${env:…}`, have at least 16 characters, no whitespace, and cannot be shared by two channels. |
 
 Modules add keys. The pages module adds `site` (one of `modules.pages.sites`), `match` (`host`, `prefix` and/or a
-`header: {name, value}`; two channels cannot match the same way) and `reserved` (paths the frontend owns, such as
+`header: {name, value}`; two channels cannot match the same way; `prefix: /` serves every path, so a site with one web
+channel needs only `match: { prefix: / }`, and a more specific channel still wins where it fits) and `reserved` (paths the frontend owns, such as
 `/cart` or `/account/*`). The site module adds `render: go`; the images module adds `image_presets`. A key no module
 registered fails with the list of known ones.
 

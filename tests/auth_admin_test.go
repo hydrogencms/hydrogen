@@ -531,3 +531,71 @@ func TestAdminSearchUsersAndAuditPrefix(t *testing.T) {
 		}
 	})
 }
+
+func TestAdminFirstRunSetup(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, b backend) {
+		e := newAuthEnv(t, b, nil)
+		ctx := context.Background()
+		if need, err := e.admin.NeedsSetup(ctx); err != nil || !need {
+			t.Fatalf("fresh database needs setup: %v %v", need, err)
+		}
+		if _, err := e.admin.CompleteSetup(ctx, "", "root", authPassword); !errors.Is(err, access.ErrSetupToken) {
+			t.Fatalf("no token yet: %v", err)
+		}
+		tok, err := e.admin.SetupToken(ctx)
+		if err != nil || len(tok) < 32 {
+			t.Fatalf("token %q %v", tok, err)
+		}
+		if again, _ := e.admin.SetupToken(ctx); again != tok {
+			t.Fatal("token changed within the process")
+		}
+		if _, err := e.admin.CompleteSetup(ctx, tok+"x", "root", authPassword); !errors.Is(err, access.ErrSetupToken) {
+			t.Fatalf("wrong token: %v", err)
+		}
+		// an invalid password keeps the token usable
+		if _, err := e.admin.CompleteSetup(ctx, tok, "root", "short"); err == nil {
+			t.Fatal("short password accepted")
+		}
+		u, err := e.admin.CompleteSetup(ctx, tok, "Root", authPassword)
+		if err != nil || u.Login != "root" {
+			t.Fatalf("setup: %v %+v", err, u)
+		}
+		if _, _, err := e.login("root", authPassword); err != nil {
+			t.Fatal(err)
+		}
+		as, err := e.admin.AssignmentsOf(ctx, userRef(u))
+		if err != nil || len(as) != 1 || as[0].Role != "administrator" {
+			t.Fatalf("assignments %v %v", as, err)
+		}
+		if _, err := e.admin.CompleteSetup(ctx, tok, "second", authPassword); !errors.Is(err, access.ErrSetupToken) {
+			t.Fatalf("token reused: %v", err)
+		}
+		if tok, err := e.admin.SetupToken(ctx); tok != "" || err != nil {
+			t.Fatalf("token after setup %q %v", tok, err)
+		}
+		if need, _ := e.admin.NeedsSetup(ctx); need {
+			t.Fatal("still needs setup")
+		}
+	})
+}
+
+func TestAdminSetupRefusedOnceAUserExists(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, b backend) {
+		e := newAuthEnv(t, b, nil)
+		ctx := context.Background()
+		tok, err := e.admin.SetupToken(ctx)
+		if err != nil || tok == "" {
+			t.Fatal(tok, err)
+		}
+		// someone ran users:create-admin meanwhile
+		if _, err := e.admin.EnsureAdmin(ctx, "ops", authPassword); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.admin.CompleteSetup(ctx, tok, "intruder", authPassword); !errors.Is(err, access.ErrSetupDone) {
+			t.Fatalf("setup after a user exists: %v", err)
+		}
+		if _, err := e.admin.CompleteSetup(ctx, tok, "intruder", authPassword); !errors.Is(err, access.ErrSetupToken) {
+			t.Fatalf("token kept after refusal: %v", err)
+		}
+	})
+}

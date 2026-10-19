@@ -167,7 +167,11 @@ func (d *deliverer) route(w http.ResponseWriter, r *http.Request) {
 		delivery.Fail(w, r, err)
 		return
 	}
-	if loc.Kind == LocatedNoChannel || loc.Channel != ch.Name {
+	if loc.Kind == LocatedNoChannel {
+		delivery.Fail(w, r, manage.NotFound("no channel's match fits the url (a channel that serves every URL has match: { prefix: / })"))
+		return
+	}
+	if loc.Channel != ch.Name {
 		delivery.Fail(w, r, manage.NotFound("the url is not served by this channel"))
 		return
 	}

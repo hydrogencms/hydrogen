@@ -6,6 +6,23 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **First-run setup.** While no user exists, the server prints a link at start that opens a form in the admin to
+  create the first administrator (`GET`/`POST /auth/setup`). The link's token is random per start (stable across
+  `hydrogen dev` restarts) and stops working once a user exists. Without the link, the sign-in page says where to
+  find it. `users:create-admin` still works.
+- New projects start with an example `article` type in `schema/article.yaml`, so the admin has something to edit.
+- A web channel can serve every URL with `match: { prefix: / }`; more specific channels still win where they fit.
+- A YAML error caused by an unquoted `${env:…}` inside `{ }` or `[ ]` now says to quote the value.
+
+### Changed
+
+- The quick start is three commands: `go install`, `hydrogen new mysite`, `hydrogen dev`. `-module` is optional, and
+  `migrate` and `users:create-admin` are no longer needed to try Hydrogen.
+- The block editor counts top-level blocks, with nested ones apart ("6 blocks, 12 inside them").
+- A delivery `/route` request that no channel matches explains how to add a catch-all `match`.
+
 ### Removed
 
 - The documentation site build (`website/`). The guides stay as Markdown under `docs/`.

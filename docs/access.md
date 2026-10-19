@@ -24,7 +24,10 @@ hydrogen tokens:create -name ci -role editor      # prints the secret once; add 
 ```
 
 `users:create-admin` creates the user, or resets the password of an existing one (ending their sessions), and gives
-the `administrator` role. Passwords are 12 to 256 bytes; there are no composition rules. They are stored as
+the `administrator` role. On a database with no user yet, the server also prints a setup link when it starts
+(`no administrator yet` in its log): it opens a form in the admin that creates the first administrator. The link
+carries a token that is random at every start (in `dev`, derived from the dev token so it survives live reload) and
+stops working once any user exists; `GET /auth/setup` tells whether setup is still open. Passwords are 12 to 256 bytes; there are no composition rules. They are stored as
 PBKDF2-HMAC-SHA256 hashes. Logins are throttled per client, per login and per pair, and a flood of password checks is
 answered `503` before it can exhaust the server.
 

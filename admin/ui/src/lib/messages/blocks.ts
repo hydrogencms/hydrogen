@@ -6,6 +6,8 @@ export const blocks: Record<string, string> = {
   'blocks.loadFailed': 'Could not load the block types.',
   'blocks.count': '{n} blocks',
   'blocks.count1': '1 block',
+  'blocks.countNested': '{n} blocks, {nested} inside them',
+  'blocks.count1Nested': '1 block, {nested} inside it',
   'blocks.expandAll': 'Expand all',
   'blocks.collapseAll': 'Collapse all',
   'blocks.slotEmpty': 'Empty. Drop a block here or add one.',

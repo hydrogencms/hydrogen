@@ -19,11 +19,12 @@ of the Hydrogen repository instead, build it with `go build -o bin/hydrogen ./cm
 ## Create a project
 
 ```sh
-hydrogen new -module example.com/mysite mysite
+hydrogen new mysite
 cd mysite
 ```
 
-(From a checkout: `hydrogen new -module example.com/mysite -core /path/to/hydrogen mysite`.)
+The Go module path defaults to the directory name; pass `-module example.com/mysite` to choose one. (From a checkout:
+`hydrogen new -core /path/to/hydrogen mysite`.)
 
 ```
 mysite/
@@ -32,7 +33,7 @@ mysite/
   hydrogen.yaml      the modules compiled in (sqlite, postgres)
   modules_gen.go     generated from hydrogen.yaml
   config/app.yaml    server, database and admin settings
-  schema/            your content types
+  schema/            your content types (article.yaml is an example)
   admin/             a starter for admin extensions (optional)
 ```
 
@@ -40,7 +41,7 @@ The project is an ordinary Go program. The CLI builds and runs it; you can also 
 
 ## Describe your content
 
-Create `schema/article.yaml`:
+The project starts with one example type, in `schema/article.yaml`:
 
 ```yaml
 types:
@@ -57,24 +58,7 @@ types:
 
 A type is a list of typed fields. `required` is checked at publish, `translatable` makes the value per language, and
 `index` makes a field filterable and sortable in the APIs. All field types and options are in [schema](schema.md).
-
-```sh
-hydrogen config:check
-```
-
-```
-config ok (env dev)
-```
-
-## Create the database and an administrator
-
-```sh
-hydrogen migrate
-echo "a long passphrase" | hydrogen users:create-admin admin
-```
-
-`migrate` creates `.work/hydrogen.db` (SQLite). Passwords are at least 12 characters. In production the password comes
-from `HYDROGEN_ADMIN_PASSWORD` or stdin, never from the command line.
+Change it or add types next to it; `hydrogen config:check` validates them without starting the server.
 
 ## Run it
 
@@ -84,11 +68,17 @@ hydrogen dev
 
 ```
 level=INFO msg=serving addr=[::]:8080 env=dev db=sqlite modules="[sqlite postgres project]"
+level=WARN msg="no administrator yet: open this link to create the first one" url="http://localhost:8080/admin/login#setup=…"
 ```
 
-`hydrogen dev` rebuilds and restarts when Go code, configuration or schema change, and regenerates the typed code in
-`gen/`. Open [http://localhost:8080/admin/](http://localhost:8080/admin/), sign in as `admin`, choose **Article**, write
-one and publish it.
+`hydrogen dev` creates the SQLite database in `.work/`, applies the migrations, and rebuilds and restarts when Go code,
+configuration or schema change (regenerating the typed code in `gen/`). Open the link it printed and create your
+administrator account (passwords are at least 12 characters). Then choose **Article**, write one and publish it.
+
+The link works only while no user exists, and only with the token it carries: outside `dev` the token is new at every
+start. On a server you set up from the command line instead, create the administrator with
+`hydrogen users:create-admin <login>` (the password comes from `HYDROGEN_ADMIN_PASSWORD` or stdin, never from the
+command line).
 
 ## Read it from the API
 

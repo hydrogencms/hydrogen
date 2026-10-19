@@ -55,6 +55,9 @@ type AdminOptions struct {
 	Log     *slog.Logger
 	// PasswordIterations is the PBKDF2 cost of new hashes (0 = 600 000); tests lower it.
 	PasswordIterations int
+	// SetupSeed, when set, derives a stable setup token from it instead of a random one per process: dev passes
+	// the dev token, so the setup link survives the restarts of live reload.
+	SetupSeed string
 }
 
 // Admin manages users, groups, roles, assignments and API tokens. Every method checks the caller's policy in
@@ -73,6 +76,8 @@ type Admin struct {
 	pwThr   *throttle
 	verify  verifyGate
 	iter    int
+	setup   setupState
+	seed    string
 }
 
 func NewAdmin(o AdminOptions) (*Admin, error) {
@@ -81,7 +86,7 @@ func NewAdmin(o AdminOptions) (*Admin, error) {
 		return nil, errors.New("access: admin needs DB, Outbox, Audit, IDs, Catalog and Checker")
 	}
 	a := &Admin{db: o.DB, outbox: o.Outbox, audit: o.Audit, clock: o.Clock, ids: o.IDs, rand: o.Rand,
-		catalog: o.Catalog, checker: o.Checker, log: o.Log, pwThr: newThrottle(throttleKeys, limitPair), verify: newVerifyGate(0), iter: iterationsOr(o.PasswordIterations)}
+		catalog: o.Catalog, checker: o.Checker, log: o.Log, pwThr: newThrottle(throttleKeys, limitPair), verify: newVerifyGate(0), iter: iterationsOr(o.PasswordIterations), seed: o.SetupSeed}
 	if a.clock == nil {
 		a.clock = clock.System{}
 	}
