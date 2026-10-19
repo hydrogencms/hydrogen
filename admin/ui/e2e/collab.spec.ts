@@ -3,7 +3,7 @@ import { draftOf, manage } from './helpers';
 import { editorUser } from './review-helpers';
 import {
   addSection, alsoHere, caretIn, announcements, avatarOf, collabArticle, collabItem, conflictDialog, fieldTag, form, headingValues,
-  openSession, resetNotice, saveButton, typeAt, unsaved, withPair, type Editor,
+  openSession, resetNotice, saveButton, throttle, typeAt, unsaved, withPair, type Editor,
 } from './collab-helpers';
 
 // H8c collaboration: two editors in two browser contexts on one item. Presence, soft locks, Yjs convergence,
@@ -69,6 +69,19 @@ test.describe('collaboration', () => {
       await Promise.all([addSection(A.page, 'From A'), addSection(B.page, 'From B')]);
       await expect.poll(() => headingValues(A.page)).toHaveLength(2);
       // Wait for both headings' text, not just two items: typing reaches the other side a little later.
+      await expect.poll(async () => [...(await headingValues(A.page))].sort(), { timeout: 15_000 }).toEqual(['From A', 'From B']);
+      const a = await headingValues(A.page);
+      await expect.poll(() => headingValues(B.page), { timeout: 15_000 }).toEqual(a);
+    });
+  });
+
+  test('adding a block in both on slow machines (CPU throttled): each keeps what its editor typed', async ({ browser }) => {
+    // Slow enough that the peer's new item arrives between one's click and typing: its row must not take over the
+    // input (the list keys rows by item, and the binding matches items by identity, not by their equal values).
+    const item = await collabItem('Slow blocks');
+    await withPair(browser, alex, blake, item.id, async (A, B) => {
+      await Promise.all([throttle(A, 6), throttle(B, 6)]);
+      await Promise.all([addSection(A.page, 'From A'), addSection(B.page, 'From B')]);
       await expect.poll(async () => [...(await headingValues(A.page))].sort(), { timeout: 15_000 }).toEqual(['From A', 'From B']);
       const a = await headingValues(A.page);
       await expect.poll(() => headingValues(B.page), { timeout: 15_000 }).toEqual(a);

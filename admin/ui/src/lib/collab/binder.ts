@@ -91,10 +91,11 @@ export class Binder {
   #server = new Y.Doc();
   // Parts seeded here whose seed the server has not acknowledged yet: someone else's seed for one means the claim is lost.
   #seeding = new Set<string>();
+  #lists: NonNullable<Env['lists']> = new WeakMap();
 
   constructor(o: BinderOptions) {
     this.#o = o;
-    this.#env = o.env ?? {};
+    this.#env = { ...o.env, lists: this.#lists };
     this.parts = [SHARED, localePart(o.locale)];
     const me = o.join.presence?.find((p) => p.client === o.join.client);
     this.#ro = !!me && !me.edit;
@@ -251,8 +252,9 @@ export class Binder {
   #flushForm() {
     if (this.#ro || this.#poisoned || !this.#begun) return;
     const values = this.#snap();
+    const live = this.#o.fields();
     this.doc.transact(() => {
-      for (const p of this.parts) if (this.#ready.has(p)) syncPart(this.doc.getMap(p), this.#defs(p), values, this.#env);
+      for (const p of this.parts) if (this.#ready.has(p)) syncPart(this.doc.getMap(p), this.#defs(p), values, this.#env, undefined, live);
     }, LOCAL);
   }
 
@@ -433,7 +435,7 @@ export class Binder {
   async #start() {
     await this.#o.before?.catch(() => undefined);
     if (this.#destroyed) return;
-    this.#env = this.#o.env ?? this.#env;
+    this.#env = { ...(this.#o.env ?? this.#env), lists: this.#lists };
     const j = this.#o.join;
     for (const u of [...j.updates].sort((a, b) => a.seq - b.seq)) {
       if (!this.#apply(u.data)) return;

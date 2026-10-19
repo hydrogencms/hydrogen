@@ -56,6 +56,12 @@ export async function withPair(browser: Browser, a: Editor, b: Editor, itemId: s
 
 export const form = (page: Page) => page.getByRole('form', { name: /fields/ });
 
+/** Slows the page's CPU down `rate` times (Chromium): a slow CI runner, reliably. */
+export async function throttle(s: Session, rate: number) {
+  const cdp = await s.ctx.newCDPSession(s.page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate });
+}
+
 // ---- Selectors that depend on the presence UI (lib/collab/PresenceAvatars.svelte, marks.ts, messages/collab.ts) ----
 
 /** The header group listing the other participants (labelled "Also here"; each avatar is named by its person). */

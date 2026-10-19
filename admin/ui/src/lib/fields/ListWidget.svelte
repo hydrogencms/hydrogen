@@ -82,7 +82,8 @@
   {#if field.description}<p class="h-field__desc">{field.description}</p>{/if}
   {#if error}<p class="h-field__error" role="alert"><Icon name="alert-circle" size={14} />{error}</p>{/if}
   <ol class="h-list-widget__items">
-    {#each items as _, i (i)}
+    <!-- Group items by object: a peer's item inserted before this one must not take over its inputs mid-edit. -->
+    {#each items as item, i (isGroup && item && typeof item === 'object' ? item : i)}
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <li class="h-list-widget__item" class:h-list-widget__item--scalar={!isGroup} id="{uid}-{i}" role="group" aria-label={itemLabel(i)} onkeydown={(e) => key(e, i)}>
         {#if isGroup}

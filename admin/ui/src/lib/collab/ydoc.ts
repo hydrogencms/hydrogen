@@ -6,7 +6,8 @@
 //                                  delete + insert, the block list is reconciled by id
 //   group                          Y.Map
 //   list of group                  Y.Array of Y.Map without ids; changes are index-based inserts/deletes from an
-//                                  LCS of the items, an item that keeps its place is edited field by field
+//                                  LCS of the items (matched by the form object and Y.Map they last had, else by
+//                                  value), an item that keeps its place is edited field by field
 //   everything else                plain values (last writer wins), lists of scalars are replaced as a whole
 //
 // `sync` makes Y equal to a value, `project` makes a value equal to Y. Both only touch what differs, so they are
@@ -28,6 +29,19 @@ export interface Env {
    * translatable field is not an empty one. It has no entry in the part map, an empty string is an override.
    */
   sparse?: boolean;
+  /**
+   * Lists of groups as last synced with or projected into the form: the Y.Maps in the form's order, and the form's
+   * item objects and values then. List items have no ids, so changes are matched by these identities (by value,
+   * two equal items, such as two just-added empty ones, can trade places, and an editor then edits or removes the
+   * other one).
+   */
+  lists?: WeakMap<Y.Array<Y.Map<unknown>>, ListMirror>;
+}
+
+interface ListMirror {
+  maps: Y.Map<unknown>[];
+  objs: unknown[];
+  vals: unknown[];
 }
 
 const sparseTop = (env: Env, d: CompiledField | undefined) => !!env.sparse && !!d?.translatable;
@@ -346,7 +360,8 @@ function lis(seq: number[]): Set<number> {
  * Makes `existing` (the Y content currently held for this value) equal to `v`. Returns `existing` when it was
  * updated in place (or already equal), else the content to hold instead (undefined: remove it).
  */
-export function sync(existing: unknown, def: CompiledField | undefined, v: unknown, env: Env, post: Post): unknown {
+/** `live` is the form's own object for `v` (`v` may be a snapshot): list items are matched by its identity. */
+export function sync(existing: unknown, def: CompiledField | undefined, v: unknown, env: Env, post: Post, live?: unknown): unknown {
   const kind = kindOf(def, v);
   if (existing instanceof Y.XmlFragment) {
     if (kind !== 'rich' && v !== undefined) return build(def, v, env, post);
@@ -371,7 +386,7 @@ export function sync(existing: unknown, def: CompiledField | undefined, v: unkno
     }
   } else if (existing instanceof Y.Map) {
     if (kind === 'group' && isObj(v)) {
-      syncMap(existing, def!.fields, v, env, post);
+      syncMap(existing, def!.fields, v, env, post, undefined, isObj(live) ? live : undefined);
       return existing;
     }
   } else if (existing instanceof Y.Array) {
@@ -382,7 +397,7 @@ export function sync(existing: unknown, def: CompiledField | undefined, v: unkno
       return existing;
     }
     if (kind === 'objlist' && Array.isArray(v) && v.every(isObj)) {
-      syncObjList(existing, def!, v as Doc[], env, post);
+      syncObjList(existing, def!, v as Doc[], env, post, Array.isArray(live) ? live : undefined);
       return existing;
     }
   } else if (existing !== undefined && kind !== 'text' && kind !== 'rich' && kind !== 'blocks' && kind !== 'group' && kind !== 'objlist') {
@@ -397,12 +412,12 @@ function put(m: Y.Map<unknown>, key: string, existing: unknown, next: unknown) {
   else m.set(key, next);
 }
 
-export function syncMap(m: Y.Map<unknown>, defs: CompiledField[] | undefined, v: Doc, env: Env, post: Post, skip?: Set<string>) {
+export function syncMap(m: Y.Map<unknown>, defs: CompiledField[] | undefined, v: Doc, env: Env, post: Post, skip?: Set<string>, live?: Doc) {
   const names = new Set([...(defs?.map((d) => d.name) ?? []), ...Object.keys(v), ...m.keys()]);
   for (const n of names) {
     if (skip?.has(n)) continue;
     const ex = m.get(n);
-    put(m, n, ex, sync(ex, defOf(defs, n), v[n], env, post));
+    put(m, n, ex, sync(ex, defOf(defs, n), v[n], env, post, live?.[n]));
   }
 }
 
@@ -464,19 +479,37 @@ export function syncBlocks(arr: Y.Array<Y.Map<unknown>>, target: Doc[], env: Env
   }
 }
 
-function syncObjList(arr: Y.Array<Y.Map<unknown>>, def: CompiledField, target: Doc[], env: Env, post: Post) {
+function syncObjList(arr: Y.Array<Y.Map<unknown>>, def: CompiledField, target: Doc[], env: Env, post: Post, live?: unknown[]) {
   const defs = def.of!.fields;
-  const old = arr.toArray().map((m) => plainOf(m, def.of, env));
+  const items = arr.toArray();
+  const old = items.map((m) => plainOf(m, def.of, env));
   const want = target.map((x) => clone(x));
-  const gaps = lcsGaps(old.length, want.length, (i, j) => jsonEq(old[i], want[j]));
-  for (const g of gaps.reverse()) {
-    const pair = Math.min(g.i1 - g.i0, g.j1 - g.j0);
-    for (let k = 0; k < pair; k++) syncMap(arr.get(g.i0 + k), defs, target[g.j0 + k]!, env, post);
-    if (g.i1 - g.i0 > pair) arr.delete(g.i0 + pair, g.i1 - g.i0 - pair);
-    if (g.j1 - g.j0 > pair) {
-      arr.insert(g.i0 + pair, target.slice(g.j0 + pair, g.j1).map((x) => buildMap(defs, x, env, post)));
+  const objs = live?.length === target.length ? live.slice() : undefined;
+  const liveOf = (j: number) => (isObj(objs?.[j]) ? (objs![j] as Doc) : undefined);
+  // Anchors: form objects that still hold the Y.Map they were synced with or projected from, in order. Between
+  // them, items are matched by value as before (new objects, or a form whose values were replaced).
+  let anchors: [number, number][] = [];
+  const last = env.lists?.get(arr);
+  if (objs && last?.objs.length && last.maps.length === items.length && last.maps.every((m, i) => m === items[i])) {
+    const at = new Map(last.objs.map((o, i) => [o, i]));
+    const found = objs.flatMap((o, j): [number, number][] => (at.has(o) ? [[at.get(o)!, j]] : []));
+    const keep = lis(found.map(([i]) => i));
+    anchors = found.filter((_, k) => keep.has(k));
+  }
+  const bounds: [number, number][] = [[-1, -1], ...anchors, [items.length, target.length]];
+  for (let a = bounds.length - 1; a > 0; a--) {
+    const [i0, j0] = [bounds[a - 1]![0] + 1, bounds[a - 1]![1] + 1];
+    const [i1, j1] = bounds[a]!;
+    if (a < bounds.length - 1) syncMap(items[i1]!, defs, target[j1]!, env, post, undefined, liveOf(j1));
+    for (const g of lcsGaps(i1 - i0, j1 - j0, (i, j) => jsonEq(old[i0 + i], want[j0 + j])).reverse()) {
+      const [gi0, gi1, gj0, gj1] = [i0 + g.i0, i0 + g.i1, j0 + g.j0, j0 + g.j1];
+      const pair = Math.min(gi1 - gi0, gj1 - gj0);
+      for (let k = 0; k < pair; k++) syncMap(items[gi0 + k]!, defs, target[gj0 + k]!, env, post, undefined, liveOf(gj0 + k));
+      if (gi1 - gi0 > pair) arr.delete(gi0 + pair, gi1 - gi0 - pair);
+      if (gj1 - gj0 > pair) arr.insert(gi0 + pair, target.slice(gj0 + pair, gj1).map((x) => buildMap(defs, x, env, post)));
     }
   }
+  env.lists?.set(arr, { maps: arr.toArray(), objs: objs ?? [], vals: want });
 }
 
 // ---- project: Y -> value (in place where possible)
@@ -597,6 +630,29 @@ function projectObjList(y: Y.Array<Y.Map<unknown>>, arr: unknown[], def: Compile
   const want = items.map((m) => plainOf(m, def.of, env));
   const have = arr.map((x) => clone(x));
   const defs = def.of!.fields;
+  const last = env.lists?.get(y);
+  if (last && last.maps.length === arr.length && arr.every((x, i) => x === last.objs[i] || jsonEq(have[i], last.vals[i]))) {
+    projectByIdentity(items, want, last.maps, arr, defs, env, hooks, path);
+  } else projectByValue(items, want, have, arr, defs, env, hooks, path);
+  env.lists?.set(y, { maps: items, objs: arr.slice(), vals: arr.map((x) => clone(x)) });
+}
+
+/** The form's items are `maps` (in order): survivors are edited in place, the others removed or inserted. */
+function projectByIdentity(items: Y.Map<unknown>[], want: unknown[], maps: Y.Map<unknown>[], arr: unknown[], defs: CompiledField[] | undefined, env: Env, hooks: Hooks, path: string) {
+  const at = new Map(items.map((m, j) => [m, j]));
+  maps.forEach((m, i) => {
+    const j = at.get(m);
+    if (j === undefined) return;
+    const cur = arr[i];
+    if (isObj(cur)) projectMap(items[j]!, cur, defs, env, hooks, join(path, i));
+    else arr[i] = want[j];
+  });
+  for (const g of lcsGaps(maps.length, items.length, (i, j) => maps[i] === items[j]).reverse()) {
+    arr.splice(g.i0, g.i1 - g.i0, ...want.slice(g.j0, g.j1));
+  }
+}
+
+function projectByValue(items: Y.Map<unknown>[], want: unknown[], have: unknown[], arr: unknown[], defs: CompiledField[] | undefined, env: Env, hooks: Hooks, path: string) {
   for (const g of lcsGaps(have.length, want.length, (i, j) => jsonEq(have[i], want[j])).reverse()) {
     const pair = Math.min(g.i1 - g.i0, g.j1 - g.j0);
     for (let k = 0; k < pair; k++) {
@@ -651,13 +707,14 @@ export function seedPart(m: Y.Map<unknown>, defs: CompiledField[], values: Doc, 
 }
 
 /** Makes a part's map equal to the values of its fields. Call inside a transaction. */
-export function syncPart(m: Y.Map<unknown>, defs: CompiledField[], values: Doc, env: Env, only?: Set<string>) {
+/** `live`: the form's own values object when `values` is a snapshot of it (see `sync`). */
+export function syncPart(m: Y.Map<unknown>, defs: CompiledField[], values: Doc, env: Env, only?: Set<string>, live?: Doc) {
   const post: Post = [];
   for (const d of defs) {
     if (only && !only.has(d.name)) continue;
     const ex = m.get(d.name);
     const v = values[d.name];
-    put(m, d.name, ex, sparseTop(env, d) && (v === undefined || v === null) ? undefined : sync(ex, d, v, env, post));
+    put(m, d.name, ex, sparseTop(env, d) && (v === undefined || v === null) ? undefined : sync(ex, d, v, env, post, live?.[d.name]));
   }
   for (const f of post) f();
 }

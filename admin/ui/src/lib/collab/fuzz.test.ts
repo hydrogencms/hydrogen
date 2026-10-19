@@ -15,7 +15,9 @@ import { jsonEq, richSchema, toPlain, type Doc } from './ydoc';
 // reordered delivery, late joiners with edits made before they joined, two locales, and rich text edited through
 // ProseMirror and y-prosemirror in a quarter of the runs. Intent oracle: unique single-character tokens inserted
 // into a text field, blocks marked `keep-`, and tokens typed into the rich text (runs without structural edits)
-// must survive exactly once in every client of the locale.
+// must survive exactly once in every client of the locale. Lists of groups: items an editor adds (empty, so equal
+// to the ones others add at the same time) and then types tokens into, by the form object it added, keep those
+// tokens exactly once, and tokens typed into different items never end up in one.
 const RUNS = Number(process.env.COLLAB_FUZZ_RUNS ?? 1500);
 
 function rng(seed: number) {
@@ -86,12 +88,23 @@ interface Client {
   merge?: string[];
   resume?: { parts: string[]; base: Doc };
   pm?: { view: EditorView; frag: Y.XmlFragment };
+  /** List items this client added and types into (`n: -1`; the other list edits leave them alone). */
+  own: { item: Doc; key: number; safe: boolean }[];
+  typed: string[];
+  /** Rich text tokens typed while this client was still seeding the part (its claim may yet be lost). */
+  seedTyped: string[];
 }
 
 interface Oracle {
   note: Set<string>;
   keep: Map<string, Set<string>>;
   body: Map<string, Set<string>>;
+  /** Rich text tokens a restart after a lost claim may drop (the part is merged as a whole then): at most once. */
+  bodyRisk: Set<string>;
+  /** Token typed into an own list item -> that item's key. */
+  sect: Map<string, number>;
+  /** Tokens typed where they cannot be lost (a ready part, before any restart of the typing client). */
+  sectSafe: Set<string>;
 }
 
 let ids = 0;
@@ -226,6 +239,7 @@ function editPM(r: Rng, c: Client, structural: boolean, or: Oracle) {
       const set = or.body.get(c.locale) ?? new Set<string>();
       set.add(tok);
       or.body.set(c.locale, set);
+      if (c.b!.lostParts().includes(`l:${c.locale}`)) c.seedTyped.push(tok);
     } else if (roll < 0.8 || !structural) {
       if (tb.size > 1 && sc.marks.bold) view.dispatch(st.tr.addMark(tb.pos, tb.pos + tb.size, sc.marks.bold.create()));
     } else if (roll < 0.9) view.dispatch(st.tr.split(at));
@@ -242,6 +256,28 @@ function editPM(r: Rng, c: Client, structural: boolean, or: Oracle) {
   const doc = view.state.doc;
   c.v.fields.body = isEmptyDoc(doc.toJSON()) ? undefined : toStored(doc);
   return true;
+}
+
+let owns = 0;
+const isOwn = (x: Doc) => x.n === -1;
+const inSession = (c: Client) => !!c.b?.isReady('shared') && !c.b.lostParts().includes('shared');
+
+function typeInto(r: Rng, c: Client, or: Oracle, o: Client['own'][number]) {
+  const chars = [...((o.item.heading as string) ?? '')];
+  const tok = token();
+  chars.splice(r.int(chars.length + 1), 0, tok);
+  o.item.heading = chars.join('');
+  or.sect.set(tok, o.key);
+  c.typed.push(tok);
+  if (inSession(c)) or.sectSafe.add(tok);
+}
+
+function addOwn(r: Rng, c: Client, or: Oracle, typeNow: boolean) {
+  const s = ((c.v.fields.sections ??= []) as Doc[]);
+  const o = { item: { heading: '', n: -1 } as Doc, key: owns++, safe: inSession(c) };
+  s.splice(r.chance(0.7) ? s.length : r.int(s.length + 1), 0, o.item);
+  c.own.push(o);
+  if (typeNow) typeInto(r, c, or, o);
 }
 
 function edit(r: Rng, c: Client, or: Oracle, pmMode: '' | 'plain' | 'struct') {
@@ -280,15 +316,22 @@ function edit(r: Rng, c: Client, or: Oracle, pmMode: '' | 'plain' | 'struct') {
     }
     case 7: {
       const s = ((f.sections ??= []) as Doc[]);
-      const k = r.int(4);
-      if (k === 0 || !s.length) s.splice(r.int(s.length + 1), 0, { heading: word(r), n: r.int(9) });
-      else if (k === 1) s.splice(r.int(s.length), 1);
+      const k = r.int(7);
+      const others = s.map((x, i) => [x, i] as const).filter(([x]) => !isOwn(x));
+      // Not items added before the join: the join's merge may have given their form objects to other items.
+      const mine = c.own.filter((o) => o.safe && s.includes(o.item));
+      if (k >= 4) {
+        // Like the list widget: an empty item, typed into right away or later, by the object the editor added.
+        if (k === 4 || !mine.length) addOwn(r, c, or, r.chance(0.3));
+        else typeInto(r, c, or, r.pick(mine));
+      } else if (k === 0 || !others.length) s.splice(r.int(s.length + 1), 0, { heading: word(r), n: r.int(9) });
+      else if (k === 1) s.splice(r.pick(others)[1], 1);
       else if (k === 2) {
-        const it = r.pick(s);
+        const [it] = r.pick(others);
         if (r.chance(0.7)) it.heading = splice(r, (it.heading as string) ?? '');
         else it.n = r.int(9);
-      } else if (s.length > 1) {
-        const [x] = s.splice(r.int(s.length), 1);
+      } else if (others.length > 1) {
+        const [x] = s.splice(r.pick(others)[1], 1);
         s.splice(r.int(s.length + 1), 0, x!);
       }
       break;
@@ -401,7 +444,7 @@ const live = (run: Run) => run.clients.filter((c) => c.b);
 
 function newClient(run: Run, locale: string, pre: boolean): Client {
   const t = run.server.connect();
-  const c: Client = { id: run.clients.length, locale, t, b: undefined, v: { fields: hydrate(type.fields, structuredClone(draft.fields)) as Doc }, tick: [], fatal: '' };
+  const c: Client = { id: run.clients.length, locale, t, b: undefined, v: { fields: hydrate(type.fields, structuredClone(draft.fields)) as Doc }, tick: [], fatal: '', own: [], typed: [], seedTyped: [] };
   run.clients.push(c);
   // Edits made between loading the draft and joining the session.
   if (pre) for (let i = run.r.int(4); i > 0; i--) edit(run.r, c, run.or, '');
@@ -436,6 +479,12 @@ async function startBinder(run: Run, c: Client) {
 async function restart(run: Run, c: Client) {
   c.merge = c.b!.lostParts();
   c.resume = c.b!.ackedValues();
+  // A list of groups is merged as a whole on a restart: what this client added or typed may give way to others'
+  // changes, and a form object of an item that did not make it may then show another one.
+  for (const tok of c.typed.splice(0)) run.or.sectSafe.delete(tok);
+  c.own.length = 0;
+  // So is rich text typed into the part whose claim was lost.
+  for (const tok of c.seedTyped.splice(0)) if (c.merge.includes(`l:${c.locale}`)) (run.or.body.get(c.locale)?.delete(tok), run.or.bodyRisk.add(tok));
   c.b!.destroy({ discard: true });
   c.pm?.view.destroy();
   c.pm = undefined;
@@ -488,7 +537,7 @@ async function run(seed: number) {
   const server = new FakeServer();
   server.strict = true;
   const clock = new Clock(server);
-  const or: Oracle = { note: new Set(), keep: new Map(), body: new Map() };
+  const or: Oracle = { note: new Set(), keep: new Map(), body: new Map(), sect: new Map(), sectSafe: new Set(), bodyRisk: new Set() };
   const pmMode: Run['pmMode'] = seed % 4 === 0 ? (seed % 8 === 0 ? 'struct' : 'plain') : '';
   const R: Run = { r, server, clock, clients: [], or, pmMode, blocked: new Set(), failP: 0 };
   server.failPost = (client: string) => R.blocked.has(client) || (R.failP > 0 && r.chance(R.failP));
@@ -542,6 +591,12 @@ async function run(seed: number) {
     } else if (roll < 0.98) {
       if (R.blocked.size) R.blocked.delete(r.pick([...R.blocked]));
       else if (c.b!.unsynced() || r.chance(0.3)) R.blocked.add(c.t.client);
+    } else if (roll < 0.995) {
+      // Two editors add an (empty, so equal) list item at the same time, typing into it now or later.
+      for (const who of new Set([c, r.pick(lv)])) {
+        addOwn(r, who, or, r.chance(0.3));
+        if (r.chance(0.5)) who.b!.flush();
+      }
     } else await micro();
     await micro(2);
   }
@@ -564,9 +619,27 @@ async function run(seed: number) {
     for (const tok of or.note) expect(count(note, tok), `seed ${seed}: note token ${tok.codePointAt(0)!.toString(16)} in client ${i}`).toBe(1);
     const blocks = ((c.v.fields.blocks ?? []) as Doc[]).map((b) => b.id as string);
     for (const id of or.keep.get(c.locale) ?? []) expect(blocks.filter((x) => x === id).length, `seed ${seed}: keep block ${id} in client ${i}`).toBe(1);
+    const heads = ((c.v.fields.sections ?? []) as Doc[]).map((x) => (x.heading as string | undefined) ?? '');
+    for (const [tok] of or.sect) {
+      const n = count(heads.join('\n'), tok);
+      if (or.sectSafe.has(tok)) expect(n, `seed ${seed}: list token ${tok.codePointAt(0)!.toString(16)} in client ${i}\n${JSON.stringify(heads)}`).toBe(1);
+      else expect(n, `seed ${seed}: list token doubled in client ${i}`).toBeLessThanOrEqual(1);
+    }
+    for (const h of heads) {
+      const keys = new Set([...h].filter((ch) => or.sect.has(ch)).map((ch) => or.sect.get(ch)));
+      expect(keys.size, `seed ${seed}: tokens of different list items in one item of client ${i}: ${JSON.stringify(heads)}`).toBeLessThanOrEqual(1);
+    }
+    // The form object an editor added (in the session) still holds that item, not one somebody else added.
+    for (const o of c.own) {
+      if (!o.safe || !((c.v.fields.sections ?? []) as Doc[]).includes(o.item)) continue;
+      for (const ch of (o.item.heading as string | undefined) ?? '') {
+        if (or.sect.has(ch)) expect(or.sect.get(ch), `seed ${seed}: client ${i} shows another item in the one it added`).toBe(o.key);
+      }
+    }
     if (pmMode) {
       const body = JSON.stringify(c.v.fields.body ?? '');
       if (pmMode === 'plain') for (const tok of or.body.get(c.locale) ?? []) expect(count(body, tok), `seed ${seed}: body token in client ${i}`).toBe(1);
+      for (const tok of or.bodyRisk) expect(count(body, tok), `seed ${seed}: body token doubled in client ${i}`).toBeLessThanOrEqual(1);
     }
   }
   for (const c of R.clients) {

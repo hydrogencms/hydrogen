@@ -256,6 +256,82 @@ describe('Binder', () => {
     expect(t.compactions).toEqual([seq]);
   });
 
+  async function pair() {
+    const s = new FakeServer();
+    const mk = async () => {
+      const t = s.connect();
+      const v = { fields: hydrate(type.fields, structuredClone(draft.fields)) as Doc };
+      const c = make(t, await t.join('en'), v);
+      await c.b.started;
+      return { t, v, ...c };
+    };
+    const a = await mk();
+    const b = await mk();
+    await settle();
+    exchange([a, b]);
+    return [a, b] as const;
+  }
+  const exchange = (cs: { t: ReturnType<FakeServer['connect']> }[]) => {
+    for (const c of cs) for (const u of c.t.queue.splice(0)) for (const f of c.t.listeners) f(u);
+  };
+
+  // Items of a list of groups have no ids: two editors adding an empty item at once hold equal values, and the
+  // remote one must not take over the form object (and so the input) the local editor is typing into.
+  it.each([
+    ['after both items were exchanged', false],
+    ['while the own item is still unsent', true],
+  ])('list of groups: an item added concurrently with a peer keeps what its editor types (%s)', async (_, unsent) => {
+    const [a, b] = await pair();
+    const mine = new Map<(typeof a) | (typeof b), Doc>();
+    for (const c of [a, b]) {
+      const item: Doc = { heading: '' };
+      (c.v.fields.sections as Doc[]).splice(0, 0, item);
+      mine.set(c, item);
+      if (!unsent || c === b) c.b.flush();
+    }
+    await settle();
+    // A receives B's item before its own went out (the receive flushes A's form first), or after.
+    exchange([a, b]);
+    a.b.flush();
+    await settle();
+    exchange([a, b]);
+    for (const [c, text] of [[a, 'from a'], [b, 'from b']] as const) {
+      expect((c.v.fields.sections as Doc[]).includes(mine.get(c)!), `${text}: own item still in the form`).toBe(true);
+      mine.get(c)!.heading = text;
+      c.b.flush();
+    }
+    await settle();
+    exchange([a, b]);
+    for (const c of [a, b]) {
+      const heads = (c.v.fields.sections as Doc[]).map((x) => x.heading);
+      expect([...heads].sort()).toEqual(['from a', 'from b', 'one', 'two']);
+      expect(jsonEq(c.v.fields.sections, (toPlain(c.b.doc.getMap('shared')) as Doc).sections)).toBe(true);
+    }
+    expect(a.v.fields.sections).toEqual(b.v.fields.sections);
+  });
+
+  it('list of groups: removing one of two equal items removes that one, not the one a peer is typing into', async () => {
+    const [a, b] = await pair();
+    const add = async (c: typeof a) => {
+      const item: Doc = { heading: '' };
+      (c.v.fields.sections as Doc[]).push(item);
+      c.b.flush();
+      await settle();
+      exchange([a, b]);
+      return item;
+    };
+    const x = await add(a);
+    const y = await add(b);
+    const as = a.v.fields.sections as Doc[];
+    as.splice(as.indexOf(x), 1);
+    y.heading = 'from b';
+    a.b.flush();
+    b.b.flush();
+    await settle();
+    exchange([a, b]);
+    for (const c of [a, b]) expect((c.v.fields.sections as Doc[]).map((i) => i.heading)).toEqual(['one', 'two', 'from b']);
+  });
+
   it('a late joiner reaches the same state and gets duplicates removed', async () => {
     const s = new FakeServer();
     const mk = async () => {

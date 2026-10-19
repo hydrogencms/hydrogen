@@ -280,6 +280,10 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
   search never uses an external engine (it cannot apply access scopes or see drafts).
 - Run e2e scripts one at a time: they share process names and ports, and concurrent runs kill each other's
   servers. Starter lockfiles are gitignored; `packages/.npmrc` needs `legacy-peer-deps=true` for Nuxt's peers.
+- Collab lists of groups have no item ids: the Yjs binding pairs form items with `Y.Map`s by identity
+  (`Env.lists`) and `ListWidget` keys group rows by object, never by index or value (equal fresh items are
+  indistinguishable by value; index keys rebind a row when a peer inserts before it). Known limitation: edits typed
+  while a lost seeding claim restarts are merged whole-field and can be dropped.
 - GraphQL responses must stay bounded and fresh: depth/field/node/call/item budgets apply to every query
   (introspection included), and a response that looked something up and found nothing is `no-store`.
 - Image URLs must stay bounded: `/images` serves only configured presets, allowed widths and focal points that
