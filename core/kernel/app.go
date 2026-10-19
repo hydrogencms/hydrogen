@@ -85,6 +85,9 @@ type ContentConfig struct {
 	TrashRetention time.Duration `yaml:"trash_retention"`
 	// ReviewFourEyes keeps the principal who submitted or last edited a draft from approving it (default true).
 	ReviewFourEyes bool `yaml:"review_four_eyes"`
+	// Files is a directory (relative to the project) holding the content as an export, kept in git: serve
+	// loads it into the SQLite database and content:save writes it back. Empty turns the feature off.
+	Files string `yaml:"files"`
 }
 
 type ManageConfig struct {
@@ -399,6 +402,11 @@ func (a *App) open(ctx context.Context, url string, o store.OpenOptions) (store.
 	return op(ctx, url, o)
 }
 
+func dialectOf(url string) string {
+	scheme, _, _ := strings.Cut(url, ":")
+	return scheme
+}
+
 func opener(reg *Registry, url string) (store.Opener, error) {
 	scheme, _, ok := strings.Cut(url, ":")
 	if !ok {
@@ -579,6 +587,9 @@ func (p *plan) checkRuntime(cfg *config.Config) error {
 	}
 	if _, err := opener(p.reg, p.core.Database.URL); err != nil {
 		return err
+	}
+	if p.core.Content.Files != "" && !strings.HasPrefix(p.core.Database.URL, "sqlite:") {
+		return fmt.Errorf("content.files needs a SQLite database (database.url sqlite:…), not %q", dialectOf(p.core.Database.URL))
 	}
 	_, err := newLogger(p.core.Log, cfg.Env(), io.Discard)
 	return err

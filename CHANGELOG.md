@@ -8,12 +8,21 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Added
 
+- **Content in git.** `content.files: <dir>` keeps the content as a committed export with a SQLite database as the
+  working copy. `serve` reconciles the two before it starts (first run imports, a changed directory reloads the
+  database after a backup, unsaved edits are kept, a double change refuses to start); `content:save` writes the
+  database back and `content:load [-force]` replaces it. A change signal in the sync marker keeps restarts from
+  exporting. See `docs/content-in-git.md`.
 - **First-run setup.** While no user exists, the server prints a link at start that opens a form in the admin to
   create the first administrator (`GET`/`POST /auth/setup`). The link's token is random per start (stable across
   `hydrogen dev` restarts) and stops working once a user exists. Without the link, the sign-in page says where to
   find it. `users:create-admin` still works.
 - New projects start with an example `article` type in `schema/article.yaml`, so the admin has something to edit.
 - A web channel can serve every URL with `match: { prefix: / }`; more specific channels still win where they fit.
+- `@hydrogencms/astro` builds fully static sites (`output: 'static'`, no adapter, e.g. GitHub Pages): the
+  integration skips the preview, revalidation and bridge routes, the middleware resolves prerendered requests with
+  Astro's `base`, `site` and no cookies, `hydrogen.staticPaths()` lists every URL the channels route for
+  `getStaticPaths`, and `href()` (also in `Astro.locals.hydrogen`) gives CMS URLs the base.
 - A YAML error caused by an unquoted `${env:…}` inside `{ }` or `[ ]` now says to quote the value.
 
 ### Changed

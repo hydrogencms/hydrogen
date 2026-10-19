@@ -25,6 +25,7 @@ import (
 
 	"github.com/hydrogencms/hydrogen/core/access"
 	"github.com/hydrogencms/hydrogen/core/cachetag"
+	"github.com/hydrogencms/hydrogen/core/clock"
 	"github.com/hydrogencms/hydrogen/core/config"
 	"github.com/hydrogencms/hydrogen/core/content"
 	"github.com/hydrogencms/hydrogen/core/hooks"
@@ -197,6 +198,7 @@ type RunOptions struct {
 	Stdout io.Writer       // default os.Stdout
 	Stderr io.Writer       // default os.Stderr
 	DB     store.DB        // inject a database (tests)
+	Clock  clock.Clock     // default clock.System; names the database backups of content.files
 	// PasswordIterations lowers the PBKDF2 cost of password hashes so tests run fast (0 = 600 000).
 	PasswordIterations int
 	Listening          func(addr string)
@@ -215,6 +217,8 @@ var core = []struct{ name, summary string }{
 	{"tokens:create", "create an API token and print its secret once: tokens:create -name <n> -role <role> [-agent] [-expires 720h]"},
 	{"export", "write content and module data to a directory: export [-published-only] <dir>"},
 	{"import", "restore an export into an empty database: import [-allow-schema-change] <dir>"},
+	{"content:save", "write the database's content to content.files (content in git)"},
+	{"content:load", "replace the database with the content of content.files: content:load [-force]"},
 	{"version", "print the Hydrogen version"},
 }
 
@@ -260,13 +264,25 @@ func Run(ctx context.Context, args []string, configure func(*Builder), o RunOpti
 	if err != nil {
 		return err
 	}
-	defer func() { _ = app.Close() }()
+	defer func() {
+		if app != nil {
+			_ = app.Close()
+		}
+	}()
 	switch name {
 	case "serve":
 		if len(rest) > 0 {
 			return fmt.Errorf("serve takes no arguments")
 		}
+		if app, err = reconcileContentFiles(ctx, b, o, app); err != nil {
+			return err
+		}
 		return serve(ctx, app, o)
+	case "content:save":
+		return contentSave(ctx, app, o, rest)
+	case "content:load":
+		app, err = contentLoad(ctx, b, o, app, rest)
+		return err
 	case "migrate":
 		if len(rest) > 0 {
 			return fmt.Errorf("migrate takes no arguments")
@@ -309,7 +325,7 @@ func newApp(ctx context.Context, b *Builder, o RunOptions) (*kernel.App, error) 
 	if err != nil {
 		return nil, err
 	}
-	return kernel.New(ctx, kernel.Options{Config: cfg, DB: o.DB, Stderr: o.Stderr, Stdout: o.Stdout, PasswordIterations: o.PasswordIterations}, b.all()...)
+	return kernel.New(ctx, kernel.Options{Config: cfg, DB: o.DB, Clock: o.Clock, Stderr: o.Stderr, Stdout: o.Stdout, PasswordIterations: o.PasswordIterations}, b.all()...)
 }
 
 func serve(ctx context.Context, app *kernel.App, o RunOptions) error {

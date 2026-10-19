@@ -37,6 +37,16 @@ type Manifest struct {
 	Files         []File    `json:"files"`
 }
 
+// Fingerprint identifies the content of an export: a hash of the manifest without what says nothing about the
+// content (export time, Hydrogen version, source dialect). The manifest lists the SHA-256 of every other file,
+// so equal fingerprints mean equal exports.
+func (m Manifest) Fingerprint() string {
+	m.CreatedAt, m.Hydrogen, m.Dialect = time.Time{}, "", ""
+	data, _ := json.Marshal(m)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
 // Counts are the numbers of records exported. Modules holds the record count of each module file.
 type Counts struct {
 	Items             int            `json:"items"`
@@ -247,6 +257,21 @@ func (r *Reader) Names(prefix string) []string {
 		}
 	}
 	return out
+}
+
+// CheckSizes compares the size of every listed file on disk with the manifest. It is a cheap check that the
+// directory still is the export its manifest describes; Verify also hashes the files.
+func (r *Reader) CheckSizes() error {
+	for _, f := range r.m.Files {
+		st, err := os.Stat(filepath.Join(r.dir, filepath.FromSlash(f.Name)))
+		switch {
+		case err != nil:
+			return fmt.Errorf("exportfmt: %w", err)
+		case st.Size() != f.Bytes:
+			return fmt.Errorf("exportfmt: %s: %d bytes, manifest says %d", f.Name, st.Size(), f.Bytes)
+		}
+	}
+	return nil
 }
 
 // Verify streams every listed file and compares size, record count and sha-256 with the manifest. It reports

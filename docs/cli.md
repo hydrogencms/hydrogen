@@ -52,6 +52,8 @@ command (or `help`) the binary lists everything it has, module commands included
 | `tokens:create -name <n> -role <role> [-agent] [-expires 720h]` | Creates an API token with the named roles and prints its secret to stdout, once. The id goes to stderr. |
 | `export [-published-only] <dir>` | Writes content and module data to a directory. See [Backup and portability](deployment.md#backups-and-export). |
 | `import [-allow-schema-change] <dir>` | Restores an export into an empty, migrated database. |
+| `content:save` | With [`content.files`](content-in-git.md): writes the database's content to the directory, leaving it untouched when nothing changed. |
+| `content:load [-force]` | With `content.files`: replaces the database with the directory's content, keeping the old database in a backup. `-force` also discards unsaved changes. |
 | `modules` | Lists the modules in this build with their versions. |
 | `search:reindex` | Rebuilds the external search index from published content ([search](search.md)). |
 | `version` | Prints the Hydrogen version. |

@@ -98,6 +98,7 @@ Defaults are shown where there is one.
 | `schema_dir` | `schema` | Directory of schema files. |
 | `default_locale` | `en` | Main locale of new items. |
 | `trash_retention` | `720h` | How long trashed items are kept before the `content.trash` job purges them. `0` keeps them until someone purges them. |
+| `files` | none | A directory (relative to the project) that holds the content as an export, kept in git. Needs SQLite; `serve` loads it and `content:save` writes it. See [content in git](content-in-git.md). |
 | `review_four_eyes` | `true` | The person who submitted or last edited a draft cannot approve it. See [reviews](reviews.md). |
 
 ### `manage` and `auth`

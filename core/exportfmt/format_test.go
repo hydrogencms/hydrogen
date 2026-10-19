@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type rec struct {
@@ -185,5 +186,19 @@ func TestStreamsLargeFiles(t *testing.T) {
 	defer func() { _ = rr.Close() }()
 	if rr.Total() != 3000 {
 		t.Fatalf("total %d", rr.Total())
+	}
+}
+
+func TestFingerprintIgnoresWhenAndWhereAnExportWasMade(t *testing.T) {
+	m := Manifest{Format: 2, Hydrogen: "0.1.0", Dialect: "sqlite", SchemaHash: "s", CreatedAt: time.Now(),
+		Counts: Counts{Items: 1, Modules: map[string]int{"a": 1, "b": 2}}, Files: []File{{Name: "items.ndjson", SHA256: "x", Bytes: 3, Records: 1}}}
+	other := m
+	other.Hydrogen, other.Dialect, other.CreatedAt = "0.2.0", "postgres", m.CreatedAt.Add(time.Hour)
+	if m.Fingerprint() != other.Fingerprint() {
+		t.Fatal("fingerprint depends on the export time, version or dialect")
+	}
+	other.Files = []File{{Name: "items.ndjson", SHA256: "y", Bytes: 3, Records: 1}}
+	if m.Fingerprint() == other.Fingerprint() {
+		t.Fatal("fingerprint ignores file checksums")
 	}
 }

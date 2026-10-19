@@ -46,6 +46,7 @@ Optional parts of the binary, compiled in per project.
 | [Module versions](module-versions.md) | Compatibility checks and reading the versions of a running server. |
 | [Languages and overlays](locales.md) | Channel languages, fallbacks and the overlays module. |
 | [Images](images.md) | Presets, focal points and resized variants. |
+| [Content in git](content-in-git.md) | Keeping the content in the repository, with SQLite as the working copy. |
 | [Meilisearch](meilisearch.md) | An external search engine. |
 | [WebAssembly hooks](wasm-hooks.md) | Hooks in any language, sandboxed, and TypeScript hooks. |
 
