@@ -1,4 +1,4 @@
-(function(){"use strict";const SDK = '@hydrogencms/bridge@0.2.0';
+(function(){"use strict";const SDK = '@hydrogencms/bridge@0.1.0';
 const PREVIEW_COOKIE = 'hydrogen-preview';
 class PatchError extends Error {
     name = 'PatchError';

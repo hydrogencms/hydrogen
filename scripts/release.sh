@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 # npm packages in dependency order (checked below against their @hydrogencms dependencies).
 # shellcheck source=scripts/npm-packages.sh
 . scripts/npm-packages.sh
-GATES=(conformance admin-e2e next-e2e site-export-e2e wasm-e2e)
+GATES=(sdk conformance admin-e2e next-e2e site-export-e2e wasm-e2e)
 CORE=github.com/hydrogencms/hydrogen
 
 usage() {
@@ -106,6 +106,9 @@ for p in "${NPM_ORDER[@]}"; do
 		[ "$seen" = 1 ] || bad "$f: depends on $d, which is not published before it (fix NPM_ORDER)"
 	done < <(grep -oE '"@hydrogencms/[a-z-]+": "[^"]*"' "$f" | sed 's|^"@hydrogencms/||; s|": "|": "|' | sed 's|^\([a-z-]*\)": "\(.*\)"$|\1": "\2"|')
 done
+# The bridge announces its version to the admin (ready.sdk); it must match the package.
+grep -q "^export const SDK = '@hydrogencms/bridge@$npmver'" packages/bridge/src/index.ts ||
+	bad "packages/bridge/src/index.ts: SDK constant is not @hydrogencms/bridge@$npmver"
 for f in packages/*/package.json; do
 	p=$(basename "$(dirname "$f")")
 	printf '%s\n' "${NPM_ORDER[@]}" | grep -qx "$p" || bad "$f: package $p is not in NPM_ORDER"
