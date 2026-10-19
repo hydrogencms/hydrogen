@@ -1,0 +1,22 @@
+---
+import Layout from '../../../layouts/Layout.astro'
+import { channels } from '../../../lib/channels'
+
+const { locale } = Astro.params
+if (!locale || !channels.includes(locale)) return Astro.rewrite('/404')
+const h = Astro.locals.hydrogen
+const items = (await h.client(locale).list('post', { locale, sort: '-publishedAt', limit: 50 })).data.items
+---
+<Layout title="Blog" lang={locale}>
+  <section class="container prose" lang={locale}>
+    <h1>Blog</h1>
+    <ul class="posts">
+      {items.map((p: any) => (
+        <li>
+          <h2><a href={`/${locale}/blog/${p.fields.slug}`}>{p.fields.title}</a></h2>
+          {p.fields.excerpt && <p>{p.fields.excerpt}</p>}
+        </li>
+      ))}
+    </ul>
+  </section>
+</Layout>

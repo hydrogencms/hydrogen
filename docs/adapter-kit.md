@@ -7,6 +7,21 @@ templates. This guide is what you need to write another one, and `@hydrogencms/a
 Your frontend only renders. The CMS decides which page lives at which URL, the admin performs every edit, and the
 preview bridge shows the frontend what the editor is changing.
 
+## Adapters
+
+| Adapter | Package and starter | Bridge mode | Cache |
+|---|---|---|---|
+| Next.js (App Router) | [`@hydrogencms/next`](https://github.com/hydrogencms/hydrogen/blob/main/packages/next/README.md), [starter](https://github.com/hydrogencms/hydrogen/blob/main/packages/starters/next/README.md) | live for client templates, reload for server templates | `"use cache"` entries tagged from `Surrogate-Key`; the signed webhook calls `revalidateTag` |
+| SvelteKit | [`@hydrogencms/sveltekit`](https://github.com/hydrogencms/hydrogen/blob/main/packages/sveltekit/README.md), [starter](https://github.com/hydrogencms/hydrogen/blob/main/packages/starters/sveltekit/README.md) | live (`<Live>`) | in-memory response cache tagged from `Surrogate-Key`; the signed webhook purges by tag |
+| Nuxt | [`@hydrogencms/nuxt`](https://github.com/hydrogencms/hydrogen/blob/main/packages/nuxt/README.md), [starter](https://github.com/hydrogencms/hydrogen/blob/main/packages/starters/nuxt/README.md) | reload | the same in-memory tagged cache |
+| Astro (SSR) | [`@hydrogencms/astro`](https://github.com/hydrogencms/hydrogen/blob/main/packages/astro/README.md), [starter](https://github.com/hydrogencms/hydrogen/blob/main/packages/starters/astro/README.md) | reload | the same in-memory tagged cache |
+| Go `site` module | [`modules/site`](site.md) | reload | page cache inside the binary, purged by the same `cache.purge` notifications (no webhook) |
+
+All four JavaScript adapters share their server code through `@hydrogencms/client/server`
+(webhook signature, preview cookie rules, public URLs, the tagged response cache) and `@hydrogencms/client/richtext`
+(link safety, rich text walk); live merging of the working document is `@hydrogencms/bridge/merge`. Run the
+conformance suite against each with `make conformance`.
+
 ## The four wiring points
 
 ### 1. One catch-all route that asks the CMS

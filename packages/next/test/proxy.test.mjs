@@ -2,7 +2,7 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { NextRequest } from 'next/server.js'
 import { createProxy } from '../dist/proxy.js'
-import { readCapped } from '../dist/signature.js'
+import { readCapped } from '@hydrogencms/client/server'
 
 const BASE = 'http://cms.test'
 const web = (name, match, extra = {}) => ({ name, languages: ['en'], collections: ['page'], options: { site: 's', match, ...extra } })

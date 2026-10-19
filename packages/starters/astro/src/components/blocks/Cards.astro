@@ -1,0 +1,8 @@
+---
+import Blocks from '@hydrogencms/astro/components/Blocks.astro'
+const { props: p, attrs, slots } = Astro.props
+---
+<section {...attrs} class:list={['container cards', `space-${p.space ?? 'md'}`]}>
+  {p.heading && <h2>{p.heading}</h2>}
+  <div class={`grid cols-${p.columns ?? '3'}`}>{slots.items && <Blocks {...slots.items} />}</div>
+</section>

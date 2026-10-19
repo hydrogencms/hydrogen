@@ -1,0 +1,19 @@
+---
+import { channels } from '../../lib/channels'
+import { postBySlug } from '../../lib/posts'
+
+// The CMS's preview URL of a post is `/blog/{slug}` (the channel's preview pattern, which has no language prefix).
+// The preview route has set the cookie; the token belongs to one channel, so try each and continue at the post's real URL.
+const { slug } = Astro.params
+const h = Astro.locals.hydrogen
+if (h.draft && slug) {
+  for (const channel of channels) {
+    try {
+      if (await postBySlug(h.client(channel), channel, slug)) return Astro.redirect(`/${channel}/blog/${slug}`)
+    } catch {
+      // a token of another channel is refused: try the next one
+    }
+  }
+}
+return Astro.rewrite('/404')
+---

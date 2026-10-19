@@ -1,0 +1,5 @@
+---
+import Blocks from './Blocks.astro'
+const { attrs, slots } = Astro.props
+---
+<div {...attrs} style="display: contents">{slots.blocks && <Blocks {...slots.blocks} />}</div>

@@ -7,3 +7,5 @@ posts: Blog
 not_found_title: Seite nicht gefunden
 not_found_text: Die gesuchte Seite existiert nicht oder wurde verschoben.
 back_home: Zur Startseite
+pager_prev: Neuer
+pager_next: Älter

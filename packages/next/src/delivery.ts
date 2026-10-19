@@ -59,14 +59,3 @@ export function channelInfos(baseUrl: string, names: string[], timeoutMs?: numbe
   infos.set(key, { at: performance.now(), p })
   return p
 }
-
-/** The request headers that header matchers of the channels look at, to forward to the CMS. */
-export function matcherHeaders(all: ChannelInfo[], h: { get(n: string): string | null }): Record<string, string> | undefined {
-  let out: Record<string, string> | undefined
-  for (const c of all) {
-    const n = c.options.match?.header?.name
-    const v = n ? h.get(n) : null
-    if (n && v !== null) (out ??= {})[n] = v
-  }
-  return out
-}

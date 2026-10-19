@@ -8,6 +8,7 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./merge": { "types": "./dist/merge.d.ts", "import": "./dist/merge.js" },
     "./iife": "./dist/bridge.iife.js",
     "./package.json": "./package.json"
   },

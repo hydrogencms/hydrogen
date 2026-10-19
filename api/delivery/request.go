@@ -6,9 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/hydrogencms/hydrogen/api/manage"
@@ -259,6 +261,15 @@ func (a *API) selectChannel(r *http.Request, cl *claims) (*chanMeta, *manage.Err
 // wrap serves a route: channel and preview selection, the cache lookup, then the handler on a miss.
 func (a *API) wrap(rt route) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		post := r.Method == http.MethodPost
+		if rt.Post {
+			if origin := r.Header.Get("Origin"); origin != "" && a.corsAllowed(r, origin) {
+				w = &corsWriter{ResponseWriter: w, origin: origin}
+			}
+		}
+		if post {
+			r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
+		}
 		cl, _ := r.Context().Value(claimsKey{}).(*claims)
 		if tok := previewToken(r); tok != "" && cl == nil {
 			var err error
@@ -285,7 +296,7 @@ func (a *API) wrap(rt route) http.Handler {
 		var kbuf [256]byte
 		var key []byte
 		var gen uint64
-		if cl == nil && a.cache != nil {
+		if cl == nil && a.cache != nil && !post {
 			key = a.appendKey(kbuf[:0], m, r)
 			if e := a.cache.get(key); e != nil {
 				a.writeEntry(w, r, e)
@@ -293,7 +304,7 @@ func (a *API) wrap(rt route) http.Handler {
 			}
 			gen = a.cache.generation()
 		}
-		st := &state{a: a, m: m, preview: cl, q: r.URL.Query()}
+		st := &state{a: a, m: m, preview: cl, q: r.URL.Query(), noStore: post}
 		if me := st.narrow(); me != nil {
 			a.plainError(w, me)
 			return
@@ -303,6 +314,59 @@ func (a *API) wrap(rt route) http.Handler {
 		rt.Handler(c, r)
 		a.finish(w, r, st, c, key, gen)
 	})
+}
+
+// MaxBodyBytes is the largest request body a POST to a module route may carry.
+const MaxBodyBytes = 64 << 10
+
+// ReadBody reads the body of a POST to a module route, at most MaxBodyBytes. A longer body is a 413.
+func ReadBody(r *http.Request) ([]byte, error) {
+	b, err := io.ReadAll(r.Body)
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		return nil, &manage.Error{Status: http.StatusRequestEntityTooLarge, Code: "payload_too_large",
+			Message: "the request body is larger than " + strconv.Itoa(MaxBodyBytes) + " bytes"}
+	}
+	if err != nil {
+		return nil, manage.BadRequest("cannot read the request body")
+	}
+	return b, nil
+}
+
+// corsWriter adds the CORS headers of an allowed origin when the response starts.
+type corsWriter struct {
+	http.ResponseWriter
+	origin string
+	sent   bool
+}
+
+func (c *corsWriter) start() {
+	if c.sent {
+		return
+	}
+	c.sent = true
+	h := c.Header()
+	h.Set("Access-Control-Allow-Origin", c.origin)
+	h.Add("Vary", "Origin")
+	h.Set("Access-Control-Expose-Headers", "ETag, Surrogate-Key")
+}
+
+func (c *corsWriter) WriteHeader(code int) { c.start(); c.ResponseWriter.WriteHeader(code) }
+
+func (c *corsWriter) Write(b []byte) (int, error) { c.start(); return c.ResponseWriter.Write(b) }
+
+// preflight answers a CORS preflight for a route that accepts POST: allowed origins may send the delivery
+// headers; anything else gets a bare 204 without CORS headers.
+func (a *API) preflight(w http.ResponseWriter, r *http.Request) {
+	h := w.Header()
+	h.Add("Vary", "Origin")
+	if origin := r.Header.Get("Origin"); origin != "" && a.corsAllowed(r, origin) {
+		h.Set("Access-Control-Allow-Origin", origin)
+		h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, "+previewHeader)
+		h.Set("Access-Control-Max-Age", "600")
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // channelByName selects the channel named in the path; a token channel needs its own token.
@@ -428,6 +492,9 @@ func (a *API) writeEntry(w http.ResponseWriter, r *http.Request, e *entry) {
 		return
 	}
 	h["Content-Type"] = hContentType
+	if e.hType != nil {
+		h["Content-Type"] = e.hType
+	}
 	h["X-Content-Type-Options"] = hNoSniff
 	h["Content-Length"] = e.hLength
 	_, _ = w.Write(e.body)
@@ -465,6 +532,9 @@ func (a *API) finish(w http.ResponseWriter, r *http.Request, st *state, c *captu
 		return
 	}
 	e := newEntry(st.m, key, body, st.etagOf(body), st.responseTags())
+	if ct := h["Content-Type"]; len(ct) > 0 && ct[0] != hContentType[0] {
+		e.hType = ct
+	}
 	if a.cache != nil && key != nil {
 		a.cache.put(e, gen)
 	}

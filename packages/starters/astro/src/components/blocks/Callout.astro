@@ -1,0 +1,6 @@
+---
+const { props: p, attrs } = Astro.props
+---
+<div {...attrs} class="container prose">
+  <aside class:list={['callout', `tone-${p.tone ?? 'brand'}`]}><p>{p.text}</p></aside>
+</div>

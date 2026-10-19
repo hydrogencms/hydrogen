@@ -4,9 +4,9 @@ import { HydrogenError } from '@hydrogencms/client'
 import type { ChannelInfo } from '@hydrogencms/client'
 import type { Resolved } from '@hydrogencms/router'
 import { matchSite } from '@hydrogencms/router'
-import { channelInfos, matcherHeaders, routerOf, setToken } from './delivery.js'
-import { PREVIEW_COOKIE, PREVIEW_PARAM, matchPreviewPath, tokenFromCookie, validToken } from './preview.js'
-import { PATH_HEADER, publicUrl } from './url.js'
+import { PREVIEW_COOKIE, PREVIEW_PARAM, matchPreviewPath, matcherHeaders, publicUrl, tokenFromCookie, validToken } from '@hydrogencms/client/server'
+import { channelInfos, routerOf, setToken } from './delivery.js'
+import { PATH_HEADER } from './url.js'
 
 export interface ProxyOptions {
   baseUrl: string
@@ -20,7 +20,7 @@ export interface ProxyOptions {
   /** a fallback template exists */
   fallback?: boolean
   origin?: string
-  /** use X-Forwarded-Host/-Proto for the public origin (default true: the front proxy must overwrite them) */
+  /** use X-Forwarded-Host/-Proto for the public origin (default false; only behind a front proxy that overwrites them) */
   trustForwarded?: boolean
   /** where unknown URLs are rewritten to, with status 404 (default the app's `/_not-found`) */
   notFoundPath?: string

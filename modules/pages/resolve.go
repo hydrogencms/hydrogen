@@ -253,3 +253,16 @@ func (s *service) paths(ctx context.Context, item ids.UUID) ([]Route, error) {
 		})
 	return out, err
 }
+
+// redirectRoutes lists the routes that only redirect: former paths of moved items and manual redirects.
+func (s *service) redirectRoutes(ctx context.Context) ([]Route, error) {
+	out := []Route{}
+	err := each(ctx, s.db.Read(), "SELECT "+routeCols+" FROM route WHERE state IN ('redirect', 'manual') ORDER BY site, locale, path", nil,
+		func(r store.Rows) error {
+			x, err := scanRoute(r)
+			out = append(out, Route{Site: x.Site, Locale: x.Locale, Path: x.Path, State: x.State, Item: x.Item, Node: x.Node,
+				Target: x.Target, Status: x.Status})
+			return err
+		})
+	return out, err
+}

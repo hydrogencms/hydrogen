@@ -1,0 +1,5 @@
+---
+import RichText from '@hydrogencms/astro/components/RichText.astro'
+const { props: p, attrs, links } = Astro.props
+---
+<div {...attrs} class="container prose"><RichText doc={p.body} links={links} /></div>

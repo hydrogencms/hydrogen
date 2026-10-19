@@ -25,9 +25,12 @@ var catalog = []Module{
 	{Name: "postgres", Package: modPrefix + "postgres", GoModule: modPrefix + "postgres", Summary: "PostgreSQL database adapter"},
 	{Name: "pages", Package: modPrefix + "pages", Summary: "page tree per site, routes with history, redirects", Config: "modules.pages"},
 	{Name: "site", Package: modPrefix + "site", Summary: "server-rendered website for web channels with render: go", Config: "modules.site"},
+	{Name: "site-export", Package: modPrefix + "siteexport", Summary: "static export of the site module: files, manifest, redirects, incremental export, publishers", Docs: "docs/site-export.md", Config: "modules.site-export"},
+	{Name: "site-proxy", Package: modPrefix + "siteproxy", Summary: "serves a JS frontend (static export or supervised SSR process) behind the binary", Docs: "docs/site-proxy.md", Config: "modules.site-proxy"},
 	{Name: "overlays", Package: modPrefix + "overlays", Summary: "locale overlays: a language inherits fields from another", Docs: "docs/locales.md"},
 	{Name: "images", Package: modPrefix + "images", Summary: "image presets, focal points and variants", Docs: "docs/images.md", Config: "modules.images"},
 	{Name: "wasmhooks", Package: modPrefix + "wasmhooks", GoModule: modPrefix + "wasmhooks", Summary: "content hooks as sandboxed WebAssembly programs (Go, Rust, TypeScript, …)", Docs: "docs/wasm-hooks.md", Config: "modules.wasmhooks"},
+	{Name: "graphql", Package: modPrefix + "graphql", GoModule: modPrefix + "graphql", Summary: "read-only GraphQL delivery API generated from the schema", Docs: "docs/graphql.md", Config: "modules.graphql"},
 	{Name: "meilisearch", Package: modPrefix + "meilisearch", Summary: "Meilisearch as the search engine", Docs: "docs/meilisearch.md", Config: "modules.meilisearch"},
 }
 

@@ -1,0 +1,14 @@
+{{define "content"}}
+<div class="container narrow page-head">
+{{template "partials/breadcrumbs.html" .}}
+<h1 class="page-title">{{t "search"}}</h1>
+<form method="get" action="{{.Path}}" role="search"><input type="search" name="q" value="{{.Data.Query}}" aria-label="{{t "search"}}" autofocus> <button type="submit">{{t "search"}}</button></form>
+{{if .Data.Query}}
+{{if .Data.Results}}<p class="lead">{{t "search_results" "count" (len .Data.Results) "query" .Data.Query}}</p>
+<ul class="search-results">
+{{range .Data.Results}}<li><a href="{{.URL}}">{{.Name}}</a>{{with .Excerpt}} <span>{{.}}</span>{{end}}</li>
+{{end}}</ul>
+{{else}}<p class="lead">{{t "search_none"}}</p>{{end}}
+{{end}}
+</div>
+{{end}}

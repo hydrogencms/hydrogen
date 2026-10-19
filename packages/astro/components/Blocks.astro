@@ -1,0 +1,17 @@
+---
+// Renders a list of blocks through the registry (block type -> .astro component). Each block component receives
+// { block, props, attrs, path, preview, links, registry, slots } and spreads `attrs` on its root element
+// (data-h-block always, data-h-path in preview); it renders a slot with <Blocks {...slots.items} />.
+import { blockAttrs, blockSlots, pickBlock } from '../dist/blocks.js'
+import Shared from './Shared.astro'
+import Unknown from './Unknown.astro'
+
+const { blocks, registry, path, preview, links } = Astro.props
+---
+{(blocks ?? []).map((block: any, i: number) => {
+  const own = path === undefined ? undefined : `${path}/${i}`
+  const C = pickBlock(registry, block.type, { shared: Shared, unknown: Unknown }, preview) as any
+  return C && (
+    <C block={block} props={block.props ?? {}} attrs={blockAttrs(block.type, own, preview)} path={own} preview={preview} links={links} registry={registry} slots={blockSlots(block, own, registry, preview, links)} />
+  )
+})}

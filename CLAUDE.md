@@ -154,6 +154,19 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   instance per call (memory cap, deadline that also cuts sleeps, no FS/env/network). TypeScript hooks:
   `@hydrogencms/hook` (`defineHook`) + `hydrogen hooks build` (esbuild + Javy 9, pinned in `scripts/javy.sh`);
   `make wasm-e2e` (needs the network). Docs: `docs/wasm-hooks.md`. Contract: `planning/design/wasm-h10c.md`.
+- GraphQL (H10d): `modules/graphql` (own Go module, graphql-go) builds a read-only schema per channel at start and
+  resolves through the delivery API in process (same availability, includes, preview and cache tags). Delivery
+  module routes may accept POST (`delivery.Route.Post`, never cached). Docs: `docs/graphql.md`. Contract:
+  `planning/design/graphql-h10d.md`.
+- Framework adapters (H10e): `@hydrogencms/sveltekit`, `@hydrogencms/nuxt`, `@hydrogencms/astro` with starters in
+  `packages/starters/*`, each passing `make starter-<name>-e2e`. Framework-neutral server code lives in
+  `@hydrogencms/client/server` and `/richtext`, live merging in `@hydrogencms/bridge/merge`; adapters keep only
+  glue. Contract: `planning/design/adapters-h10e.md`.
+- Fullstack (H10f): `modules/site` themes (`site.UseTheme`, base chains), custom routes (`site.Handle`), templ-style
+  components (`site.Component`, no templ dependency) and the `site.Exporter` API; `modules/siteexport` (static
+  export, incremental via the outbox, redirect formats, dir/s3/command publishers; `make site-export-e2e`);
+  `modules/siteproxy` (static or supervised SSR frontend behind the binary; `make site-proxy-e2e`). Docs:
+  `docs/site.md`, `docs/site-export.md`, `docs/site-proxy.md`. Contract: `planning/design/fullstack-h10f.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
@@ -256,6 +269,10 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
   restore, purge, `item.updated` with `draft: false`) must reach the `search.index` consumer, and its handlers must
   re-read the item's snapshots (all locales, overlay-derived ones included), never apply event payloads. Manage
   search never uses an external engine (it cannot apply access scopes or see drafts).
+- Run e2e scripts one at a time: they share process names and ports, and concurrent runs kill each other's
+  servers. Starter lockfiles are gitignored; `packages/.npmrc` needs `legacy-peer-deps=true` for Nuxt's peers.
+- GraphQL responses must stay bounded and fresh: depth/field/node/call/item budgets apply to every query
+  (introspection included), and a response that looked something up and found nothing is `no-store`.
 - Image URLs must stay bounded: `/images` serves only configured presets, allowed widths and focal points that
   some item holding the file really has (checked on a cache miss). Never add a free-form size or crop parameter.
   Anything in a variant's output must be in its URL (preset version, width, focal), or immutable caching breaks.

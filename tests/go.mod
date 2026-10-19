@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/hydrogencms/hydrogen v0.0.0
+	github.com/hydrogencms/hydrogen/modules/graphql v0.0.0
 	github.com/hydrogencms/hydrogen/modules/postgres v0.0.0
 	github.com/hydrogencms/hydrogen/modules/sqlite v0.0.0
 	github.com/jackc/pgx/v5 v5.11.0
@@ -12,6 +13,7 @@ require (
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/graphql-go/graphql v0.8.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
@@ -31,6 +33,7 @@ require (
 
 replace (
 	github.com/hydrogencms/hydrogen => ..
+	github.com/hydrogencms/hydrogen/modules/graphql => ../modules/graphql
 	github.com/hydrogencms/hydrogen/modules/postgres => ../modules/postgres
 	github.com/hydrogencms/hydrogen/modules/sqlite => ../modules/sqlite
 )

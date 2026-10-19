@@ -82,9 +82,16 @@ type Item struct {
 // selected and, for token channels, authenticated; use Channel(r), Locale(r), Tag, NoStore, Fail and
 // WriteJSON. Successful responses are cached by the in-process cache and carry ETag and cache headers like the
 // core routes.
+//
+// Post also serves the same path and handler for POST, for read-only queries whose input does not fit a URL
+// (GraphQL). A POST goes through the same channel selection, token authentication and preview handling as a GET,
+// but its response is never cached (Cache-Control: no-store, no ETag, no in-process cache entry) and the handler
+// reads the body with ReadBody (at most MaxBodyBytes). The handler tells the methods apart with r.Method. A Post
+// route also answers CORS preflight (OPTIONS) and sends Access-Control-Allow-Origin for configured origins.
 type Route struct {
 	Method  string
 	Path    string // relative to /api/deliver/v1, ServeMux syntax
+	Post    bool   // also accept POST (read-only, uncached, body limited)
 	Handler http.HandlerFunc
 	Summary string
 	// OpenAPI is the operation object for the document; optional.
@@ -254,6 +261,13 @@ func New(o Options) (*API, error) {
 			return nil, err
 		}
 	}
+	for _, rt := range routes {
+		if rt.Post && rt.raw == nil {
+			if err := a.handlePost(mux, rt); err != nil {
+				return nil, err
+			}
+		}
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		a.plainError(w, &manage.Error{Status: http.StatusNotFound, Code: "not_found", Message: "no such endpoint"})
 	})
@@ -286,6 +300,17 @@ func handleRoute(mux *http.ServeMux, rt route, a *API) (err error) {
 		return nil
 	}
 	mux.Handle(rt.Method+" "+rt.Path, a.wrap(rt))
+	return nil
+}
+
+func (a *API) handlePost(mux *http.ServeMux, rt route) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("delivery: %s: %v", describe(rt.Route), v)
+		}
+	}()
+	mux.Handle(http.MethodPost+" "+rt.Path, a.wrap(rt))
+	mux.Handle(http.MethodOptions+" "+rt.Path, http.HandlerFunc(a.preflight))
 	return nil
 }
 

@@ -1,0 +1,33 @@
+package main
+
+import "github.com/hydrogencms/hydrogen/modules/site"
+
+// colophon renders the whole /colophon page, replacing the template file routes/colophon.html. The View's
+// helper methods (Meta, Asset, T, Nav…) give it what templates get from {{meta}}, {{asset}}, {{t}} and {{nav}}.
+templ colophon(v *site.View) {
+	<!DOCTYPE html>
+	<html lang={ v.Locale }>
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			@templ.Raw(string(v.Meta()))
+			<link rel="stylesheet" href={ templ.SafeURL(assetURL(v, "site.css")) }/>
+		</head>
+		<body>
+			<div class="site" data-h-root>
+				<header class="site-header">
+					<div class="container bar">
+						<a class="brand" href={ templ.SafeURL(v.Channel.Home) }>{ siteName(v) }</a>
+					</div>
+				</header>
+				<main id="main">
+					<div class="container narrow page-head">
+						<h1 class="page-title">{ v.T("colophon") }</h1>
+						<p class="lead">{ v.T("colophon_text") }</p>
+						<p><a class="button" href={ templ.SafeURL(v.Channel.Home) }>{ v.T("back_home") }</a></p>
+					</div>
+				</main>
+			</div>
+		</body>
+	</html>
+}

@@ -1,13 +1,13 @@
 {
   "name": "hydrogen-sdk",
   "private": true,
-  "workspaces": ["client", "router", "bridge", "react", "next", "adapter-test", "admin-sdk", "hook"],
+  "workspaces": ["client", "router", "bridge", "react", "next", "adapter-test", "admin-sdk", "hook", "sveltekit", "nuxt", "astro"],
   "engines": { "node": ">=20" },
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "test": "npm test --workspaces --if-present",
     "size": "node scripts/size.mjs",
-    "clean": "rm -rf client/dist router/dist bridge/dist react/dist next/dist adapter-test/dist admin-sdk/dist hook/dist"
+    "clean": "rm -rf client/dist router/dist bridge/dist react/dist next/dist adapter-test/dist admin-sdk/dist hook/dist sveltekit/dist nuxt/dist astro/dist"
   },
   "devDependencies": { "typescript": "~5.9.3", "@types/node": "^22.0.0" }
 }

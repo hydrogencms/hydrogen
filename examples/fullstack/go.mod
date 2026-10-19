@@ -3,6 +3,7 @@ module github.com/hydrogencms/hydrogen/examples/fullstack
 go 1.26.0
 
 require (
+	github.com/a-h/templ v0.3.1070
 	github.com/hydrogencms/hydrogen v0.0.0
 	github.com/hydrogencms/hydrogen/modules/postgres v0.0.0
 	github.com/hydrogencms/hydrogen/modules/sqlite v0.0.0

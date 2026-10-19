@@ -8,11 +8,13 @@ import (
 	"github.com/hydrogencms/hydrogen/modules/pages"
 	"github.com/hydrogencms/hydrogen/modules/postgres"
 	"github.com/hydrogencms/hydrogen/modules/site"
+	"github.com/hydrogencms/hydrogen/modules/siteexport"
 	"github.com/hydrogencms/hydrogen/modules/sqlite"
 )
 
 func main() { hydrogen.Main(configure) }
 
 func configure(h *hydrogen.Builder) {
-	h.Use(sqlite.Module(), postgres.Module(), pages.Module(), site.Module())
+	h.Use(sqlite.Module(), postgres.Module(), pages.Module(), site.Module(), siteexport.Module())
+	register(h)
 }

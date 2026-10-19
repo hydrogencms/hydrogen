@@ -1,0 +1,6 @@
+search: Search
+search_placeholder: Search the site
+search_results: "{count} results for {query}"
+search_none: Nothing matched.
+colophon: Colophon
+colophon_text: This site is rendered by Hydrogen's site module. This page is a templ component.

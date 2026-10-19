@@ -1,0 +1,9 @@
+---
+const { props: p, attrs } = Astro.props
+---
+<div {...attrs} class="container prose">
+  <figure class="figure">
+    <img src={p.src} alt={p.alt ?? ''} loading="lazy" />
+    {p.caption && <figcaption>{p.caption}</figcaption>}
+  </figure>
+</div>

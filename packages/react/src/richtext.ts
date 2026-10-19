@@ -1,8 +1,9 @@
 import { createElement, Fragment } from 'react'
 import type { ReactNode } from 'react'
+import { linkHref } from '@hydrogencms/client/richtext'
+import type { PMNode } from '@hydrogencms/client/richtext'
 
-export interface PMMark { type: string; attrs?: Record<string, any> }
-export interface PMNode { type: string; attrs?: Record<string, any>; content?: PMNode[]; marks?: PMMark[]; text?: string }
+export type { PMMark, PMNode } from '@hydrogencms/client/richtext'
 
 /** Replaces the output for a node or mark type (they share one namespace): `{ heading: ({ attrs, children }) => … }`. */
 export type RenderOverrides = Record<string, (p: { attrs: Record<string, any>; children: ReactNode }) => ReactNode>
@@ -14,13 +15,6 @@ export interface RichTextProps {
   /** resolves an `item:<id>` href first; return undefined to fall back to `links` */
   resolveLink?: (href: string) => string | undefined
   render?: RenderOverrides
-}
-
-// http(s), mailto and scheme-less (relative) URLs only; no protocol-relative (//host) and no backslashes
-function safe(u: string | undefined): string | undefined {
-  const s = u?.replace(/[\u0000- \u007f-\u009f]/g, '')
-  if (u?.includes('\\') || /^[/\\]{2}/.test(s ?? '')) return undefined
-  return s && (!/^[a-z][a-z0-9+.-]*:/i.test(s) || /^(https?|mailto):/i.test(s)) ? u!.trim() : undefined
 }
 
 const tags: Record<string, string> = {
@@ -36,10 +30,9 @@ export function RichText(p: RichTextProps): ReactNode {
     switch (type) {
       case 'heading': return createElement('h' + Math.min(6, Math.max(1, Number(attrs.level) || 1)), { key }, children)
       case 'orderedList': return createElement('ol', { key, start: attrs.order > 1 ? Number(attrs.order) : undefined }, children)
-      case 'codeBlock': return createElement('pre', { key }, createElement('code', { className: /^[\w+-]+$/.test(attrs.language) ? 'language-' + attrs.language : undefined }, children))
+      case 'codeBlock': return createElement('pre', { key }, createElement('code', { className: typeof attrs.language === 'string' && /^[\w+-]+$/.test(attrs.language) ? 'language-' + attrs.language : undefined }, children))
       case 'link': {
-        const h = String(attrs.href ?? '')
-        const href = safe(h.startsWith('item:') ? resolveLink?.(h) ?? links?.[h.slice(5)] ?? links?.[h] : h)
+        const href = linkHref(attrs, { links, resolveLink })
         return href ? createElement('a', { key, href }, children) : createElement(Fragment, { key }, children)
       }
       case 'horizontalRule': case 'hardBreak': return createElement(tags[type]!, { key })

@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/hydrogencms/hydrogen/core/cachetag"
+	"github.com/hydrogencms/hydrogen/core/channel"
 	"github.com/hydrogencms/hydrogen/core/config"
 	"github.com/hydrogencms/hydrogen/core/kernel"
 	"github.com/hydrogencms/hydrogen/core/schema"
@@ -29,9 +30,12 @@ type server struct {
 	singletons []string // singleton types, sorted
 	proxies    []netip.Prefix
 	loadErr    error // the templates did not parse; fatal outside dev
+	ext        *Extensions
+	src        *sources
+	custom     *customSet
 }
 
-func newServer(cfg *Config, s *kernel.Services, ps *pages.Service) (*server, error) {
+func newServer(cfg *Config, ext *Extensions, s *kernel.Services, ps *pages.Service) (*server, error) {
 	routes, err := parseRoutes(cfg.Routes)
 	if err != nil {
 		return nil, fmt.Errorf("site: modules.site.routes: %w", err)
@@ -47,7 +51,22 @@ func newServer(cfg *Config, s *kernel.Services, ps *pages.Service) (*server, err
 			proxies = append(proxies, netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen()))
 		}
 	}
-	srv := &server{proxies: proxies, cfg: cfg, svc: s, pages: ps, routes: routes, log: s.Log, dev: s.Env == config.DevEnv}
+	chain, err := ext.chain(cfg.Theme)
+	if err != nil {
+		return nil, err
+	}
+	var rendered []*channel.Channel
+	for _, ch := range s.Channels.All() {
+		if renders(ch) {
+			rendered = append(rendered, ch)
+		}
+	}
+	custom, err := buildCustom(ext.routes, rendered)
+	if err != nil {
+		return nil, err
+	}
+	srv := &server{proxies: proxies, cfg: cfg, svc: s, pages: ps, routes: routes, log: s.Log, dev: s.Env == config.DevEnv,
+		ext: ext, custom: custom, src: &sources{chain: chain, dir: cfg.Dir, comps: ext.comps}}
 	if cfg.CacheBytes > 0 {
 		srv.cache = newPageCache(cfg.CacheBytes)
 	}
@@ -63,7 +82,7 @@ func newServer(cfg *Config, s *kernel.Services, ps *pages.Service) (*server, err
 	if !served {
 		return srv, nil
 	}
-	e, err := loadEngine(cfg.Dir, false)
+	e, err := loadEngine(srv.src, false)
 	if err != nil {
 		srv.loadErr = err
 		return srv, nil
@@ -104,7 +123,7 @@ func checkRoutes(routes []*route, s *schema.Schema) error {
 func (s *server) engine() *engine {
 	e := s.eng.Load()
 	if e == nil && s.dev && s.loadErr != nil {
-		ne, err := loadEngine(s.cfg.Dir, false)
+		ne, err := loadEngine(s.src, false)
 		if err != nil {
 			s.loadErr = err
 			return nil
@@ -120,7 +139,7 @@ func (s *server) engine() *engine {
 	if sig == e.sig {
 		return e
 	}
-	ne, err := loadEngine(s.cfg.Dir, false)
+	ne, err := loadEngine(s.src, false)
 	if err != nil {
 		s.log.Error("site: templates not reloaded", "err", err)
 		kept := *e

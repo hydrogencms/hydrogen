@@ -1,0 +1,28 @@
+---
+// The shared layout of the templates: language switch, title, optional intro (the "lead" slot) and the body blocks.
+import Blocks from '@hydrogencms/astro/components/Blocks.astro'
+import Field from '@hydrogencms/astro/components/Field.astro'
+import { channels } from '../lib/channels'
+import { registry } from './registry'
+
+const { item, locale, preview = false, hidden = false, alternates = [] } = Astro.props
+// The same page in the other languages, from the route's alternates, in the channels' configuration order.
+const order = (l: string) => (channels.includes(l) ? channels.indexOf(l) : channels.length)
+const langs = [...alternates].sort((a, b) => order(a.hreflang) - order(b.hreflang))
+---
+{langs.length >= 2 && (
+  <nav class="container langs" aria-label="Language">
+    {langs.map((a: { hreflang: string; href: string }) => (
+      <a href={new URL(a.href).pathname} hreflang={a.hreflang} aria-current={a.hreflang === locale ? 'true' : undefined}>{a.hreflang.toUpperCase()}</a>
+    ))}
+  </nav>
+)}
+<article lang={locale}>
+  <header class={hidden ? 'sr-only' : 'page-head'}>
+    <div class="container">
+      <h1><Field path="fields/title" preview={preview}>{item.fields.title}</Field></h1>
+      <slot name="lead" />
+    </div>
+  </header>
+  <Blocks blocks={item.fields.body} registry={registry} path="fields/body" preview={preview} links={item.links ?? {}} />
+</article>

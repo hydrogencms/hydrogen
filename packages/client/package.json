@@ -6,7 +6,12 @@
   "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }, "./package.json": "./package.json" },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./server": { "types": "./dist/server.d.ts", "import": "./dist/server.js" },
+    "./richtext": { "types": "./dist/richtext.d.ts", "import": "./dist/richtext.js" },
+    "./package.json": "./package.json"
+  },
   "files": ["dist"],
   "engines": { "node": ">=20" },
   "license": "MIT",

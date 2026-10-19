@@ -41,12 +41,18 @@ type result struct {
 	location string
 	tags     []string
 	store    bool
+	// custom routes: the route's headers, and whether shared caches may keep the answer
+	header    http.Header
+	custom    bool
+	cacheable bool
 }
 
 func (s *server) serveSite(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		if !s.serveMutation(w, r) {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
 		return
 	}
 	eng := s.engine()
@@ -91,9 +97,17 @@ func (s *server) serveSite(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if rest == notFoundPath {
+		rc := &reqCtx{ctx: r.Context(), r: r, ch: ch, rest: rest, raw: raw, f: s.fetcher(r, ch.Name, token), token: token, eng: eng}
+		s.respond(w, r, ch, s.notFound(rc), token != "", "", 0)
+		return
+	}
+	if s.serveCustom(w, r, eng, ch, rest, raw, token) {
+		return
+	}
 	key := ch.Name + "\x00" + r.URL.EscapedPath()
 	var gen uint64
-	if token == "" && s.cache != nil {
+	if token == "" && s.cache != nil && !noCache(r) {
 		if e := s.cache.get(key); e != nil {
 			s.writeCached(w, r, e)
 			return
@@ -103,6 +117,56 @@ func (s *server) serveSite(w http.ResponseWriter, r *http.Request) {
 	rc := &reqCtx{ctx: r.Context(), r: r, ch: ch, rest: rest, raw: raw, f: s.fetcher(r, ch.Name, token), token: token, eng: eng}
 	res := s.resolve(rc)
 	s.respond(w, r, ch, res, token != "", key, gen)
+}
+
+// notFoundPath is a channel-relative path that always answers the channel's 404 page: static exports render it
+// as the site's 404 file.
+const notFoundPath = "/__hydrogen/404"
+
+type noCacheKey struct{}
+
+// noCache reports a request that must not be answered from the page cache (static exports).
+func noCache(r *http.Request) bool { v, _ := r.Context().Value(noCacheKey{}).(bool); return v }
+
+// serveCustom answers a request a custom route claims; false when none does.
+func (s *server) serveCustom(w http.ResponseWriter, r *http.Request, eng *engine, ch *channel.Channel, rest, raw, token string) bool {
+	hit, allow := s.custom.match(r.Context(), ch, r.Method, rest)
+	if hit == nil && allow == "" {
+		return false
+	}
+	rc := &reqCtx{ctx: r.Context(), r: r, ch: ch, rest: rest, raw: raw, f: s.fetcher(r, ch.Name, token), token: token, eng: eng}
+	if hit == nil {
+		w.Header().Set("Allow", allow)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return true
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		if !hit.route.crossOK && crossSite(r, strings.ToLower(strings.TrimRight(ch.Frontend, "/"))) {
+			s.respond(w, r, ch, &result{status: http.StatusForbidden, body: []byte("cross-site request refused"), custom: true}, false, "", 0)
+			return true
+		}
+		limit := hit.route.maxBody
+		if limit <= 0 {
+			limit = defaultMaxBody
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
+	}
+	s.respond(w, r, ch, s.runCustom(rc, hit), token != "", "", 0)
+	return true
+}
+
+// serveMutation answers a non-GET request when a custom route of a rendered channel claims it.
+func (s *server) serveMutation(w http.ResponseWriter, r *http.Request) bool {
+	eng := s.engine()
+	if eng == nil || s.owned(r.URL.Path) || len(s.custom.byChannel) == 0 {
+		return false
+	}
+	raw := s.schemeOf(r) + "://" + r.Host + r.URL.EscapedPath()
+	ch, rest, ok := s.pages.Match(raw, r.Header)
+	if !ok || !renders(ch) {
+		return false
+	}
+	return s.serveCustom(w, r, eng, ch, rest, raw, "")
 }
 
 // owned are the paths other parts of the binary serve; a "/" catch-all must not answer them.
@@ -248,18 +312,26 @@ func (s *server) respond(w http.ResponseWriter, r *http.Request, ch *channel.Cha
 	if !preview && res.status < 500 {
 		cc = s.cacheControl(ch)
 	}
+	if res.custom && (!res.cacheable || preview || res.status != http.StatusOK || (r.Method != http.MethodGet && r.Method != http.MethodHead)) {
+		cc = "no-store"
+	}
 	h.Set("Cache-Control", cc)
 	if !preview && len(res.tags) > 0 {
 		h.Set("Surrogate-Key", strings.Join(res.tags, " "))
 		h.Set("Cache-Tag", strings.Join(res.tags, ","))
+	}
+	for k, v := range res.header {
+		h[http.CanonicalHeaderKey(k)] = slices.Clone(v)
 	}
 	if res.location != "" {
 		h.Set("Location", res.location)
 		w.WriteHeader(res.status)
 		return
 	}
-	h.Set("Content-Type", "text/html; charset=utf-8")
-	if res.status == http.StatusOK && !preview {
+	if h.Get("Content-Type") == "" {
+		h.Set("Content-Type", "text/html; charset=utf-8")
+	}
+	if res.status == http.StatusOK && !preview && !res.custom {
 		etag := etagOf(res.body)
 		h.Set("ETag", etag)
 		if s.cache != nil && res.store {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -114,4 +115,23 @@ func parseRoutes(list []Route) ([]*route, error) {
 		out = append(out, rt)
 	}
 	return out, errors.Join(errs...)
+}
+
+// matchPage reports the page number of a listing path: /blog is page 1, /blog/page/2 page 2.
+func (r *route) matchPage(path string) (int, bool) {
+	if r.param != "" {
+		return 0, false
+	}
+	if path == r.Path {
+		return 1, true
+	}
+	rest, ok := strings.CutPrefix(path, r.Path+"/page/")
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(rest)
+	if err != nil || n < 2 || n > 100000 || strconv.Itoa(n) != rest {
+		return 0, false
+	}
+	return n, true
 }

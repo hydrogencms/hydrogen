@@ -1,0 +1,47 @@
+{
+  "name": "@hydrogencms/astro",
+  "version": "0.1.0",
+  "description": "Astro adapter for Hydrogen: integration, route-resolving middleware, preview, revalidation and block components",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js"
+    },
+    "./middleware": "./dist/middleware.js",
+    "./routes/preview": "./dist/routes/preview.js",
+    "./routes/revalidate": "./dist/routes/revalidate.js",
+    "./routes/bridge": "./dist/routes/bridge.js",
+    "./components/*": "./components/*",
+    "./env": "./env.d.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "components",
+    "env.d.ts"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "astro": "^6.0.0 || ^7.0.0"
+  },
+  "dependencies": {
+    "@hydrogencms/bridge": "^0.2.0",
+    "@hydrogencms/client": "^0.1.0",
+    "@hydrogencms/router": "^0.1.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.mjs"
+  }
+}

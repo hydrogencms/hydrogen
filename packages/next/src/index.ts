@@ -12,23 +12,25 @@ import { matchSite } from '@hydrogencms/router'
 import type { Metadata as RouteMetadata, Resolved } from '@hydrogencms/router'
 import { adminOriginWarning } from './admin.js'
 import { Live } from './live.js'
-import { previewHash } from './hash.js'
 import { callCached, resolveCached, resolveFresh } from './cache.js'
 import type { Called, Cfg, Method } from './cache.js'
-import { channelInfos, clientOf, matcherHeaders, setToken } from './delivery.js'
+import { channelInfos, clientOf, setToken } from './delivery.js'
 import {
-  PREVIEW_COOKIE, matchPreviewPath, parsePreviewRequest, previewCookieOptions, tokenFromCookie,
-} from './preview.js'
-import { MIN_SECRET_LENGTH, SIGNATURE_HEADER, readCapped, verifySignature } from './signature.js'
-import { webhookTags } from './tags.js'
-import { PATH_HEADER, publicUrl } from './url.js'
+  MIN_SECRET_LENGTH, PREVIEW_COOKIE, SIGNATURE_HEADER, matchPreviewPath, matcherHeaders, parsePreviewRequest, previewCookieOptions,
+  previewHash, publicUrl, readCapped, tokenFromCookie, verifySignature, webhookTags,
+} from '@hydrogencms/client/server'
+import { PATH_HEADER } from './url.js'
 
 export type { ChannelInfo, Client, Item, TreeNode, RouteMetadata }
+
+/** `<meta name="hydrogen-preview">`: the SHA-256 of the preview token, which proves to the bridge that the frontend has it. */
+async function PreviewMeta({ token }: { token?: string }): Promise<ReactElement> {
+  return createElement('meta', { name: 'hydrogen-preview', content: token ? await previewHash(token) : '' })
+}
 export { createProxy } from './proxy.js'
 export type { ProxyOptions } from './proxy.js'
-export { verifySignature } from './signature.js'
-export { cacheTags, webhookTags } from './tags.js'
-export { PREVIEW_COOKIE } from './preview.js'
+export { PREVIEW_COOKIE, verifySignature, webhookTags } from '@hydrogencms/client/server'
+export { cacheTags } from './tags.js'
 
 /** What a template receives. Templates are server components. */
 export interface TemplateProps<F = any, T extends object = any> {
@@ -65,7 +67,7 @@ export interface HydrogenOptions<T extends object = Record<string, unknown>> {
   revalidateSecret?: string
   /** public origin to locate URLs with instead of the request's (dev on localhost, or another host than the channel's) */
   origin?: string
-  /** use X-Forwarded-Host/-Proto for the public origin (default true: the front proxy must overwrite them) */
+  /** use X-Forwarded-Host/-Proto for the public origin (default false; only behind a front proxy that overwrites them) */
   trustForwarded?: boolean
   /** path of the preview URLs for items without a route (default "/preview": `/preview/<collection>/<id>`) */
   previewPath?: string
@@ -144,7 +146,7 @@ export function createHydrogen<T extends object = Record<string, unknown>>(o: Hy
     const el = (T as { $$typeof?: symbol }).$$typeof === Symbol.for('react.client.reference')
       ? createElement(draft ? Live : T, draft ? { Template: T, adminOrigin, ...base } : { ...base, preview: false })
       : createElement(T, { ...base, preview: draft, blocks: o.blocks, client })
-    return draft ? createElement(Fragment, null, createElement('meta', { name: 'hydrogen-preview', content: token ? previewHash(token) : '' }), el) : el
+    return draft ? createElement(Fragment, null, createElement(PreviewMeta, { token }), el) : el
   }
 
   const draftToken = async () => (await draftMode()).isEnabled ? tokenFromCookie((await cookies()).get(PREVIEW_COOKIE)?.value) : undefined

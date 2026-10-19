@@ -10,7 +10,7 @@ import (
 
 // helpers are the template functions that need the page being rendered; parsing needs their names, rendering
 // a clone of the set with the real ones.
-var helpers = []string{"blocks", "richtext", "link", "t", "meta", "nav", "breadcrumbs", "asset", "edit", "setting"}
+var helpers = []string{"blocks", "richtext", "link", "t", "meta", "nav", "breadcrumbs", "asset", "edit", "setting", "component"}
 
 // engine is the parsed template set: the shared files (layout, partials, blocks) in one set and a clone of
 // it with each page-like template parsed on top.
@@ -23,18 +23,27 @@ type engine struct {
 	sig     string
 	strict  bool
 	sources map[string]string
+	comps   map[string]ComponentFunc
+}
+
+// sources are what an engine loads: the theme chain (base first), the project's directory and the registered
+// components.
+type sources struct {
+	chain []Theme
+	dir   string
+	comps map[string]ComponentFunc
 }
 
 func isPageTemplate(name string) bool {
-	return strings.HasPrefix(name, "pages/") || strings.HasPrefix(name, "collections/") || name == "404.html"
+	return strings.HasPrefix(name, "pages/") || strings.HasPrefix(name, "collections/") || strings.HasPrefix(name, "routes/") || name == "404.html"
 }
 
-func loadEngine(dir string, strict bool) (*engine, error) {
-	list, err := files(layers(dir, "templates"), ".html")
+func loadEngine(src *sources, strict bool) (*engine, error) {
+	list, err := files(layers(src.chain, src.dir, "templates"), ".html")
 	if err != nil {
 		return nil, err
 	}
-	e := &engine{pages: map[string]*template.Template{}, strict: strict, sources: map[string]string{}}
+	e := &engine{pages: map[string]*template.Template{}, strict: strict, sources: map[string]string{}, comps: src.comps}
 	stubs := template.FuncMap{}
 	for _, h := range helpers {
 		stubs[h] = func(...any) string { return "" }
@@ -70,27 +79,32 @@ func loadEngine(dir string, strict bool) (*engine, error) {
 		}
 		e.pages[f.name] = c
 	}
-	if e.assets, err = loadAssets(dir); err != nil {
+	if e.assets, err = loadAssets(src.chain, src.dir); err != nil {
 		return nil, err
 	}
-	if e.trans, err = loadTranslations(dir); err != nil {
+	if e.trans, err = loadTranslations(src.chain, src.dir); err != nil {
 		return nil, err
 	}
-	e.sig = dirSignature(dir)
+	e.sig = dirSignature(src.dir)
 	return e, nil
 }
 
 func (e *engine) has(name string) bool {
+	if e.comps[name] != nil {
+		return true
+	}
 	if isPageTemplate(name) {
 		return e.pages[name] != nil
 	}
 	return e.base.Lookup(name) != nil
 }
 
+func (e *engine) hasPage(name string) bool { return e.pages[name] != nil || e.comps[name] != nil }
+
 // pageTemplate picks pages/<type>.html, else the fallback pages/default.html.
 func (e *engine) pageTemplate(typ string) (string, bool) {
 	for _, n := range []string{"pages/" + typ + ".html", "pages/default.html"} {
-		if e.pages[n] != nil {
+		if e.hasPage(n) {
 			return n, true
 		}
 	}
@@ -99,7 +113,7 @@ func (e *engine) pageTemplate(typ string) (string, bool) {
 
 // itemTemplate is for mounted items: collections/<type>.html, then the page templates.
 func (e *engine) itemTemplate(typ string) (string, bool) {
-	if n := "collections/" + typ + ".html"; e.pages[n] != nil {
+	if n := "collections/" + typ + ".html"; e.hasPage(n) {
 		return n, true
 	}
 	return e.pageTemplate(typ)
@@ -107,6 +121,10 @@ func (e *engine) itemTemplate(typ string) (string, bool) {
 
 // render executes layout.html in the set of a page-like template with the page's helpers.
 func (e *engine) render(name string, p *page, v *View) ([]byte, error) {
+	v.p = p
+	if f := e.comps[name]; f != nil {
+		return e.renderComponent(name, f, p, v)
+	}
 	set := e.pages[name]
 	if set == nil {
 		return nil, fmt.Errorf("missing template %s", name)
@@ -134,10 +152,34 @@ func (e *engine) renderBlock(b *BlockView, p *page) ([]byte, error) {
 		return nil, err
 	}
 	p.t = t
+	p.view.p = p
 	t.Funcs(p.funcs())
 	var buf bytes.Buffer
 	if err := p.blockInto(&buf, b); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// renderComponent runs a registered component for the page being rendered.
+func (e *engine) renderComponent(name string, f ComponentFunc, p *page, v *View) ([]byte, error) {
+	c := f(v)
+	if c == nil {
+		return nil, fmt.Errorf("component %s returned no renderer", name)
+	}
+	var buf bytes.Buffer
+	if err := c.Render(p.context(), &buf); err != nil {
+		return nil, fmt.Errorf("component %s: %w", name, err)
+	}
+	return buf.Bytes(), nil
+}
+
+// blockSet is the shared template set for helpers called outside a template execution (components).
+func (e *engine) blockSet(p *page) (*template.Template, error) {
+	t, err := e.base.Clone()
+	if err != nil {
+		return nil, err
+	}
+	t.Funcs(p.funcs())
+	return t, nil
 }

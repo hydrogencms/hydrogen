@@ -1,0 +1,9 @@
+---
+// An <img> for a delivery asset: the preset's variant and srcset, lazy by default, positioned on the focal point.
+import { imageProps } from '@hydrogencms/client'
+const { asset, preset, alt, style, ...rest } = Astro.props
+const p = imageProps(asset, preset)
+const f = asset.focal
+const pos = f ? `object-position: ${+(f.x * 100).toFixed(2)}% ${+(f.y * 100).toFixed(2)}%` : undefined
+---
+<img loading="lazy" decoding="async" {...p} {...rest} alt={alt ?? p.alt} style={[pos, style].filter(Boolean).join('; ') || undefined} />

@@ -272,6 +272,17 @@ func (s *Service) Resolve(ctx context.Context, site, locale, path string) (*Reso
 	return res, nil
 }
 
+// Redirects lists the routes of every site that redirect: former paths of moved items (StateRedirect, which
+// lead to the item's current path) and manual redirects (StateManual). It is for tools that mirror the route
+// table, such as static export; a request is answered by Resolve. The caller is trusted (no access check).
+func (s *Service) Redirects(ctx context.Context) ([]Route, error) {
+	impl, err := s.get()
+	if err != nil {
+		return nil, err
+	}
+	return impl.redirectRoutes(ctx)
+}
+
 // Paths lists every route of an item ("where this appears").
 func (s *Service) Paths(ctx context.Context, item ids.UUID) ([]Route, error) {
 	impl, err := s.get()

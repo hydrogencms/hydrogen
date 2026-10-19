@@ -36,6 +36,9 @@ func (s *server) resolve(rc *reqCtx) *result {
 		if !rc.ch.AllowsCollection(rt.Type) {
 			continue
 		}
+		if n, ok := rt.matchPage(rc.rest); ok {
+			return s.listing(rc, rt, n)
+		}
 		val, ok := rt.match(rc.rest)
 		if !ok {
 			continue
@@ -125,7 +128,7 @@ func (s *server) newPage(rc *reqCtx, locale string, it *Item) (*page, *View) {
 		v.Fields = it.Fields
 		v.Title = itemTitle(it)
 	}
-	p := &page{eng: rc.eng, ch: rc.ch, locale: locale, def: s.svc.Core.Content.DefaultLocale, preview: rc.preview(), log: s.log,
+	p := &page{ctx: rc.ctx, eng: rc.eng, ch: rc.ch, locale: locale, def: s.svc.Core.Content.DefaultLocale, preview: rc.preview(), log: s.log,
 		view: v, links: map[string]string{}}
 	if it != nil {
 		for k, u := range it.Links {
@@ -278,7 +281,7 @@ func collectIDs(v any, out *[]string) {
 // collection serves a collection route; nil when the path matched but no item did (routing goes on).
 func (s *server) collection(rc *reqCtx, rt *route, val string) *result {
 	if rt.param == "" {
-		return s.listing(rc, rt)
+		return s.listing(rc, rt, 1)
 	}
 	it, err := s.findItem(rc, rt, val)
 	if err != nil {
@@ -290,14 +293,20 @@ func (s *server) collection(rc *reqCtx, rt *route, val string) *result {
 	return s.page(rc, rt.templateName(), it, nil, rt)
 }
 
-func (s *server) listing(rc *reqCtx, rt *route) *result {
+func (s *server) listing(rc *reqCtx, rt *route, page int) *result {
 	q := url.Values{"limit": {fmt.Sprint(rt.Limit)}}
+	if page > 1 {
+		q.Set("offset", fmt.Sprint((page-1)*rt.Limit))
+	}
 	if rt.Sort != "" {
 		q.Set("sort", rt.Sort)
 	}
 	l, err := rc.f.list(rc.ctx, rt.Type, q, rc.preview())
 	if err != nil {
 		return s.internal(rc, err)
+	}
+	if page > 1 && len(l.Items) == 0 {
+		return s.notFound(rc)
 	}
 	loc := rc.ch.Languages[0]
 	p, v := s.newPage(rc, loc, nil)
@@ -310,7 +319,25 @@ func (s *server) listing(rc *reqCtx, rt *route) *result {
 			}
 		}
 	}
-	v.Path, p.canon = s.pages.SiteURL(rc.ch, rt.Path)
+	here := rt.Path
+	if page > 1 {
+		here = fmt.Sprintf("%s/page/%d", rt.Path, page)
+	}
+	v.Path, p.canon = s.pages.SiteURL(rc.ch, here)
+	if page > 1 || l.HasMore {
+		pg := &Pager{Page: page}
+		if page > 1 {
+			prev := rt.Path
+			if page > 2 {
+				prev = fmt.Sprintf("%s/page/%d", rt.Path, page-1)
+			}
+			pg.Prev, _ = s.pages.SiteURL(rc.ch, prev)
+		}
+		if l.HasMore {
+			pg.Next, _ = s.pages.SiteURL(rc.ch, fmt.Sprintf("%s/page/%d", rt.Path, page+1))
+		}
+		v.Pager = pg
+	}
 	p.crumbs = []Crumb{{Name: p.tFn("home"), URL: v.Channel.Home}}
 	v.Title = p.tFn(rt.Template)
 	body, err := rc.eng.render(rt.templateName(), p, v)

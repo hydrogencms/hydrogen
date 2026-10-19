@@ -1,0 +1,15 @@
+---
+// Pages: the CMS decides which page lives at which URL; the middleware resolved it (redirects and 404s were answered there).
+import Layout from '../layouts/Layout.astro'
+import Landing from '../templates/Landing.astro'
+import Page from '../templates/Page.astro'
+
+const templates: Record<string, any> = { page: Page, landing: Landing }
+const h = Astro.locals.hydrogen
+const p = h.page
+const T = p && templates[p.template]
+if (!T) return new Response(h.unavailable ? 'The CMS is unavailable' : 'Not found', { status: h.unavailable ? 503 : 404 })
+---
+<Layout lang={p.locale}>
+  <T item={p.item} locale={p.locale} metadata={p.metadata} preview={h.draft} />
+</Layout>

@@ -1,0 +1,23 @@
+---
+import { HydrogenError } from '@hydrogencms/client'
+import Layout from '../../../layouts/Layout.astro'
+import { channels } from '../../../lib/channels'
+import { postBySlug } from '../../../lib/posts'
+import Post from '../../../templates/Post.astro'
+
+const { locale, slug } = Astro.params
+if (!locale || !slug || !channels.includes(locale)) return Astro.rewrite('/404')
+const h = Astro.locals.hydrogen
+let item
+try {
+  item = await postBySlug(h.client(locale), locale, slug)
+} catch (e) {
+  // A preview token the CMS refuses: leave preview and come back to the public page.
+  if (e instanceof HydrogenError && e.status === 401) return Astro.redirect(h.exitUrl(Astro.url.pathname))
+  throw e
+}
+if (!item) return Astro.rewrite('/404')
+---
+<Layout title={item.fields.title} description={item.fields.excerpt} lang={locale}>
+  <Post item={item} locale={locale} preview={h.draft} />
+</Layout>

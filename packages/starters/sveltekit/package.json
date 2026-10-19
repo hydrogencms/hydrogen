@@ -1,0 +1,28 @@
+{
+  "name": "hydrogen-starter-sveltekit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "start": "node build",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+  },
+  "dependencies": {
+    "@hydrogencms/bridge": "file:../../bridge",
+    "@hydrogencms/client": "file:../../client",
+    "@hydrogencms/router": "file:../../router",
+    "@hydrogencms/sveltekit": "file:../../sveltekit"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "^5.5.7",
+    "@sveltejs/kit": "^2.70.3",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@types/node": "^22.0.0",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.7",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.4"
+  }
+}

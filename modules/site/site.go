@@ -35,6 +35,9 @@ var bridgeJS []byte
 
 // Config is modules.site.
 type Config struct {
+	// Theme names the theme the site renders with (default "starter", the embedded one); register others with
+	// UseTheme. The project's Dir is layered over the theme and its bases.
+	Theme string `yaml:"theme"`
 	// Dir holds templates/, assets/ and translations/ (default "site", relative to the working directory).
 	Dir string `yaml:"dir"`
 	// AdminURL is the admin's origin (scheme://host[:port]) when it is not the site's own.
@@ -63,10 +66,11 @@ type Route struct {
 
 // Module returns the site module.
 func Module() kernel.Module {
-	return &module{cfg: Config{Dir: "site", CacheBytes: 16 << 20, PreviewCSP: true}}
+	return &module{cfg: Config{Theme: starterName, Dir: "site", CacheBytes: 16 << 20, PreviewCSP: true}}
 }
 
 type module struct {
+	ext   *Extensions
 	cfg   Config
 	pages *pages.Service
 	srv   *server
@@ -88,6 +92,9 @@ func (m *module) Register(r *kernel.Registry) error {
 		return errors.New("the pages module did not provide its service")
 	}
 	m.pages = svc
+	m.ext = newExtensions() // Register may run more than once (config:check): start clean each time
+	kernel.Provide(r, m.ext)
+	kernel.Provide(r, &Exporter{m: m})
 	r.ChannelOption(channel.Option{Name: optRender, Decode: decodeRender})
 	r.ChannelCheck(m.checkChannels)
 	r.Handle("GET "+bridgeURL, http.HandlerFunc(serveBridge))
@@ -108,7 +115,7 @@ func (m *module) handler(pick func(*server) http.HandlerFunc) http.Handler {
 }
 
 func (m *module) Boot(_ context.Context, s *kernel.Services) error {
-	srv, err := newServer(&m.cfg, s, m.pages)
+	srv, err := newServer(&m.cfg, m.ext, s, m.pages)
 	if err != nil {
 		return err
 	}
@@ -133,6 +140,9 @@ var (
 func (c *Config) validate() error {
 	if c.Dir == "" {
 		return errors.New("site: modules.site.dir must not be empty")
+	}
+	if !themeNameRE.MatchString(c.Theme) {
+		return fmt.Errorf("site: modules.site.theme %q must be a theme name (lower-case letters, digits and dashes)", c.Theme)
 	}
 	if c.AdminURL != "" {
 		o, err := normalizeOrigin(c.AdminURL)
@@ -177,6 +187,9 @@ func renders(ch *channel.Channel) bool {
 // public access.
 func (m *module) checkChannels(s *channel.Set) error {
 	var errs []error
+	if err := m.ext.checkThemes(m.cfg.Theme); err != nil {
+		errs = append(errs, err)
+	}
 	if root := m.cfg.Root; root != "" {
 		if ch, ok := s.Get(root); !ok || !renders(ch) {
 			errs = append(errs, fmt.Errorf("modules.site.root %q is not a channel with render: go", root))
@@ -192,6 +205,16 @@ func (m *module) checkChannels(s *channel.Set) error {
 		if ch.Access != channel.AccessPublic {
 			errs = append(errs, fmt.Errorf("channel %s: render: go needs public access", ch.Name))
 		}
+	}
+	var rendered []*channel.Channel
+	for _, ch := range s.All() {
+		if renders(ch) {
+			rendered = append(rendered, ch)
+		}
+	}
+	known := func(n string) bool { ch, ok := s.Get(n); return ok && renders(ch) }
+	if err := checkCustomRoutes(m.ext.routes, rendered, known); err != nil {
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }

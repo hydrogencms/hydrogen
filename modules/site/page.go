@@ -2,6 +2,7 @@ package site
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"html"
 	"html/template"
@@ -28,6 +29,21 @@ type View struct {
 	Alternates []pages.Alternate         // the page in the other languages of its group, when there are any
 	Preview    bool
 	Status     int
+	// Data is what a custom route's Response carried.
+	Data any
+	// Pager is set on a paged collection listing.
+	Pager *Pager
+	// Block is the block a block component renders.
+	Block *BlockView
+
+	p *page // the render the helper methods below read
+}
+
+// Pager links the pages of a collection listing (/blog, /blog/page/2…). Prev and Next are empty at the ends.
+type Pager struct {
+	Page int
+	Prev string
+	Next string
 }
 
 // ChannelView describes the channel being served.
@@ -82,6 +98,14 @@ type page struct {
 	navDone  bool
 	t        *template.Template
 	siteName string
+	ctx      context.Context
+}
+
+func (p *page) context() context.Context {
+	if p.ctx == nil {
+		return context.Background()
+	}
+	return p.ctx
 }
 
 func (p *page) funcs() template.FuncMap {
@@ -96,6 +120,7 @@ func (p *page) funcs() template.FuncMap {
 		"asset":       p.assetFn,
 		"edit":        p.editFn,
 		"setting":     p.settingFn,
+		"component":   p.componentFn,
 	}
 }
 
@@ -138,6 +163,16 @@ func (p *page) blocksFn(v any) (template.HTML, error) {
 
 func (p *page) blockInto(buf *bytes.Buffer, b *BlockView) error {
 	name := "blocks/" + b.Type + ".html"
+	if f := p.eng.comps[name]; f != nil {
+		cv := *p.view
+		cv.Block = b
+		out, err := p.eng.renderComponent(name, f, p, &cv)
+		buf.Write(out)
+		return err
+	}
+	if err := p.ensureSet(); err != nil {
+		return err
+	}
 	if p.t.Lookup(name) == nil {
 		if err := p.problem("no template %s for block type %s", name, b.Type); err != nil {
 			return err
@@ -305,3 +340,61 @@ func (p *page) settingFn(key string) any {
 	}
 	return nil
 }
+
+// ensureSet gives a render that did not start from a template (a component) a template set for blocks.
+func (p *page) ensureSet() error {
+	if p.t != nil {
+		return nil
+	}
+	t, err := p.eng.blockSet(p)
+	if err != nil {
+		return err
+	}
+	p.t = t
+	return nil
+}
+
+// componentFn renders a registered component with the page's view.
+func (p *page) componentFn(name string) (template.HTML, error) {
+	f := p.eng.comps[name]
+	if f == nil {
+		if err := p.problem("no component %s", name); err != nil {
+			return "", err
+		}
+		return "", nil
+	}
+	out, err := p.eng.renderComponent(name, f, p, p.view)
+	return template.HTML(out), err //nolint:gosec // component output is HTML by contract
+}
+
+// The methods below give components (which are not templates) the helpers templates have.
+
+// T translates a key in the page's locale; pairs replace {name} placeholders.
+func (v *View) T(key string, pairs ...any) string { return v.p.tFn(key, pairs...) }
+
+// Meta renders the head tags: title, description, canonical, hreflang and Open Graph basics.
+func (v *View) Meta() template.HTML { return v.p.metaFn() }
+
+// Nav is the site navigation (two levels).
+func (v *View) Nav() ([]*NavItem, error) { return v.p.navFn() }
+
+// Breadcrumbs are the current page's ancestors.
+func (v *View) Breadcrumbs() []Crumb { return v.p.breadcrumbsFn() }
+
+// Asset is the fingerprinted URL of a file of the theme's or project's assets.
+func (v *View) Asset(name string) (string, error) { return v.p.assetFn(name) }
+
+// Link is the URL of a referenced item (id, or an item of a listing).
+func (v *View) Link(item any) string { return v.p.linkFn(item) }
+
+// Setting reads a field of the singleton types.
+func (v *View) Setting(key string) any { return v.p.settingFn(key) }
+
+// Edit marks an element for visual editing in previews.
+func (v *View) Edit(path string) template.HTMLAttr { return v.p.editFn(path) }
+
+// Blocks renders a blocks field of the item, a slot or a block.
+func (v *View) Blocks(x any) (template.HTML, error) { return v.p.blocksFn(x) }
+
+// RichText renders a rich text document.
+func (v *View) RichText(doc any) template.HTML { return v.p.richtextFn(doc) }

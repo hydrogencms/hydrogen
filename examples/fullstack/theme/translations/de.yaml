@@ -1,0 +1,6 @@
+search: Suche
+search_placeholder: Die Website durchsuchen
+search_results: "{count} Treffer für {query}"
+search_none: Nichts gefunden.
+colophon: Impressum der Technik
+colophon_text: Diese Website rendert das site-Modul von Hydrogen. Diese Seite ist eine templ-Komponente.

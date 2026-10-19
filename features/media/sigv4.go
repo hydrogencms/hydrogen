@@ -156,3 +156,13 @@ func uriEncode(s string, encodeSlash bool) string {
 	}
 	return b.String()
 }
+
+// SignV4 signs req for an S3-compatible service with AWS Signature Version 4 (see the notes above), for other
+// packages that talk to object storage. payloadHash is the hex SHA-256 of the body or "UNSIGNED-PAYLOAD";
+// set the X-Amz-Content-Sha256 header to it before signing.
+func SignV4(req *http.Request, payloadHash, accessKey, secretKey, sessionToken, region string, now time.Time) {
+	signV4(req, payloadHash, credentials{accessKey, secretKey, sessionToken}, region, "s3", now)
+}
+
+// URIEncode percent-encodes an object key path the way SigV4 canonicalizes it ('/' stays).
+func URIEncode(path string) string { return uriEncode(path, false) }

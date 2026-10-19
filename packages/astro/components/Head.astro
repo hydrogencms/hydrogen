@@ -1,0 +1,14 @@
+---
+// Title, canonical, hreflang alternates, robots and the preview markers (token proof, bridge) for <head>.
+// Inside <head>: <Head /> for a CMS page, <Head title="..." /> for your own routes.
+const h = Astro.locals.hydrogen
+const { metadata = h?.page?.metadata, title = metadata?.title, description } = Astro.props
+const draft = !!h?.draft
+---
+<title>{title ?? 'Not found'}</title>
+{metadata?.canonical && <link rel="canonical" href={metadata.canonical} />}
+{metadata?.alternates.map((a: { hreflang: string; href: string }) => <link rel="alternate" hreflang={a.hreflang} href={a.href} />)}
+{description && <meta name="description" content={description} />}
+{draft && <meta name="robots" content="noindex, nofollow" />}
+{draft && h.previewHash && <meta name="hydrogen-preview" content={h.previewHash} />}
+{draft && <script is:inline src="/__hydrogen/bridge.js" data-auto="" data-admin-origin={h.adminOrigin} data-mode="reload" defer></script>}

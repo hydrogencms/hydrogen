@@ -1,0 +1,45 @@
+{
+  "name": "@hydrogencms/nuxt",
+  "version": "0.1.0",
+  "description": "Nuxt module (Nuxt 4, Nitro) adapter for Hydrogen",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/module.js",
+  "types": "./dist/module.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/module.d.ts",
+      "import": "./dist/module.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "nuxt": "^4.0.0",
+    "vue": "^3.5.0"
+  },
+  "dependencies": {
+    "@hydrogencms/bridge": "^0.2.0",
+    "@hydrogencms/client": "^0.1.0",
+    "@hydrogencms/router": "^0.1.0",
+    "@nuxt/kit": "^4.0.0"
+  },
+  "devDependencies": {
+    "nuxt": "^4.6.2",
+    "vue": "^3.5.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.mjs"
+  }
+}

@@ -36,7 +36,7 @@ webhook fanned out to every instance; otherwise `ttl` bounds staleness.
 ## Channels
 
 `channel: 'x'` serves one channel. `channels: [...]` serves several from one deployment: the request's host (or
-`x-forwarded-host`) and path prefix are matched with the channels' `match` options (`matchSite`), exactly as the
+`x-forwarded-host` with `trustForwarded: true`) and path prefix are matched with the channels' `match` options (`matchSite`), exactly as the
 CMS does. `origin` overrides the public origin used to locate URLs.
 
 ## Preview
@@ -79,7 +79,7 @@ See `packages/starters/next` and `docs/adapter-kit.md`.
 - `X-Forwarded-Host`/`Host` must be trustworthy (set by your proxy), as for any host-based routing.
 - The page never trusts the proxy: it derives the channel from Host, path and the channels' matchers itself. The
   proxy's `x-hydrogen-path` header (always overwritten) only picks the navigation's channel for that response.
-- `x-forwarded-host` and `x-forwarded-proto` are trusted by default (`trustForwarded: false` turns that off), so the
-  front proxy must overwrite them.
+- `x-forwarded-host` and `x-forwarded-proto` are ignored unless `trustForwarded: true`; set it only behind a front
+  proxy that overwrites them (a fixed `origin` makes them irrelevant).
 - Channel tokens are kept out of cache keys (`token` is registered once per process).
 - Reserved paths (the channels' `reserved`) pass through the proxy to your own routes.

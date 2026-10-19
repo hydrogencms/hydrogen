@@ -252,6 +252,15 @@ func addRoute(paths obj, rt Route) {
 		op["responses"] = responses(openapi.OKResp("Success.", obj{"type": "object"}), "400", "401", "404")
 	}
 	item["get"] = op
+	if rt.Post {
+		pop := obj{}
+		maps.Copy(pop, op)
+		pop["operationId"] = "post" + pathWords(rt.Path)
+		if _, ok := pop["requestBody"]; !ok {
+			pop["requestBody"] = obj{"content": obj{"application/json": obj{"schema": obj{"type": "object"}}}}
+		}
+		item["post"] = pop
+	}
 }
 
 func openAPIPath(p string) (string, []string) {

@@ -1,0 +1,4 @@
+{{with .Pager}}<nav class="pager" aria-label="Pagination">
+{{if .Prev}}<a rel="prev" href="{{.Prev}}">{{t "pager_prev"}}</a>{{end}}
+{{if .Next}}<a rel="next" href="{{.Next}}">{{t "pager_next"}}</a>{{end}}
+</nav>{{end}}

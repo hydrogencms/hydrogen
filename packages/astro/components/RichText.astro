@@ -1,0 +1,5 @@
+---
+import { richTextHtml } from '../dist/richtext.js'
+const { doc, links, resolveLink, render } = Astro.props
+---
+<Fragment set:html={richTextHtml(doc, { links, resolveLink, render })} />

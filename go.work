@@ -8,6 +8,7 @@ use (
 	./examples/multisite
 	./examples/starter
 	./examples/minimal
+	./modules/graphql
 	./modules/postgres
 	./modules/sqlite
 	./modules/wasmhooks

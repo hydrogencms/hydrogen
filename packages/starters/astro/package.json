@@ -1,0 +1,24 @@
+{
+  "name": "hydrogen-starter-astro",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "start": "node dist/server/entry.mjs",
+    "typecheck": "npx --yes @astrojs/check"
+  },
+  "dependencies": {
+    "@astrojs/node": "^10.1.4",
+    "@hydrogencms/astro": "file:../../astro",
+    "@hydrogencms/bridge": "file:../../bridge",
+    "@hydrogencms/client": "file:../../client",
+    "@hydrogencms/router": "file:../../router",
+    "astro": "^6.4.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "~5.9.3"
+  }
+}

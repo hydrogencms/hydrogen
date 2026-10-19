@@ -1,0 +1,14 @@
+---
+import type { BlockComponentProps } from '@hydrogencms/astro/runtime'
+import type { Block } from '../../lib/types'
+type P = Extract<Block, { type: 'hero' }>['props']
+const { props: p, attrs, links = {} } = Astro.props as BlockComponentProps<P>
+const href = p.ctaLink ? links[p.ctaLink] : p.ctaUrl
+---
+<section {...attrs} class:list={['hero', `tone-${p.tone ?? 'light'}`]}>
+  <div class="container">
+    <h2 class="hero-title">{p.heading}</h2>
+    {p.subheading && <p class="hero-sub">{p.subheading}</p>}
+    {p.ctaLabel && href && <a class="button" href={href}>{p.ctaLabel}</a>}
+  </div>
+</section>

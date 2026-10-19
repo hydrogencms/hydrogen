@@ -1,0 +1,7 @@
+<footer class="site-footer">
+<div class="container">
+<p>{{with setting "footerText"}}{{.}}{{end}}</p>
+<form method="get" action="{{.Channel.Home}}/search" role="search"><input type="search" name="q" placeholder="{{t "search_placeholder"}}" aria-label="{{t "search"}}"> <button type="submit">{{t "search"}}</button></form>
+<p><a href="{{.Channel.Home}}/colophon">{{t "colophon"}}</a></p>
+</div>
+</footer>

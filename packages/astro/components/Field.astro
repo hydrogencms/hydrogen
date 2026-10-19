@@ -1,0 +1,5 @@
+---
+// Marks inline content as editable at `path` (fields/title); renders just the content outside preview.
+const { path, preview, as: Tag = 'span' } = Astro.props
+---
+{preview ? <Tag data-h-path={path}><slot /></Tag> : <slot />}

@@ -17,18 +17,25 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// layer is a source of files: the embedded theme under the project's directory. A file in the project
-// replaces the theme's file of the same name.
+// layer is a source of files: the theme chain (base first) under the project's directory. A later layer's
+// file replaces an earlier one's of the same name.
 type layer struct {
 	fsys fs.FS
 	root string // the file system's directory for messages
 }
 
-// layers returns the theme's and the project's file systems for a sub directory ("templates", "assets",
-// "translations"); the project's is absent when the directory does not exist.
-func layers(dir, sub string) []layer {
-	theme, _ := fs.Sub(themeFS, "themes/starter/"+sub)
-	out := []layer{{theme, "theme/" + sub}}
+// layers returns the themes' and the project's file systems for a sub directory ("templates", "assets",
+// "translations"); a layer is absent when its directory does not exist.
+func layers(chain []Theme, dir, sub string) []layer {
+	var out []layer
+	for _, t := range chain {
+		if st, err := fs.Stat(t.FS, sub); err != nil || !st.IsDir() {
+			continue
+		}
+		if sf, err := fs.Sub(t.FS, sub); err == nil {
+			out = append(out, layer{sf, "theme " + t.Name + "/" + sub})
+		}
+	}
 	p := filepath.Join(dir, sub)
 	if st, err := os.Stat(p); err == nil && st.IsDir() {
 		out = append(out, layer{os.DirFS(p), p})
@@ -74,8 +81,8 @@ type assetSet struct {
 	byName map[string]string  // name → fingerprinted name
 }
 
-func loadAssets(dir string) (*assetSet, error) {
-	list, err := files(layers(dir, "assets"))
+func loadAssets(chain []Theme, dir string) (*assetSet, error) {
+	list, err := files(layers(chain, dir, "assets"))
 	if err != nil {
 		return nil, err
 	}
@@ -126,30 +133,33 @@ func (a *assetSet) serve(w http.ResponseWriter, r *http.Request, name string) {
 	http.ServeContent(w, r, path.Base(f.name), time.Time{}, bytes.NewReader(b))
 }
 
-// translations are the flat key → text maps of site/translations/<locale>.yaml over the theme's.
+// translations are the flat key → text maps of site/translations/<locale>.yaml over the themes', per key.
 type translations map[string]map[string]string
 
-func loadTranslations(dir string) (translations, error) {
-	list, err := files(layers(dir, "translations"), ".yaml", ".yml")
-	if err != nil {
-		return nil, err
-	}
+func loadTranslations(chain []Theme, dir string) (translations, error) {
 	out := translations{}
-	for _, f := range list {
-		b, err := fs.ReadFile(f.fsys, f.name)
+	// Layers merge key by key (a project's en.yaml adds to the theme's rather than replacing it).
+	for _, l := range layers(chain, dir, "translations") {
+		list, err := files([]layer{l}, ".yaml", ".yml")
 		if err != nil {
 			return nil, err
 		}
-		var m map[string]string
-		if err := yaml.Unmarshal(b, &m); err != nil {
-			return nil, fmt.Errorf("translations %s: %w", f.where, err)
-		}
-		loc := strings.TrimSuffix(path.Base(f.name), path.Ext(f.name))
-		if out[loc] == nil {
-			out[loc] = map[string]string{}
-		}
-		for k, v := range m {
-			out[loc][k] = v
+		for _, f := range list {
+			b, err := fs.ReadFile(f.fsys, f.name)
+			if err != nil {
+				return nil, err
+			}
+			var m map[string]string
+			if err := yaml.Unmarshal(b, &m); err != nil {
+				return nil, fmt.Errorf("translations %s: %w", f.where, err)
+			}
+			loc := strings.TrimSuffix(path.Base(f.name), path.Ext(f.name))
+			if out[loc] == nil {
+				out[loc] = map[string]string{}
+			}
+			for k, v := range m {
+				out[loc][k] = v
+			}
 		}
 	}
 	return out, nil

@@ -1,0 +1,271 @@
+type Query {
+  """One Article by id or key."""
+  article(id: ID, key: String, locale: String): Article
+  """A page of Article items."""
+  articleList(limit: Int, locale: String, offset: Int, sort: String, where: JSON): ArticleList
+  """One Company by id or key."""
+  company(id: ID, key: String, locale: String): Company
+  """A page of Company items."""
+  companyList(limit: Int, locale: String, offset: Int, sort: String, where: JSON): CompanyList
+  """One Image by id or key."""
+  image(id: ID, key: String, locale: String): Image
+  """A page of Image items."""
+  imageList(limit: Int, locale: String, offset: Int, sort: String, where: JSON): ImageList
+  """Any item by id."""
+  item(id: ID!, locale: String): Item
+  """One Person by id or key."""
+  person(id: ID, key: String, locale: String): Person
+  """A page of Person items."""
+  personList(limit: Int, locale: String, offset: Int, sort: String, where: JSON): PersonList
+  """Full-text search over the channel's searchable collections."""
+  search(facets: [String!], limit: Int, locale: String, offset: Int, q: String!, sort: String, types: [String!], where: JSON): SearchResult
+  """The Settings singleton."""
+  settings(locale: String): Settings
+}
+
+type Article implements Item {
+  address: Article_address
+  attachment: File
+  author: Person
+  body: JSON
+  contact: String
+  eventDay: String
+  extra: JSON
+  featured: Boolean
+  gallery: [Asset]
+  hero: Asset
+  """The item's id."""
+  id: ID!
+  """The item's key, when it has one."""
+  key: String
+  kind: Article_kind
+  """The locale the item is shown in."""
+  locale: String!
+  logo: Image
+  """The item's display name."""
+  name: String
+  places: [Article_places!]
+  price: Float
+  publishDate: String
+  """When the shown version was published (ISO 8601)."""
+  publishedAt: String
+  rating: Long
+  related: [Article]
+  sections: JSON
+  seo: Article_seo
+  slug: String
+  stage: String
+  subject: ArticleOrCompanyOrPerson
+  summary: String
+  tags: [String!]
+  title: String
+  """The content type's name."""
+  type: String!
+  """The item's URL on the channel, when it has one."""
+  url: String
+  urlField: String
+}
+
+"""A page of Article items."""
+type ArticleList {
+  """Whether another page follows."""
+  hasMore: Boolean!
+  items: [Article!]!
+  """The number of matches; counted only when selected."""
+  total: Int
+}
+
+union ArticleOrCompanyOrPerson = Article | Company | Person
+
+type Article_address {
+  city: String
+  geo: Article_address_geo
+  street: String
+}
+
+type Article_address_geo {
+  lat: Float
+  lng: Float
+}
+
+enum Article_kind {
+  news
+  video
+}
+
+type Article_places {
+  label: String
+  rank: Long
+}
+
+type Article_seo {
+  metaDescription: String
+  metaTitle: String
+}
+
+"""An uploaded file as a delivery response shows it."""
+type Asset {
+  """fields.alt when it is a string."""
+  alt: String
+  """The asset item's own fields."""
+  fields: JSON
+  focal: JSON
+  height: Long
+  id: ID!
+  mime: String
+  name: String
+  size: Long
+  url: String
+  """Image renditions, when the images module is on."""
+  variants: JSON
+  width: Long
+}
+
+type Company implements Item {
+  """The item's id."""
+  id: ID!
+  """The item's key, when it has one."""
+  key: String
+  """The locale the item is shown in."""
+  locale: String!
+  """The item's display name."""
+  name: String
+  """When the shown version was published (ISO 8601)."""
+  publishedAt: String
+  title: String
+  """The content type's name."""
+  type: String!
+  """The item's URL on the channel, when it has one."""
+  url: String
+}
+
+"""A page of Company items."""
+type CompanyList {
+  """Whether another page follows."""
+  hasMore: Boolean!
+  items: [Company!]!
+  """The number of matches; counted only when selected."""
+  total: Int
+}
+
+"""A stored file value."""
+type File {
+  focal: JSON
+  height: Long
+  """The file's content hash."""
+  id: ID!
+  mime: String
+  name: String
+  size: Long
+  width: Long
+}
+
+type Image implements Item {
+  alt: String
+  caption: String
+  file: File
+  folder: String
+  """The item's id."""
+  id: ID!
+  """The item's key, when it has one."""
+  key: String
+  """The locale the item is shown in."""
+  locale: String!
+  """The item's display name."""
+  name: String
+  """When the shown version was published (ISO 8601)."""
+  publishedAt: String
+  tags: [String!]
+  """The content type's name."""
+  type: String!
+  """The item's URL on the channel, when it has one."""
+  url: String
+}
+
+"""A page of Image items."""
+type ImageList {
+  """Whether another page follows."""
+  hasMore: Boolean!
+  items: [Image!]!
+  """The number of matches; counted only when selected."""
+  total: Int
+}
+
+"""A content item."""
+interface Item {
+  """The item's id."""
+  id: ID!
+  """The item's key, when it has one."""
+  key: String
+  """The locale the item is shown in."""
+  locale: String!
+  """The item's display name."""
+  name: String
+  """When the shown version was published (ISO 8601)."""
+  publishedAt: String
+  """The content type's name."""
+  type: String!
+  """The item's URL on the channel, when it has one."""
+  url: String
+}
+
+"""Any JSON value."""
+scalar JSON
+
+"""A 64-bit integer, sent as a JSON number. JavaScript clients read it exactly only up to 2^53."""
+scalar Long
+
+type Person implements Item {
+  bio: JSON
+  company: Company
+  fullName: String
+  """The item's id."""
+  id: ID!
+  """The item's key, when it has one."""
+  key: String
+  """The locale the item is shown in."""
+  locale: String!
+  """The item's display name."""
+  name: String
+  """When the shown version was published (ISO 8601)."""
+  publishedAt: String
+  """The content type's name."""
+  type: String!
+  """The item's URL on the channel, when it has one."""
+  url: String
+}
+
+"""A page of Person items."""
+type PersonList {
+  """Whether another page follows."""
+  hasMore: Boolean!
+  items: [Person!]!
+  """The number of matches; counted only when selected."""
+  total: Int
+}
+
+type SearchResult {
+  facets: JSON
+  """Per item: score and highlights, parallel to items."""
+  hits: JSON
+  items: [Item!]!
+  total: Int
+}
+
+type Settings implements Item {
+  """The item's id."""
+  id: ID!
+  """The item's key, when it has one."""
+  key: String
+  """The locale the item is shown in."""
+  locale: String!
+  """The item's display name."""
+  name: String
+  """When the shown version was published (ISO 8601)."""
+  publishedAt: String
+  siteName: String
+  """The content type's name."""
+  type: String!
+  """The item's URL on the channel, when it has one."""
+  url: String
+}

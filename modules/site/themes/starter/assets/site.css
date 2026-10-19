@@ -144,3 +144,5 @@ a:hover { color: var(--brand-dark); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+.pager { display: flex; justify-content: space-between; gap: 16px; margin-top: 28px; }

@@ -1,0 +1,12 @@
+---
+import Field from '@hydrogencms/astro/components/Field.astro'
+import Body from '../components/Body.astro'
+const { item, locale, preview } = Astro.props
+const date = new Date(item.publishedAt)
+---
+<Body item={item} locale={locale} preview={preview}>
+  <p slot="lead" class="meta">
+    <time datetime={item.publishedAt}>{isNaN(+date) ? '' : date.toLocaleDateString(locale, { dateStyle: 'long', timeZone: 'UTC' })}</time>
+    {item.fields.excerpt && <Fragment> · <Field path="fields/excerpt" preview={preview}>{item.fields.excerpt}</Field></Fragment>}
+  </p>
+</Body>

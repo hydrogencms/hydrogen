@@ -1,0 +1,59 @@
+---
+import Head from '@hydrogencms/astro/components/Head.astro'
+import { defaultChannel } from '../lib/channels'
+import '../styles/globals.css'
+
+// Pages of the CMS pass nothing (the middleware resolved them); your own routes pass a title.
+const { title, description, lang = 'en' } = Astro.props
+const h = Astro.locals.hydrogen
+const channel = h.channel ?? defaultChannel
+
+async function load() {
+  try {
+    const [tree, settings] = await Promise.all([
+      h.nav({ depth: 2 }),
+      h.client(channel).singleton('siteSettings', { locale: channel }),
+    ])
+    return { tree, s: settings.data.fields }
+  } catch {
+    return { tree: [], s: undefined }
+  }
+}
+const { tree, s } = await load()
+const href = (n: { url?: string }) => (n.url ? new URL(n.url).pathname : undefined)
+---
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <Head title={title} description={description} />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="container bar">
+        <a class="brand" href={`/${channel}`}>{s?.siteName ?? 'Starter'}</a>
+        <nav aria-label="Main">
+          <ul>
+            {tree.filter((n) => n.url).map((n) => (
+              <li>
+                <a href={href(n)}>{n.name}</a>
+                {(n.nodes?.filter((k) => k.url).length ?? 0) > 0 && (
+                  <ul>{n.nodes!.filter((k) => k.url).map((k) => <li><a href={href(k)}>{k.name}</a></li>)}</ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </div>
+    </header>
+    <main id="main" data-h-root><slot /></main>
+    <footer class="site-footer">
+      <div class="container">
+        <strong>{s?.siteName}</strong>
+        {s?.footerText && <p>{s.footerText}</p>}
+      </div>
+    </footer>
+  </body>
+</html>

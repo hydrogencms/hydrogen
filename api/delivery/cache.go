@@ -15,6 +15,7 @@ type entry struct {
 	etag string // quoted
 
 	hETag, hCache, hSurrogate, hTag, hLength, hVary []string
+	hType                                           []string // the handler's Content-Type; nil is JSON
 
 	tags       []string
 	size       int64

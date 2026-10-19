@@ -1,0 +1,5 @@
+---
+import Body from '../components/Body.astro'
+const { item, locale, metadata, preview } = Astro.props
+---
+<Body item={item} locale={locale} preview={preview} alternates={metadata.alternates} hidden={item.fields.body?.[0]?.type === 'hero'} />

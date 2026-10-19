@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -335,6 +336,76 @@ func TestEveryBlockRenders(t *testing.T) {
 	})
 }
 
+func TestCustomRoutesAndTheme(t *testing.T) {
+	backends(t, func(t *testing.T, dbURL string) {
+		s := serve(t, dbURL)
+
+		// the theme's footer layers over the starter's, and its translations over the starter's keys
+		home := s.get("/en")
+		for _, want := range []string{`<form method="get" action="/en/search" role="search">`, `placeholder="Search the site"`, `<a href="/en/colophon">Colophon</a>`, "Skip to content"} {
+			if !strings.Contains(home.body, want) {
+				t.Errorf("/en lacks %q", want)
+			}
+		}
+		if de := s.get("/de"); !strings.Contains(de.body, "Die Website durchsuchen") || !strings.Contains(de.body, "Startseite") {
+			t.Error("/de lacks the theme's and the starter's translations")
+		}
+
+		// /search: a custom route with the full page context, never cached, tagged by what it read
+		r := s.get("/en/search?q=block")
+		if r.status != 200 {
+			t.Fatalf("/en/search: %d %s", r.status, r.body)
+		}
+		for _, want := range []string{`<html lang="en">`, `<input type="search" name="q" value="block"`, `<a href="/en/blog/building-with-blocks">Building with blocks</a>`,
+			`class="site-header"`, `<link rel="canonical" href="http://localhost:8080/en/search">`, `<a href="/en/search">Search</a>`} {
+			if !strings.Contains(r.body, want) {
+				t.Errorf("/en/search lacks %q", want)
+			}
+		}
+		if r.header.Get("Cache-Control") != "no-store" || r.header.Get("Etag") != "" || r.header.Get("X-Hydrogen-Cache") != "" {
+			t.Errorf("search headers = %v", r.header)
+		}
+		if !strings.Contains(r.header.Get("Surrogate-Key"), "c:post") {
+			t.Errorf("search tags = %q", r.header.Get("Surrogate-Key"))
+		}
+		if none := s.get("/en/search?q=zzzzqqq"); none.status != 200 || !strings.Contains(none.body, "Nothing matched.") {
+			t.Errorf("empty search: %d", none.status)
+		}
+		if blank := s.get("/en/search"); blank.status != 200 || strings.Contains(blank.body, "search-results") {
+			t.Errorf("search without q: %d", blank.status)
+		}
+		if de := s.get("/de/search?q=welt"); de.status != 200 || !strings.Contains(de.body, "Suche") || !strings.Contains(de.body, `href="/de/blog/hallo-welt"`) {
+			t.Errorf("/de/search: %d", de.status)
+		}
+		if p := s.do("POST", "/en/search", nil, nil); p.status != 405 {
+			t.Errorf("POST /en/search: %d", p.status)
+		}
+
+		// /colophon: rendered by the templ component, cacheable for shared caches
+		c := s.get("/en/colophon")
+		if c.status != 200 || !strings.Contains(c.body, `<h1 class="page-title">Colophon</h1>`) || !strings.Contains(c.body, "This page is a templ component.") ||
+			!strings.Contains(c.body, `href="/__hydrogen/assets/site.`) || !strings.Contains(c.body, "<title>Colophon") {
+			t.Errorf("/en/colophon: %d\n%s", c.status, c.body)
+		}
+		if !strings.Contains(c.header.Get("Cache-Control"), "s-maxage=60") {
+			t.Errorf("colophon Cache-Control = %q", c.header.Get("Cache-Control"))
+		}
+		if d := s.get("/de/colophon"); d.status != 200 || !strings.Contains(d.body, "Diese Seite ist eine templ-Komponente.") {
+			t.Errorf("/de/colophon: %d", d.status)
+		}
+		// the reserved paths below the routes stay the site's 404
+		if r := s.get("/en/search/x"); r.status != 404 {
+			t.Errorf("/en/search/x: %d", r.status)
+		}
+		// a preview of a custom route carries the preview scaffolding
+		home2 := s.itemID("landing", "Home")
+		pv := s.get(strings.Replace(s.previewURL(home2, "en", "en"), "/en?", "/en/search?q=block&", 1))
+		if pv.status != 200 || !strings.Contains(pv.body, `name="hydrogen-preview"`) || !strings.Contains(pv.body, "bridge.js") || pv.header.Get("Cache-Control") != "no-store" {
+			t.Errorf("preview search: %d %v", pv.status, pv.header)
+		}
+	})
+}
+
 func TestPurgeOnPublish(t *testing.T) {
 	backends(t, func(t *testing.T, dbURL string) {
 		s := serve(t, dbURL)
@@ -547,6 +618,22 @@ func projectWith(t *testing.T, routes string, templates map[string]string) (dir 
 			t.Fatal(err)
 		}
 	}
+	shipped := filepath.Join("site", "templates")
+	_ = filepath.WalkDir(shipped, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, _ := filepath.Rel(shipped, p)
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(root, "site", "templates", rel)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(dst, b, 0o644)
+	})
 	for name, src := range templates {
 		p := filepath.Join(root, "site", "templates", name)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -590,6 +677,7 @@ func TestSiteCheck(t *testing.T) {
 	expectProblem(t, "a template that does not parse", siteCheck(t, "", map[string]string{"pages/landing.html": `{{define "content"}}{{if}}{{end}}`}), "landing.html")
 	expectProblem(t, "a route without a template", siteCheck(t, `      - { path: "/team/{slug}", type: post, template: ghost }`, nil), "ghost.html")
 	expectProblem(t, "a broken 404 page", siteCheck(t, "", map[string]string{"404.html": `{{define "content"}}{{.Nope}}{{end}}`}), "404.html")
+	expectProblem(t, "a broken custom route template", siteCheck(t, "", map[string]string{"routes/search.html": `{{define "content"}}{{.Data.Nope}}{{end}}`}), "routes/search.html")
 	expectProblem(t, "a missing asset", siteCheck(t, "", map[string]string{"layout.html": `<link href="{{asset "nope.css"}}">{{block "content" .}}{{end}}`}), "nope.css")
 }
 
@@ -647,6 +735,9 @@ func TestConfigIsValidated(t *testing.T) {
 	}
 	for _, c := range []struct{ file, from, to, want string }{
 		{"channels.yaml", "render: go", "render: php", `render must be "go"`},
+		{"app.yaml", "theme: fullstack", "theme: nope", `unknown theme "nope"`},
+		{"app.yaml", "theme: fullstack", "theme: Bad_Name", "must be a theme name"},
+		{"channels.yaml", ", /search, /colophon]", ", /colophon]", "/search is not on a reserved path of channel en"},
 		{"app.yaml", "root: en", "root: fr", "is not a channel with render"},
 		{"app.yaml", `type: post, template: posts`, `type: post`, "a listing needs a template"},
 		{"app.yaml", `/blog/{slug}`, `/blog/{slug}/{x}`, "at most one {param}"},

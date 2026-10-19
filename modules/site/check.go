@@ -52,7 +52,12 @@ func (m *module) check(ctx context.Context, svc *kernel.Services, out io.Writer,
 	if err := c.checkRoutes(); err != nil {
 		c.fail("%v", err)
 	}
-	if c.eng, err = loadEngine(m.cfg.Dir, true); err != nil {
+	chain, err := m.ext.chain(m.cfg.Theme)
+	if err != nil {
+		return err
+	}
+	c.src = &sources{chain: chain, dir: m.cfg.Dir, comps: m.ext.comps}
+	if c.eng, err = loadEngine(c.src, true); err != nil {
 		c.fail("%v", err)
 		return c.result()
 	}
@@ -73,6 +78,7 @@ type checker struct {
 	svc    *kernel.Services
 	out    io.Writer
 	eng    *engine
+	src    *sources
 	routes []*route
 	g      *gen
 	seen   map[string]bool
@@ -182,6 +188,16 @@ func (c *checker) channel(ch *channel.Channel) {
 		}
 		c.renderItem(ch, rt.templateName(), c.g.sampleItem(t, loc), nil)
 	}
+	for _, cr := range c.m.ext.routes {
+		if !cr.applies(ch) {
+			continue
+		}
+		if cr.sample == nil {
+			c.note("custom route %s has no Sample: not rendered (declare one with .Sample)", cr.pattern)
+			continue
+		}
+		c.renderCustom(ch, cr, cr.sample())
+	}
 	if c.eng.has("404.html") {
 		p := c.fakePage(ch, nil, false)
 		p.view.Status, p.view.Title = http.StatusNotFound, p.tFn("not_found_title")
@@ -191,6 +207,44 @@ func (c *checker) channel(ch *channel.Channel) {
 			c.pass()
 		}
 	}
+}
+
+func (c *checker) note(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	if !c.seen["note:"+msg] {
+		c.seen["note:"+msg] = true
+		fmt.Fprintln(c.out, msg)
+	}
+}
+
+// renderCustom renders a custom route's sample answer normally and in preview.
+func (c *checker) renderCustom(ch *channel.Channel, cr *CustomRoute, resp *Response) {
+	switch {
+	case resp == nil:
+		c.fail("custom route %s: Sample returned nil", cr.pattern)
+		return
+	case resp.Redirect != "":
+		c.pass()
+		return
+	case resp.Template == "" || !c.eng.has(resp.Template):
+		c.fail("custom route %s: template %q does not exist (add site/templates/routes/<name>.html)", cr.pattern, resp.Template)
+		return
+	}
+	for _, preview := range []bool{false, true} {
+		p := c.fakePage(ch, nil, preview)
+		p.view.Data, p.view.Status = resp.Data, max(resp.Status, http.StatusOK)
+		if resp.Title != "" {
+			p.view.Title = resp.Title
+		}
+		for _, n := range cr.names {
+			p.view.Params[n] = "sample"
+		}
+		if _, err := c.eng.render(resp.Template, p, p.view); err != nil {
+			c.fail("custom route %s: %s: %v", cr.pattern, resp.Template, err)
+			return
+		}
+	}
+	c.pass()
 }
 
 // renderItem renders a template with a sample item (or listing) normally and in preview, and checks that
@@ -262,7 +316,7 @@ func (c *checker) fakePage(ch *channel.Channel, it *Item, preview bool) *page {
 func (c *checker) database(ctx context.Context, chans []*channel.Channel) {
 	cfg := c.m.cfg
 	cfg.CacheBytes = 0
-	srv, err := newServer(&cfg, c.svc, c.m.pages)
+	srv, err := newServer(&cfg, c.m.ext, c.svc, c.m.pages)
 	if err != nil {
 		c.fail("%v", err)
 		return
@@ -299,6 +353,26 @@ func (c *checker) database(ctx context.Context, chans []*channel.Channel) {
 			if rt.param == "" && ch.AllowsCollection(rt.Type) {
 				path, _ := srv.pages.SiteURL(ch, rt.Path)
 				c.request(srv, ch, path, fmt.Sprintf("listing %s", rt.Path))
+			}
+		}
+		client := &Client{ctx: ctx, f: f}
+		for _, cr := range srv.ext.routes {
+			if !cr.applies(ch) || !cr.exportable() {
+				continue
+			}
+			sets, err := cr.static(context.WithValue(ctx, clientKey{}, client))
+			if err != nil {
+				c.fail("channel %s: custom route %s: static params: %v", ch.Name, cr.pattern, err)
+				continue
+			}
+			for _, params := range sets {
+				p, err := cr.fill(params)
+				if err != nil {
+					c.fail("channel %s: %v", ch.Name, err)
+					continue
+				}
+				path, _ := srv.pages.SiteURL(ch, p)
+				c.request(srv, ch, path, "custom route "+cr.pattern)
 			}
 		}
 	}

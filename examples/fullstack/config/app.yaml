@@ -20,6 +20,8 @@ modules:
   pages:
     sites: [main]
   site:
+    # The theme package in ./theme builds on the embedded starter theme (site.UseTheme in routes.go).
+    theme: fullstack
     root: en
     # The origin of the admin that previews the site (required outside dev). On a shared origin the website's
     # scripts are trusted like project code; for production, serve the website from a separate host or port.
