@@ -6,11 +6,13 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -67,3 +69,46 @@ jobs:
           prerelease=()
           case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
           gh release create "$TAG" dist/* --title "Hydrogen $TAG" --notes-file notes.md "${prerelease[@]}"
+
+  # Publishes the npm packages with provenance (each package is signed and linked to this workflow run and commit).
+  # Off until the repository variable NPM_PUBLISH is "true". Authentication: npm trusted publishing (OIDC; configure
+  # each package's trusted publisher on npmjs.com as hydrogencms/hydrogen, workflow release.yml, environment npm),
+  # or the NPM_TOKEN secret (a granular token for the @hydrogencms scope) until trusted publishing is set up.
+  # Provenance needs a public repository. The `npm` environment can require a reviewer before anything is published.
+  npm:
+    needs: release
+    if: vars.NPM_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: npm with trusted publishing support
+        run: npm install -g npm@^11.5.1
+      - name: Build and test the packages
+        working-directory: packages
+        run: |
+          npm ci
+          npm run build
+          npm test
+          npm run size
+      - name: Check the tag matches the packages
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          . scripts/npm-packages.sh
+          for p in "${NPM_ORDER[@]}"; do
+            v=$(node -p "require('./packages/$p/package.json').version")
+            [ "v$v" = "$TAG" ] || { echo "packages/$p is $v, the tag is $TAG" >&2; exit 1; }
+          done
+      - name: Publish with provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: scripts/npm-publish.sh --provenance

@@ -24,6 +24,8 @@
     "node": ">=20.19"
   },
   "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/hydrogencms/hydrogen.git", "directory": "packages/nuxt" },
+  "homepage": "https://github.com/hydrogencms/hydrogen#readme",
   "peerDependencies": {
     "nuxt": "^4.0.0",
     "vue": "^3.5.0"

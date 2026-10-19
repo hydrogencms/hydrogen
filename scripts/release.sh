@@ -11,7 +11,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # npm packages in dependency order (checked below against their @hydrogencms dependencies).
-NPM_ORDER=(client router bridge react admin-sdk hook adapter-test next sveltekit nuxt astro)
+# shellcheck source=scripts/npm-packages.sh
+. scripts/npm-packages.sh
 GATES=(conformance admin-e2e next-e2e site-export-e2e wasm-e2e)
 CORE=github.com/hydrogencms/hydrogen
 
@@ -92,6 +93,7 @@ for p in "${NPM_ORDER[@]}"; do
 	[ "$got" = "$npmver" ] || bad "$f: version $got (want $npmver)"
 	name=$(sed -n 's/^  "name": "\(.*\)",\{0,1\}$/\1/p' "$f" | head -1)
 	[ "$name" = "@hydrogencms/$p" ] || bad "$f: name $name"
+	grep -q '"directory": "packages/'"$p"'"' "$f" || bad "$f: repository.directory must be packages/$p (npm provenance checks it)"
 	while IFS= read -r dep; do
 		d=${dep%%\"*}
 		range=${dep#*: \"}; range=${range%%\"*}
@@ -144,7 +146,6 @@ echo
 echo "Push (not run; the root tag triggers the GitHub release workflow):"
 echo "  git push origin main ${tags[*]}"
 echo
-echo "Publish to npm in this order (not run; needs 'npm login' and a built tree):"
-for p in "${NPM_ORDER[@]}"; do
-	echo "  (cd packages/$p && npm publish --access public)"
-done
+echo "Publish to npm (not run): the release workflow does it with provenance when the repository variable"
+echo "NPM_PUBLISH is true; by hand, after 'npm login' and a build (cd packages && npm ci && npm run build):"
+echo "  scripts/npm-publish.sh            (order: ${NPM_ORDER[*]})"

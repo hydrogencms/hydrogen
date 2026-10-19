@@ -10,6 +10,8 @@
   "files": ["dist"],
   "engines": { "node": ">=20" },
   "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/hydrogencms/hydrogen.git", "directory": "packages/router" },
+  "homepage": "https://github.com/hydrogencms/hydrogen#readme",
   "dependencies": { "@hydrogencms/client": "^0.1.0" },
   "scripts": {
     "build": "tsc -p tsconfig.json",

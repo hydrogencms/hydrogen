@@ -25,6 +25,8 @@
     "node": ">=20.19"
   },
   "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/hydrogencms/hydrogen.git", "directory": "packages/sveltekit" },
+  "homepage": "https://github.com/hydrogencms/hydrogen#readme",
   "peerDependencies": {
     "@sveltejs/kit": "^2.0.0",
     "svelte": "^5.0.0"

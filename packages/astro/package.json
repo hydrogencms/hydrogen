@@ -32,6 +32,8 @@
     "node": ">=22.12"
   },
   "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/hydrogencms/hydrogen.git", "directory": "packages/astro" },
+  "homepage": "https://github.com/hydrogencms/hydrogen#readme",
   "peerDependencies": {
     "astro": "^6.0.0 || ^7.0.0"
   },

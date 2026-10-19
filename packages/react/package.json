@@ -24,6 +24,8 @@
     "node": ">=20"
   },
   "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/hydrogencms/hydrogen.git", "directory": "packages/react" },
+  "homepage": "https://github.com/hydrogencms/hydrogen#readme",
   "peerDependencies": {
     "react": ">=19.0.0"
   },

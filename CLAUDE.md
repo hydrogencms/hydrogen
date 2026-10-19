@@ -171,7 +171,10 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   `DOCS_STRICT=1` fails on missing pages or broken links; new pages go into `website/sidebar.mjs`). Releases:
   `scripts/release.sh <version>` (checks every go.mod/package.json version, `ReleaseVersion` in
   internal/scaffold and the CHANGELOG section, runs the gates, `--tag` creates the module tags locally, prints the
-  push and npm publish commands). Pushing tags and publishing are the user's call. Contract:
+  push command). npm packages publish through `scripts/npm-publish.sh` (order in `scripts/npm-packages.sh`; skips
+  published versions); the release workflow runs it with `--provenance` when the repository variable `NPM_PUBLISH`
+  is `true` (provenance needs a public repo and `repository.directory` in each package.json). Pushing tags and
+  publishing are the user's call. Contract:
   `planning/design/release-h10g.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
