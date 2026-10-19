@@ -44,6 +44,7 @@ func (module) Register(r *kernel.Registry) error {
 
 type DB struct {
 	pool     *pgxpool.Pool
+	lockPool *pgxpool.Pool
 	clock    clock.Clock
 	listener *listener
 	stop     context.CancelFunc
@@ -67,6 +68,16 @@ func Open(ctx context.Context, url string, o store.OpenOptions) (store.DB, error
 		pool.Close()
 		return nil, fmt.Errorf("postgres: connect: %w", err)
 	}
+	// Advisory locks hold their connection until released. Taken from the shared pool they could use every
+	// connection (a pool is only max(4, CPUs) wide) and starve the work the lock holders need to do.
+	lcfg := cfg.Copy()
+	lcfg.MaxConns = lockPoolSize
+	lcfg.MinConns = 0
+	lockPool, err := pgxpool.NewWithConfig(ctx, lcfg)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("postgres: %w", err)
+	}
 	if o.Clock == nil {
 		o.Clock = clock.System{}
 	}
@@ -74,7 +85,7 @@ func Open(ctx context.Context, url string, o store.OpenOptions) (store.DB, error
 		o.Log = slog.New(slog.DiscardHandler)
 	}
 	lctx, stop := context.WithCancel(context.Background())
-	db := &DB{pool: pool, clock: o.Clock, stop: stop, rewrite: newRewriteCache()}
+	db := &DB{pool: pool, lockPool: lockPool, clock: o.Clock, stop: stop, rewrite: newRewriteCache()}
 	db.listener = newListener(lctx, cfg.ConnConfig, o.Log, &db.wg)
 	return db, nil
 }
@@ -82,12 +93,13 @@ func Open(ctx context.Context, url string, o store.OpenOptions) (store.DB, error
 func (db *DB) Dialect() string                  { return Dialect }
 func (db *DB) Capabilities() store.Capabilities { return store.Capabilities{MultiNode: true} }
 func (db *DB) Notifier() store.Notifier         { return db.listener }
-func (db *DB) Locker() store.Locker             { return locker{db.pool} }
+func (db *DB) Locker() store.Locker             { return locker{db.lockPool} }
 func (db *DB) Ping(ctx context.Context) error   { return db.pool.Ping(ctx) }
 
 func (db *DB) Close() error {
 	db.stop()
 	db.wg.Wait()
+	db.lockPool.Close()
 	db.pool.Close()
 	return nil
 }
@@ -219,6 +231,9 @@ func (db *DB) Migrate(ctx context.Context, sets []store.MigrationSet) error {
 }
 
 // Locks
+
+// lockPoolSize bounds the advisory locks one process holds at once.
+const lockPoolSize = 32
 
 type locker struct{ pool *pgxpool.Pool }
 

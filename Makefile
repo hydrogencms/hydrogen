@@ -6,8 +6,11 @@ MODULES := . modules/sqlite modules/postgres modules/wasmhooks modules/graphql t
 build:
 	@for m in $(MODULES); do (cd $$m && go build ./...) || exit 1; done
 
+# TEST_TIMEOUT is per package; go's default of 10m is too short for the tests module under -race on a small CI runner.
+TEST_TIMEOUT ?= 30m
+
 test:
-	@for m in $(MODULES); do (cd $$m && go test -race -count=1 ./...) || exit 1; done
+	@for m in $(MODULES); do (cd $$m && go test -race -count=1 -timeout $(TEST_TIMEOUT) ./...) || exit 1; done
 
 vet:
 	@for m in $(MODULES); do (cd $$m && go vet ./...) || exit 1; done

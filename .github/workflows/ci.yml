@@ -5,9 +5,50 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request supersedes the run in progress.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ubuntu-24.04 rather than ubuntu-latest: the label moves to a newer release on GitHub's schedule.
 jobs:
-  check:
-    runs-on: ubuntu-latest
+  # Fast gates: formatting of go.mod/go.sum, vet, lint, and the binary size, cold start and memory budgets.
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/toolchain
+        with:
+          node: "false"
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+      - run: make tidy-check
+      - run: make vet
+      - run: make lint
+      - name: Smoke and budgets
+        run: make smoke
+
+  # Go tests under the race detector against a real Postgres, in shards that run in parallel.
+  test:
+    name: test (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: core
+            modules: "."
+          - name: modules
+            modules: "modules/sqlite modules/postgres modules/wasmhooks modules/graphql"
+          - name: tests
+            modules: "tests"
+          - name: examples
+            modules: "examples/minimal examples/content examples/headless examples/multisite examples/starter examples/fullstack"
     services:
       postgres:
         image: postgres:17
@@ -25,53 +66,91 @@ jobs:
     env:
       HYDROGEN_TEST_REQUIRE_POSTGRES: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/toolchain
         with:
-          go-version-file: go.mod
-      - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
-      - name: Tidy
-        run: make tidy-check
-      - name: Vet
-        run: make vet
-      - name: Lint
-        run: make lint
-      - name: Test
-        run: make test
-      - name: Smoke and budgets
-        run: make smoke
+          node: "false"
+      - run: make test MODULES="${{ matrix.modules }}" TEST_TIMEOUT=25m
 
-  frontend:
-    runs-on: ubuntu-latest
+  # The npm packages (build, tests, gzip budgets), then the committed build outputs: they must match a rebuild.
+  assets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/toolchain
+      - run: make sdk
+      - name: Admin app (typecheck, unit tests, size budgets) and admin/dist
+        run: make admin-dist-check
+      - run: make example-admin-check
+      - run: make site-bridge-check
+
+  # Admin end to end, one Playwright run per scenario (scripts/admin-e2e.sh ADMIN_E2E_ONLY).
+  admin-e2e:
+    name: admin-e2e (${{ matrix.only }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        only: [multisite, content, starter, next, fullstack]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/toolchain
         with:
-          go-version-file: go.mod
-      - uses: actions/setup-node@v4
+          browser: "true"
+      - run: make admin-e2e
+        env:
+          ADMIN_E2E_ONLY: ${{ matrix.only }}
+      - name: Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            packages/package-lock.json
-            admin/ui/package-lock.json
-      - name: Install npm dependencies and build the SDK packages
-        run: |
-          scripts/npm-ci.sh packages
-          scripts/npm-ci.sh admin/ui
-          cd packages && npm run build
-      - name: Cache Playwright browsers
-        id: playwright
-        uses: actions/cache@v4
+          name: admin-e2e-${{ matrix.only }}
+          path: .work/e2e
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Adapter conformance suite against every frontend, then the export, Next.js sample and WebAssembly hook scenarios.
+  e2e:
+    name: e2e (${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: starter-next-e2e, browser: "true" }
+          - { target: starter-sveltekit-e2e, browser: "true" }
+          - { target: starter-nuxt-e2e, browser: "true" }
+          - { target: starter-astro-e2e, browser: "true" }
+          - { target: site-e2e, browser: "true" }
+          - { target: site-proxy-e2e, browser: "true" }
+          - { target: site-export-e2e, browser: "false" }
+          - { target: next-e2e, browser: "false" }
+          - { target: wasm-e2e, browser: "false" }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/toolchain
         with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('admin/ui/package-lock.json') }}
-      - name: Install Chromium
-        run: |
-          cd admin/ui
-          if [ "${{ steps.playwright.outputs.cache-hit }}" = "true" ]; then npx playwright install-deps chromium; else npx playwright install --with-deps chromium; fi
-      - name: Adapter conformance (Next.js starter and site module)
-        run: make conformance
-      - name: Admin end to end
-        run: make admin-e2e
+          browser: ${{ matrix.browser }}
+      - name: Cache the pinned Javy binary
+        if: matrix.target == 'wasm-e2e'
+        uses: actions/cache@v6
+        with:
+          path: .work/tools
+          key: javy-${{ hashFiles('scripts/javy.sh') }}
+      - run: make ${{ matrix.target }}
+
+  # The documentation site, strict (broken links fail). Deploying is the docs workflow's job.
+  docs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DOCS_STRICT: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/toolchain
+        with:
+          node: "true"
+      - run: make docs

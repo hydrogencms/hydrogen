@@ -110,13 +110,29 @@ export async function caretIn(editor: Locator, where: 'start' | 'end') {
   }, where);
 }
 
-/** Adds a list item (a "block" of the e2e schema's sections field) and returns its heading input. */
+/**
+ * Adds a list item (a "block" of the e2e schema's sections field) and returns its heading input.
+ *
+ * A peer may add its own item at the same time, and on a slow machine its item can reach this page before a
+ * count check runs. So the new input is identified inside the page, in the same task as the click: the update is
+ * flushed in microtasks, and a message from the peer cannot be handled in between.
+ */
 export async function addSection(page: Page, heading: string) {
-  const headings = form(page).getByLabel('Heading');
-  const before = await headings.count();
-  await form(page).getByRole('button', { name: /Add item/ }).click();
-  await expect(headings).toHaveCount(before + 1);
-  const input = headings.nth(before);
+  const mark = `e2e-mine-${Math.random().toString(36).slice(2)}`;
+  const button = form(page).getByRole('button', { name: /Add item/ });
+  await expect(button).toBeEnabled();
+  const marked = await form(page).evaluate(async (formEl, m) => {
+    const inputs = () => [...formEl.querySelectorAll('input')].filter((i) => i.labels?.[0]?.textContent?.trim() === 'Heading');
+    const seen = new Set(inputs());
+    const add = [...formEl.querySelectorAll('button')].find((b) => /Add item/.test(b.getAttribute('aria-label') ?? b.textContent ?? ''));
+    add?.click();
+    for (let i = 0; i < 5; i++) await new Promise<void>((r) => queueMicrotask(r));
+    const fresh = inputs().filter((i) => !seen.has(i));
+    if (fresh.length === 1) fresh[0].setAttribute('data-e2e-mine', m);
+    return fresh.length;
+  }, mark);
+  expect(marked, 'exactly one new heading input right after the click').toBe(1);
+  const input = form(page).locator(`[data-e2e-mine="${mark}"]`);
   await input.fill(heading);
   return input;
 }

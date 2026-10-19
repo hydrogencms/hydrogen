@@ -1,0 +1,40 @@
+name: toolchain
+description: Go (modules cached across every go.mod), Node 22 (npm cache over every lockfile) and, on request, Playwright's Chromium.
+
+inputs:
+  node:
+    description: Install Node.
+    default: "true"
+  browser:
+    description: Install Playwright's Chromium (needs node).
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache-dependency-path: "**/go.sum"
+    - if: inputs.node == 'true'
+      uses: actions/setup-node@v7
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: |
+          packages/package-lock.json
+          admin/ui/package-lock.json
+          examples/content/admin/package-lock.json
+          website/package-lock.json
+    - if: inputs.browser == 'true'
+      id: playwright
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ hashFiles('admin/ui/package-lock.json') }}
+    - if: inputs.browser == 'true'
+      shell: bash
+      run: |
+        scripts/npm-ci.sh admin/ui
+        cd admin/ui
+        if [ "${{ steps.playwright.outputs.cache-hit }}" = "true" ]; then npx playwright install-deps chromium; else npx playwright install --with-deps chromium; fi
