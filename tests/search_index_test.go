@@ -43,6 +43,7 @@ type fakeIndex struct {
 	deletes     int
 	syncs       []search.Settings
 	rebuilds    int
+	begun       int // Rebuild calls, finished or not
 	rebuilt     []search.Settings
 	// onNext runs before each page of a rebuild is requested (page counts from 1).
 	onNext func(page int)
@@ -60,9 +61,7 @@ func (f *fakeIndex) Sync(_ context.Context, s search.Settings) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.syncs = append(f.syncs, s)
-	rebuild := f.fingerprint != s.Fingerprint
-	f.fingerprint = s.Fingerprint
-	return rebuild, nil
+	return f.fingerprint != s.Fingerprint, nil
 }
 
 func (f *fakeIndex) Upsert(_ context.Context, docs []search.Doc) error {
@@ -88,6 +87,9 @@ func (f *fakeIndex) Delete(_ context.Context, items []ids.UUID) error {
 }
 
 func (f *fakeIndex) Rebuild(ctx context.Context, s search.Settings, next func(context.Context) ([]search.Doc, error)) error {
+	f.mu.Lock()
+	f.begun++
+	f.mu.Unlock()
 	fresh := map[string]search.Doc{}
 	for page := 1; ; page++ {
 		if f.onNext != nil {
@@ -107,6 +109,7 @@ func (f *fakeIndex) Rebuild(ctx context.Context, s search.Settings, next func(co
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.docs = fresh
+	f.fingerprint = s.Fingerprint // last, as search.Index requires
 	f.rebuilds++
 	f.rebuilt = append(f.rebuilt, s)
 	return nil
@@ -323,29 +326,24 @@ func TestSearchIndexRebuildAtStart(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		run := func(a *kernel.App) {
+		// run serves a until done holds (or the wait times out), then stops it. Run waits for the start-up sync
+		// and rebuild, so the app must still be running while the test waits for them.
+		run := func(a *kernel.App, what string, done func() bool) {
 			t.Helper()
 			rctx, cancel := context.WithCancel(ctx)
-			done := make(chan error, 1)
+			stopped := make(chan error, 1)
 			listening := make(chan struct{})
-			go func() { done <- a.Run(rctx, func(string) { close(listening) }) }()
+			go func() { stopped <- a.Run(rctx, func(string) { close(listening) }) }()
 			<-listening
 			defer func() {
 				cancel()
-				if err := <-done; err != nil {
+				if err := <-stopped; err != nil {
 					t.Error(err)
 				}
 			}()
-			siWait(t, "the index sync", func() bool {
-				fx.mu.Lock()
-				defer fx.mu.Unlock()
-				return len(fx.syncs) > 0
-			})
-			time.Sleep(50 * time.Millisecond)
+			siWait(t, what, done)
 		}
-
-		run(a)
-		siWait(t, "the rebuild", func() bool { return fx.count() == 1 })
+		run(a, "the rebuild", func() bool { return fx.count() == 1 })
 		if len(fx.keys()) != len(published) {
 			t.Fatalf("indexed %d documents, want %d", len(fx.keys()), len(published))
 		}
@@ -356,16 +354,27 @@ func TestSearchIndexRebuildAtStart(t *testing.T) {
 
 		// The same settings do not rebuild again; changed ones do.
 		a2 := siApp(t, a.Services().DB, clk, fx)
-		run(a2)
-		if fx.count() != 1 {
-			t.Errorf("rebuilds = %d after a restart with the same settings", fx.count())
+		run(a2, "the index sync", func() bool {
+			fx.mu.Lock()
+			n := len(fx.syncs)
+			fx.mu.Unlock()
+			if n < 2 {
+				return false
+			}
+			time.Sleep(100 * time.Millisecond) // time for a wrong rebuild to begin
+			return true
+		})
+		fx.mu.Lock()
+		begun := fx.begun
+		fx.mu.Unlock()
+		if begun != 1 {
+			t.Errorf("rebuilds begun = %d after a restart with the same settings", begun)
 		}
 		fx.mu.Lock()
 		fx.fingerprint = "old"
 		fx.mu.Unlock()
 		a3 := siApp(t, a.Services().DB, clk, fx)
-		run(a3)
-		siWait(t, "the second rebuild", func() bool { return fx.count() == 2 })
+		run(a3, "the second rebuild", func() bool { return fx.count() == 2 })
 	})
 }
 
@@ -422,6 +431,49 @@ func TestSearchRebuildCatchesUpEdits(t *testing.T) {
 		fx.mu.Unlock()
 		if !ok || len(fx.keys()) != 3 {
 			t.Fatalf("index = %v, want the late item too", fx.keys())
+		}
+	})
+}
+
+func TestSearchCatchUpSkipsABusyItem(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, b backend) {
+		fx := newFakeIndex()
+		clk := newTickClock()
+		a := siApp(t, b.open(t, clk), clk, fx)
+		siSetup(t, a)
+		siPublished(t, a, 2)
+		var late []ids.UUID
+		var held store.Lock
+		fx.onNext = func(page int) {
+			if page != 2 {
+				return
+			}
+			late = siPublished(t, a, 3)
+			// The newest item comes first in the catch-up; something else is indexing it the whole time.
+			l, ok, err := a.Services().DB.Locker().TryLock(ctx, "search:item:"+late[2].String())
+			if err != nil || !ok {
+				t.Fatalf("lock: %v, %v", ok, err)
+			}
+			held = l
+		}
+		cmd, _ := a.Command(kernel.SearchReindexCommand)
+		err := cmd.Run(ctx, a, nil)
+		if held != nil {
+			_ = held.Release(ctx)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(late) != 3 {
+			t.Fatal("no items were published during the rebuild")
+		}
+		fx.mu.Lock()
+		_, busy := fx.docs[late[2].String()+"/en"]
+		_, a0 := fx.docs[late[0].String()+"/en"]
+		_, a1 := fx.docs[late[1].String()+"/en"]
+		fx.mu.Unlock()
+		if busy || !a0 || !a1 || len(fx.keys()) != 4 {
+			t.Fatalf("index = %v, want the late items except the busy one", fx.keys())
 		}
 	})
 }

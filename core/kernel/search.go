@@ -25,6 +25,9 @@ const (
 	searchRebuildLock = "search:rebuild"
 	searchPage        = 100
 	searchRetry       = 30 * time.Second
+	// A busy item in the catch-up is tried this many times, waiting searchBusyWait, then twice as long, ….
+	searchBusyAttempts = 5
+	searchBusyWait     = 20 * time.Millisecond
 )
 
 // SearchEngine registers the engine that answers searches (Services.Search). At most one module may register
@@ -212,13 +215,36 @@ func (s *Services) catchUpSearch(ctx context.Context, idx search.Index, set sear
 			if it.UpdatedAt.Before(since) {
 				return nil
 			}
-			if err := reindexItem(ctx, idx, s.DB, s.Schema, it.ID); err != nil {
+			if err := s.catchUpItem(ctx, idx, it.ID); err != nil {
 				return err
 			}
 		}
 		if len(res.Items) < searchPage {
 			return nil
 		}
+	}
+}
+
+// catchUpItem re-indexes one item of the catch-up. A busy item is normally being indexed by the search.index
+// consumer, whose write is then current and lands in the new index, so after a few tries it is skipped rather
+// than failing the rest of the catch-up.
+func (s *Services) catchUpItem(ctx context.Context, idx search.Index, id ids.UUID) error {
+	wait := searchBusyWait
+	for attempt := 1; ; attempt++ {
+		err := reindexItem(ctx, idx, s.DB, s.Schema, id)
+		if !errors.Is(err, errSearchItemBusy) {
+			return err
+		}
+		if attempt == searchBusyAttempts {
+			s.Log.Warn("search: catch-up skipped an item that stayed busy (its indexer writes it)", "item", id)
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+		wait *= 2
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -741,6 +742,63 @@ func TestDeleteDuringRebuildSurvivesTheSwap(t *testing.T) {
 			time.Sleep(50 * time.Millisecond)
 			return fixture()[4:], nil
 		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-deleted; err != nil {
+		t.Fatal(err)
+	}
+	want(t, "purged item absent", items(search1(t, ix, search.Request{Types: []string{"article"}, Locale: "en"})), "01/en", "02/en", "05/en")
+}
+
+// roundTrip lets a test act on requests as the client sends them.
+type roundTrip func(*http.Request) (*http.Response, error)
+
+func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestDeleteStraddlingTheSwapSurvivesIt(t *testing.T) {
+	_, srv := newFake(t, "")
+	liveDeleted, swapped := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	wait := func(c chan struct{}) {
+		select {
+		case <-c:
+		case <-time.After(time.Second):
+		}
+	}
+	// The purge's delete on the live index lands just before the swap and the rest of the purge just after it.
+	hc := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/swap-indexes" {
+			wait(liveDeleted)
+			resp, err := http.DefaultTransport.RoundTrip(r)
+			close(swapped)
+			return resp, err
+		}
+		resp, err := http.DefaultTransport.RoundTrip(r)
+		if r.URL.Path == "/indexes/site/documents/delete" {
+			once.Do(func() { close(liveDeleted) })
+			wait(swapped)
+		}
+		return resp, err
+	})}
+	cfg := defaults()
+	cfg.URL, cfg.Index, cfg.Timeout = srv.URL, "site", 5*time.Second
+	ix := New(cfg, hc)
+	s := testSettings("fp")
+	if _, err := ix.Sync(bg, s); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	deleted := make(chan error, 1)
+	err := ix.Rebuild(bg, s, func(ctx context.Context) ([]search.Doc, error) {
+		calls++
+		if calls == 1 {
+			return fixture(), nil
+		}
+		// The purge arrives after the last batch; it runs once the batch lock is released.
+		go func() { deleted <- ix.Delete(bg, []ids.UUID{uid(3)}) }()
 		return nil, nil
 	})
 	if err != nil {

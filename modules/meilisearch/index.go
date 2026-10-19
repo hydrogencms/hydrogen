@@ -183,7 +183,8 @@ func (ix *Index) add(ctx context.Context, uid string, docs []search.Doc) error {
 
 // Delete removes every locale of the items with one delete-by-filter task per batch (`item IN [...]`;
 // needs Meilisearch 1.2 or later). While a Rebuild is filling <index>_next the items are removed from it too,
-// so a purged item cannot come back with the swap.
+// so a purged item cannot come back with the swap. <index>_next goes first: a swap between the two deletes then
+// makes the second one hit the new live index, where the other order would leave the item in it.
 func (ix *Index) Delete(ctx context.Context, items []ids.UUID) error {
 	ix.wmu.Lock()
 	defer ix.wmu.Unlock()
@@ -193,7 +194,7 @@ func (ix *Index) Delete(ctx context.Context, items []ids.UUID) error {
 			lits[i] = quote(id.String())
 		}
 		body := map[string]string{"filter": attrItem + " IN [" + strings.Join(lits, ", ") + "]"}
-		for _, uid := range []string{ix.cfg.Index, ix.nextUID()} {
+		for _, uid := range []string{ix.nextUID(), ix.cfg.Index} {
 			err := ix.c.run(ctx, http.MethodPost, idxPath(uid)+"/documents/delete", body)
 			if err != nil && !isCode(err, "index_not_found") {
 				return err

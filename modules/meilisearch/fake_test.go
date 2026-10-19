@@ -513,8 +513,17 @@ type (
 		attr string
 		op   string // = != < <= > >= IN EXISTS
 		vals []any
+		strs []string // vals printed once: a delete filter can list hundreds of ids
 	}
 )
+
+func cond(attr, op string, vals []any) fCond {
+	c := fCond{attr: attr, op: op, vals: vals, strs: make([]string, len(vals))}
+	for i, v := range vals {
+		c.strs[i] = fmt.Sprint(v)
+	}
+	return c
+}
 
 func (e fAnd) eval(d map[string]any) bool { return e.a.eval(d) && e.b.eval(d) }
 func (e fOr) eval(d map[string]any) bool  { return e.a.eval(d) || e.b.eval(d) }
@@ -532,7 +541,8 @@ func (c fCond) eval(d map[string]any) bool {
 		elems = []any{v}
 	}
 	for _, e := range elems {
-		for _, want := range c.vals {
+		es := fmt.Sprint(e)
+		for i, want := range c.vals {
 			cmp, comparable := 0, true
 			switch x := e.(type) {
 			case float64:
@@ -542,7 +552,7 @@ func (c fCond) eval(d map[string]any) bool {
 					cmp = compareAny(x, y)
 				}
 			default:
-				cmp = strings.Compare(fmt.Sprint(e), fmt.Sprint(want))
+				cmp = strings.Compare(es, c.strs[i])
 			}
 			if !comparable {
 				continue
@@ -798,14 +808,14 @@ func (p *fparser) primary() (fexpr, error) {
 			}
 		}
 		p.pos++
-		return fCond{attr: attr, op: "IN", vals: vals}, nil
+		return cond(attr, "IN", vals), nil
 	case o.kind == "punct" && slices.Contains([]string{"=", "!=", "<", "<=", ">", ">="}, o.text):
 		p.pos++
 		v, err := p.value()
 		if err != nil {
 			return nil, err
 		}
-		return fCond{attr: attr, op: o.text, vals: []any{v}}, nil
+		return cond(attr, o.text, []any{v}), nil
 	}
 	return nil, fmt.Errorf("expected an operator after %q in filter", attr)
 }
