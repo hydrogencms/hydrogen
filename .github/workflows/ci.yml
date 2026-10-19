@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, release]
   pull_request:
 
 permissions:
@@ -141,3 +141,11 @@ jobs:
           path: .work/tools
           key: javy-${{ hashFiles('scripts/javy.sh') }}
       - run: make ${{ matrix.target }}
+
+  # The single check the release branch ruleset requires: green only when every job above succeeded.
+  ci-ok:
+    if: always()
+    needs: [static, test, assets, admin-e2e, e2e]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: test "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = false

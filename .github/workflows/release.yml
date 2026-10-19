@@ -15,6 +15,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check the tag is on the release branch
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/release || { echo "$GITHUB_REF_NAME is not on release" >&2; exit 1; }
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod

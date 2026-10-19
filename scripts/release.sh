@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Prepare a release: verify versions, run the gates, and (with --tag) create the annotated tags locally.
 # Never pushes, never publishes: the push and npm publish commands are printed for you to run.
+# Releases live on the `release` branch. Cut one from main (--tag fast-forwards release to it) or, for a hotfix,
+# from release itself (merge release back into main afterwards).
 #
 #   scripts/release.sh v0.1.0                 dry run: checks everything, prints the tags and commands
 #   scripts/release.sh v0.1.0 --tag           also creates the tags locally
@@ -52,7 +54,18 @@ if [ "$tag" = 1 ] && [ "$allow_dirty" = 1 ]; then
 fi
 
 branch=$(git rev-parse --abbrev-ref HEAD)
-[ "$branch" = main ] || bad "on branch $branch, releases are cut from main"
+case "$branch" in
+main)
+	if git rev-parse -q --verify refs/heads/release >/dev/null; then
+		git merge-base --is-ancestor release HEAD || bad "release has commits main lacks: merge release into main first"
+	else
+		git rev-parse -q --verify refs/remotes/origin/release >/dev/null || bad "no release branch (git fetch origin release)"
+		git merge-base --is-ancestor origin/release HEAD || bad "origin/release has commits main lacks: merge it into main first"
+	fi
+	;;
+release) ;;
+*) bad "on branch $branch, releases are cut from main (or from release for a hotfix)" ;;
+esac
 if [ -n "$(git status --porcelain)" ]; then
 	if [ "$allow_dirty" = 1 ]; then
 		echo "release: warning: dirty tree (--allow-dirty, dry run)" >&2
@@ -140,14 +153,24 @@ if [ "$tag" = 1 ]; then
 		git tag -a "$t" -m "Hydrogen $t"
 		echo "tagged $t"
 	done
+	if [ "$branch" = main ]; then
+		git branch -f release HEAD
+		echo "release fast-forwarded to $(git rev-parse --short HEAD)"
+	fi
 else
 	echo "Dry run: tags that --tag would create at $(git rev-parse --short HEAD):"
 	printf '  %s\n' "${tags[@]}"
 fi
 
 echo
-echo "Push (not run; the root tag triggers the GitHub release workflow):"
-echo "  git push origin main ${tags[*]}"
+echo "Push (not run; the root tag triggers the GitHub release workflow, which requires the tag on release; GitHub"
+echo "accepts the release branch only once CI passed on the commit, so push main and wait for CI first):"
+if [ "$branch" = main ]; then
+	echo "  git push --atomic origin main release ${tags[*]}"
+else
+	echo "  git push --atomic origin release ${tags[*]}"
+	echo "then bring the hotfix to main: git switch main && git merge release"
+fi
 echo
 echo "Publish to npm (not run): the release workflow does it with provenance when the repository variable"
 echo "NPM_PUBLISH is true; by hand, after 'npm login' and a build (cd packages && npm ci && npm run build):"

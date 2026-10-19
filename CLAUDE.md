@@ -171,7 +171,9 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   was removed in d3e25bf). Releases:
   `scripts/release.sh <version>` (checks, never bumps, every go.mod/package.json version, `ReleaseVersion` in
   internal/scaffold and the CHANGELOG section, runs the gates, `--tag` creates the module tags locally, prints the
-  push command). npm packages publish through `scripts/npm-publish.sh` (order in `scripts/npm-packages.sh`; skips
+  push command). Releases are cut on `main`: `--tag` fast-forwards `release` and the release workflow rejects
+  tags not on `release`; a GitHub ruleset keeps `release` fast-forward only and requires CI's `ci-ok` check. Hotfixes:
+  PR into `release`, run the script there, then merge `release` into `main`. npm packages publish through `scripts/npm-publish.sh` (order in `scripts/npm-packages.sh`; skips
   published versions); the release workflow runs it with `--provenance` when the repository variable `NPM_PUBLISH`
   is `true` (provenance needs a public repo and `repository.directory` in each package.json). Pushing tags and
   publishing are the user's call. Contract:
@@ -333,5 +335,6 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - Schema lives in project files; never hand-edit generated code.
 - No raw CSS or HTML in content; style through design tokens.
 - Comments: minimal; only where the implementation is non-obvious.
-- Branch `main`. Commit by default once the full gate passes (`make tidy vet lint test smoke`): each milestone,
+- Branch `main` for all work; `release` holds only released commits and moves only through
+  `scripts/release.sh --tag` (or a hotfix PR into it), never by direct commits. Commit by default once the full gate passes (`make tidy vet lint test smoke`): each milestone,
   and checkpoints within one. Push only when asked. Commits: no "Generated with Claude Code" footer.
