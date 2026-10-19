@@ -141,16 +141,3 @@ jobs:
           path: .work/tools
           key: javy-${{ hashFiles('scripts/javy.sh') }}
       - run: make ${{ matrix.target }}
-
-  # The documentation site, strict (broken links fail). Deploying is the docs workflow's job.
-  docs:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    env:
-      DOCS_STRICT: "1"
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/toolchain
-        with:
-          node: "true"
-      - run: make docs

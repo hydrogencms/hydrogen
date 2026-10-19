@@ -118,8 +118,3 @@ example-admin-check: example-admin
 	@test -z "$$(git status --porcelain -- examples/content/admin/dist)" || (git status --short -- examples/content/admin/dist; echo "examples/content/admin/dist is stale: run make example-admin and commit it"; exit 1)
 
 check: tidy-check vet lint test smoke admin admin-dist-check example-admin-check site-bridge-check
-
-# Docs site (Astro Starlight) built from docs/*.md into website/dist; DOCS_BASE/DOCS_SITE set the URL
-docs:
-	scripts/npm-ci.sh website
-	cd website && npm run build
