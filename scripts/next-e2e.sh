@@ -256,7 +256,8 @@ expect_body '<h1>About</h1>' "still cached while the webhook is held"
 expect_no_body 'Our Story' "page served from cache before the webhook"
 released=$(curl -fsS "$relay/release")
 [ "$(echo "$released" | jq '[.statuses[] | select(. != 200)] | length')" = 0 ] || fail "revalidate route answered $released"; ok
-get www.acme.com /en/about
+# Next can answer one request from the render that was in flight when the tag expired; allow a few seconds.
+for _ in $(seq 30); do get www.acme.com /en/about; grep -q '<title>Our Story</title>' "$body" && break; sleep 0.1; done
 expect_body '<title>Our Story</title>' "title after the webhook"
 expect_body '<h1>Our Story</h1>' "h1 after the webhook"
 expect_body '>Our Story</a>' "navigation after the webhook"
