@@ -6,6 +6,10 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- The documentation site build (`website/`). The guides stay as Markdown under `docs/`.
+
 ## [0.1.0] - 2026-10-19
 
 First release. Every Go module (`github.com/hydrogencms/hydrogen` and the modules under `modules/` that have their

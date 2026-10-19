@@ -1,7 +1,7 @@
 # Go modules in this repository (core first). Every target runs over all of them.
 MODULES := . modules/sqlite modules/postgres modules/wasmhooks modules/graphql tests examples/minimal examples/content examples/headless examples/multisite examples/starter examples/fullstack
 
-.PHONY: docs starter-fixture build test vet lint tidy tidy-check db-up db-down smoke check sdk next-e2e starter-next-e2e starter-sveltekit-e2e starter-nuxt-e2e starter-astro-e2e conformance site-e2e wasm-e2e site-bridge site-bridge-check admin admin-types admin-dist-check admin-e2e example-admin example-admin-check site-proxy-e2e site-export-e2e
+.PHONY: starter-fixture build test vet lint tidy tidy-check db-up db-down smoke check sdk next-e2e starter-next-e2e starter-sveltekit-e2e starter-nuxt-e2e starter-astro-e2e conformance site-e2e wasm-e2e site-bridge site-bridge-check admin admin-types admin-dist-check admin-e2e example-admin example-admin-check site-proxy-e2e site-export-e2e
 
 build:
 	@for m in $(MODULES); do (cd $$m && go build ./...) || exit 1; done
