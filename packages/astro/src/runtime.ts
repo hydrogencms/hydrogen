@@ -1,10 +1,10 @@
 import { createClient, HydrogenError } from '@hydrogencms/client'
 import type { ChannelInfo, Client, Item, TreeNode } from '@hydrogencms/client'
-import { createRouter, matchSite } from '@hydrogencms/router'
+import { createRouter, matchSite, reservedMatch } from '@hydrogencms/router'
 import type { Metadata, Resolved, Router } from '@hydrogencms/router'
 import {
   MIN_SECRET_LENGTH, PREVIEW_COOKIE, SIGNATURE_HEADER, createTagCache, matchPreviewPath, matcherHeaders, originOf, parsePreviewRequest,
-  previewCookieOptions, previewHash, publicUrl, readCapped, tokenFromCookie, validToken, verifySignature, webhookTags,
+  previewCookieOptions, previewHash, readCapped, tokenFromCookie, validToken, verifySignature, webhookTags,
 } from '@hydrogencms/client/server'
 
 export type { ChannelInfo, Client, Item, TreeNode, Metadata }
@@ -75,6 +75,8 @@ export interface HydrogenLocals {
   client(channel?: string): Client<any>
   /** the navigation of the request's channel (the first configured channel when none matched) */
   nav(o?: { depth?: number; site?: string; locale?: string }): Promise<TreeNode[]>
+  /** a CMS URL (absolute, from `item.url`, `links`, tree nodes) as a path of this site with the Astro `base`; other origins stay as they are */
+  href(url: string): string
   /** the URL that leaves preview (clears the cookie) and returns to `path`: for a token the CMS refuses */
   exitUrl(path: string): string
 }
@@ -83,7 +85,7 @@ interface Cookies {
   get(name: string): { value: string } | undefined
   set(name: string, value: string, o?: Record<string, unknown>): void
 }
-export interface MiddlewareContext { request: Request; cookies: Cookies; locals: Record<string, any> }
+export interface MiddlewareContext { request: Request; cookies: Cookies; locals: Record<string, any>; isPrerendered?: boolean; site?: URL }
 export type MiddlewareNext = (rewrite?: string) => Promise<Response>
 export interface RouteContext { request: Request; cookies: Cookies }
 
@@ -93,6 +95,23 @@ const defaultSkip = (p: string) => p.startsWith('/_') || p.startsWith('/@') || p
 const json = (body: unknown, status = 200) => Response.json(body, { status })
 const redirect = (location: string, status: number, draft = false) =>
   new Response(null, { status, headers: { location, ...(draft ? { 'cache-control': 'private, no-store' } : {}) } })
+
+const STATIC_PAGE = 500
+const STATIC_CONCURRENCY = 4
+
+async function pool<T>(items: T[], size: number, fn: (x: T) => Promise<void>): Promise<void> {
+  let i = 0
+  await Promise.all(Array.from({ length: Math.min(size, items.length) }, async () => {
+    while (i < items.length) await fn(items[i++]!)
+  }))
+}
+
+/** The site path (decoded, no slashes at the ends) of a URL that belongs to this channel and is not reserved. */
+function pathOf(url: string, info: ChannelInfo, all: ChannelInfo[]): string | undefined {
+  const m = matchSite(url, all)
+  if (!m || m.bad || m.channel.name !== info.name || reservedMatch(info.options.reserved ?? [], m.path)) return undefined
+  return decodeURIComponent(new URL(url).pathname).replace(/^\/+|\/+$/g, '')
+}
 
 export function createHydrogen(o: HydrogenOptions) {
   const names = o.channels ?? (o.channel ? [o.channel] : [])
@@ -126,12 +145,32 @@ export function createHydrogen(o: HydrogenOptions) {
   }
 
   let infos: { at: number; p: Promise<ChannelInfo[]> } | undefined
+  // the channels' match hosts, which href() treats as this site's own
+  const hosts = new Set<string>()
   function channelInfos(): Promise<ChannelInfo[]> {
     if (infos && performance.now() - infos.at < TTL) return infos.p
     const p = Promise.all(names.map(async (n) => (await clientOf(n).channel(n)).data))
+    p.then((all) => all.forEach((c) => c.options.match?.host && hosts.add(c.options.match.host)), () => {})
     p.catch(() => (infos = undefined))
     infos = { at: performance.now(), p }
     return p
+  }
+
+  // Astro's `base` (no trailing slash) and `site`, set by the integration's middleware entry
+  let base = ''
+  let site: URL | undefined
+  const ownOrigin = () => (o.origin ? o.origin.replace(/\/+$/, '') : site?.origin)
+  const withBase = (path: string) => (base && (path === '/' ? base + '/' : base + path)) || path
+
+  function href(url: string): string {
+    if (url.startsWith('/') && !url.startsWith('//')) return withBase(url)
+    let u: URL
+    try {
+      u = new URL(url)
+    } catch {
+      return url
+    }
+    return u.origin === ownOrigin() || hosts.has(u.hostname) ? withBase(u.pathname) + u.search + u.hash : url
   }
 
   const exitUrl = (path: string) => `${previewRoute}?exit=1&path=${encodeURIComponent(path)}`
@@ -143,19 +182,22 @@ export function createHydrogen(o: HydrogenOptions) {
    */
   async function middleware(ctx: MiddlewareContext, next: MiddlewareNext): Promise<Response> {
     const u = new URL(ctx.request.url)
-    const pathname = u.pathname
+    // a prerendering build has no visitor: no cookies (so no preview), and the request carries Astro's base
+    const pre = ctx.isPrerendered === true
+    // (Astro asks for directory pages with a trailing slash, which the CMS would redirect away)
+    const pathname = pre ? (base && (u.pathname === base || u.pathname.startsWith(base + '/')) ? u.pathname.slice(base.length) : u.pathname).replace(/\/+$/, '') || '/' : u.pathname
     // a rewrite (the 404 page) enters the middleware again: the first pass has decided
     if (skip(pathname) || ctx.locals.hydrogen) return next()
 
     // The CMS's preview URLs are the normal URL plus ?preview=<token>: the preview route validates it and sets the cookie.
     const pv = u.searchParams.get('preview')
-    if (pv !== null && (ctx.request.method === 'GET' || ctx.request.method === 'HEAD') && pathname !== previewRoute) {
+    if (!pre && pv !== null && (ctx.request.method === 'GET' || ctx.request.method === 'HEAD') && pathname !== previewRoute) {
       u.searchParams.delete('preview')
       const rest = u.searchParams.toString()
       return redirect(`${previewRoute}?${new URLSearchParams({ token: validToken(pv) ? pv : '', path: pathname + (rest ? '?' + rest : '') })}`, 307, true)
     }
 
-    const token = tokenFromCookie(ctx.cookies.get(PREVIEW_COOKIE)?.value)
+    const token = pre ? undefined : tokenFromCookie(ctx.cookies.get(PREVIEW_COOKIE)?.value)
     const here = pathname + u.search
     const h: HydrogenLocals = {
       draft: !!token,
@@ -164,11 +206,15 @@ export function createHydrogen(o: HydrogenOptions) {
       adminOrigin,
       client: (channel) => clientOf(channel ?? h.channel ?? names[0], token),
       nav: async (a = {}) => (await h.client(h.channel ?? names[0]).tree(a)).data,
+      href,
       exitUrl,
     }
     ctx.locals.hydrogen = h
+    const notFoundPath = o.notFoundPath ?? '/404'
+    // the 404 page is built as a page of its own: it is not a CMS URL
+    if (pre && pathname === notFoundPath) return next()
     const notFound = async () => {
-      const r = await next(o.notFoundPath ?? '/404')
+      const r = await next(notFoundPath)
       return new Response(r.body, { status: 404, headers: r.headers })
     }
     const done = async (r: Response) => {
@@ -203,7 +249,10 @@ export function createHydrogen(o: HydrogenOptions) {
       }
     }
 
-    const url = publicUrl(ctx.request.headers, pathname, o.origin, o.trustForwarded)
+    // a build has no visitor headers either (Astro warns on access)
+    const headers = pre ? undefined : ctx.request.headers
+    const origin = pre ? (ownOrigin() ?? ctx.site?.origin ?? u.origin) : originOf(ctx.request.headers, o.origin, o.trustForwarded)
+    const url = origin + (pathname || '/')
     let all: ChannelInfo[]
     try {
       all = await channelInfos()
@@ -211,21 +260,21 @@ export function createHydrogen(o: HydrogenOptions) {
       h.unavailable = true
       return next()
     }
-    h.channel = o.channels ? matchSite(url, all, ctx.request.headers)?.channel.name : o.channel
+    h.channel = o.channels ? matchSite(url, all, headers)?.channel.name : o.channel
     if (!h.channel) return done(await notFound())
     let r: Resolved
     try {
-      r = await routerOf(h.channel).resolve(url, { headers: matcherHeaders(all, ctx.request.headers), preview: token })
+      r = await routerOf(h.channel).resolve(url, { headers: headers && matcherHeaders(all, headers), preview: token })
     } catch (e) {
       return failed(e)
     }
     switch (r.kind) {
       case 'redirect': {
         // relative to the public origin, never the internal host the server sees
-        const base = originOf(ctx.request.headers, o.origin, o.trustForwarded)
-        const to = new URL(r.location, base + here)
+        // (a prerendered one becomes a meta-refresh page at the requested path; the base is part of its target)
+        const to = new URL(r.location, origin + here)
         if (!to.search) to.search = u.search
-        return redirect(to.origin === base ? to.pathname + to.search + to.hash : to.href, r.status, h.draft)
+        return redirect(to.origin === origin ? (pre ? withBase(to.pathname) : to.pathname) + to.search + to.hash : to.href, r.status, h.draft)
       }
       case 'notFound':
         return done(await notFound())
@@ -240,6 +289,44 @@ export function createHydrogen(o: HydrogenOptions) {
   return {
     /** the Astro middleware (`onRequest`) */
     middleware,
+
+    /** @internal Astro's `base` and `site`, handed over by the integration's middleware entry */
+    configure(a: { base?: string; site?: string }) {
+      base = (a.base ?? '').replace(/\/+$/, '')
+      site = a.site ? new URL(a.site) : undefined
+    },
+
+    href,
+
+    /**
+     * The `getStaticPaths` entries of a static build: every URL the CMS routes for the configured channels (the
+     * collections each allows, in each of its languages), as `{ params: { path } }` without base and leading slash
+     * (`undefined` for the root). Reserved paths and URLs of other channels are left out.
+     */
+    async staticPaths(a: { param?: string } = {}): Promise<{ params: Record<string, string | undefined> }[]> {
+      const all = await channelInfos()
+      const jobs = all.flatMap((info) => info.languages.flatMap((locale) => info.collections.map((type) => ({ info, locale, type }))))
+      const found = new Set<string>()
+      await pool(jobs, STATIC_CONCURRENCY, async ({ info, locale, type }) => {
+        const c = clientOf(info.name)
+        for (let offset = 0; ; offset += STATIC_PAGE) {
+          let l
+          try {
+            l = (await c.list(type, { locale, limit: STATIC_PAGE, offset })).data
+          } catch (e) {
+            // a singleton is not a collection
+            if (e instanceof HydrogenError && (e.status === 400 || e.status === 404)) return
+            throw new Error(`hydrogen: cannot list ${type} (${locale}) of channel ${info.name}: ${e instanceof Error ? e.message : e}`)
+          }
+          for (const it of l.items) {
+            const p = it.url ? pathOf(it.url, info, all) : undefined
+            if (p !== undefined) found.add(p)
+          }
+          if (!l.hasMore) return
+        }
+      })
+      return [...found].sort().map((p) => ({ params: { [a.param ?? 'path']: p || undefined } }))
+    },
 
     /** `GET` of the preview route: `?token=…&path=/…` keeps the token in an httpOnly cookie and redirects; `?exit=1` leaves */
     previewRoute(ctx: RouteContext): Response {

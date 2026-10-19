@@ -1,6 +1,6 @@
 # @hydrogencms/astro
 
-Astro adapter for Hydrogen (Astro 6 and 7, SSR with an adapter such as `@astrojs/node`). The CMS decides which page
+Astro adapter for Hydrogen (Astro 6 and 7, SSR with an adapter such as `@astrojs/node`, or a fully static build). The CMS decides which page
 lives at which URL; the site has one catch-all page, a template component per content type, block components and a
 config module. See `packages/starters/astro` for a complete site.
 
@@ -46,9 +46,54 @@ if (!T) return new Response('Not found', { status: h.unavailable ? 503 : 404 })
 <Layout><T item={p.item} locale={p.locale} metadata={p.metadata} preview={h.draft} /></Layout>
 ```
 
-`Astro.locals.hydrogen`: `page`, `channel` (matched by host and prefix), `draft`, `client(channel?)` (a client of the
+`Astro.locals.hydrogen`: `page`, `href(url)` (a CMS URL as a path of this site, with Astro's `base`), `channel` (matched by host and prefix), `draft`, `client(channel?)` (a client of the
 CMS: cached and tagged normally, uncached with the preview token in preview), `nav()`, `exitUrl(path)`, `unavailable`.
 Add `src/pages/404.astro` (the middleware rewrites unknown URLs to it with status 404).
+
+## Static sites
+
+With `output: 'static'` and no Astro adapter the integration installs the middleware only: preview, the revalidation
+webhook and the bridge need a server, so they are not available (rebuild when content changes). While Astro
+prerenders, the middleware never reads cookies, strips Astro's `base` from the path, and asks the CMS about
+`origin` (the option) or else Astro's `site` or else the request's origin: set one of them to the origin the
+channels' `frontend` uses (a channel that matches by host needs it). Set the channel's `frontend` to the deployed
+URL including the base, or canonical and hreflang URLs will miss it.
+
+```js
+// astro.config.mjs
+export default defineConfig({ output: 'static', site: 'https://acme.github.io', base: '/docs', integrations: [hydrogen()] })
+```
+
+```astro
+---
+// src/pages/[...path].astro: one page for every URL the CMS routes
+import hydrogen from '../hydrogen'
+export function getStaticPaths() {
+  return hydrogen.staticPaths()
+}
+const p = Astro.locals.hydrogen.page!
+---
+```
+
+`hydrogen.staticPaths({ param = 'path' })` returns `{ params: { path } }` for every URL the configured channels route:
+it lists each collection a channel allows in each of its languages (500 items per request, four lists at a time),
+keeps the item `url`s that belong to that channel and are not reserved, removes duplicates and sorts them. `path`
+has no base and no leading slash (`undefined` for the root, as Astro's rest parameters expect). A collection that
+cannot be listed (a singleton) is skipped; any other failure fails the build. Use `export function getStaticPaths`,
+not `export const …`: Astro keeps a whole frontmatter at module level for the latter and `Astro.locals` is unavailable
+there.
+
+Unknown paths are rewritten to your `404` page, which is built once as `404.html` and not resolved itself. Reserved
+paths (`reserved` in the channel, relative to its prefix) pass through: the middleware answers 404 for every other
+path it does not know, so list the pages your frontend owns (`/blog/*`) as reserved and give them their own
+routes. A CMS redirect becomes Astro's meta-refresh page at the requested path, pointing to the target with the
+base. Directory pages are resolved without their trailing slash. Header matchers cannot work in a build (there are no
+request headers).
+
+Links: wrap CMS URLs (`item.links`, `item.url`, tree nodes) in `Astro.locals.hydrogen.href(url)` (also
+`hydrogen.href`, after the middleware ran): own-origin and absolute-path URLs get the base, other origins stay.
+Pass `resolveLink` to `RichText` to do the same for rich text links. A static build asks the CMS once per list page
+and once per page rendered (the answers of `client()` calls in layouts are cached for `ttl`).
 
 ## Components
 

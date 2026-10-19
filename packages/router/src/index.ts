@@ -113,7 +113,8 @@ export function matchChannel(url: string, channels: ChannelInfo[], headers?: Hea
   return matchSite(url, channels, headers)?.channel
 }
 
-const reservedMatch = (patterns: string[], path: string) => {
+/** Whether a site path is one of the reserved patterns (exact, or `/x/*`). */
+export const reservedMatch = (patterns: string[], path: string) => {
   const p = trimSlash(path)
   return patterns.some((r) => {
     const wild = r.endsWith('/*')
