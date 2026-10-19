@@ -25,7 +25,6 @@ runs:
           packages/package-lock.json
           admin/ui/package-lock.json
           examples/content/admin/package-lock.json
-          website/package-lock.json
     - if: inputs.browser == 'true'
       id: playwright
       uses: actions/cache@v6

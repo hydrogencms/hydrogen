@@ -167,8 +167,8 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   export, incremental via the outbox, redirect formats, dir/s3/command publishers; `make site-export-e2e`);
   `modules/siteproxy` (static or supervised SSR frontend behind the binary; `make site-proxy-e2e`). Docs:
   `docs/site.md`, `docs/site-export.md`, `docs/site-proxy.md`. Contract: `planning/design/fullstack-h10f.md`.
-- Docs and releases (H10g): `docs/` holds the public docs as Markdown (index in `docs/README.md`; the docs site
-  was removed in d3e25bf). Releases:
+- Docs and releases (H10g): `docs/` holds the public docs as Markdown (index in `docs/README.md`). The website
+  (hydrogencms/website, GitHub Pages) publishes them from the `release` branch; new pages go into its `sidebar.mjs`. Releases:
   `scripts/release.sh <version>` (checks, never bumps, every go.mod/package.json version, `ReleaseVersion` in
   internal/scaffold and the CHANGELOG section, runs the gates, `--tag` creates the module tags locally, prints the
   push command). Releases are cut on `main`: `--tag` fast-forwards `release` and the release workflow rejects
