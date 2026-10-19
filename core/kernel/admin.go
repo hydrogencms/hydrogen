@@ -42,7 +42,7 @@ func checkSchemaRefs(s *schema.Schema, widgets, cells map[string]string) error {
 	walk = func(typ string, f *schema.Field) {
 		if w := f.Admin.Widget; w != "" {
 			if _, ok := widgets[w]; !ok {
-				errs = append(errs, fmt.Errorf("type %q: field %q: admin.widget %q is not declared in admin.widgets", typ, f.Name, w))
+				errs = append(errs, fmt.Errorf("%s: field %q: admin.widget %q is not declared in admin.widgets", typ, f.Name, w))
 			}
 		}
 		if f.Of != nil {
@@ -52,9 +52,14 @@ func checkSchemaRefs(s *schema.Schema, widgets, cells map[string]string) error {
 			walk(typ, m)
 		}
 	}
+	for _, b := range s.Blocks() {
+		for _, f := range b.Props {
+			walk(fmt.Sprintf("block %q", b.Name), f)
+		}
+	}
 	for _, t := range s.Types() {
 		for _, f := range t.Fields {
-			walk(t.Name, f)
+			walk(fmt.Sprintf("type %q", t.Name), f)
 		}
 		for _, l := range t.Admin.List {
 			if field, cell, ok := strings.Cut(l, ":"); ok {
@@ -81,6 +86,7 @@ func composeAdmin(c *AdminConfig, reg *Registry, s *schema.Schema, env string) (
 	check := func(m *admin.Manifest, o admin.CheckOptions) error {
 		o.Policy = func(n string) bool { _, ok := cat.Policy(n); return ok }
 		o.Type = func(n string) bool { _, ok := s.Type(n); return ok }
+		o.Block = func(n string) bool { _, ok := s.Block(n); return ok }
 		return m.Check(o)
 	}
 	var errs []error

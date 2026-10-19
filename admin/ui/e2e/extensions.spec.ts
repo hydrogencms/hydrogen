@@ -1,4 +1,7 @@
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { add, card, expand } from './blocks-helpers';
+import { randomPNG } from './media-helpers';
 import { adminLogin, adminPassword, draftOf, manage, signIn, tag, watchErrors } from './helpers';
 
 // Runs against examples/content (E2E_PROJECT=content in scripts/admin-e2e.sh): every extension kind of its admin/.
@@ -19,6 +22,8 @@ test.describe.serial('admin extensions (examples/content)', () => {
     });
     await manage('POST', `/items/${a.id}/publish`, {});
     article = a.id;
+    // the list action test selects two articles
+    await manage('POST', '/collections/article/items', { locale: 'en', fields: { title: `Extensions second ${t}`, summary: 'Another.' } });
     const p = await manage('POST', '/collections/person/items', { locale: 'en', fields: { firstName: 'Ext', lastName: t } });
     other = p.id;
   });
@@ -122,6 +127,94 @@ test.describe.serial('admin extensions (examples/content)', () => {
     await signIn(page, viewer.login, viewer.password);
     await expect(nav(page).getByRole('link', { name: 'Import' })).toHaveCount(0);
     await expect(nav(page).getByText('Tools', { exact: true })).toHaveCount(0);
+  });
+
+  async function serious(page: Page, skip: string[] = []) {
+    const result = await skip.reduce((b, sel) => b.exclude(sel), new AxeBuilder({ page })).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice']).analyze();
+    expect(result.passes.length, 'axe ran').toBeGreaterThan(10);
+    return result.violations
+      .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+      .map((v) => `${v.id} (${v.impact}): ${v.help}\n${v.nodes.slice(0, 3).map((n) => '    ' + n.target.join(' ')).join('\n')}`);
+  }
+
+  test('block preview and block prop widget: palette tile, card summary, colour round-trips', async ({ page }) => {
+    const errors = watchErrors(page);
+    const doc = await manage('POST', '/collections/page/items', { locale: 'en', fields: { title: `Blocks page ${t}` } });
+    await signIn(page, adminLogin, adminPassword);
+    await page.goto(`/admin/items/${doc.id}`);
+    const trigger = page.locator('[data-blocks="blocks"] > .h-blocklist > .h-blocklist__foot').getByRole('button', { name: 'Add block' });
+    await trigger.click();
+    // palette: the hero tile renders the preview element with the type's defaults, the quote tile stays built in
+    const tile = page.getByRole('option', { name: /^Hero/ });
+    await expect(tile.locator('[data-preview="x-hero-preview"]')).toBeVisible();
+    await expect(page.getByRole('option', { name: /^Quote/ }).locator('[data-preview]')).toHaveCount(0);
+    expect(await serious(page)).toEqual([]);
+    await tile.click();
+
+    const hero = card(page, 'hero');
+    await hero.getByLabel(/^Heading/).fill('Hello preview');
+    await hero.getByLabel('Brand colour (hex)').fill('#336699');
+    await expect(hero.getByLabel('Brand colour', { exact: true })).toHaveValue('#336699');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
+    const saved = (await draftOf(doc.id)).fields.blocks;
+    expect(JSON.stringify(saved)).toContain('#336699');
+
+    await page.reload();
+    const again = card(page, 'hero');
+    // collapsed card summary: heading text and the colour swatch
+    const summary = again.locator('[data-preview="x-hero-preview"]').first();
+    await expect(summary.getByTestId('hero-heading')).toHaveText('Hello preview');
+    const bg = await summary.getByTestId('hero-swatch').evaluate((e) => getComputedStyle(e).backgroundColor);
+    expect(bg).toBe('rgb(51, 102, 153)');
+    await expand(again);
+    await expect(again.getByLabel('Brand colour (hex)')).toHaveValue('#336699');
+    expect(await serious(page)).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
+  test('list action: the toolbar button counts the selected items', async ({ page }) => {
+    const errors = watchErrors(page);
+    await signIn(page, adminLogin, adminPassword);
+    await page.goto('/admin/collections/article');
+    const action = page.locator('[data-extension="x-export-csv"]');
+    await expect(action.first().getByTestId('export-count')).toHaveText('0');
+    const rows = page.locator('tbody').getByRole('row').filter({ has: page.getByRole('checkbox') });
+    await rows.nth(0).getByRole('checkbox').check();
+    await rows.nth(1).getByRole('checkbox').check();
+    await expect(action.getByTestId('export-count').last()).toHaveText('2');
+    await action.last().getByRole('button').click();
+    await expect(page.getByText('Exported 2 article items')).toBeVisible();
+    expect(await serious(page)).toEqual([]);
+    expect(errors).toEqual([]);
+    // not offered on a collection the action does not list
+    await page.goto('/admin/collections/person');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.locator('[data-extension="x-export-csv"]')).toHaveCount(0);
+  });
+
+  test('assets: the slot renders and the alt check panel shows on an image', async ({ page }) => {
+    const errors = watchErrors(page);
+    const name = `ext-${t}.png`;
+    await signIn(page, adminLogin, adminPassword);
+    await page.goto('/admin/assets');
+    await expect(page.locator('[data-slot="assets.before"]')).toContainText('Media guidelines apply (assets.before)');
+    await page.locator('input[type=file]').first().setInputFiles({ name, mimeType: 'image/png', buffer: randomPNG() });
+    await page.getByText(name).first().click();
+    const panel = page.locator('[data-extension="x-alt-check"]');
+    await expect(panel.getByTestId('alt-state')).toHaveText('Alt text is missing.');
+    expect(await serious(page)).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
+  test('palette: lists the Import view', async ({ page }) => {
+    await signIn(page, adminLogin, adminPassword);
+    await page.keyboard.press('ControlOrMeta+k');
+    await expect(page.getByRole('combobox')).toBeVisible();
+    await expect(page.getByRole('listbox').getByRole('option', { name: /Import/ })).toBeVisible();
+    await page.getByRole('listbox').getByRole('option', { name: /Import/ }).click();
+    await expect(page).toHaveURL(/\/admin\/tools\/import$/);
+    expect(await serious(page)).toEqual([]);
   });
 
   test('a broken element module toasts once and the built-in editor still works', async ({ page }) => {

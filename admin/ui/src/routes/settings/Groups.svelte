@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Slot from '../../lib/ext/Slot.svelte';
   import '../../lib/messages/settings';
   import { api, type Schemas } from '../../lib/api/client';
   import { Form } from '../../lib/form.svelte';
@@ -92,6 +93,7 @@
       {/snippet}
     </Table>
   {/if}
+  <Slot at="settings.after" props={{section: 'groups'}} />
 </div>
 
 {#snippet nameCell(r: Group)}<NameCell name={r.name} icon="layers" href={`/settings/groups/${r.id}`} />{/snippet}

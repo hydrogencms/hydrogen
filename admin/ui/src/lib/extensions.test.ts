@@ -11,6 +11,8 @@ import { router } from './router.svelte';
 import { toast } from './ui/toast.svelte';
 import type { CompiledField } from './types.svelte';
 import ViewHost from './ext/ViewHost.svelte';
+import Preview from './ext/Preview.svelte';
+import Slot from './ext/Slot.svelte';
 import FieldRowHost from './fields/FieldRowHost.test.svelte';
 
 const reply = (body: unknown, ok = true) => Promise.resolve({ ok, status: ok ? 200 : 404, json: async () => body }) as unknown as Promise<Response>;
@@ -334,5 +336,129 @@ describe('views', () => {
     expect(el.query).toEqual({ x: '1' });
     expect(el.params).toEqual({});
     expect(document.body.querySelector('h1')?.textContent).toBe('Import');
+  });
+});
+
+describe('H10b registry', () => {
+  it('parses previews and list actions and drops malformed ones', () => {
+    const m = parseExtensions({ previews: { hero: 'x-hero', bad: 3, __proto__: 'x-p' }, listActions: [{ tag: 'x-a', title: 'A', types: ['article'], policy: 'p.a' }, { title: 'no tag' }, 'x'] });
+    expect(m.previews).toEqual({ hero: 'x-hero' });
+    expect(m.listActions).toEqual([{ tag: 'x-a', title: 'A', types: ['article'], policy: 'p.a' }]);
+    expect(parseExtensions(undefined)).toMatchObject({ previews: {}, listActions: [] });
+  });
+
+  it('looks up a preview by block type', async () => {
+    await ext.boot({ previews: { hero: 'x-hero' } });
+    expect(ext.preview('hero')).toBe('x-hero');
+    expect(ext.preview('cta')).toBeUndefined();
+    expect(ext.preview('constructor')).toBeUndefined();
+  });
+
+  it('list actions are filtered by type and policy', async () => {
+    await ext.boot({
+      listActions: [{ tag: 'x-a', types: ['article'] }, { tag: 'x-b' }, { tag: 'x-c', policy: 'p.a' }],
+    });
+    session.grants = [];
+    expect(ext.listActions('article').map((x) => x.tag)).toEqual(['x-a', 'x-b']);
+    expect(ext.listActions('page').map((x) => x.tag)).toEqual(['x-b']);
+    session.grants = [{ policy: 'p.a', role: 'r' }] as never;
+    expect(ext.listActions('page').map((x) => x.tag)).toEqual(['x-b', 'x-c']);
+  });
+
+  it('asset panels need an explicit matching type', async () => {
+    await ext.boot({ panels: [{ tag: 'x-all' }, { tag: 'x-img', types: ['image'] }, { tag: 'x-doc', types: ['doc'] }] });
+    expect(ext.assetPanels('image').map((x) => x.tag)).toEqual(['x-img']);
+    expect(ext.panels('image').map((x) => x.tag)).toEqual(['x-all', 'x-img']);
+  });
+
+  it('openable views skip parameterised paths and refused policies', async () => {
+    await ext.boot({
+      views: [
+        { path: '/tools/a', tag: 'x-a', title: 'A', policy: 'p.a' },
+        { path: '/tools/b', tag: 'x-b' },
+        { path: '/tools/c/:id', tag: 'x-c' },
+        { path: '/tools/d/*', tag: 'x-d' },
+      ],
+    });
+    session.grants = [];
+    expect(ext.openableViews().map((v) => v.path)).toEqual(['/tools/b']);
+    session.grants = [{ policy: 'p.a', role: 'r' }] as never;
+    expect(ext.openableViews().map((v) => [v.path, v.index])).toEqual([['/tools/a', 0], ['/tools/b', 1]]);
+  });
+
+  it('the newer screens\' slots resolve like the old ones', async () => {
+    await ext.boot({ slots: ['pages', 'assets', 'search', 'releases', 'reviews', 'trash', 'settings'].flatMap((s) => [{ tag: `x-${s}-b`, at: `${s}.before` }, { tag: `x-${s}-a`, at: `${s}.after` }]) });
+    for (const s of ['pages', 'assets', 'search', 'releases', 'reviews', 'trash', 'settings']) {
+      expect(ext.slots(`${s}.before`).map((x) => x.tag)).toEqual([`x-${s}-b`]);
+      expect(ext.slots(`${s}.after`).map((x) => x.tag)).toEqual([`x-${s}-a`]);
+    }
+  });
+
+  it('a slot passes its subject props to the element', async () => {
+    let el!: HTMLElement & Record<string, unknown>;
+    class E extends HTMLElement {
+      constructor() {
+        super();
+        el = this as never;
+      }
+    }
+    if (!customElements.get('x-search-slot')) customElements.define('x-search-slot', E);
+    await ext.boot({ elements: ['/e.js'], slots: [{ tag: 'x-search-slot', at: 'search.before' }] });
+    ext.importer = async () => ({});
+    mounted.push(mount(Slot, { target: document.body, props: { at: 'search.before', props: { q: 'hello' } } }));
+    await vi.waitFor(() => expect(el).toBeTruthy());
+    expect(el.at).toBe('search.before');
+    expect(el.q).toBe('hello');
+  });
+});
+
+describe('block preview', () => {
+  const host = (tag: string, props: Record<string, unknown>) => {
+    const box = document.createElement('div');
+    document.body.append(box);
+    mounted.push(mount(Preview, { target: box, props: { tag, type: 'hero', props, context: 'card' as const } }));
+    return box;
+  };
+
+  it('mounts the element with type, props and context, and updates it', async () => {
+    let el!: HTMLElement & Record<string, unknown>;
+    class E extends HTMLElement {
+      constructor() {
+        super();
+        el = this as never;
+      }
+    }
+    customElements.define('x-hero-preview', E);
+    ext.importer = async () => ({});
+    await ext.boot({ elements: ['/e.js'] });
+    const box = host('x-hero-preview', { title: 'Hi' });
+    await vi.waitFor(() => expect(el).toBeTruthy());
+    expect(el.type).toBe('hero');
+    expect(el.props).toEqual({ title: 'Hi' });
+    expect(el.context).toBe('card');
+    expect(el.ctx).toBeTruthy();
+    expect(box.querySelector('.h-preview--ready')).toBeTruthy();
+  });
+
+  it('an undefined element leaves the box empty and not ready (built-in rendering shows)', async () => {
+    ext.importer = async () => ({});
+    await ext.boot({ elements: ['/e.js'] });
+    const box = host('x-never-defined', {});
+    await ext.ensureElements();
+    await tick();
+    expect(box.querySelector('.h-preview')!.childElementCount).toBe(0);
+    expect(box.querySelector('.h-preview--ready')).toBeNull();
+  });
+
+  it('a module that fails to load leaves the box empty', async () => {
+    ext.importer = async () => {
+      throw new Error('boom');
+    };
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await ext.boot({ elements: ['/broken.js'] });
+    const box = host('x-hero-preview-2', {});
+    await ext.ensureElements();
+    await tick();
+    expect(box.querySelector('.h-preview--ready')).toBeNull();
   });
 });

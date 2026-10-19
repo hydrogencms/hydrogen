@@ -94,6 +94,4 @@ export const isConflict = (e: unknown): boolean => (e as ApiError)?.status === 4
 export const isNotFound = (e: unknown) => (e as ApiError)?.status === 404;
 
 /** True when it is fine to replace the form with a fresh load: nothing unsaved, or the user agreed to discard it. */
-export function confirmDiscard(dirty: boolean, ask: (message: string) => boolean): boolean {
-  return !dirty || ask(t('collections.reloadDiscard'));
-}
+export { confirmDiscard } from '../../lib/discard';

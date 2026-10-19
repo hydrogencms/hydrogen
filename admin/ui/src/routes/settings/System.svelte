@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Slot from '../../lib/ext/Slot.svelte';
   import '../../lib/messages/settings';
   import { api } from '../../lib/api/client';
   import { reportError } from '../../lib/errors';
@@ -66,6 +67,7 @@
         { key: 'requires', label: t('settings.system.requires'), cell: reqCell, mobile: 'hide' },
       ]} />
   {/if}
+  <Slot at="settings.after" props={{section: 'system'}} />
 </div>
 
 {#snippet nameCell(r: Mod)}<strong>{r.name}</strong>{/snippet}

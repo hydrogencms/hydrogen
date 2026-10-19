@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api } from './lib/api/client';
   import { session } from './lib/auth/session.svelte';
+  import { ext } from './lib/extensions.svelte';
   import { types } from './lib/types.svelte';
   import { channels } from './lib/channels.svelte';
   import { router } from './lib/router.svelte';
@@ -12,7 +13,7 @@
 
   interface Cmd {
     id: string;
-    group: 'search' | 'recent' | 'items' | 'types' | 'actions';
+    group: 'search' | 'recent' | 'items' | 'types' | 'views' | 'actions';
     label: string;
     hint?: string;
     icon: string;
@@ -62,6 +63,10 @@
       .map((ty) => ({ id: `s-${ty.name}`, group: 'types' as const, label: ty.label, icon: ty.admin?.icon ?? 'settings', run: () => go(`/singletons/${ty.name}`) })),
     ...sites.map((s) => ({ id: `p-${s}`, group: 'types' as const, label: s, hint: t('nav.pages'), icon: 'sitemap', run: () => go(`/pages/${s}`) })),
   ]);
+  // Extension views the principal may open (those with a menu entry or a title).
+  const views = $derived<Cmd[]>(
+    ext.openableViews().map((v) => ({ id: `v-${v.index}`, group: 'views' as const, label: v.title ?? v.menu ?? v.tag, hint: v.title && v.menu ? v.menu : undefined, icon: 'layout', run: () => go(v.path) })),
+  );
   const settingsTo = $derived(
     session.can('user.manage')
       ? '/settings/users'
@@ -99,7 +104,7 @@
     const asCmd = (h: Hit, group: 'recent' | 'items'): Cmd => ({ id: `i-${h.id}`, group, label: h.name, hint: typeLabel(h.type), icon: types.get(h.type)?.admin?.icon ?? 'file', run: () => openItem(h) });
     if (!term) out.push(...recent.map((h) => asCmd(h, 'recent')));
     else out.push(...hits.map((h) => asCmd(h, 'items')));
-    out.push(...destinations.filter(match).slice(0, 6), ...actions.filter(match).slice(0, 8));
+    out.push(...destinations.filter(match).slice(0, 6), ...views.filter(match).slice(0, 6), ...actions.filter(match).slice(0, 8));
     return out;
   });
   const heading = (g: Cmd['group']) => (g === 'search' ? '' : t(`palette.${g}`));

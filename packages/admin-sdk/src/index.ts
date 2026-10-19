@@ -32,6 +32,7 @@ export interface AdminContext {
 export type SlotPosition =
   | 'login.before' | 'login.after' | 'list.before' | 'list.after'
   | 'editor.before' | 'editor.after' | 'dashboard.before' | 'dashboard.after'
+  | `${'pages' | 'assets' | 'search' | 'releases' | 'reviews' | 'trash' | 'settings'}.${'before' | 'after'}`
 
 export interface ExtensionManifest {
   elements?: string[]
@@ -43,6 +44,8 @@ export interface ExtensionManifest {
   actions?: { tag: string; title: string; types?: string[]; policy?: string }[]
   dashboard?: { tag: string; title?: string; policy?: string }[]
   views?: { path: string; tag: string; menu?: string; title: string; policy?: string }[]
+  previews?: Record<string, string>
+  list_actions?: { tag: string; title: string; types?: string[]; policy?: string }[]
   slots?: { tag: string; at: SlotPosition; policy?: string }[]
 }
 
@@ -74,7 +77,21 @@ export type DashboardProps = WithCtx
 
 export interface ViewProps extends WithCtx { params: Record<string, string>; query: Record<string, string> }
 
-export interface SlotProps extends WithCtx { at: SlotPosition; item?: ItemView; type?: string }
+export interface SlotProps extends WithCtx {
+  at: SlotPosition
+  item?: ItemView
+  type?: string
+  /** pages.*: the site; search.*: the query; settings.*: users|groups|roles|tokens|audit|system. */
+  site?: string
+  q?: string
+  section?: string
+}
+
+/** A block type's thumbnail in the palette (props are the type's defaults) or its collapsed card summary. */
+export interface PreviewProps extends WithCtx { type: string; props: Record<string, unknown>; context: 'palette' | 'card' }
+
+/** A collection list action (toolbar and bulk bar); events: refresh, navigate. */
+export interface ListActionProps extends WithCtx { type: string; selected: string[]; query: Record<string, string> }
 
 /** Registers a custom element once; a tag that is already defined is skipped with one warning (HMR). */
 export function defineElement(tag: string, ctor: CustomElementConstructor): void {

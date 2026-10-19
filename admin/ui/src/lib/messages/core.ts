@@ -98,6 +98,7 @@ export const core: Record<string, string> = {
   'palette.recent': 'Recent',
   'palette.types': 'Go to',
   'palette.actions': 'Actions',
+  'palette.views': 'Tools',
   'palette.none': 'Nothing matches',
   'palette.new': 'New {type}',
   'palette.dashboard': 'Go to Dashboard',

@@ -90,6 +90,55 @@ export interface ItemView<T> {
   publishedAt?: string;
 }
 
+/** The props of the "hero" block. */
+export interface HeroProps {
+  heading: string;
+  /** Brand colour as #rrggbb. */
+  color?: string;
+}
+
+/**
+ * The "hero" block.
+ *
+ * Large heading with a brand colour
+ */
+export interface HeroBlock {
+  id: string;
+  type: "hero";
+  props: HeroProps;
+}
+
+/** The props of the "quote" block. */
+export interface QuoteProps {
+  text: string;
+}
+
+/**
+ * The "quote" block.
+ *
+ * A pull quote
+ */
+export interface QuoteBlock {
+  id: string;
+  type: "quote";
+  props: QuoteProps;
+}
+
+/** Block types by name. */
+export interface HydrogenBlocks {
+  hero: HeroBlock;
+  quote: QuoteBlock;
+}
+
+/** The name of a block type. */
+export type BlockName = keyof HydrogenBlocks;
+
+/** A block, discriminated by `type`; narrow it with a union of names. */
+export type Block<N extends BlockName = BlockName> = HydrogenBlocks[N];
+
+/** The blocks of a blocks field or slot. */
+export type Blocks<N extends BlockName = BlockName> = Block<N>[];
+
 /** The reusable "seo" field group. */
 export interface SeoGroup {
   metaDescription?: string;
@@ -162,6 +211,7 @@ export interface Landing {
 export interface Page {
   title: string;
   intro?: string;
+  blocks?: Blocks<"hero" | "quote">;
   slug?: string;
   /** Extra URL serving this page, e.g. /promo */
   vanityPath?: string;

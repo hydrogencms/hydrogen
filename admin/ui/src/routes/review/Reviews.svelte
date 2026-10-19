@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Slot from '../../lib/ext/Slot.svelte';
   import '../../lib/messages/review';
   import { reportError } from '../../lib/errors';
   import { t } from '../../lib/i18n';
@@ -51,6 +52,7 @@
 </script>
 
 <div class="h-page">
+  <Slot at="reviews.before" />
   <PageHeader title={t('nav.reviews')} breadcrumbs={[{ label: t('nav.publishing') }, { label: t('nav.reviews') }]} meta={t('reviews.meta')} />
   <Tabs variant="underline" label={t('reviews.tabs')} {tabs} value={tab} onchange={(id) => router.setQuery({ tab: id === 'assigned' ? undefined : id, page: undefined })} />
 
@@ -78,6 +80,7 @@
       {/snippet}
     </Table>
   {/if}
+  <Slot at="reviews.after" />
 </div>
 
 {#snippet nameCell(r: QueueRow)}<NameCell name={r.name || r.id} icon={types.get(r.type)?.admin?.icon ?? 'file'} href={`/items/${r.id}`} />{/snippet}

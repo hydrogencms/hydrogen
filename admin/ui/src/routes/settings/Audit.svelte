@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Slot from '../../lib/ext/Slot.svelte';
   import '../../lib/messages/settings';
   import '../../lib/messages/history';
   import { api, type Schemas } from '../../lib/api/client';
@@ -279,6 +280,7 @@
       {/snippet}
     </Table>
   {/if}
+  <Slot at="settings.after" props={{section: 'audit'}} />
 </div>
 
 {#snippet atCell(r: Entry)}<Time at={r.at} />{/snippet}

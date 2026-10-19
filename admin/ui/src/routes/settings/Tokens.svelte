@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Slot from '../../lib/ext/Slot.svelte';
   import '../../lib/messages/settings';
   import { api, ApiError, type Schemas } from '../../lib/api/client';
   import { formatDateTime } from '../../lib/format';
@@ -177,6 +178,7 @@
       {/snippet}
     </Table>
   {/if}
+  <Slot at="settings.after" props={{section: 'tokens'}} />
 </div>
 
 {#snippet nameCell(r: Token)}<NameCell name={r.name} icon={r.kind === 'agent' ? 'cpu' : 'key'} sub={r.expiresAt ? `${t('settings.tokens.expires')} ${formatDateTime(r.expiresAt)}` : undefined} />{/snippet}

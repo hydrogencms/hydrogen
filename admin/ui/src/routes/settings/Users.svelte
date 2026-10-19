@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Slot from '../../lib/ext/Slot.svelte';
   import '../../lib/messages/settings';
   import { api, type Schemas } from '../../lib/api/client';
   import { Form } from '../../lib/form.svelte';
@@ -100,6 +101,7 @@
       {/snippet}
     </Table>
   {/if}
+  <Slot at="settings.after" props={{section: 'users'}} />
 </div>
 
 {#snippet nameCell(r: User)}<NameCell name={r.name || r.login} sub={r.name && r.name !== r.login ? r.login : undefined} avatar={r.name || r.login} href={`/settings/users/${r.id}`} />{/snippet}

@@ -28,7 +28,7 @@
   import Table from '../../lib/ui/Table.svelte';
   import { toast } from '../../lib/ui/toast.svelte';
   import type { Column } from '../../lib/ui/table';
-  import { ext } from '../../lib/extensions.svelte';
+  import { ext, navigateTo } from '../../lib/extensions.svelte';
   import Extension from '../../lib/ext/Extension.svelte';
   import Slot from '../../lib/ext/Slot.svelte';
   import LocaleDots from './LocaleDots.svelte';
@@ -50,6 +50,8 @@
   const shown = $derived(channels.showsType(typeName));
   const canPublish = $derived(session.can('content.publish', { type: typeName }));
   const canDelete = $derived(session.can('content.delete', { type: typeName }));
+  const listActions = $derived(ext.listActions(typeName));
+  const actionEvents = { refresh: () => reload++, navigate: (e: CustomEvent) => navigateTo(e.detail?.path) };
   const canCreate = $derived(session.can('content.create', { type: typeName }));
   const sort = $derived(sortState(q));
 
@@ -59,6 +61,7 @@
   let error = $state<Error | null>(null);
   let reload = $state(0);
   let selected = $state(new Set<string>());
+  const actionProps = $derived({ type: typeName, selected: [...selected], query: { ...apiQuery } });
 
   // ---- load
   $effect(() => {
@@ -298,6 +301,9 @@
     <PageHeader title={type.label} breadcrumbs={[{ label: t('nav.content') }, { label: type.label }]} meta={type.description}>
       {#snippet badge()}{#if !error && (!loading || total > 0)}<Badge>{total}</Badge>{/if}{/snippet}
       {#snippet actions()}
+        {#each listActions as a, i (a.tag + i)}
+          <span class="h-list__ext" data-list-action={a.tag} title={a.title}><Extension tag={a.tag} props={actionProps} onEvents={actionEvents} /></span>
+        {/each}
         {#if candidates.length}
           <Popover label={t('collections.columns')} triggerClass="h-pill" align="end">
             {#snippet trigger()}<Icon name="sliders" size={16} />{t('collections.columns')}{/snippet}
@@ -340,7 +346,7 @@
         caption={t('collections.caption', { type: type.label })}
         sort={tableSort}
         {onsort}
-        selectable={canPublish || canDelete}
+        selectable={canPublish || canDelete || listActions.length > 0}
         bind:selected
         {loading}
         maxHeight={narrow ? undefined : 'max(22rem, calc(100dvh - 22rem))'}
@@ -365,9 +371,12 @@
         {/snippet}
       </Table>
     {/if}
-    <BulkBar count={canPublish || canDelete ? selected.size : 0} onclear={() => (selected = new Set())}>
+    <BulkBar count={canPublish || canDelete || listActions.length ? selected.size : 0} onclear={() => (selected = new Set())}>
       {#if canPublish}<Button size="sm" variant="ghost" onclick={() => startBulk('publish')}>{t('collections.bulk.publish')}</Button>{/if}
       {#if canDelete}<Button size="sm" variant="ghost" onclick={() => startBulk('delete')}>{t('common.delete')}</Button>{/if}
+      {#each listActions as a, i (a.tag + i)}
+        <span class="h-list__ext" data-bulk-action={a.tag} title={a.title}><Extension tag={a.tag} props={actionProps} onEvents={actionEvents} /></span>
+      {/each}
     </BulkBar>
     <Slot at="list.after" props={{ type: typeName }} />
   {/if}

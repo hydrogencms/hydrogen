@@ -128,6 +128,9 @@ type AdminConfig struct {
 	Dashboard []admin.Panel `yaml:"dashboard"`
 	Views     []admin.View  `yaml:"views"`
 	Slots     []admin.Slot  `yaml:"slots"`
+	// Previews maps a block type to its preview element; ListActions are collection list toolbar/bulk actions.
+	Previews    map[string]string `yaml:"previews"`
+	ListActions []admin.Panel     `yaml:"list_actions"`
 	// ElementsDevEntry is the Vite entry listed instead of the built files when ADMIN_ELEMENTS_DEV_URL is set
 	// in dev. Default "/src/elements.ts".
 	ElementsDevEntry string `yaml:"elements_dev_entry"`
@@ -135,7 +138,8 @@ type AdminConfig struct {
 
 func (c *AdminConfig) manifest() admin.Manifest {
 	return admin.Manifest{Elements: c.Elements, Theme: c.Theme, Strings: c.Strings, Widgets: c.Widgets, Cells: c.Cells,
-		Panels: c.Panels, Actions: c.Actions, Dashboard: c.Dashboard, Views: c.Views, Slots: c.Slots}
+		Panels: c.Panels, Actions: c.Actions, Dashboard: c.Dashboard, Views: c.Views, Slots: c.Slots,
+		Previews: c.Previews, ListActions: c.ListActions}
 }
 
 func (c *AdminConfig) check() error {

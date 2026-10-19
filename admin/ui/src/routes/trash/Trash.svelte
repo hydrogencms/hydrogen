@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Slot from '../../lib/ext/Slot.svelte';
   import { tick as settle } from 'svelte';
   import '../../lib/messages/releases';
   import { ApiError } from '../../lib/api/client';
@@ -104,6 +105,7 @@
 </script>
 
 <div class="h-page">
+  <Slot at="trash.before" />
   <PageHeader title={t('nav.trash')} breadcrumbs={[{ label: t('nav.publishing') }, { label: t('nav.trash') }]} meta={t('trash.meta')} />
   <div class="h-trash__bar">
     <Select
@@ -136,6 +138,7 @@
       {/snippet}
     </Table>
   {/if}
+  <Slot at="trash.after" />
 </div>
 
 {#snippet nameCell(r: TrashRow)}<NameCell name={r.name || r.id} icon={types.get(r.type)?.admin?.icon ?? 'file'} href={`/trash/${r.id}`} />{/snippet}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Slot from '../../lib/ext/Slot.svelte';
   import '../../lib/messages/releases';
   import { session } from '../../lib/auth/session.svelte';
   import { formatInZone, inTab, parseTab, statusTone, tabQuery, TABS, type Release, type ReleaseTab } from './logic';
@@ -54,6 +55,7 @@
 </script>
 
 <div class="h-page">
+  <Slot at="releases.before" />
   <PageHeader title={t('nav.releases')} breadcrumbs={[{ label: t('nav.publishing') }, { label: t('nav.releases') }]} meta={t('releases.meta')}>
     {#snippet primary()}
       {#if canManage}<Button variant="primary" icon="plus" onclick={() => (creating = true)}>{t('releases.new')}</Button>{/if}
@@ -94,6 +96,7 @@
       {/snippet}
     </Table>
   {/if}
+  <Slot at="releases.after" />
 </div>
 
 {#snippet nameCell(r: Release)}<NameCell name={r.name || r.id} icon={r.kind === 'item' ? 'clock' : 'send'} href={`/releases/${r.id}`} sub={r.description || undefined} />{/snippet}

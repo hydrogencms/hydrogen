@@ -2,6 +2,8 @@
   import { untrack } from 'svelte';
   import { ApiError } from '../api/client';
   import { reportError } from '../errors';
+  import { ext } from '../extensions.svelte';
+  import Extension from '../ext/Extension.svelte';
   import { knownLocales, itemLocales } from '../fields/locales';
   import { cleanDoc, fieldsPatch, jsonEqual, type Doc } from '../fields/logic';
   import { t } from '../i18n';
@@ -25,6 +27,7 @@
   import FilePreview from './FilePreview.svelte';
   import { addTags, assetPath, checkFile, dimensions, fileOf, formatSize, maxUpload, normFolder, type FileValue, type Focal } from './logic';
   import { mediaApi, uploadFile } from './upload';
+  import { confirmDiscard } from '../discard';
   import './media.css';
 
   let {
@@ -74,6 +77,11 @@
   const main = $derived(data?.mainLocale ?? '');
   const canEdit = $derived((data?.actions?.edit ?? true) && !!ty && !!data && session.can('content.edit', { type: data.type }));
   const file = $derived(fileOf(shared.file));
+  const extPanels = $derived(data ? ext.assetPanels(data.type) : []);
+  // An extension asked for a reload: unsaved edits are only dropped after a confirmation.
+  function extRefresh() {
+    if (confirmDiscard(isDirty, (m) => confirm(m))) reloadTick++;
+  }
 
   const pick = (fields: CompiledField[], doc: Doc): Doc => Object.fromEntries(fields.filter((f) => f.name in doc).map((f) => [f.name, structuredClone(doc[f.name])]));
   const folderOf = (v: unknown) => (typeof v === 'string' && v.trim() && normFolder(v) !== '/' ? normFolder(v) : undefined);
@@ -360,6 +368,13 @@
       </div>
       {#if isDirty}<p class="h-muted" role="status">{t('media.unsaved')}</p>{/if}
     </form>
+
+    {#each extPanels as p, i (p.tag + i)}
+      <section class="h-assetpanel__ext" data-asset-panel={p.tag} aria-label={p.title ?? p.tag}>
+        <h3>{p.title ?? p.tag}</h3>
+        <Extension tag={p.tag} props={{ item: data, type: data.type, locale: main, draft: data.status !== 'published' }} onEvents={{ refresh: extRefresh }} />
+      </section>
+    {/each}
 
     <section class="h-assetpanel__usage">
       <h3>{t('media.usedBy')}</h3>

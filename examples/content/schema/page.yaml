@@ -5,6 +5,7 @@ types:
     fields:
       title: { type: string, translatable: true, required: true }
       intro: { type: text, translatable: true }
+      blocks: { type: blocks, allow: [hero, quote], max: 20, translatable: true }
   landing:
     page: true
     children: []

@@ -3,6 +3,7 @@
   import type { Snippet } from 'svelte';
   import { session } from '../../lib/auth/session.svelte';
   import { t } from '../../lib/i18n';
+  import Slot from '../../lib/ext/Slot.svelte';
   import { router } from '../../lib/router.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
   import Tabs from '../../lib/ui/Tabs.svelte';
@@ -23,5 +24,6 @@
   const current = $derived(all.find((s) => s.id === section)!.label());
 </script>
 
+<Slot at="settings.before" props={{ section }} />
 <PageHeader title={t('nav.settings')} breadcrumbs={[{ label: t('nav.settings') }, { label: current }]} meta={t('settings.meta')} {primary} />
 <Tabs variant="underline" label={t('nav.settings')} {tabs} value={section} onchange={(id) => void router.navigate(`/settings/${id}`)} />

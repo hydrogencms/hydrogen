@@ -15,7 +15,7 @@ import (
 func adminFixture(t *testing.T) (dir string, reg *Registry, s *schema.Schema) {
 	t.Helper()
 	dir = t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte("types:\n  article:\n    fields:\n      title: { type: string }\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte("blocks:\n  hero:\n    props:\n      h: { type: string }\ntypes:\n  article:\n    fields:\n      title: { type: string }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range []string{"el.js", "logo.svg", "t.css", "s.json"} {
@@ -55,8 +55,17 @@ func TestAdminManifestValidation(t *testing.T) {
 			c.Actions = []admin.Panel{{Tag: "x-act", Title: "Go", Policy: "content.edit"}}
 			c.Dashboard = []admin.Panel{{Tag: "x-dash", Title: "Recent"}}
 			c.Views = []admin.View{{Path: "/tools/import", Tag: "x-imp", Menu: "Tools", Title: "Import", Policy: "import.run"}}
-			c.Slots = []admin.Slot{{Tag: "x-banner", At: "editor.before"}}
+			c.Slots = []admin.Slot{{Tag: "x-banner", At: "editor.before"}, {Tag: "x-n", At: "settings.after"}, {Tag: "x-o", At: "trash.before"}}
+			c.Previews = map[string]string{"hero": "x-hero-preview"}
+			c.ListActions = []admin.Panel{{Tag: "x-export", Title: "Export", Types: []string{"article"}, Policy: "content.edit"}}
 		}, ""},
+		{"preview unknown block", func(c *AdminConfig) { c.Previews = map[string]string{"nope": "x-a"} }, `unknown block type "nope"`},
+		{"preview bad tag", func(c *AdminConfig) { c.Previews = map[string]string{"hero": "hero"} }, "previews.hero"},
+		{"list action tag", func(c *AdminConfig) { c.ListActions = []admin.Panel{{Tag: "bad", Title: "t"}} }, "list_actions[0].tag"},
+		{"list action title", func(c *AdminConfig) { c.ListActions = []admin.Panel{{Tag: "x-a"}} }, "list_actions[0]: title is required"},
+		{"list action type", func(c *AdminConfig) { c.ListActions = []admin.Panel{{Tag: "x-a", Title: "t", Types: []string{"nope"}}} }, `list_actions[0].types: unknown content type "nope"`},
+		{"list action policy", func(c *AdminConfig) { c.ListActions = []admin.Panel{{Tag: "x-a", Title: "t", Policy: "nope.run"}} }, "list_actions[0].policy"},
+		{"new slot position", func(c *AdminConfig) { c.Slots = []admin.Slot{{Tag: "x-a", At: "pages.sideways"}} }, "slots[0].at"},
 		{"missing element", func(c *AdminConfig) { c.Elements = []string{f("nope.js")} }, "admin.elements[0]"},
 		{"element is a directory", func(c *AdminConfig) { c.Elements = []string{dir} }, "not a regular file"},
 		{"missing strings", func(c *AdminConfig) { c.Strings = f("nope.json") }, "admin.strings"},
@@ -128,17 +137,41 @@ func TestAdminSchemaReferences(t *testing.T) {
 	}
 }
 
+func TestAdminBlockPropWidgets(t *testing.T) {
+	dir, reg, _ := adminFixture(t)
+	yaml := "blocks:\n  hero:\n    props:\n      color: { type: string, admin: { widget: swatch } }\ntypes:\n  article:\n    fields:\n      title: { type: string }\n"
+	if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := compileSchema(dir, nil, reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := AdminConfig{Enabled: true, Prefix: "/admin", ElementsDevEntry: "/src/elements.ts"}
+	_, err = composeAdmin(&c, reg, s, "prod")
+	if err == nil || !strings.Contains(err.Error(), `block "hero": field "color": admin.widget "swatch"`) {
+		t.Fatalf("err = %v", err)
+	}
+	reg.current = "seo"
+	reg.AdminExtension(AdminExtension{Manifest: admin.Manifest{Widgets: map[string]string{"swatch": "x-swatch"}}})
+	if _, err := composeAdmin(&c, reg, s, "prod"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAdminModuleExtensions(t *testing.T) {
 	dir, reg, s := adminFixture(t)
 	c := AdminConfig{Enabled: true, Prefix: "/admin", ElementsDevEntry: "/src/elements.ts", Elements: []string{filepath.Join(dir, "el.js")},
-		Widgets: map[string]string{"a": "x-a"}, Views: []admin.View{{Path: "/p", Tag: "x-p", Title: "P"}}}
+		Widgets: map[string]string{"a": "x-a"}, ListActions: []admin.Panel{{Tag: "x-pa", Title: "P"}}, Views: []admin.View{{Path: "/p", Tag: "x-p", Title: "P"}}}
 	files := fstest.MapFS{"dist/el.js": {Data: []byte("m")}, "s.json": {Data: []byte("{}")}}
 	add := func(module string, m admin.Manifest) {
 		reg.current = module
 		reg.AdminExtension(AdminExtension{Files: files, Manifest: m})
 	}
 	add("seo", admin.Manifest{Elements: []string{"dist/el.js"}, Strings: "s.json", Widgets: map[string]string{"b": "x-b"},
-		Slots: []admin.Slot{{Tag: "x-s", At: "list.after"}}})
+		Slots:       []admin.Slot{{Tag: "x-s", At: "list.after"}},
+		Previews:    map[string]string{"hero": "x-hero"},
+		ListActions: []admin.Panel{{Tag: "x-la", Title: "L"}}})
 	x, err := composeAdmin(&c, reg, s, "prod")
 	if err != nil {
 		t.Fatal(err)
@@ -152,19 +185,23 @@ func TestAdminModuleExtensions(t *testing.T) {
 	if len(x.Widgets) != 2 || len(x.Slots) != 1 {
 		t.Errorf("merge: %+v", x)
 	}
+	if len(x.Previews) != 1 || x.Previews["hero"] != "x-hero" || len(x.ListActions) != 2 {
+		t.Errorf("previews/list actions: %+v %+v", x.Previews, x.ListActions)
+	}
 
 	for name, tc := range map[string]struct {
 		m    admin.Manifest
 		want string
 	}{
-		"theme":        {admin.Manifest{Theme: admin.Theme{Name: "x"}}, "only the project sets the theme"},
-		"missing file": {admin.Manifest{Elements: []string{"nope.js"}}, "module bad: admin extension.elements[0]"},
-		"escaping":     {admin.Manifest{Elements: []string{"../el.js"}}, "not a valid file name"},
-		"tag":          {admin.Manifest{Slots: []admin.Slot{{Tag: "x", At: "list.after"}}}, "slots[0].tag"},
-		"policy":       {admin.Manifest{Views: []admin.View{{Path: "/q", Tag: "x-q", Title: "q", Policy: "no.pe"}}}, "unknown policy"},
-		"type":         {admin.Manifest{Panels: []admin.Panel{{Tag: "x-q", Title: "q", Types: []string{"nope"}}}}, "unknown content type"},
-		"widget clash": {admin.Manifest{Widgets: map[string]string{"a": "x-z"}}, `widgets name "a" is already taken`},
-		"view clash":   {admin.Manifest{Views: []admin.View{{Path: "/p", Tag: "x-q", Title: "q"}}}, "already used"},
+		"theme":         {admin.Manifest{Theme: admin.Theme{Name: "x"}}, "only the project sets the theme"},
+		"missing file":  {admin.Manifest{Elements: []string{"nope.js"}}, "module bad: admin extension.elements[0]"},
+		"escaping":      {admin.Manifest{Elements: []string{"../el.js"}}, "not a valid file name"},
+		"tag":           {admin.Manifest{Slots: []admin.Slot{{Tag: "x", At: "list.after"}}}, "slots[0].tag"},
+		"policy":        {admin.Manifest{Views: []admin.View{{Path: "/q", Tag: "x-q", Title: "q", Policy: "no.pe"}}}, "unknown policy"},
+		"type":          {admin.Manifest{Panels: []admin.Panel{{Tag: "x-q", Title: "q", Types: []string{"nope"}}}}, "unknown content type"},
+		"widget clash":  {admin.Manifest{Widgets: map[string]string{"a": "x-z"}}, `widgets name "a" is already taken`},
+		"preview clash": {admin.Manifest{Previews: map[string]string{"hero": "x-z"}}, `previews name "hero" is already taken`},
+		"view clash":    {admin.Manifest{Views: []admin.View{{Path: "/p", Tag: "x-q", Title: "q"}}}, "already used"},
 	} {
 		reg.adminExts = reg.adminExts[:1]
 		add("bad", tc.m)

@@ -145,6 +145,10 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   build info, `kernel.CoreRequirer` ranges (`internal/semver`) are checked at start, and `modules` (app command) and
   `GET /api/manage/v1/system` (policy `system.read`; admin Settings â†’ System) report them. Docs: `docs/modules.md`,
   `docs/module-versions.md`. Contract: `planning/design/modules-h10a.md`.
+- Admin extension points (H10b, completing H5c): block previews (`previews`), block prop widgets, list actions
+  (`list_actions`), asset panels (panels typed to an upload type), slots on every list screen, extension views in
+  the command palette. Every point is documented in `docs/admin-extensions.md` (public) and typed in
+  `@hydrogencms/admin-sdk`. Contract: `planning/design/admin-h10b.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field

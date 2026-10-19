@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Slot from '../../lib/ext/Slot.svelte';
   import '../../lib/messages/pages';
   import { onMount } from 'svelte';
   import { api, ApiError } from '../../lib/api/client';
@@ -394,6 +395,7 @@
 </script>
 
 <div class="h-page h-pages" class:h-pages--detail={!!sel}>
+  <Slot at="pages.before" props={{site}} />
   <Breadcrumbs items={crumbs} />
   <h1 class="h-sr">{t('pages.title', { site: siteName(site) })}</h1>
 
@@ -524,6 +526,7 @@
       {/if}
     </section>
   </div>
+  <Slot at="pages.after" props={{site}} />
 </div>
 
 {#snippet row(tn: TreeNode)}

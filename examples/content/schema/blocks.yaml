@@ -1,0 +1,15 @@
+blocks:
+  hero:
+    label: Hero
+    description: Large heading with a brand colour
+    icon: layout
+    props:
+      heading: { type: string, required: true, max: 120 }
+      color: { type: string, max: 7, admin: { widget: brand-color }, description: "Brand colour as #rrggbb." }
+
+  quote:
+    label: Quote
+    description: A pull quote
+    icon: text
+    props:
+      text: { type: text, required: true }

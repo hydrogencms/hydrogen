@@ -2,6 +2,8 @@
   import Fields from '../fields/Fields.svelte';
   import Icon from '../ui/Icon.svelte';
   import Menu, { type MenuItem } from '../ui/Menu.svelte';
+  import { ext } from '../extensions.svelte';
+  import Preview from '../ext/Preview.svelte';
   import { t } from '../i18n';
   import BlockList from './BlockList.svelte';
   import { blocksCatalog } from './catalog.svelte';
@@ -31,6 +33,7 @@
   const open = $derived(!!model.open[id]);
   const label = $derived(def?.label ?? block.type);
   const sum = $derived(summary(block, def));
+  const pv = $derived(ext.preview(block.type));
   const sibs = $derived(listAt(model.root, container) ?? []);
   const isShared = $derived(block.type === SHARED);
   const errs = $derived(model.routed.block.get(id) ?? []);
@@ -127,7 +130,9 @@
       onkeydown={key}
     >
       <span class="h-block__label">{label}</span>
-      {#if sum}<span class="h-block__sum">{sum}</span>{/if}
+      {#if pv && !open}
+        <span class="h-block__sum h-block__sum--pv" data-block-preview={block.type}>{sum}<Preview tag={pv} type={block.type} props={$state.snapshot(block.props ?? {})} context="card" /></span>
+      {:else if sum}<span class="h-block__sum">{sum}</span>{/if}
       <Icon name={open ? 'chevron-up' : 'chevron-down'} size={14} />
     </button>
     {#if errCount > 0}<span class="h-block__errbadge" role="status">{errCount === 1 ? t('blocks.error1') : t('blocks.errors', { n: errCount })}</span>{/if}

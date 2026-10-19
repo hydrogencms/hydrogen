@@ -174,6 +174,23 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.h-block__sum--pv {
+  position: relative;
+  height: 1.75rem;
+  line-height: 1.75rem;
+}
+.h-palette__thumb {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 10rem;
+  height: 5.625rem;
+  overflow: hidden;
+  border: 1px solid var(--h-border);
+  border-radius: var(--h-radius);
+  background: var(--h-surface-2);
+}
 .h-block__toggle svg:last-child {
   flex: none;
   margin-inline-start: auto;
@@ -324,6 +341,10 @@
 .h-palette__none {
   color: var(--h-text-muted);
   font-size: var(--h-text-sm);
+}
+/* Muted text on the highlight can fall below 4.5:1 with a project's accent and surfaces. */
+.h-palette__opt--on .h-palette__desc {
+  color: var(--h-text);
 }
 .h-palette__none {
   padding: var(--h-space-3);

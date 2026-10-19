@@ -297,6 +297,7 @@
   flex-wrap: wrap;
   gap: var(--h-space-2);
 }
+.h-assetpanel__ext h3,
 .h-assetpanel__usage h3 {
   margin: 0 0 var(--h-space-2);
   font-size: var(--h-text-md);

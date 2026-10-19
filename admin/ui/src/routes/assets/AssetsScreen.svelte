@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Slot from '../../lib/ext/Slot.svelte';
   import { untrack } from 'svelte';
   import { session } from '../../lib/auth/session.svelte';
   import { t } from '../../lib/i18n';
@@ -156,6 +157,7 @@
 </script>
 
 <div class="h-page h-assets">
+  <Slot at="assets.before" />
   <input bind:this={fileInput} hidden type="file" multiple {accept} onchange={picked} />
   <PageHeader title={t('media.title')} breadcrumbs={[{ label: t('nav.content') }, { label: t('media.title') }]} meta={t('media.meta')}>
     {#snippet primary()}
@@ -247,6 +249,7 @@
       </div>
     {/if}
   </div>
+  <Slot at="assets.after" />
 </div>
 
 <Confirm

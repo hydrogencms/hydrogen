@@ -30,6 +30,9 @@ export interface Extensions {
   dashboard: Entry[];
   views: ViewDef[];
   slots: SlotDef[];
+  /** Block type -> preview element tag. */
+  previews: Record<string, string>;
+  listActions: Entry[];
 }
 
 const BAD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -78,6 +81,8 @@ export function parseExtensions(raw: unknown): Extensions {
       const at = str(o.at);
       return tag && at ? { tag, at, policy: str(o.policy) } : undefined;
     }),
+    previews: cleanMap(r.previews),
+    listActions: entries(r.listActions, entry),
   };
 }
 
@@ -200,6 +205,22 @@ class ExtensionsStore {
   }
   actions(type: string) {
     return this.m.actions.filter((e) => this.#fits(e, type) && this.allowed(e, type));
+  }
+  /** Panels that name this upload type among their `types`: sections of the asset details panel. */
+  assetPanels(type: string) {
+    return this.m.panels.filter((e) => !!e.types?.length && e.types.includes(type) && this.allowed(e, type));
+  }
+  /** Toolbar and bulk-bar actions of a collection list. */
+  listActions(type: string) {
+    return this.m.listActions.filter((e) => this.#fits(e, type) && this.allowed(e, type));
+  }
+  /** The preview element of a block type, if the manifest names one. */
+  preview(type: string): string | undefined {
+    return this.m.previews[type];
+  }
+  /** Every static view the principal may open (command palette); paths with parameters can't be opened bare. */
+  openableViews(): (ViewDef & { index: number })[] {
+    return this.m.views.flatMap((v, index) => (this.allowed(v) && !/[:*]/.test(v.path) ? [{ ...v, index }] : []));
   }
   dashboard() {
     return this.m.dashboard.filter((e) => this.allowed(e));

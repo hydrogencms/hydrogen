@@ -12,4 +12,12 @@ const bad: ExtensionManifest = { slots: [{ tag: 'x-b', at: 'nowhere' }] }
 declare const p: WidgetProps
 const ctx: AdminContext = p.ctx
 const ev: WidgetChangeEvent = new CustomEvent('change', { detail: { value: 1 } })
+const m2: ExtensionManifest = {
+  previews: { hero: 'x-hero-preview' },
+  list_actions: [{ tag: 'x-l', title: 'L', types: ['a'], policy: 'content.read' }],
+  slots: [{ tag: 'x-b', at: 'assets.before' }, { tag: 'x-b', at: 'settings.after' }],
+}
+// @ts-expect-error unknown screen
+const bad2: ExtensionManifest = { slots: [{ tag: 'x-b', at: 'nowhere.before' }] }
+void [m2, bad2]
 void [m, bad, ctx, ev, useContext]

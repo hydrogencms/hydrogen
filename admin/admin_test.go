@@ -91,7 +91,7 @@ func TestIndexLinksUnderPrefix(t *testing.T) {
 func TestConfigJSON(t *testing.T) {
 	w := get(Handler("/admin", dist(), Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: "/api/deliver/v1", Pages: true, Collab: true}), "GET", "/admin/config.json")
 	want := `{"apiPrefix":"/api/manage/v1","prefix":"/admin","pages":true,"collab":true,"deliveryPrefix":"/api/deliver/v1","extensions":` +
-		`{"elements":[],"theme":{"name":""},"strings":[],"widgets":{},"cells":{},"panels":[],"actions":[],"dashboard":[],"views":[],"slots":[]}}`
+		`{"elements":[],"theme":{"name":""},"strings":[],"widgets":{},"cells":{},"panels":[],"actions":[],"dashboard":[],"views":[],"slots":[],"previews":{},"listActions":[]}}`
 	if w.Body.String() != want || w.Header().Get("Cache-Control") != "no-store" || !strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") {
 		t.Fatalf("config.json: %s %v", w.Body, w.Header())
 	}

@@ -5,11 +5,13 @@
   import Input from '../ui/Input.svelte';
   import Popover from '../ui/Popover.svelte';
   import { api } from '../api/client';
+  import { ext } from '../extensions.svelte';
+  import Preview from '../ext/Preview.svelte';
   import { t } from '../i18n';
   import { types } from '../types.svelte';
   import { blocksCatalog } from './catalog.svelte';
   import type { BlocksModel } from './model.svelte';
-  import { SHARED, type Container } from './tree';
+  import { newBlock, SHARED, type Container } from './tree';
 
   let {
     model,
@@ -35,7 +37,7 @@
   const refusal = $derived(model.addable(container));
   const rule = $derived(model.rules(container));
   const entries = $derived(
-    (rule ? blocksCatalog.allowed(rule) : []).map((b) => ({ name: b.name, label: b.label, description: b.description ?? '', icon: b.icon || (b.name === SHARED ? 'link' : 'square') })),
+    (rule ? blocksCatalog.allowed(rule) : []).map((b) => ({ name: b.name, label: b.label, description: b.description ?? '', icon: b.icon || (b.name === SHARED ? 'link' : 'square'), preview: ext.preview(b.name), def: b })),
   );
   let q = $state('');
   let active = $state(0);
@@ -161,7 +163,14 @@
                 onclick={() => choose(e.name, close)}
                 onkeydown={() => {}}
               >
-                <span class="h-block__tile"><Icon name={e.icon} size={16} /></span>
+                {#if e.preview}
+                  <span class="h-palette__thumb" data-block-preview={e.name}>
+                    <span class="h-block__tile"><Icon name={e.icon} size={16} /></span>
+                    <Preview tag={e.preview} type={e.name} props={$state.snapshot(newBlock(e.def, () => '').props ?? {})} context="palette" />
+                  </span>
+                {:else}
+                  <span class="h-block__tile"><Icon name={e.icon} size={16} /></span>
+                {/if}
                 <span class="h-palette__text">
                   <span class="h-palette__name">{e.label}</span>
                   {#if e.description}<span class="h-palette__desc">{e.description}</span>{/if}

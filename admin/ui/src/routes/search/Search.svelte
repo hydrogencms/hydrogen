@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Slot from '../../lib/ext/Slot.svelte';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import Snippet from '../../lib/ui/Snippet.svelte';
   import Icon from '../../lib/ui/Icon.svelte';
@@ -43,6 +44,7 @@
 </script>
 
 <div class="h-page">
+  <Slot at="search.before" props={{q}} />
   <h1>{t('search.title')}</h1>
   {#if !q}
     <EmptyState icon="search" title={t('search.title')} description={t('search.placeholder')} />
@@ -66,6 +68,7 @@
       {/each}
     </ul>
   {/if}
+  <Slot at="search.after" props={{q}} />
 </div>
 
 <style>

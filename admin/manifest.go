@@ -28,6 +28,10 @@ type Manifest struct {
 	Dashboard []Panel           `yaml:"dashboard" json:"dashboard"`
 	Views     []View            `yaml:"views" json:"views"`
 	Slots     []Slot            `yaml:"slots" json:"slots"`
+	// Previews maps a block type to the element that previews it (palette thumbnail, collapsed block card).
+	Previews map[string]string `yaml:"previews" json:"previews"`
+	// ListActions are toolbar and bulk actions of the collection list.
+	ListActions []Panel `yaml:"list_actions" json:"listActions"`
 }
 
 // Theme in a Manifest holds file paths (Logo, CSS); in config.json it holds URLs.
@@ -65,7 +69,10 @@ type Slot struct {
 
 // SlotPositions are the valid values of Slot.At.
 var SlotPositions = []string{"login.before", "login.after", "list.before", "list.after",
-	"editor.before", "editor.after", "dashboard.before", "dashboard.after"}
+	"editor.before", "editor.after", "dashboard.before", "dashboard.after",
+	"pages.before", "pages.after", "assets.before", "assets.after", "search.before", "search.after",
+	"releases.before", "releases.after", "reviews.before", "reviews.after", "trash.before", "trash.after",
+	"settings.before", "settings.after"}
 
 // BuiltinRoutes are the admin's own screens; a view path may not equal or sit under one.
 var BuiltinRoutes = []string{"/", "/login", "/search", "/account", "/collections", "/items", "/singletons", "/pages", "/settings", "/releases", "/trash", "/reviews", "/assets"}
@@ -88,6 +95,8 @@ type CheckOptions struct {
 	File   func(name string) error
 	Policy func(name string) bool
 	Type   func(name string) bool
+	// Block reports whether a block type exists.
+	Block func(name string) bool
 	// Module is true for module manifests: the theme must be empty.
 	Module bool
 	// SkipElements skips the existence check of elements (dev, where a dev server supplies them).
@@ -169,11 +178,21 @@ func (m *Manifest) Check(o CheckOptions) error {
 			tag(kv.key+"."+name, kv.m[name])
 		}
 	}
+	for _, name := range sortedKeys(m.Previews) {
+		k := "previews." + name
+		if !identifier.MatchString(name) {
+			bad("previews: block type %q: use letters, digits, _ and -, starting with a letter", name)
+		} else if o.Block != nil && !o.Block(name) {
+			bad("%s: unknown block type %q", k, name)
+		}
+		tag(k, m.Previews[name])
+	}
 	for _, g := range []struct {
 		key   string
 		items []Panel
 		typed bool
-	}{{"panels", m.Panels, true}, {"actions", m.Actions, true}, {"dashboard", m.Dashboard, false}} {
+	}{{"panels", m.Panels, true}, {"actions", m.Actions, true}, {"list_actions", m.ListActions, true},
+		{"dashboard", m.Dashboard, false}} {
 		for i, p := range g.items {
 			k := g.key + "[" + strconv.Itoa(i) + "]"
 			tag(k+".tag", p.Tag)
@@ -237,16 +256,18 @@ type Source struct {
 // Extensions is the "extensions" object of config.json, composed from every source (project first, then
 // modules in start-up order; except elements and strings: modules first, the project last so its strings win), plus the files it serves under <prefix>/x/. All lists are present, possibly empty.
 type Extensions struct {
-	Elements  []string          `json:"elements"`
-	Theme     Theme             `json:"theme"`
-	Strings   []string          `json:"strings"`
-	Widgets   map[string]string `json:"widgets"`
-	Cells     map[string]string `json:"cells"`
-	Panels    []Panel           `json:"panels"`
-	Actions   []Panel           `json:"actions"`
-	Dashboard []Panel           `json:"dashboard"`
-	Views     []View            `json:"views"`
-	Slots     []Slot            `json:"slots"`
+	Elements    []string          `json:"elements"`
+	Theme       Theme             `json:"theme"`
+	Strings     []string          `json:"strings"`
+	Widgets     map[string]string `json:"widgets"`
+	Cells       map[string]string `json:"cells"`
+	Panels      []Panel           `json:"panels"`
+	Actions     []Panel           `json:"actions"`
+	Dashboard   []Panel           `json:"dashboard"`
+	Views       []View            `json:"views"`
+	Slots       []Slot            `json:"slots"`
+	Previews    map[string]string `json:"previews"`
+	ListActions []Panel           `json:"listActions"`
 
 	files map[string]*xfile
 }
@@ -255,7 +276,8 @@ type Extensions struct {
 // <prefix>/x/dev<devEntry> in place of the project's element files.
 func Compose(prefix string, srcs []Source, devEntry string) (*Extensions, error) {
 	x := &Extensions{Elements: []string{}, Strings: []string{}, Widgets: map[string]string{}, Cells: map[string]string{},
-		Panels: []Panel{}, Actions: []Panel{}, Dashboard: []Panel{}, Views: []View{}, Slots: []Slot{}, files: map[string]*xfile{}}
+		Panels: []Panel{}, Actions: []Panel{}, Dashboard: []Panel{}, Views: []View{}, Slots: []Slot{},
+		Previews: map[string]string{}, ListActions: []Panel{}, files: map[string]*xfile{}}
 	base := prefix + "/x/"
 	add := func(rel string, f *xfile) string {
 		x.files[rel] = f
@@ -329,7 +351,7 @@ func Compose(prefix string, srcs []Source, devEntry string) (*Extensions, error)
 			key string
 			dst map[string]string
 			src map[string]string
-		}{{"widgets", x.Widgets, m.Widgets}, {"cells", x.Cells, m.Cells}} {
+		}{{"widgets", x.Widgets, m.Widgets}, {"cells", x.Cells, m.Cells}, {"previews", x.Previews, m.Previews}} {
 			for _, name := range sortedKeys(kv.src) {
 				if _, dup := kv.dst[name]; dup {
 					return nil, fmt.Errorf("%s: admin %s name %q is already taken", who, kv.key, name)
@@ -348,6 +370,7 @@ func Compose(prefix string, srcs []Source, devEntry string) (*Extensions, error)
 		x.Dashboard = append(x.Dashboard, m.Dashboard...)
 		x.Views = append(x.Views, m.Views...)
 		x.Slots = append(x.Slots, m.Slots...)
+		x.ListActions = append(x.ListActions, m.ListActions...)
 	}
 	x.Elements = append(x.Elements, projEls...)
 	x.Strings = append(x.Strings, projStrs...)

@@ -31,6 +31,10 @@ admin:
   cells: { swatch: x-color-swatch }
   panels:
     - { tag: x-seo-panel, title: SEO, types: [article] }
+    - { tag: x-alt-check, title: Alt text, types: [image] }
+  previews: { hero: x-hero-preview }
+  list_actions:
+    - { tag: x-export-csv, title: Export CSV, types: [article], policy: content.read }
   actions:
     - { tag: x-translate-action, title: Send to translation, types: [article], policy: content.edit }
   dashboard:
@@ -39,3 +43,4 @@ admin:
     - { path: /tools/import, tag: x-import-tool, menu: Tools, title: Import, policy: import.run }
   slots:
     - { tag: x-banner, at: editor.before }
+    - { tag: x-assets-banner, at: assets.before }

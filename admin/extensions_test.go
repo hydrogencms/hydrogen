@@ -30,7 +30,8 @@ func extFixture(t *testing.T) (*Extensions, string) {
 		{Manifest: Manifest{Elements: []string{p("a.js"), p("b.js")}, Strings: p("s.json"),
 			Theme:   Theme{Name: "Acme", Logo: p("logo.svg"), Accent: "#0b6", CSS: p("t.css")},
 			Widgets: map[string]string{"brand": "x-brand"}, Panels: []Panel{{Tag: "x-seo", Title: "SEO", Types: []string{"article"}}},
-			Views: []View{{Path: "/tools", Tag: "x-tools", Menu: "Tools", Title: "Tools", Policy: "import.run"}}}},
+			Views:    []View{{Path: "/tools", Tag: "x-tools", Menu: "Tools", Title: "Tools", Policy: "import.run"}},
+			Previews: map[string]string{"hero": "x-hero-preview"}, ListActions: []Panel{{Tag: "x-csv", Title: "CSV", Types: []string{"article"}, Policy: "content.read"}}}},
 		{Module: "seo", FS: fstest.MapFS{"dist/seo.js": {Data: []byte("export {}")}, "s.json": {Data: []byte("{}")}},
 			Manifest: Manifest{Elements: []string{"dist/seo.js"}, Strings: "s.json", Slots: []Slot{{Tag: "x-b", At: "editor.after"}}}},
 	}, "")
@@ -52,7 +53,8 @@ func TestConfigJSONExtensions(t *testing.T) {
 		`"strings":["/admin/x/m/seo/s.json","/admin/x/strings.json"],"widgets":{"brand":"x-brand"},"cells":{},` +
 		`"panels":[{"tag":"x-seo","title":"SEO","types":["article"]}],"actions":[],"dashboard":[],` +
 		`"views":[{"path":"/tools","tag":"x-tools","menu":"Tools","title":"Tools","policy":"import.run"}],` +
-		`"slots":[{"tag":"x-b","at":"editor.after"}]}`
+		`"slots":[{"tag":"x-b","at":"editor.after"}],"previews":{"hero":"x-hero-preview"},` +
+		`"listActions":[{"tag":"x-csv","title":"CSV","types":["article"],"policy":"content.read"}]}`
 	if string(got.Extensions) != want {
 		t.Fatalf("extensions:\n%s\nwant\n%s", got.Extensions, want)
 	}
@@ -153,6 +155,11 @@ func TestComposeErrors(t *testing.T) {
 	if _, err := Compose("/admin", []Source{a, b}, ""); err == nil {
 		t.Error("duplicate cell name accepted")
 	}
+	pa := Source{Manifest: Manifest{Previews: map[string]string{"hero": "x-a"}}}
+	pb := Source{Module: "m", FS: fstest.MapFS{}, Manifest: Manifest{Previews: map[string]string{"hero": "x-b"}}}
+	if _, err := Compose("/admin", []Source{pa, pb}, ""); err == nil {
+		t.Error("duplicate block preview accepted")
+	}
 }
 
 func TestElementsDevProxy(t *testing.T) {
@@ -238,5 +245,29 @@ func TestViewPathSyntax(t *testing.T) {
 		if (err == nil) != ok {
 			t.Errorf("%q: err = %v, want ok=%v", p, err, ok)
 		}
+	}
+}
+
+func TestManifestCheckNewKeys(t *testing.T) {
+	m := Manifest{
+		Previews:    map[string]string{"hero": "x-p", "ghost": "x-q", "bad name": "x-r", "cta": "nodash"},
+		ListActions: []Panel{{Tag: "x-a", Title: "A", Types: []string{"nope"}, Policy: "no.pe"}},
+		Slots:       []Slot{{Tag: "x-s", At: "assets.after"}, {Tag: "x-t", At: "settings.before"}},
+	}
+	err := m.Check(CheckOptions{Where: "admin", SkipElements: true,
+		Block:  func(n string) bool { return n != "ghost" },
+		Type:   func(n string) bool { return n != "nope" },
+		Policy: func(n string) bool { return n != "no.pe" }})
+	if err == nil {
+		t.Fatal("no error")
+	}
+	for _, w := range []string{`previews.ghost: unknown block type`, `previews: block type "bad name"`, `previews.cta "nodash"`,
+		`list_actions[0].types: unknown content type "nope"`, `list_actions[0].policy`} {
+		if !strings.Contains(err.Error(), w) {
+			t.Errorf("missing %q in %v", w, err)
+		}
+	}
+	if strings.Contains(err.Error(), "slots") || strings.Contains(err.Error(), "previews.hero") {
+		t.Errorf("unexpected: %v", err)
 	}
 }

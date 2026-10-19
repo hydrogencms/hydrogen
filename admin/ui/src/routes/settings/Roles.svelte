@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Slot from '../../lib/ext/Slot.svelte';
   import '../../lib/messages/settings';
   import { api, type Schemas } from '../../lib/api/client';
   import { t } from '../../lib/i18n';
@@ -70,6 +71,7 @@
       {/snippet}
     </Table>
   {/if}
+  <Slot at="settings.after" props={{section: 'roles'}} />
 </div>
 
 {#snippet nameCell(r: Role)}<NameCell name={r.name} sub={r.description || undefined} icon="shield" href={`/settings/roles/${r.id}`} />{/snippet}

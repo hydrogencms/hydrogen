@@ -8,9 +8,10 @@ import (
 
 // Page is the "page" content type.
 type Page struct {
-	Title string  `json:"title,omitempty"`
-	Intro *string `json:"intro,omitempty"`
-	Slug  *string `json:"slug,omitempty"`
+	Title  string  `json:"title,omitempty"`
+	Intro  *string `json:"intro,omitempty"`
+	Blocks []Block `json:"blocks,omitempty"`
+	Slug   *string `json:"slug,omitempty"`
 	// Extra URL serving this page, e.g. /promo
 	VanityPath *string   `json:"vanityPath,omitempty"`
 	Seo        *SeoGroup `json:"seo,omitempty"`
