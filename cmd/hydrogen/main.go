@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/hydrogencms/hydrogen"
 	"github.com/hydrogencms/hydrogen/internal/devwatch"
 	"github.com/hydrogencms/hydrogen/internal/projectfile"
 	"github.com/hydrogencms/hydrogen/internal/scaffold"
@@ -59,10 +58,16 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stdout, usage)
 		return 0
 	}
+	if len(args) > 1 && (args[1] == "-h" || args[1] == "--help") && args[0] != "new" {
+		if text := commandUsage(args[0]); text != "" {
+			fmt.Fprint(stdout, text)
+			return 0
+		}
+	}
 	var err error
 	switch args[0] {
 	case "version":
-		fmt.Fprintln(stdout, "hydrogen", hydrogen.Version())
+		fmt.Fprintln(stdout, "hydrogen", cliVersion())
 		return 0
 	case "new":
 		err = newProject(ctx, args[1:], stdout, stderr)
@@ -101,13 +106,16 @@ func newProject(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	core := fs.String("core", "", "use a local hydrogen checkout (replace directives) instead of published versions")
 	noTidy := fs.Bool("no-tidy", false, "skip go mod tidy")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	if fs.NArg() != 1 {
 		return errors.New("new: give exactly one target directory")
 	}
 	dir := fs.Arg(0)
-	if err := scaffold.Write(scaffold.Options{Dir: dir, Module: *module, Core: *core}); err != nil {
+	if err := scaffold.Write(scaffold.Options{Dir: dir, Module: *module, Core: *core, Version: releaseVersion()}); err != nil {
 		return err
 	}
 	if !*noTidy {

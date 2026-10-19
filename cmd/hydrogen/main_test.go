@@ -120,7 +120,7 @@ func TestAddRemoveCatalog(t *testing.T) {
 	}
 
 	mustHy(t, "add", "postgres")
-	has(t, "go.mod", "github.com/hydrogencms/hydrogen/modules/postgres v0.0.0")
+	has(t, "go.mod", "github.com/hydrogencms/hydrogen/modules/postgres v0.1.0")
 	has(t, "go.mod", "github.com/hydrogencms/hydrogen/modules/postgres => ")
 	has(t, "hydrogen.yaml", "  - sqlite\n  - images\n  - postgres\n")
 

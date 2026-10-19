@@ -36,7 +36,7 @@
     "astro": "^6.0.0 || ^7.0.0"
   },
   "dependencies": {
-    "@hydrogencms/bridge": "^0.2.0",
+    "@hydrogencms/bridge": "^0.1.0",
     "@hydrogencms/client": "^0.1.0",
     "@hydrogencms/router": "^0.1.0"
   },

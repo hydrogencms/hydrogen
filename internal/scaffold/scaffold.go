@@ -20,11 +20,15 @@ import (
 //go:embed all:template
 var files embed.FS
 
+// ReleaseVersion is the latest released version of the hydrogen modules: what a new project requires when the
+// CLI itself is not a release build.
+const ReleaseVersion = "v0.1.0"
+
 type Options struct {
 	Dir     string // target directory; must not exist or be empty
 	Module  string // Go module path; default: the directory name
-	Core    string // local checkout of hydrogen to use via replace directives (until releases exist)
-	Version string // required version of the hydrogen modules, default v0.0.0
+	Core    string // local checkout of hydrogen to use via replace directives instead of published versions
+	Version string // required version of the hydrogen modules, default ReleaseVersion
 }
 
 type data struct {
@@ -53,7 +57,7 @@ func Write(o Options) error {
 		return fmt.Errorf("scaffold: invalid module path %q", d.Module)
 	}
 	if d.Version == "" {
-		d.Version = "v0.0.0"
+		d.Version = ReleaseVersion
 	}
 	if o.Core != "" {
 		core, err := filepath.Abs(o.Core)

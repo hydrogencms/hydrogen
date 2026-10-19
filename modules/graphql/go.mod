@@ -4,8 +4,8 @@ go 1.26.0
 
 require (
 	github.com/graphql-go/graphql v0.8.1
-	github.com/hydrogencms/hydrogen v0.0.0
-	github.com/hydrogencms/hydrogen/modules/sqlite v0.0.0-00010101000000-000000000000
+	github.com/hydrogencms/hydrogen v0.1.0
+	github.com/hydrogencms/hydrogen/modules/sqlite v0.1.0
 )
 
 require (

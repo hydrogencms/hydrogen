@@ -38,16 +38,19 @@ written through temporary files, and when `go get` or `go mod tidy` fails, `hydr
 
 ## The catalog
 
-| Name | Package | Own Go module | Config key |
-| --- | --- | --- | --- |
-| `sqlite` | `github.com/hydrogencms/hydrogen/modules/sqlite` | yes | `database.url` |
-| `postgres` | `github.com/hydrogencms/hydrogen/modules/postgres` | yes | `database.url` |
-| `pages` | `.../modules/pages` | no | `modules.pages` |
-| `site` | `.../modules/site` | no | `modules.site` |
-| `overlays` | `.../modules/overlays` | no | none (see [locales](locales.md)) |
-| `images` | `.../modules/images` | no | `modules.images` (see [images](images.md)) |
-| `meilisearch` | `.../modules/meilisearch` | no | `modules.meilisearch` (see [meilisearch](meilisearch.md)) |
-| `wasmhooks` | `github.com/hydrogencms/hydrogen/modules/wasmhooks` | yes | `modules.wasmhooks` (see [wasm-hooks](wasm-hooks.md)) |
+| Name | Summary | Docs | Package | Own Go module | Config key |
+| --- | --- | --- | --- | --- | --- |
+| `sqlite` | SQLite database adapter (pure Go, no cgo) | none | `github.com/hydrogencms/hydrogen/modules/sqlite` | yes | `database.url` |
+| `postgres` | PostgreSQL database adapter | none | `github.com/hydrogencms/hydrogen/modules/postgres` | yes | `database.url` |
+| `pages` | page tree per site, routes with history, redirects | none | `.../modules/pages` | no | `modules.pages` |
+| `site` | server-rendered website for web channels with render: go | none | `.../modules/site` | no | `modules.site` |
+| `site-export` | static export of the site module: files, manifest, redirects, incremental export, publishers | [site-export](site-export.md) | `.../modules/siteexport` | no | `modules.site-export` |
+| `site-proxy` | serves a JS frontend (static export or supervised SSR process) behind the binary | [site-proxy](site-proxy.md) | `.../modules/siteproxy` | no | `modules.site-proxy` |
+| `overlays` | locale overlays: a language inherits fields from another | [locales](locales.md) | `.../modules/overlays` | no | none |
+| `images` | image presets, focal points and variants | [images](images.md) | `.../modules/images` | no | `modules.images` |
+| `wasmhooks` | content hooks as sandboxed WebAssembly programs (Go, Rust, TypeScript, …) | [wasm-hooks](wasm-hooks.md) | `github.com/hydrogencms/hydrogen/modules/wasmhooks` | yes | `modules.wasmhooks` |
+| `graphql` | read-only GraphQL delivery API generated from the schema | [graphql](graphql.md) | `github.com/hydrogencms/hydrogen/modules/graphql` | yes | `modules.graphql` |
+| `meilisearch` | Meilisearch as the search engine | [meilisearch](meilisearch.md) | `.../modules/meilisearch` | no | `modules.meilisearch` |
 
 Modules in the core module need no `go.mod` change. The adapters are separate Go modules because of their
 dependencies: `hydrogen add postgres` runs `go get` for them at the core's version. A project built with

@@ -18,6 +18,7 @@ import (
 
 	"github.com/hydrogencms/hydrogen/internal/modcat"
 	"github.com/hydrogencms/hydrogen/internal/projectfile"
+	"github.com/hydrogencms/hydrogen/internal/scaffold"
 )
 
 const docsURL = "https://github.com/hydrogencms/hydrogen/blob/main/"
@@ -90,7 +91,7 @@ func (mi modInfo) coreVersion() string {
 	if v, ok := mi.required(modcat.Core); ok {
 		return v
 	}
-	return "v0.0.0"
+	return scaffold.ReleaseVersion
 }
 
 // snapshot records the files a module change may touch; the returned function puts them back.

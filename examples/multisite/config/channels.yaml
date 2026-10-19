@@ -6,7 +6,7 @@ languages:
   de-CH: { inherits: de }
 
 defaults:
-  settings: { cache_ttl: 300 }
+  settings: { delivery: { cache_ttl: 300 } }
 
 groups:
   corporate_web:

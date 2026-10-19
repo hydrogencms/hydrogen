@@ -4,7 +4,7 @@ languages:
   de: {}
 
 defaults:
-  settings: { cache_ttl: 60 }
+  settings: { delivery: { cache_ttl: 60 } }
 
 groups:
   web:

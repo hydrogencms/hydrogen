@@ -167,6 +167,12 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   export, incremental via the outbox, redirect formats, dir/s3/command publishers; `make site-export-e2e`);
   `modules/siteproxy` (static or supervised SSR frontend behind the binary; `make site-proxy-e2e`). Docs:
   `docs/site.md`, `docs/site-export.md`, `docs/site-proxy.md`. Contract: `planning/design/fullstack-h10f.md`.
+- Docs and releases (H10g): `docs/` is the source of the docs site (`website/`, Astro Starlight; `make docs`,
+  `DOCS_STRICT=1` fails on missing pages or broken links; new pages go into `website/sidebar.mjs`). Releases:
+  `scripts/release.sh <version>` (checks every go.mod/package.json version, `ReleaseVersion` in
+  internal/scaffold and the CHANGELOG section, runs the gates, `--tag` creates the module tags locally, prints the
+  push and npm publish commands). Pushing tags and publishing are the user's call. Contract:
+  `planning/design/release-h10g.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
