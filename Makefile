@@ -1,7 +1,7 @@
 # Go modules in this repository (core first). Every target runs over all of them.
 MODULES := . modules/sqlite modules/postgres modules/wasmhooks modules/graphql tests examples/minimal examples/content examples/headless examples/multisite examples/starter examples/fullstack
 
-.PHONY: starter-fixture build test vet lint tidy tidy-check db-up db-down smoke check sdk next-e2e starter-next-e2e starter-sveltekit-e2e starter-nuxt-e2e starter-astro-e2e conformance site-e2e wasm-e2e site-bridge site-bridge-check admin admin-types admin-dist-check admin-e2e example-admin example-admin-check site-proxy-e2e site-export-e2e
+.PHONY: starter-fixture static-content static-e2e build test vet lint tidy tidy-check db-up db-down smoke check sdk next-e2e starter-next-e2e starter-sveltekit-e2e starter-nuxt-e2e starter-astro-e2e conformance site-e2e wasm-e2e site-bridge site-bridge-check admin admin-types admin-dist-check admin-e2e example-admin example-admin-check site-proxy-e2e site-export-e2e
 
 build:
 	@for m in $(MODULES); do (cd $$m && go build ./...) || exit 1; done
@@ -28,6 +28,11 @@ tidy-check: tidy
 # Rebuild examples/starter/fixture (deterministic): run after changing its schema or tools/fixture.
 starter-fixture:
 	cd examples/starter && go run ./tools/fixture
+
+# Rebuild internal/scaffold/static/content, the starter content of `hydrogen new -static` (deterministic): run after
+# changing the static template's schema or tests/tools/staticsite. TestStaticContentIsCurrent fails when it is stale.
+static-content:
+	cd tests && go run ./tools/staticsite
 
 # Local Postgres 17 on localhost:5436 (hydrogen/hydrogen) for adapter tests and development.
 db-up:
@@ -74,6 +79,10 @@ wasm-e2e:
 # examples/fullstack served by one binary (admin, APIs, website), checked by the adapter conformance suite with a browser.
 site-e2e:
 	./scripts/site-e2e.sh
+
+# hydrogen new -static → run → build the Astro site (under a base path) → edit → content:save → rebuild.
+static-e2e:
+	./scripts/static-e2e.sh
 
 # The Next starter's standalone build behind the site-proxy module (ssr mode), checked by the adapter conformance
 # suite on the CMS port.

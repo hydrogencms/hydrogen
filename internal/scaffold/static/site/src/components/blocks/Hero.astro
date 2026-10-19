@@ -1,0 +1,15 @@
+---
+import type { BlockComponentProps } from '@hydrogencms/astro/runtime'
+import type { HeroProps } from '../../../../gen/types'
+import { target } from '../../lib/link'
+
+const { props: p, attrs, links = {} } = Astro.props as BlockComponentProps<HeroProps>
+const to = target(Astro.locals.hydrogen, links, p.buttonLink, p.buttonUrl)
+---
+<section {...attrs} class="hero">
+  <div class="wrap">
+    <h1>{p.heading}</h1>
+    {p.subheading && <p class="lead">{p.subheading}</p>}
+    {p.buttonLabel && to && <a class="button" href={to}>{p.buttonLabel}</a>}
+  </div>
+</section>

@@ -96,6 +96,23 @@ func TestNewHasModuleWiring(t *testing.T) {
 	}
 }
 
+func TestNewStatic(t *testing.T) {
+	t.Setenv("GOWORK", "off")
+	t.Setenv("GOFLAGS", "-mod=mod")
+	dir := filepath.Join(t.TempDir(), "docs")
+	out := mustHy(t, "new", "-static", "-core", root, dir)
+	if !strings.Contains(out, "npm run dev") {
+		t.Errorf("new output:\n%s", out)
+	}
+	t.Chdir(dir)
+	has(t, "hydrogen.yaml", "  - sqlite\n  - pages\n")
+	lacks(t, "go.mod", "modules/postgres")
+	has(t, "gen/types.ts", "export interface Page")
+	has(t, "gen/types.ts", "export interface HeroProps")
+	mustHy(t, "config:check")
+	failHy(t, "not empty", "new", "-static", dir)
+}
+
 func TestAddRemoveCatalog(t *testing.T) {
 	scratchProject(t)
 	out := mustHy(t, "add", "images")

@@ -1,0 +1,72 @@
+# {{.Name}}
+
+A static website made with [Hydrogen](https://github.com/hydrogencms/hydrogen). The content lives in git, editors
+work in the admin, and GitHub Pages serves the result.
+
+```
+content/              the content, committed (a `hydrogen export`): the source of truth
+schema/               page and block types (types.yaml, blocks.yaml)
+config/               server, database and the one web channel
+site/                 the Astro site: templates, block components, styles
+.github/workflows/    builds the site from content/ and deploys it to GitHub Pages
+```
+
+## Run it
+
+You need Go 1.26 and Node 22.12 or later.
+
+```sh
+hydrogen dev                      # the CMS on http://127.0.0.1:8080; loads content/ into .work/hydrogen.db
+cd site && npm install && npm run dev      # the site on http://localhost:4321
+```
+
+`hydrogen dev` prints a link that creates the first administrator. Open it, choose a password, and edit pages in the
+admin (http://127.0.0.1:8080/admin). Publish a page, then reload the site. `hydrogen dev` also regenerates `gen/`
+(typed code, the site imports its TypeScript types) when the schema changes.
+{{if .Core}}
+The `@hydrogencms/*` packages in `site/package.json` are `file:` dependencies on your hydrogen checkout; build its
+`packages/` first (`npm run build` there).
+{{end}}
+## Edit, save, publish
+
+1. Edit and publish in the admin. Your edits live in the local database in `.work/`, which is not committed.
+2. Write them to the repository: `hydrogen content:save`. It updates `content/`; review it with `git diff content`.
+3. `git add content && git commit && git push`. The workflow builds and deploys the site.
+
+After a `git pull` that changes `content/`, restart `hydrogen dev`: the start loads the new content (the old database
+is moved to `.work/backups/`). If you edited and your teammates changed `content/` too, the start asks you to choose:
+`hydrogen content:save` keeps your edits, `hydrogen content:load -force` keeps the directory. Users are not part of
+the content, so loading a changed directory resets them; the first-run link creates the administrator again. See
+[content in git](https://hydrogencms.github.io/website/docs/content-in-git/).
+
+## Deploy to GitHub Pages
+
+1. Create a repository, then `git init`, commit everything (including `site/package-lock.json`, created by
+   `npm install`) and push to `main`.
+2. In the repository, open Settings > Pages and set Source to **GitHub Actions**.
+3. Every push to `main` runs `.github/workflows/deploy.yml`: it builds the CMS from this repository, starts it (it loads
+   `content/` into a fresh SQLite database), builds `site/` against it and deploys `site/dist`.
+
+For a project site (`https://you.github.io/repo/`) the workflow passes the origin in `SITE_URL` and the base path in
+`SITE_BASE` (`/repo`; empty for a custom domain or a `you.github.io` site). The Astro config reads both and the
+channel reads `SITE_URL`. Locally you can build the same way:
+
+```sh
+SITE_URL=https://you.github.io SITE_BASE=/repo npm run build     # in site/, with the CMS running
+npm run preview
+```
+
+The workflow starts the CMS as `APP_ENV=production` with a secret made for the run, because it needs no dev defaults and
+production fails early on a missing secret. A custom domain needs no change: Pages reports it as the site's address.
+
+## Change the site
+
+- **New block**: add it to `schema/blocks.yaml` and to `allow` in `schema/types.yaml`, run `hydrogen generate` (or
+  keep `hydrogen dev` running), write `site/src/components/blocks/<Name>.astro` and add it to
+  `site/src/components/registry.ts`.
+- **New page type**: add the type to `schema/types.yaml` (`page: true` puts it in the page tree), then add a template in
+  `site/src/templates/`, and list the type in `templates` in `site/src/hydrogen.ts` and in `[...path].astro`.
+- **Links** in blocks pick a page (`ref`) or hold a URL; `site/src/lib/link.ts` turns them into paths with the base.
+
+Changing the schema can make the committed content invalid; the start of `hydrogen dev` says what is wrong. Fields that
+change shape need a content migration, see [schema](https://hydrogencms.github.io/website/docs/schema/).

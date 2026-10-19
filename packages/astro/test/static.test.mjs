@@ -159,3 +159,18 @@ test('the integration injects the on-demand routes only with a server', () => {
   // static with an adapter (hybrid) is a server build
   assert.equal(setup({ output: 'static', adapter: {} }).routes.length, 3)
 })
+
+test('a frontend that carries the base: paths without it, links and redirects get it once', async () => {
+  const h = make({ base: '/sub' })
+  lists['en/page/en'] = [it('a', SITE + '/sub/en'), it('b', SITE + '/sub/en/about'), it('c', SITE + '/sub/en/blog/x')]
+  assert.deepEqual(paths(await h.staticPaths()), ['en', 'en/about'])
+  h.configure({ base: '/sub', site: SITE })
+  assert.equal(h.href(SITE + '/sub/en/about'), '/sub/en/about')
+  assert.equal(h.href('/sub/en'), '/sub/en')
+  assert.equal(h.href('/subway'), '/sub/subway')
+  const route = globalThis.fetch
+  globalThis.fetch = async (url, init) =>
+    String(url).includes('/route') ? json(200, { located: { kind: 'redirect', resolution: { status: 301, location: SITE + '/sub/en/new' } } }) : route(url, init)
+  const { res } = await run(h, '/sub/en/old')
+  assert.equal(res.headers.get('location'), '/sub/en/new')
+})

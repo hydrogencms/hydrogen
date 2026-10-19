@@ -1,0 +1,16 @@
+---
+import type { BlockComponentProps } from '@hydrogencms/astro/runtime'
+import RichText from '@hydrogencms/astro/components/RichText.astro'
+import type { TextProps } from '../../../../gen/types'
+
+const { props: p, attrs, links = {} } = Astro.props as BlockComponentProps<TextProps>
+const h = Astro.locals.hydrogen
+---
+<section {...attrs} class="text">
+  <div class="wrap">
+    <div class="prose">
+      {p.heading && <h2>{p.heading}</h2>}
+      <RichText doc={p.body} links={links} resolveLink={(url: string) => h.href(url)} />
+    </div>
+  </div>
+</section>

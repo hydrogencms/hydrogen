@@ -88,3 +88,67 @@ func TestWriteAdminStarter(t *testing.T) {
 		t.Errorf("README with -core:\n%s", readme)
 	}
 }
+
+func TestWriteStatic(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "docs")
+	if err := Write(Options{Dir: dir, Module: "example.com/docs", Core: "../..", Static: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"go.mod", "main.go", "hydrogen.go", "hydrogen.yaml", "modules_gen.go", "config/app.yaml", "config/channels.yaml",
+		"schema/types.yaml", "schema/blocks.yaml", ".gitignore", "README.md", ".github/workflows/deploy.yml",
+		"content/manifest.json", "content/items.ndjson", "content/schema/compiled.json", "content/modules/pages.ndjson",
+		"site/package.json", "site/astro.config.mjs", "site/tsconfig.json", "site/public/favicon.svg", "site/src/env.d.ts", "site/src/hydrogen.ts",
+		"site/src/pages/[...path].astro", "site/src/pages/404.astro", "site/src/layouts/Layout.astro", "site/src/templates/Page.astro",
+		"site/src/components/registry.ts", "site/src/components/blocks/Hero.astro", "site/src/components/blocks/Text.astro",
+		"site/src/components/blocks/Features.astro", "site/src/components/blocks/Feature.astro", "site/src/components/blocks/Callout.astro",
+		"site/src/lib/link.ts", "site/src/styles/site.css"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Errorf("missing %s", f)
+		}
+	}
+	for _, f := range []string{"schema/article.yaml", "admin", "config/app.yaml.tmpl", "gitignore.tmpl"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			t.Errorf("unexpected %s", f)
+		}
+	}
+	read := func(name string) string {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	has := func(name string, want ...string) {
+		t.Helper()
+		got := read(name)
+		for _, w := range want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s lacks %q:\n%s", name, w, got)
+			}
+		}
+	}
+	has("hydrogen.yaml", "  - sqlite\n  - pages\n")
+	has("modules_gen.go", "pages.Module()", "sqlite.Module()")
+	if strings.Contains(read("go.mod"), "postgres") {
+		t.Errorf("go.mod requires postgres:\n%s", read("go.mod"))
+	}
+	has("go.mod", "module example.com/docs", "github.com/hydrogencms/hydrogen/modules/sqlite => ")
+	has("config/app.yaml", "files: content", "sqlite:.work/hydrogen.db")
+	has("config/channels.yaml", `frontend: "${env:SITE_URL:-http://localhost:4321}"`, "match: { prefix: / }", "site: main")
+	has(".gitignore", "/.work/", "/site/node_modules/", "/site/dist/", "/site/.astro/")
+	has("site/package.json", `"@hydrogencms/astro": "file:`, `"@hydrogencms/client": "file:`, `"@hydrogencms/bridge": "file:`, "packages/astro")
+	has("site/astro.config.mjs", "output: 'static'", "process.env.SITE_URL", "process.env.SITE_BASE")
+	has("site/src/pages/[...path].astro", "export function getStaticPaths()", "hydrogen.staticPaths()")
+	has("README.md", "hydrogen content:save", "Source to **GitHub Actions**", "`file:` dependencies on your hydrogen checkout")
+	has(".github/workflows/deploy.yml", "actions/checkout@v7", "actions/setup-go@v7", "actions/setup-node@v7", "actions/configure-pages@v6",
+		"actions/upload-pages-artifact@v5", "actions/deploy-pages@v5", "APP_ENV: production", "steps.pages.outputs.origin", "steps.pages.outputs.base_path", "site/dist")
+
+	published := filepath.Join(t.TempDir(), "docs")
+	if err := Write(Options{Dir: published, Static: true}); err != nil {
+		t.Fatal(err)
+	}
+	pkg, _ := os.ReadFile(filepath.Join(published, "site/package.json"))
+	if !strings.Contains(string(pkg), `"@hydrogencms/astro": "^0.1.0"`) || strings.Contains(string(pkg), "bridge") || strings.Contains(string(pkg), "file:") {
+		t.Errorf("site/package.json:\n%s", pkg)
+	}
+}

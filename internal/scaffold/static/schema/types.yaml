@@ -1,0 +1,18 @@
+types:
+  # Every page of the site. The page tree (Pages in the admin) decides the URLs; the first page is the home page.
+  page:
+    page: true
+    children: [page]
+    admin: { icon: file-text }
+    fields:
+      title: { type: string, required: true }
+      slug: { type: slug, from: title, index: true }
+      description: { type: text, max: 300 }
+      body: { type: blocks, allow: [hero, text, features, callout], max: 40 }
+
+  siteSettings:
+    singleton: true
+    admin: { icon: settings }
+    fields:
+      siteName: { type: string, required: true }
+      footerText: { type: text }

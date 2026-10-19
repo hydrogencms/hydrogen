@@ -1,0 +1,47 @@
+# The blocks editors stack on a page. Each block type has a component in site/src/components/blocks/ and a line in
+# site/src/components/registry.ts. Field types and options: https://hydrogencms.github.io/website/docs/schema/
+blocks:
+  hero:
+    label: Hero
+    description: The opening of a page, with an optional button
+    icon: layout
+    props:
+      heading: { type: string, required: true, max: 90 }
+      subheading: { type: text, max: 300 }
+      buttonLabel: { type: string, max: 40 }
+      buttonLink: { type: ref, to: [page], on_delete: nullify }
+      buttonUrl: { type: url }
+
+  text:
+    label: Text
+    description: A heading and formatted text
+    icon: text
+    props:
+      heading: { type: string, max: 120 }
+      body: { type: richtext, required: true }
+
+  features:
+    label: Features
+    description: A heading and a list of features
+    icon: grid
+    props:
+      heading: { type: string, required: true, max: 120 }
+    slots:
+      items: { label: Features, allow: [feature], min: 1, max: 24 }
+
+  feature:
+    label: Feature
+    description: One feature, optionally linking to a page
+    icon: square
+    props:
+      title: { type: string, required: true, max: 80 }
+      text: { type: text, required: true, max: 400 }
+      link: { type: ref, to: [page], on_delete: nullify }
+
+  callout:
+    label: Callout
+    description: A short note that stands out
+    icon: megaphone
+    props:
+      text: { type: text, required: true, max: 400 }
+      tone: { type: enum, values: [note, tip, warning], default: note }

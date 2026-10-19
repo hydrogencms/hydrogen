@@ -1,0 +1,6 @@
+{"t":"node","id":"01a0f6b6-a4c0-757f-ba67-e6ba27191845","path":"/01a0f6b6-a4c0-757f-ba67-e6ba27191845/","sortKey":"a1","kind":"page","item":"01a0f6b1-2680-76f4-a787-babb602ad25a","mainLocale":"en","createdAt":"2026-10-01T09:06:00Z","site":"main","updatedAt":"2026-10-01T09:06:00Z"}
+{"t":"node","id":"01a0f6b7-8f20-75d9-a4f3-a45470d17a68","parent":"01a0f6b6-a4c0-757f-ba67-e6ba27191845","path":"/01a0f6b6-a4c0-757f-ba67-e6ba27191845/01a0f6b7-8f20-75d9-a4f3-a45470d17a68/","depth":1,"sortKey":"a1","kind":"page","item":"01a0f6b2-10e0-70bc-a345-31ed6dd63b65","mainLocale":"en","createdAt":"2026-10-01T09:07:00Z","site":"main","updatedAt":"2026-10-01T09:07:00Z"}
+{"t":"slug","locale":"en","node":"01a0f6b6-a4c0-757f-ba67-e6ba27191845","slug":"home","name":"Home"}
+{"t":"slug","locale":"en","node":"01a0f6b7-8f20-75d9-a4f3-a45470d17a68","slug":"about","name":"About"}
+{"t":"route","path":"/","item":"01a0f6b1-2680-76f4-a787-babb602ad25a","site":"main","locale":"en","node":"01a0f6b6-a4c0-757f-ba67-e6ba27191845","state":"current","updatedAt":"2026-10-01T09:06:00Z"}
+{"t":"route","path":"/about","item":"01a0f6b2-10e0-70bc-a345-31ed6dd63b65","site":"main","locale":"en","node":"01a0f6b7-8f20-75d9-a4f3-a45470d17a68","state":"current","updatedAt":"2026-10-01T09:07:00Z"}

@@ -140,6 +140,7 @@ Hydrogen only delivers content; something has to show it. Pick the route that fi
 | You want | Use |
 | --- | --- |
 | A website without a second program | The `site` module renders with Go templates from the same binary. `hydrogen add site pages`, then a web channel with `render: go`. See [the site module](site.md). |
+| A static website on GitHub Pages | `hydrogen new -static mysite`: an Astro site, starter content committed in the repository and a deploy workflow. See [a static site](#a-static-site). |
 | React, Svelte, Vue or Astro | A framework adapter and its starter: [Next.js](https://github.com/hydrogencms/hydrogen/blob/main/packages/starters/next/README.md), [SvelteKit](https://github.com/hydrogencms/hydrogen/blob/main/packages/starters/sveltekit/README.md), [Nuxt](https://github.com/hydrogencms/hydrogen/blob/main/packages/starters/nuxt/README.md) or [Astro](https://github.com/hydrogencms/hydrogen/blob/main/packages/starters/astro/README.md). Copy a starter and adapt it. |
 | To serve a JavaScript frontend from the CMS binary | [site-proxy](site-proxy.md). |
 | GraphQL | `hydrogen add graphql`. See [GraphQL](graphql.md). |
@@ -147,6 +148,23 @@ Hydrogen only delivers content; something has to show it. Pick the route that fi
 
 A frontend that wants editors to build pages visually also needs the pages module and blocks in the schema
 ([schema](schema.md#blocks-and-tokens)), and the [preview bridge](bridge-protocol.md).
+
+## A static site
+
+For a website that GitHub Pages (or any static host) serves, with the content kept in git next to the code:
+
+```sh
+hydrogen new -static mysite
+cd mysite
+hydrogen dev                                # the CMS; open the link it prints to create your administrator
+cd site && npm install && npm run dev       # in a second terminal: the site on http://localhost:4321
+```
+
+The project has page and block types (`schema/`), starter content (`content/`), an Astro site (`site/`) built with
+`@hydrogencms/astro`, and `.github/workflows/deploy.yml`. Edit pages in the admin, run `hydrogen content:save` to write
+them to `content/`, commit and push: the workflow starts the CMS on the committed content, builds the site and deploys
+it. Set Pages > Source to GitHub Actions once. The generated README has the details; [content in
+git](content-in-git.md) explains how the directory and the local database stay in step.
 
 ## Where to next
 

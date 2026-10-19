@@ -1,0 +1,12 @@
+---
+import type { BlockComponentProps } from '@hydrogencms/astro/runtime'
+import type { FeatureProps } from '../../../../gen/types'
+import { target } from '../../lib/link'
+
+const { props: p, attrs, links = {} } = Astro.props as BlockComponentProps<FeatureProps>
+const to = target(Astro.locals.hydrogen, links, p.link)
+---
+<li {...attrs} class="feature">
+  <h3>{to ? <a href={to}>{p.title}</a> : p.title}</h3>
+  <p>{p.text}</p>
+</li>

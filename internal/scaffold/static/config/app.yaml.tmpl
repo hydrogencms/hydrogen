@@ -1,0 +1,22 @@
+http:
+  addr: ${env:LISTEN_ADDR:-127.0.0.1:8080}
+
+database:
+  # Content in git needs SQLite: the database is a working copy of content/ (see docs/content-in-git.md).
+  url: ${env:DATABASE_URL:-sqlite:.work/hydrogen.db}
+
+content:
+  files: content
+  default_locale: en
+
+manage:
+  # Optional bearer token with every right, for automation; dev-token in dev when unset (loopback only).
+  token: ${env:MANAGE_TOKEN:-dev-token}
+
+modules:
+  pages:
+    sites: [main]
+
+delivery:
+  # Signs preview tokens: at least 32 characters; required outside dev (dev derives it from manage.token).
+  preview_secret: ${env:PREVIEW_SECRET:-}

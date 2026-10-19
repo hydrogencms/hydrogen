@@ -130,6 +130,8 @@ done
 # The scaffold requires the release version.
 rel=$(sed -n 's/^const ReleaseVersion = "\(.*\)"$/\1/p' internal/scaffold/scaffold.go)
 [ "$rel" = "$version" ] || bad "internal/scaffold/scaffold.go: ReleaseVersion $rel (want $version)"
+rng=$(sed -n 's/^const npmRange = "\(.*\)"$/\1/p' internal/scaffold/scaffold.go)
+[ "$rng" = "^$npmver" ] || bad "internal/scaffold/scaffold.go: npmRange $rng (want ^$npmver)"
 
 # The changelog has a section for the version.
 grep -q "^## \[$npmver\]" CHANGELOG.md || bad "CHANGELOG.md has no [$npmver] section"

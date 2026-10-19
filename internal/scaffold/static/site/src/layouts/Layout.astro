@@ -1,0 +1,41 @@
+---
+// The frame of every page: navigation from the page tree, footer from the site settings.
+import '../styles/site.css'
+
+const { title, description, noindex = false } = Astro.props
+const h = Astro.locals.hydrogen
+const [tree, settings] = await Promise.all([h.nav({ depth: 2 }), h.client().singleton('siteSettings')])
+const s = settings.data.fields
+// the pages of the first two levels of the tree, in tree order
+const links = tree.flatMap((n) => [n, ...(n.nodes ?? [])]).filter((n) => n.url).map((n) => ({ name: n.name, href: h.href(n.url!) }))
+const here = Astro.url.pathname.replace(/\/+$/, '')
+const fullTitle = title === s.siteName ? title : `${title} | ${s.siteName}`
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href={h.href('/favicon.svg')} type="image/svg+xml" />
+    <title>{fullTitle}</title>
+    {description && <meta name="description" content={description} />}
+    {noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />}
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap bar">
+        <a class="brand" href={h.href('/')}>{s.siteName}</a>
+        <nav aria-label="Main">
+          <ul>
+            {links.map((l) => <li><a href={l.href} aria-current={here === l.href.replace(/\/+$/, '') ? 'page' : undefined}>{l.name}</a></li>)}
+          </ul>
+        </nav>
+      </div>
+    </header>
+    <main id="main"><slot /></main>
+    <footer class="site-footer">
+      <div class="wrap">{s.footerText && <p>{s.footerText}</p>}</div>
+    </footer>
+  </body>
+</html>

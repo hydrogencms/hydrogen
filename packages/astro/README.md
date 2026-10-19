@@ -56,8 +56,10 @@ With `output: 'static'` and no Astro adapter the integration installs the middle
 webhook and the bridge need a server, so they are not available (rebuild when content changes). While Astro
 prerenders, the middleware never reads cookies, strips Astro's `base` from the path, and asks the CMS about
 `origin` (the option) or else Astro's `site` or else the request's origin: set one of them to the origin the
-channels' `frontend` uses (a channel that matches by host needs it). Set the channel's `frontend` to the deployed
-URL including the base, or canonical and hreflang URLs will miss it.
+channels' `frontend` uses (a channel that matches by host needs it). The channel's `frontend` may include the base
+(then canonical and hreflang URLs carry it): CMS URLs that hold the base are recognised and never get it twice. Pass
+`base: import.meta.env.BASE_URL` to `createHydrogen` so `staticPaths()` and `href()` know it before the middleware
+loads.
 
 ```js
 // astro.config.mjs

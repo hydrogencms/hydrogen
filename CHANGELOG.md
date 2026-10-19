@@ -23,6 +23,13 @@ All notable changes to Hydrogen are documented here. The format follows
   integration skips the preview, revalidation and bridge routes, the middleware resolves prerendered requests with
   Astro's `base`, `site` and no cookies, `hydrogen.staticPaths()` lists every URL the channels route for
   `getStaticPaths`, and `href()` (also in `Astro.locals.hydrogen`) gives CMS URLs the base.
+- **`hydrogen new -static`** creates a static website whose content lives in git, ready to run and deploy to GitHub
+  Pages: SQLite and the pages module, `content.files: content` with starter content (a home page, a child page and the
+  site settings; rebuilt deterministically by `make static-content` and checked by a test), page and block types, one
+  web channel (`match: { prefix: / }`), an Astro site in `site/` (`@hydrogencms/astro`, `output: 'static'`, a base path
+  from `SITE_BASE`, navigation from the page tree, block components) and `.github/workflows/deploy.yml`. It also runs
+  `generate`, so `gen/types.ts` is there for the site. `-core` points the site's npm packages at the checkout too.
+  `make static-e2e` runs it end to end.
 - A YAML error caused by an unquoted `${env:…}` inside `{ }` or `[ ]` now says to quote the value.
 
 ### Changed

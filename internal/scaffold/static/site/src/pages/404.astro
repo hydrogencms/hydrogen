@@ -1,0 +1,11 @@
+---
+import Layout from '../layouts/Layout.astro'
+---
+<Layout title="Page not found" noindex>
+  <section class="wrap notfound">
+    <p class="code">404</p>
+    <h1>Page not found</h1>
+    <p>The page you are looking for does not exist or has moved.</p>
+    <a class="button" href={Astro.locals.hydrogen.href('/')}>Back to the home page</a>
+  </section>
+</Layout>

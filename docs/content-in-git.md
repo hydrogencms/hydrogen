@@ -27,6 +27,9 @@ and the sync marker live there.
 Run `hydrogen dev`. With no database yet and no directory, nothing is loaded. Edit content in the admin, then save
 it.
 
+`hydrogen new -static` creates a project set up this way, with an Astro site and a GitHub Pages workflow (see
+[getting started](getting-started.md#a-static-site)).
+
 ## The loop
 
 ```sh

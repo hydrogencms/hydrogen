@@ -1,0 +1,11 @@
+---
+import type { BlockComponentProps } from '@hydrogencms/astro/runtime'
+import type { CalloutProps } from '../../../../gen/types'
+
+const { props: p, attrs } = Astro.props as BlockComponentProps<CalloutProps>
+---
+<section {...attrs} class="callout-block">
+  <div class="wrap">
+    <aside class:list={['callout', p.tone ?? 'note']}><p>{p.text}</p></aside>
+  </div>
+</section>

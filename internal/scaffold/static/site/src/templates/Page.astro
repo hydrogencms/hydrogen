@@ -1,0 +1,21 @@
+---
+import Blocks from '@hydrogencms/astro/components/Blocks.astro'
+import Layout from '../layouts/Layout.astro'
+import { registry } from '../components/registry'
+
+const { item } = Astro.props
+const f = item.fields
+// a page that opens with a hero has its heading there
+const hero = f.body?.[0]?.type === 'hero'
+---
+<Layout title={f.title} description={f.description}>
+  {!hero && (
+    <header class="page-head">
+      <div class="wrap">
+        <h1>{f.title}</h1>
+        {f.description && <p>{f.description}</p>}
+      </div>
+    </header>
+  )}
+  <Blocks blocks={f.body ?? []} registry={registry} links={item.links ?? {}} />
+</Layout>

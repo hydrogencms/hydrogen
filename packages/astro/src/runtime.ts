@@ -31,6 +31,8 @@ export interface HydrogenOptions {
   revalidateSecret?: string
   /** public origin to locate URLs with instead of the request's (dev on localhost, or another host than the channel's) */
   origin?: string
+  /** Astro's `base` (`import.meta.env.BASE_URL`); the integration sets it, but code that runs before the middleware loads (`getStaticPaths`) needs it here */
+  base?: string
   /** use X-Forwarded-Host/-Proto for the public origin (default false; only behind a front proxy that overwrites them) */
   trustForwarded?: boolean
   /** path of the preview URLs for items without a route (default "/preview": `/preview/<collection>/<id>`) */
@@ -106,12 +108,7 @@ async function pool<T>(items: T[], size: number, fn: (x: T) => Promise<void>): P
   }))
 }
 
-/** The site path (decoded, no slashes at the ends) of a URL that belongs to this channel and is not reserved. */
-function pathOf(url: string, info: ChannelInfo, all: ChannelInfo[]): string | undefined {
-  const m = matchSite(url, all)
-  if (!m || m.bad || m.channel.name !== info.name || reservedMatch(info.options.reserved ?? [], m.path)) return undefined
-  return decodeURIComponent(new URL(url).pathname).replace(/^\/+|\/+$/g, '')
-}
+const trimBase = (b: string | undefined) => (b ?? '').replace(/\/+$/, '')
 
 export function createHydrogen(o: HydrogenOptions) {
   const names = o.channels ?? (o.channel ? [o.channel] : [])
@@ -157,10 +154,24 @@ export function createHydrogen(o: HydrogenOptions) {
   }
 
   // Astro's `base` (no trailing slash) and `site`, set by the integration's middleware entry
-  let base = ''
+  let base = trimBase(o.base)
   let site: URL | undefined
   const ownOrigin = () => (o.origin ? o.origin.replace(/\/+$/, '') : site?.origin)
-  const withBase = (path: string) => (base && (path === '/' ? base + '/' : base + path)) || path
+  // a channel's frontend may carry the base already: CMS URLs then hold it, and it is never added twice
+  const stripBase = (path: string) => (base && (path === base || path.startsWith(base + '/')) ? path.slice(base.length) || '/' : path)
+  const withBase = (path: string) => {
+    const p = stripBase(path)
+    return (base && (p === '/' ? base + '/' : base + p)) || p
+  }
+
+  /** The site path (decoded, no slashes at the ends) of a URL that belongs to this channel and is not reserved. */
+  function pathOf(url: string, info: ChannelInfo, all: ChannelInfo[]): string | undefined {
+    const u = new URL(url)
+    const path = stripBase(u.pathname)
+    const m = matchSite(u.origin + path, all)
+    if (!m || m.bad || m.channel.name !== info.name || reservedMatch(info.options.reserved ?? [], m.path)) return undefined
+    return decodeURIComponent(path).replace(/^\/+|\/+$/g, '')
+  }
 
   function href(url: string): string {
     if (url.startsWith('/') && !url.startsWith('//')) return withBase(url)
@@ -185,7 +196,7 @@ export function createHydrogen(o: HydrogenOptions) {
     // a prerendering build has no visitor: no cookies (so no preview), and the request carries Astro's base
     const pre = ctx.isPrerendered === true
     // (Astro asks for directory pages with a trailing slash, which the CMS would redirect away)
-    const pathname = pre ? (base && (u.pathname === base || u.pathname.startsWith(base + '/')) ? u.pathname.slice(base.length) : u.pathname).replace(/\/+$/, '') || '/' : u.pathname
+    const pathname = pre ? stripBase(u.pathname).replace(/\/+$/, '') || '/' : u.pathname
     // a rewrite (the 404 page) enters the middleware again: the first pass has decided
     if (skip(pathname) || ctx.locals.hydrogen) return next()
 
@@ -292,7 +303,7 @@ export function createHydrogen(o: HydrogenOptions) {
 
     /** @internal Astro's `base` and `site`, handed over by the integration's middleware entry */
     configure(a: { base?: string; site?: string }) {
-      base = (a.base ?? '').replace(/\/+$/, '')
+      base = trimBase(a.base ?? o.base)
       site = a.site ? new URL(a.site) : undefined
     },
 

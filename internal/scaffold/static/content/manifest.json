@@ -1,0 +1,47 @@
+{
+  "format": 2,
+  "hydrogen": "static",
+  "dialect": "sqlite",
+  "schemaHash": "cea9a79af9517823363a3e7901b974392d0b2e8872b7c8c9e1ab77cf00832f49",
+  "createdAt": "2026-10-01T09:10:00Z",
+  "counts": {
+    "items": 3,
+    "versions": 3,
+    "drafts": 0,
+    "schemaRevisions": 1,
+    "contentMigrations": 0,
+    "modules": {
+      "pages": 6
+    }
+  },
+  "files": [
+    {
+      "name": "content_migrations.ndjson",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "name": "items.ndjson",
+      "sha256": "bc6cb1c1307a34116a48c8e979bf73b99c002ff30f39e1e7690c7a309ee2ca7a",
+      "bytes": 4024,
+      "records": 3
+    },
+    {
+      "name": "modules/pages.ndjson",
+      "sha256": "54c2b51cd86450e23df6e06d0cea517be368af141ab83c913e6f7b55db71cab3",
+      "bytes": 1264,
+      "records": 6
+    },
+    {
+      "name": "schema/compiled.json",
+      "sha256": "cea9a79af9517823363a3e7901b974392d0b2e8872b7c8c9e1ab77cf00832f49",
+      "bytes": 4276
+    },
+    {
+      "name": "schema/revisions/cea9a79af9517823363a3e7901b974392d0b2e8872b7c8c9e1ab77cf00832f49.json",
+      "sha256": "5c8ea71065a52026f94d73d6c387d115b97fc3df30039d39269160e697076992",
+      "bytes": 4407,
+      "records": 1
+    }
+  ]
+}

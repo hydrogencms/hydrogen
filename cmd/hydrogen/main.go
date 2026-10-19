@@ -20,7 +20,9 @@ import (
 )
 
 const usage = `Usage:
-  hydrogen new [-module path] [-core dir] [-no-tidy] <dir>   create a project
+  hydrogen new [-static] [-module path] [-core dir] [-no-tidy] <dir>
+                                                              create a project; -static: a static website with
+                                                              its content in git (Astro site, GitHub Pages)
   hydrogen dev [command args]                                 run with live reload (default: serve)
   hydrogen generate [-go dir] [-ts file]                      write typed Go and TypeScript from the schema
                                                               (and modules_gen.go from hydrogen.yaml)
@@ -105,6 +107,7 @@ func newProject(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	module := fs.String("module", "", "Go module path (default: the directory name)")
 	core := fs.String("core", "", "use a local hydrogen checkout (replace directives) instead of published versions")
 	noTidy := fs.Bool("no-tidy", false, "skip go mod tidy")
+	static := fs.Bool("static", false, "a static website with its content in git: an Astro site and a GitHub Pages workflow")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -115,7 +118,7 @@ func newProject(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		return errors.New("new: give exactly one target directory")
 	}
 	dir := fs.Arg(0)
-	if err := scaffold.Write(scaffold.Options{Dir: dir, Module: *module, Core: *core, Version: releaseVersion()}); err != nil {
+	if err := scaffold.Write(scaffold.Options{Dir: dir, Module: *module, Core: *core, Version: releaseVersion(), Static: *static}); err != nil {
 		return err
 	}
 	if !*noTidy {
@@ -125,8 +128,30 @@ func newProject(ctx context.Context, args []string, stdout, stderr io.Writer) er
 			return fmt.Errorf("go mod tidy failed (%v); fix and rerun it in %s", err, dir)
 		}
 	}
+	if *static && !*noTidy {
+		if err := generateTypes(ctx, dir, stderr); err != nil {
+			return err
+		}
+	}
 	fmt.Fprintf(stdout, "Created %s. Next:\n  cd %s\n  hydrogen dev    # then open the link it prints to create your admin account\n", dir, dir)
+	if *static {
+		fmt.Fprint(stdout, "  cd site && npm install && npm run dev    # in a second terminal: the site on http://localhost:4321\n")
+	}
 	return nil
+}
+
+// generateTypes writes gen/ for a new project: the site imports its TypeScript types and the repository commits them.
+func generateTypes(ctx context.Context, dir string, stderr io.Writer) error {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	bin := filepath.Join(abs, ".work", "bin", "app")
+	if err := devwatch.Prepare(ctx, abs, bin, stderr); err != nil {
+		return err
+	}
+	_, err = devwatch.Generate(ctx, abs, bin, nil, io.Discard, stderr)
+	return err
 }
 
 func projectDir() (string, error) {

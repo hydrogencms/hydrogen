@@ -4,14 +4,18 @@ go 1.26.0
 
 require (
 	github.com/hydrogencms/hydrogen {{.Version}}
+{{- if not .Static}}
 	github.com/hydrogencms/hydrogen/modules/postgres {{.Version}}
+{{- end}}
 	github.com/hydrogencms/hydrogen/modules/sqlite {{.Version}}
 )
 {{- if .Core}}
 
 replace (
 	github.com/hydrogencms/hydrogen => {{.Core}}
+{{- if not .Static}}
 	github.com/hydrogencms/hydrogen/modules/postgres => {{.Core}}/modules/postgres
+{{- end}}
 	github.com/hydrogencms/hydrogen/modules/sqlite => {{.Core}}/modules/sqlite
 )
 {{- end}}

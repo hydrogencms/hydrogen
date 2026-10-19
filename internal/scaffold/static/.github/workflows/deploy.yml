@@ -1,0 +1,82 @@
+name: deploy
+
+# Builds the site from the committed content and deploys it to GitHub Pages. In the repository settings, set
+# Pages > Source to "GitHub Actions" once.
+#
+# The CMS runs for the length of the build only, on the runner's loopback, and loads content/ into a fresh SQLite
+# database when it starts. It runs as production with secrets made for this run, so nothing depends on the dev
+# defaults (the dev token, the derived preview secret). Postgres is not involved: the content is in git.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - id: pages
+        uses: actions/configure-pages@v6
+      - name: Build the CMS
+        run: CGO_ENABLED=0 go build -trimpath -o bin/cms .
+      - name: Start the CMS
+        env:
+          APP_ENV: production
+          LISTEN_ADDR: 127.0.0.1:8080
+          DATABASE_URL: sqlite:.work/hydrogen.db
+          SITE_URL: ${{ steps.pages.outputs.origin }}
+        run: |
+          # the secrets exist only in the CMS process, never in later steps (npm install runs third-party scripts)
+          MANAGE_TOKEN=$(openssl rand -hex 32) PREVIEW_SECRET=$(openssl rand -hex 32) bin/cms serve > cms.log 2>&1 &
+          for _ in $(seq 100); do
+            curl -fsS -o /dev/null http://127.0.0.1:8080/healthz && exit 0
+            sleep 0.1
+          done
+          cat cms.log
+          exit 1
+      - name: Build the site
+        working-directory: site
+        env:
+          HYDROGEN_URL: http://127.0.0.1:8080
+          SITE_URL: ${{ steps.pages.outputs.origin }}
+          SITE_BASE: ${{ steps.pages.outputs.base_path }}
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm run build
+      - if: failure()
+        run: cat cms.log
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,16 @@
+---
+// Every page of the CMS: the page tree decides the URLs, getStaticPaths lists them for the build.
+import hydrogen from '../hydrogen'
+import Page from '../templates/Page.astro'
+
+export function getStaticPaths() {
+  return hydrogen.staticPaths()
+}
+
+// content type -> template; add a type to `templates` in src/hydrogen.ts too
+const templates: Record<string, typeof Page> = { page: Page }
+const p = Astro.locals.hydrogen.page
+const Template = p && templates[p.template]
+if (!p || !Template) throw new Error(`no template for ${Astro.url.pathname}${Astro.locals.hydrogen.unavailable ? ': the CMS is unavailable' : ''}`)
+---
+<Template item={p.item} />
