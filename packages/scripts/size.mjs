@@ -5,9 +5,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const budgets = { client: 5, router: 5, next: 7.25, 'admin-sdk': 5, bridge: 5.5, react: 5 }
+const budgets = { client: 5, router: 5, next: 7.25, 'admin-sdk': 5, bridge: 5.5, react: 5, hook: 2 }
 let failed = false
-for (const pkg of ['client', 'router', 'bridge', 'react', 'next', 'admin-sdk']) {
+for (const pkg of ['client', 'router', 'bridge', 'react', 'next', 'admin-sdk', 'hook']) {
   const dir = join(root, pkg, 'dist')
   let src
   try { src = Buffer.concat(readdirSync(dir).filter((f) => f.endsWith('.js') && !f.endsWith('.iife.js')).sort().map((f) => readFileSync(join(dir, f)))) } catch { console.error(`${pkg}: ${dir} missing, run npm run build`); process.exit(1) }

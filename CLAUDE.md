@@ -149,6 +149,11 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   (`list_actions`), asset panels (panels typed to an upload type), slots on every list screen, extension views in
   the command palette. Every point is documented in `docs/admin-extensions.md` (public) and typed in
   `@hydrogencms/admin-sdk`. Contract: `planning/design/admin-h10b.md`.
+- WebAssembly hooks (H10c): `modules/wasmhooks` (own Go module, wazero) runs hooks compiled to WASI preview-1
+  command modules: JSON request on stdin, JSON response (`set`/`errors`/`error`) on stdout, a fresh sandboxed
+  instance per call (memory cap, deadline that also cuts sleeps, no FS/env/network). TypeScript hooks:
+  `@hydrogencms/hook` (`defineHook`) + `hydrogen hooks build` (esbuild + Javy 9, pinned in `scripts/javy.sh`);
+  `make wasm-e2e` (needs the network). Docs: `docs/wasm-hooks.md`. Contract: `planning/design/wasm-h10c.md`.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field

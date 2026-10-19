@@ -1,7 +1,7 @@
 # Go modules in this repository (core first). Every target runs over all of them.
-MODULES := . modules/sqlite modules/postgres tests examples/minimal examples/content examples/headless examples/multisite examples/starter examples/fullstack
+MODULES := . modules/sqlite modules/postgres modules/wasmhooks tests examples/minimal examples/content examples/headless examples/multisite examples/starter examples/fullstack
 
-.PHONY: starter-fixture build test vet lint tidy tidy-check db-up db-down smoke check sdk next-e2e starter-next-e2e conformance site-e2e site-bridge site-bridge-check admin admin-types admin-dist-check admin-e2e example-admin example-admin-check
+.PHONY: starter-fixture build test vet lint tidy tidy-check db-up db-down smoke check sdk next-e2e starter-next-e2e conformance site-e2e wasm-e2e site-bridge site-bridge-check admin admin-types admin-dist-check admin-e2e example-admin example-admin-check
 
 build:
 	@for m in $(MODULES); do (cd $$m && go build ./...) || exit 1; done
@@ -53,6 +53,10 @@ starter-next-e2e:
 # (scripts/starter-next-e2e.sh is the model: it ends in `node packages/adapter-test/dist/cli.js --cms --token --frontend --browser`).
 CONFORMANCE_TARGETS := starter-next-e2e site-e2e
 conformance: $(CONFORMANCE_TARGETS)
+
+# TypeScript WebAssembly hooks: scratch project, Javy (scripts/javy.sh), hooks build, serve, assertions.
+wasm-e2e:
+	./scripts/wasm-hooks-e2e.sh
 
 # examples/fullstack served by one binary (admin, APIs, website), checked by the adapter conformance suite with a browser.
 site-e2e:

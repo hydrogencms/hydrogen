@@ -47,6 +47,7 @@ written through temporary files, and when `go get` or `go mod tidy` fails, `hydr
 | `overlays` | `.../modules/overlays` | no | none (see [locales](locales.md)) |
 | `images` | `.../modules/images` | no | `modules.images` (see [images](images.md)) |
 | `meilisearch` | `.../modules/meilisearch` | no | `modules.meilisearch` (see [meilisearch](meilisearch.md)) |
+| `wasmhooks` | `github.com/hydrogencms/hydrogen/modules/wasmhooks` | yes | `modules.wasmhooks` (see [wasm-hooks](wasm-hooks.md)) |
 
 Modules in the core module need no `go.mod` change. The adapters are separate Go modules because of their
 dependencies: `hydrogen add postgres` runs `go get` for them at the core's version. A project built with

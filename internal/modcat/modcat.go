@@ -27,6 +27,7 @@ var catalog = []Module{
 	{Name: "site", Package: modPrefix + "site", Summary: "server-rendered website for web channels with render: go", Config: "modules.site"},
 	{Name: "overlays", Package: modPrefix + "overlays", Summary: "locale overlays: a language inherits fields from another", Docs: "docs/locales.md"},
 	{Name: "images", Package: modPrefix + "images", Summary: "image presets, focal points and variants", Docs: "docs/images.md", Config: "modules.images"},
+	{Name: "wasmhooks", Package: modPrefix + "wasmhooks", GoModule: modPrefix + "wasmhooks", Summary: "content hooks as sandboxed WebAssembly programs (Go, Rust, TypeScript, …)", Docs: "docs/wasm-hooks.md", Config: "modules.wasmhooks"},
 	{Name: "meilisearch", Package: modPrefix + "meilisearch", Summary: "Meilisearch as the search engine", Docs: "docs/meilisearch.md", Config: "modules.meilisearch"},
 }
 

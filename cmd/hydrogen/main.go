@@ -28,6 +28,8 @@ const usage = `Usage:
   hydrogen add <module|path[@version]>…                       add modules to hydrogen.yaml and go.mod
   hydrogen remove <module|path>…                              remove modules
   hydrogen build [-o path] [go build flags]                   compile the project into bin/<name> (no cgo)
+  hydrogen hooks build [files…]                               compile TypeScript hooks (default hooks/*.ts) to
+                                                              hooks/<name>.wasm with esbuild and Javy ($JAVY or PATH)
   hydrogen modules                                            list the catalog; * marks this project's modules
   hydrogen modules -versions                                  build and run the project's modules command
   hydrogen modules init <module|path>…                        create hydrogen.yaml for a project that wires
@@ -74,6 +76,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		err = removeModules(ctx, args[1:], stdout, stderr)
 	case "build":
 		err = buildCmd(ctx, args[1:], stdout, stderr)
+	case "hooks":
+		err = hooksCmd(ctx, args[1:], stdout, stderr)
 	case "modules":
 		err = modulesCmd(ctx, args[1:], stdout, stderr)
 	default:

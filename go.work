@@ -10,5 +10,6 @@ use (
 	./examples/minimal
 	./modules/postgres
 	./modules/sqlite
+	./modules/wasmhooks
 	./tests
 )
