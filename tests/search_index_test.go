@@ -294,7 +294,7 @@ func siSetup(t *testing.T, a *kernel.App) {
 
 func siWait(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	for range 500 {
+	for range 3000 { // 30 s: the rebuild runs slower under -race on CI runners
 		if ok() {
 			return
 		}
