@@ -141,6 +141,19 @@ func TestPartial(t *testing.T) {
 	if out, err := newPage(true).partialFn("partials/loop.html"); err == nil || !strings.Contains(err.Error(), "nested") {
 		t.Errorf("recursion = %q %v", out, err)
 	}
+	if ok, err := newPage(true).hasTemplateFn("blocks/box/a.html"); !ok || err != nil {
+		t.Errorf("hasTemplate a = %v %v", ok, err)
+	}
+	if ok, _ := newPage(true).hasTemplateFn("blocks/box/none.html"); ok {
+		t.Error("hasTemplate found a missing template")
+	}
+	// a blocks value read from another item renders read only
+	raw := []any{map[string]any{"type": "box", "props": map[string]any{"view": "a", "Name": "y"}}}
+	pp := newPage(false)
+	pp.preview = true
+	if out, err := pp.blocksFn(raw); err != nil || string(out) != "[A y]|" {
+		t.Errorf("raw blocks = %q %v", out, err)
+	}
 }
 
 func TestReadHelpers(t *testing.T) {

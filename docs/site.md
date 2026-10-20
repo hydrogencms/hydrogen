@@ -87,7 +87,10 @@ Identical calls within one render ask the delivery API once.
   `/search`, …) when it answers 200, else nil; a 5xx answer is an error.
 - `partial "blocks/hero/wide.html" data` executes a template by a computed name (Go's `{{template}}` needs a
   constant) and returns its HTML; `data` defaults to the page's view. A missing template is an error in
-  `site:check` and a logged, empty result when serving. Partials may nest up to 32 levels.
+  `site:check` and a logged, empty result when serving. Partials may nest up to 32 levels. `hasTemplate "name"`
+  tells whether a template exists, for a fallback before calling `partial`.
+- `blocks` also takes a blocks value read from another item (`{{blocks (index $other.Fields "body")}}`) and renders
+  it read only (no editing markers in preview).
 
 ```html
 {{range items "post" (dict "limit" 3 "sort" "-slug")}}<a href="{{link .}}">{{.Name}}</a>{{end}}

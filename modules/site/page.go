@@ -116,6 +116,7 @@ func (p *page) funcs() template.FuncMap {
 	return template.FuncMap{
 		"blocks":      p.blocksFn,
 		"partial":     p.partialFn,
+		"hasTemplate": p.hasTemplateFn,
 		"items":       p.itemsFn,
 		"item":        p.itemFn,
 		"query":       p.queryFn,
@@ -143,7 +144,8 @@ func (p *page) problem(format string, args ...any) error {
 	return nil
 }
 
-// blocksFn renders a blocks field of the current item by name, a slot, or a single block.
+// blocksFn renders a blocks field of the current item by name, a slot, a single block, or a blocks value read
+// from another item (rendered read only, without editing paths).
 func (p *page) blocksFn(v any) (template.HTML, error) {
 	var list []*BlockView
 	switch x := v.(type) {
@@ -153,6 +155,8 @@ func (p *page) blocksFn(v any) (template.HTML, error) {
 		if p.view.Item != nil {
 			list = p.parseBlocks(p.view.Item.Fields[x], "fields/"+x, false)
 		}
+	case []any:
+		list = p.parseBlocks(x, "", true)
 	case []*BlockView:
 		list = x
 	case *BlockView:

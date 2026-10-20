@@ -156,6 +156,14 @@ func (p *page) queryFn(path string, args ...any) (map[string]any, error) {
 	return v.(map[string]any), nil
 }
 
+// hasTemplateFn tells whether the set has a template of that name, so a template can fall back before partial.
+func (p *page) hasTemplateFn(name string) (bool, error) {
+	if err := p.ensureSet(); err != nil {
+		return false, err
+	}
+	return p.t.Lookup(name) != nil, nil
+}
+
 // partialFn executes a template of the set by a computed name; data defaults to the page's view.
 func (p *page) partialFn(name string, data ...any) (template.HTML, error) {
 	if err := p.ensureSet(); err != nil {

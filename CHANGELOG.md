@@ -10,7 +10,8 @@ All notable changes to Hydrogen are documented here. The format follows
 
 - Site module templates: generic functions (`dict`, `list`, arithmetic, `seq`, `default`, string helpers, `date`,
   `json`, `first`, `last`), project functions with `site.Funcs`, reading helpers `items`, `item` and `query` (they tag
-  the page like any read), `partial` for computed template names, and `View.Client()` for Go components.
+  the page like any read), `partial` for computed template names with `hasTemplate` to test for one, `blocks` over another item's blocks
+  value, and `View.Client()` for Go components.
 - Rich text: the marks `underline`, `strike`, `superscript` and `subscript`, tables (`table`, with rows and `tableCell`/
   `tableHeader` cells carrying `colspan`, `rowspan` and `colwidth`) and block-level `image` nodes (`src` as an http(s)
   URL or root-relative path, `alt`, `title`, `width`, `height`). The admin editor has buttons, a table menu and an
