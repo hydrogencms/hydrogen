@@ -223,7 +223,9 @@ Delivery serves published snapshots, so a schema change that alters the stored s
 - **Breaking changes** are a removed type or field, a changed field type, a changed `translatable`, a narrowed
   `blocks` `allow` and a token field moved to another set. `hydrogen serve` and `hydrogen config:check -db` refuse
   them until a **content migration** accounts for them (see [hooks](hooks.md#content-migrations)). Migrations apply
-  by themselves when the server starts in dev, and with `hydrogen content:migrate` elsewhere.
+  by themselves when the server starts in dev, and with `hydrogen content:migrate` elsewhere. A migration rewrites
+  one type, so a change to a block or token set needs a migration (same `Changes`) for each type whose blocks can
+  hold it, e.g. one for `landing` and one for `page` when both allow `hero`.
 - After a change that alters what a published document looks like, `hydrogen content:reindex` rebuilds every
   projection, so delivery does not serve stale snapshots.
 

@@ -507,3 +507,72 @@ types:
 		t.Error("identical schemas differ")
 	}
 }
+
+func TestBlockChangesNeedMigrationPerType(t *testing.T) {
+	parse := func(y string) *compiledSchema {
+		b, err := compile(t, y).MarshalJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cs, err := parseCompiled(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cs
+	}
+	const shared = `
+blocks:
+  hero:
+    props:
+      href: { type: %s }
+  row:
+    props: { t: { type: string } }
+    slots:
+      cells: { allow: [hero] }
+types:
+  landing:
+    fields:
+      body: { type: blocks, allow: [hero] }
+  page:
+    fields:
+      body: { type: blocks, allow: [hero] }
+      title: { type: %s }
+  report:
+    fields:
+      body: { type: blocks, allow: [row] }
+  note:
+    fields:
+      title: { type: string }
+`
+	old := parse(strings.Replace(strings.Replace(shared, "%s", "string", 1), "%s", "string", 1))
+	cur := parse(strings.Replace(strings.Replace(shared, "%s", "number", 1), "%s", "number", 1))
+	changes := diffSchemas(old, cur)
+	mig := func(typ string, ch ...string) Migration { return Migration{Type: typ, Changes: ch} }
+	left := func(ms ...Migration) []string { return unaccountedBy(changes, old, cur, ms) }
+
+	if len(changes) != 2 {
+		t.Fatalf("changes = %q", changes)
+	}
+	got := left(mig("landing", "block:hero.props.href", "page.title"))
+	want := []string{"block:hero.props.href: type changed (needs a migration for types page, report)"}
+	if !slices.Equal(got, want) {
+		t.Errorf("one type migrated: %q", got)
+	}
+	got = left(mig("landing", "block:hero.props.href"), mig("page", "block:hero", "page.title"))
+	want = []string{"block:hero.props.href: type changed (needs a migration for type report)"}
+	if !slices.Equal(got, want) {
+		t.Errorf("slot-only type missing: %q", got)
+	}
+	if got = left(mig("landing", "block:hero"), mig("page", "block:hero", "page.title"), mig("report", "block:hero.props.href")); len(got) != 0 {
+		t.Errorf("all types migrated: %q", got)
+	}
+	got = left(mig("note", "block:hero", "page.title"))
+	if len(got) != 1 || !strings.Contains(got[0], "landing, page, report") {
+		t.Errorf("unrelated type migration: %q", got)
+	}
+	got = left(mig("landing", "block:hero"), mig("page", "block:hero"), mig("report", "block:hero"))
+	want = []string{"page.title: type changed"}
+	if !slices.Equal(got, want) {
+		t.Errorf("type-owned change: %q", got)
+	}
+}

@@ -218,11 +218,13 @@ func TestBreakingBlockChangesNeedAMigration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		eqSlice(t, "breaking", got, []string{"page.body: allow narrowed (removed cards)", "token:tone: values removed (dark)"})
+		eqSlice(t, "breaking", got, []string{"page.body: allow narrowed (removed cards)", "token:tone: values removed (dark) (needs a migration for types page, sharedBlock)"})
 
 		m := content.Migration{Name: "0001_narrow", Type: "page", Changes: []string{"page.body", "token:tone"},
 			Up: func(*content.MigrationDoc) error { return nil }}
-		e = newEnv(t, db, clk, envConfig{schema: narrowed, migrations: []content.Migration{m}, skipRev: true})
+		m2 := content.Migration{Name: "0002_narrow", Type: "sharedBlock", Changes: []string{"token:tone"},
+			Up: func(*content.MigrationDoc) error { return nil }}
+		e = newEnv(t, db, clk, envConfig{schema: narrowed, migrations: []content.Migration{m, m2}, skipRev: true})
 		if got, err = e.svc.BreakingChanges(ctx); err != nil || len(got) != 0 {
 			t.Fatalf("breaking with migration = %v, %v", got, err)
 		}

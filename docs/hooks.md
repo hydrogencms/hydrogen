@@ -198,6 +198,17 @@ h.Migration(content.Migration{
 })
 ```
 
+A migration only rewrites items of its `Type`. A change to a block (`block:hero.props.href`) or a token set
+(`token:tone`) reaches every type whose documents can hold it, directly or through another block's slots, so register
+one migration per such type with the same `Changes`; the start-up check names the types still missing
+(`block:hero.props.href: type changed (needs a migration for type page)`).
+
+```go
+for _, typ := range []string{"landing", "page"} {
+	h.Migration(content.Migration{Name: "0002_hero_href_" + typ, Type: typ, Changes: []string{"block:hero.props.href"}, Up: fixHref})
+}
+```
+
 `Up` runs for every item and locale, on the merged document; the result is written back split by the new schema.
 Apply with `hydrogen content:migrate` (automatic on start in `dev`), which also rebuilds the projections and records
 the new schema revision.

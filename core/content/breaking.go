@@ -94,11 +94,129 @@ func (s *Service) BreakingChanges(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var accounted []string
-	for _, m := range s.migrations {
-		accounted = append(accounted, m.Changes...)
+	return unaccountedBy(diffSchemas(old, cur), old, cur, s.migrations), nil
+}
+
+// unaccountedBy drops changes the migrations account for. A change under a type is accounted by any migration
+// listing it. A block or token change applies to every type whose stored documents can hold it, so each of
+// those types needs a migration of its own listing it; the types still missing are named in the message. The
+// old schema decides which types can hold it (their documents were written under it), restricted to types
+// that still exist: narrowing a type's allowed blocks is reported on that type's own field.
+func unaccountedBy(changes []string, old, cur *compiledSchema, migrations []Migration) []string {
+	var all []string
+	byType := make(map[string][]string)
+	for _, m := range migrations {
+		all = append(all, m.Changes...)
+		byType[m.Type] = append(byType[m.Type], m.Changes...)
 	}
-	return unaccounted(diffSchemas(old, cur), accounted), nil
+	holders := holdersOf(old, cur)
+	var out []string
+	for _, ch := range changes {
+		path, what, _ := strings.Cut(ch, ": ")
+		key, ok := holderKey(path)
+		if !ok || len(holders[key]) == 0 {
+			out = append(out, unaccounted([]string{ch}, all)...)
+			continue
+		}
+		var missing []string
+		for _, typ := range holders[key] {
+			if len(unaccounted([]string{ch}, byType[typ])) > 0 {
+				missing = append(missing, typ)
+			}
+		}
+		if len(missing) == 0 {
+			continue
+		}
+		noun := "type "
+		if len(missing) > 1 {
+			noun = "types "
+		}
+		out = append(out, path+": "+what+" (needs a migration for "+noun+strings.Join(missing, ", ")+")")
+	}
+	return out
+}
+
+// holderKey names what a change path belongs to: "block:hero" or "token:tone".
+func holderKey(path string) (string, bool) {
+	switch {
+	case strings.HasPrefix(path, "block:"):
+		name, _, _ := strings.Cut(path, ".")
+		return name, true
+	case strings.HasPrefix(path, "token:"):
+		return path, true
+	}
+	return "", false
+}
+
+// holdersOf maps "block:<name>" and "token:<set>" to the sorted types (present in cur) whose documents can
+// hold them: through their blocks fields, transitively through block slots and block props.
+func holdersOf(old, cur *compiledSchema) map[string][]string {
+	groups := groupMap(old.Groups)
+	blocks := make(map[string]compiledBlock, len(old.Blocks))
+	for _, b := range old.Blocks {
+		blocks[b.Name] = b
+	}
+	exists := make(map[string]bool, len(cur.Types))
+	for _, t := range cur.Types {
+		exists[t.Name] = true
+	}
+	sets := make(map[string]map[string]bool)
+	for _, t := range old.Types {
+		if !exists[t.Name] {
+			continue
+		}
+		var queue []string
+		keys := make(map[string]bool)
+		var visit func(f *compiledField)
+		visit = func(f *compiledField) {
+			switch f.Type {
+			case "blocks":
+				queue = append(queue, optStrings(f.Options["allow"])...)
+			case "token":
+				if set, ok := f.Options["set"].(string); ok {
+					keys["token:"+set] = true
+				}
+			}
+			if f.Of != nil {
+				visit(f.Of)
+			}
+			for i, c := 0, children(f, groups); i < len(c); i++ {
+				visit(&c[i])
+			}
+		}
+		for i := range t.Fields {
+			visit(&t.Fields[i])
+		}
+		for len(queue) > 0 {
+			name := queue[0]
+			queue = queue[1:]
+			if keys["block:"+name] {
+				continue
+			}
+			keys["block:"+name] = true
+			b := blocks[name]
+			for i := range b.Props {
+				visit(&b.Props[i])
+			}
+			for _, sl := range b.Slots {
+				queue = append(queue, sl.Allow...)
+			}
+		}
+		for k := range keys {
+			if sets[k] == nil {
+				sets[k] = make(map[string]bool)
+			}
+			sets[k][t.Name] = true
+		}
+	}
+	out := make(map[string][]string, len(sets))
+	for k, v := range sets {
+		for typ := range v {
+			out[k] = append(out[k], typ)
+		}
+		slices.Sort(out[k])
+	}
+	return out
 }
 
 // diffSchemas lists breaking changes as "path: what", sorted.
