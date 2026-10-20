@@ -19,6 +19,7 @@ import (
 	"github.com/hydrogencms/hydrogen/core/clock"
 	"github.com/hydrogencms/hydrogen/core/config"
 	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/exportfmt"
 	"github.com/hydrogencms/hydrogen/core/ids"
 	"github.com/hydrogencms/hydrogen/core/kernel"
 	"github.com/hydrogencms/hydrogen/internal/scaffold"
@@ -91,7 +92,7 @@ func run(ctx context.Context, out string) error {
 	if err := os.RemoveAll(out); err != nil {
 		return err
 	}
-	m, err := app.Export(ctx, out, kernel.ExportOptions{Version: "static"})
+	m, err := app.Export(ctx, out, kernel.ExportOptions{Version: "static", Layout: exportfmt.LayoutItems})
 	if err != nil {
 		return err
 	}

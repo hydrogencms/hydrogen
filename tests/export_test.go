@@ -766,3 +766,44 @@ func BenchmarkExportImport5000(b *testing.B) {
 		})
 	}
 }
+
+// The items layout restores the same site as items.ndjson, and both fingerprint alike.
+func TestExportItemsLayout(t *testing.T) {
+	src := freshEnv(t, backends[0], exportSchema, noopMigrations())
+	site := buildExportSite(t, src)
+	if _, err := src.c.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	flat, mf := exportTo(t, src, false)
+	dir := filepath.Join(t.TempDir(), "export")
+	m, err := src.app.Export(ctx, dir, kernel.ExportOptions{Version: "test", Layout: exportfmt.LayoutItems})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Fingerprint() != mf.Fingerprint() {
+		t.Fatal("the layout changes the fingerprint")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "items.ndjson")); err == nil {
+		t.Fatal("items.ndjson written in the items layout")
+	}
+	var files int
+	for _, f := range m.Files {
+		if strings.HasPrefix(f.Name, "items/") {
+			files++
+			data, _ := os.ReadFile(filepath.Join(dir, filepath.FromSlash(f.Name)))
+			if !bytes.HasPrefix(data, []byte("{\n  \"id\"")) || !bytes.HasSuffix(data, []byte("}\n")) {
+				t.Fatalf("%s is not an indented document:\n%.80s", f.Name, data)
+			}
+		}
+	}
+	if files != m.Counts.Items {
+		t.Fatalf("%d item files for %d items", files, m.Counts.Items)
+	}
+	for _, d := range []string{dir, flat} {
+		dst := freshEnv(t, backends[0], exportSchema, noopMigrations())
+		if _, err := importFrom(t, dst, d, false); err != nil {
+			t.Fatalf("import %s: %v", d, err)
+		}
+		compareSites(t, src, dst, site)
+	}
+}

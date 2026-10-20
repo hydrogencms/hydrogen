@@ -50,7 +50,7 @@ command (or `help`) the binary lists everything it has, module commands included
 | `check-frontend -templates <file> [-channel name] [-db]` | Checks that a frontend has a template for every page type and mounted collection its channels can serve. `<file>` is JSON: `{"templates": ["page", "article"]}`. |
 | `users:create-admin <login>` | Creates a user, or resets the password of one, with the `administrator` role. The password comes from `HYDROGEN_ADMIN_PASSWORD` or one line of stdin. |
 | `tokens:create -name <n> -role <role> [-agent] [-expires 720h]` | Creates an API token with the named roles and prints its secret to stdout, once. The id goes to stderr. |
-| `export [-published-only] <dir>` | Writes content and module data to a directory. See [Backup and portability](deployment.md#backups-and-export). |
+| `export [-published-only] [-layout ndjson\|items] <dir>` | Writes content and module data to a directory. `-layout items` writes one pretty-printed `items/<type>/<id>.json` per item instead of one `items.ndjson` (what `content:save` uses). See [Backup and portability](deployment.md#backups-and-export). |
 | `import [-allow-schema-change] <dir>` | Restores an export into an empty, migrated database. |
 | `content:save` | With [`content.files`](content-in-git.md): writes the database's content to the directory, leaving it untouched when nothing changed. |
 | `content:load [-force]` | With `content.files`: replaces the database with the directory's content, keeping the old database in a backup. `-force` also discards unsaved changes. |

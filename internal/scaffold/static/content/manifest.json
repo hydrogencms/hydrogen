@@ -2,7 +2,7 @@
   "format": 2,
   "hydrogen": "static",
   "dialect": "sqlite",
-  "schemaHash": "cea9a79af9517823363a3e7901b974392d0b2e8872b7c8c9e1ab77cf00832f49",
+  "schemaHash": "0286002b84aaaab7bdd9de6c2f8ef55cfca85b022ccdf4afc3915dba1dcdcb06",
   "createdAt": "2026-10-01T09:10:00Z",
   "counts": {
     "items": 3,
@@ -14,6 +14,10 @@
       "pages": 6
     }
   },
+  "itemStream": {
+    "sha256": "b2cf15592768ed45579866556a6062fa55889a4dd03ec1d1e7cad74b27b71b0b",
+    "bytes": 4024
+  },
   "files": [
     {
       "name": "content_migrations.ndjson",
@@ -21,10 +25,19 @@
       "bytes": 0
     },
     {
-      "name": "items.ndjson",
-      "sha256": "bc6cb1c1307a34116a48c8e979bf73b99c002ff30f39e1e7690c7a309ee2ca7a",
-      "bytes": 4024,
-      "records": 3
+      "name": "items/page/01a0f6b1-2680-76f4-a787-babb602ad25a.json",
+      "sha256": "5e375090c4dcc2222b529fd64e84b23937a6481b805657fb6308afe209aae191",
+      "bytes": 2827
+    },
+    {
+      "name": "items/page/01a0f6b2-10e0-70bc-a345-31ed6dd63b65.json",
+      "sha256": "29ed57bc95de0d5a8a0477b396fe16cfe300ad5ad977d0cc99a660ca754ec634",
+      "bytes": 4339
+    },
+    {
+      "name": "items/siteSettings/01a0f6b8-7980-7608-91dd-64095f51ee14.json",
+      "sha256": "4005bc176060df29d21c4bc34cd9eb94daee67340a483e23f0de00fc7ae37cc1",
+      "bytes": 751
     },
     {
       "name": "modules/pages.ndjson",
@@ -34,13 +47,13 @@
     },
     {
       "name": "schema/compiled.json",
-      "sha256": "cea9a79af9517823363a3e7901b974392d0b2e8872b7c8c9e1ab77cf00832f49",
-      "bytes": 4276
+      "sha256": "0286002b84aaaab7bdd9de6c2f8ef55cfca85b022ccdf4afc3915dba1dcdcb06",
+      "bytes": 4304
     },
     {
-      "name": "schema/revisions/cea9a79af9517823363a3e7901b974392d0b2e8872b7c8c9e1ab77cf00832f49.json",
-      "sha256": "5c8ea71065a52026f94d73d6c387d115b97fc3df30039d39269160e697076992",
-      "bytes": 4407,
+      "name": "schema/revisions/0286002b84aaaab7bdd9de6c2f8ef55cfca85b022ccdf4afc3915dba1dcdcb06.json",
+      "sha256": "87af4a23b2781b67aa15aed73c11536b69b970c4960e5c5fede4185256610984",
+      "bytes": 4435,
       "records": 1
     }
   ]

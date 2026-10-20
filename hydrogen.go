@@ -11,6 +11,7 @@ package hydrogen
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -215,7 +216,7 @@ var core = []struct{ name, summary string }{
 	{"check-frontend", "check that a frontend has a template for every page type and mount: check-frontend -templates <file> [-channel name] [-db]"},
 	{"users:create-admin", "create or reset an administrator: users:create-admin <login> (password from HYDROGEN_ADMIN_PASSWORD or one line of stdin)"},
 	{"tokens:create", "create an API token and print its secret once: tokens:create -name <n> -role <role> [-agent] [-expires 720h]"},
-	{"export", "write content and module data to a directory: export [-published-only] <dir>"},
+	{"export", "write content and module data to a directory: export [-published-only] [-layout ndjson|items] <dir>"},
 	{"import", "restore an export into an empty database: import [-allow-schema-change] <dir>"},
 	{"content:save", "write the database's content to content.files (content in git)"},
 	{"content:load", "replace the database with the content of content.files: content:load [-force]"},
@@ -274,10 +275,11 @@ func Run(ctx context.Context, args []string, configure func(*Builder), o RunOpti
 		if len(rest) > 0 {
 			return fmt.Errorf("serve takes no arguments")
 		}
-		if app, err = reconcileContentFiles(ctx, b, o, app); err != nil {
+		var rebuilt bool
+		if app, rebuilt, err = reconcileContentFiles(ctx, b, o, app); err != nil {
 			return err
 		}
-		return serve(ctx, app, o)
+		return serve(ctx, app, o, rebuilt)
 	case "content:save":
 		return contentSave(ctx, app, o, rest)
 	case "content:load":
@@ -328,7 +330,8 @@ func newApp(ctx context.Context, b *Builder, o RunOptions) (*kernel.App, error) 
 	return kernel.New(ctx, kernel.Options{Config: cfg, DB: o.DB, Clock: o.Clock, Stderr: o.Stderr, Stdout: o.Stdout, PasswordIterations: o.PasswordIterations}, b.all()...)
 }
 
-func serve(ctx context.Context, app *kernel.App, o RunOptions) error {
+// serve starts the server. rebuilt is set when this start (re)built the database from content.files.
+func serve(ctx context.Context, app *kernel.App, o RunOptions, rebuilt bool) error {
 	s := app.Services()
 	pending, err := app.Pending(ctx)
 	if err != nil {
@@ -343,7 +346,7 @@ func serve(ctx context.Context, app *kernel.App, o RunOptions) error {
 			return err
 		}
 	}
-	if err := readyContent(ctx, app); err != nil {
+	if err := readyContent(ctx, app, rebuilt); err != nil {
 		return err
 	}
 	if err := s.Admin.SeedTemplates(ctx); err != nil {
@@ -353,22 +356,27 @@ func serve(ctx context.Context, app *kernel.App, o RunOptions) error {
 }
 
 // readyContent checks that stored content matches the schema: breaking changes need migrations, which apply
-// automatically in dev, and the current schema is recorded as a revision.
-func readyContent(ctx context.Context, app *kernel.App) error {
+// automatically in dev, and the current schema is recorded as a revision. A database rebuilt from content.files
+// is a disposable copy of files that stay as they are, so its migrations apply in any environment.
+func readyContent(ctx context.Context, app *kernel.App, rebuilt bool) error {
 	s := app.Services()
 	breaking, err := s.Content.BreakingChanges(ctx)
 	if err != nil {
 		return err
 	}
 	if len(breaking) > 0 {
-		return fmt.Errorf("schema changes need a content migration:\n  %s", strings.Join(breaking, "\n  "))
+		msg := "schema changes need a content migration:\n  " + strings.Join(breaking, "\n  ")
+		if s.Core.Content.Files != "" {
+			msg += "\nwrite a content migration, run hydrogen dev (or content:migrate) to apply it, then content:save and commit " + s.Core.Content.Files
+		}
+		return errors.New(msg)
 	}
 	pending, err := s.Content.PendingMigrations(ctx)
 	if err != nil {
 		return err
 	}
 	if len(pending) > 0 {
-		if s.Env != config.DevEnv {
+		if s.Env != config.DevEnv && !rebuilt {
 			return fmt.Errorf("%d pending content migrations; run content:migrate first", len(pending))
 		}
 		s.Log.Info("applying content migrations", "names", pending)

@@ -80,6 +80,24 @@ func Fingerprint(dir string) (fp string, found bool, err error) {
 	return r.Manifest().Fingerprint(), true, nil
 }
 
+// Restore undoes Backup: it removes whatever database files exist at db (a failed rebuild left them) and moves
+// the backed-up ones back. The database must be closed.
+func Restore(db, backup string) error {
+	for _, p := range []string{db, db + "-wal", db + "-shm"} {
+		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	for _, p := range []string{db, db + "-wal", db + "-shm"} {
+		err := os.Rename(filepath.Join(backup, filepath.Base(p)), p)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	_ = os.Remove(backup)
+	return nil
+}
+
 // Backup moves the SQLite files of db (database, -wal, -shm) into backups/<timestamp> next to it and returns
 // that directory; "" when there is no database. The database must be closed. Nothing is ever deleted.
 func Backup(db string, now time.Time) (string, error) {

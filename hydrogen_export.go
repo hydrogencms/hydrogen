@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/hydrogencms/hydrogen/core/exportfmt"
 	"github.com/hydrogencms/hydrogen/core/kernel"
 )
 
@@ -33,11 +34,12 @@ func exportCommand(ctx context.Context, app *kernel.App, o RunOptions, args []st
 	fs := flag.NewFlagSet("export", flag.ContinueOnError)
 	fs.SetOutput(o.Stderr)
 	published := fs.Bool("published-only", false, "export only the published version of each published item (no history, no drafts)")
+	layout := fs.String("layout", exportfmt.LayoutNDJSON, "item layout: ndjson (one items.ndjson) or items (one items/<type>/<id>.json per item, for diffs)")
 	dir, err := parseDirArgs(fs, args)
 	if err != nil {
 		return err
 	}
-	m, err := app.Export(ctx, dir, kernel.ExportOptions{Version: Version(), PublishedOnly: *published, Progress: o.Stdout})
+	m, err := app.Export(ctx, dir, kernel.ExportOptions{Version: Version(), PublishedOnly: *published, Progress: o.Stdout, Layout: *layout})
 	if err != nil {
 		return err
 	}

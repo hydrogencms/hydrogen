@@ -10,7 +10,7 @@ blocks:
       subheading: { type: text, max: 300 }
       buttonLabel: { type: string, max: 40 }
       buttonLink: { type: ref, to: [page], on_delete: nullify }
-      buttonUrl: { type: url }
+      buttonUrl: { type: url, relative: true }
 
   text:
     label: Text

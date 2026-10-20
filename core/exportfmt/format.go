@@ -34,14 +34,40 @@ type Manifest struct {
 	CreatedAt     time.Time `json:"createdAt"`
 	PublishedOnly bool      `json:"publishedOnly,omitempty"`
 	Counts        Counts    `json:"counts"`
-	Files         []File    `json:"files"`
+	// ItemStream digests the item records as items.ndjson would hold them, whichever layout the export uses.
+	ItemStream *Stream `json:"itemStream,omitempty"`
+	Files      []File  `json:"files"`
 }
+
+// Stream is the SHA-256 and size of the item records written as compact JSON lines.
+type Stream struct {
+	SHA256 string `json:"sha256"`
+	Bytes  int64  `json:"bytes"`
+}
+
+// Layouts of the item records in an export.
+const (
+	// LayoutNDJSON writes every item as one line of items.ndjson.
+	LayoutNDJSON = "ndjson"
+	// LayoutItems writes every item as a pretty-printed items/<type>/<id>.json, which diffs line by line.
+	LayoutItems = "items"
+)
+
+func isItemFile(f File) bool { return f.Name == "items.ndjson" || strings.HasPrefix(f.Name, "items/") }
 
 // Fingerprint identifies the content of an export: a hash of the manifest without what says nothing about the
 // content (export time, Hydrogen version, source dialect). The manifest lists the SHA-256 of every other file,
-// so equal fingerprints mean equal exports.
+// so equal fingerprints mean equal exports. It does not depend on the item layout: an export with item files is
+// fingerprinted as the items.ndjson holding the same records, which is the value earlier versions computed.
 func (m Manifest) Fingerprint() string {
 	m.CreatedAt, m.Hydrogen, m.Dialect = time.Time{}, "", ""
+	if s := m.ItemStream; s != nil {
+		m.ItemStream = nil
+		files := slices.DeleteFunc(slices.Clone(m.Files), isItemFile)
+		files = append(files, File{Name: "items.ndjson", SHA256: s.SHA256, Bytes: s.Bytes, Records: m.Counts.Items})
+		slices.SortFunc(files, func(a, b File) int { return strings.Compare(a.Name, b.Name) })
+		m.Files = files
+	}
 	data, _ := json.Marshal(m)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
@@ -79,6 +105,7 @@ func checkName(name string) error {
 type Writer struct {
 	dir   string
 	files []File
+	names map[string]bool
 	open  *FileWriter
 }
 
@@ -105,7 +132,7 @@ func (w *Writer) Create(name string) (*FileWriter, error) {
 	if w.open != nil {
 		return nil, fmt.Errorf("exportfmt: %s is still open", w.open.name)
 	}
-	if slices.ContainsFunc(w.files, func(f File) bool { return f.Name == name }) {
+	if w.names[name] {
 		return nil, fmt.Errorf("exportfmt: %s written twice", name)
 	}
 	full := filepath.Join(w.dir, filepath.FromSlash(name))
@@ -177,18 +204,27 @@ func (f *FileWriter) Write(p []byte) (int, error) {
 
 // WriteRecord appends v as one JSON line.
 func (f *FileWriter) WriteRecord(v any) error {
-	f.buf.Reset()
-	enc := json.NewEncoder(&f.buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
+	if err := encodeLine(&f.buf, v); err != nil {
 		return fmt.Errorf("exportfmt: %s: %w", f.name, err)
 	}
-	// Encode ends the line; a record never contains a raw newline because JSON escapes them.
-	if _, err := f.Write(f.buf.Bytes()); err != nil {
+	return f.writeLine(f.buf.Bytes())
+}
+
+func (f *FileWriter) writeLine(line []byte) error {
+	if _, err := f.Write(line); err != nil {
 		return err
 	}
 	f.records++
 	return nil
+}
+
+// encodeLine encodes v as one compact JSON line. It ends with a newline, and a record never contains another
+// because JSON escapes them.
+func encodeLine(buf *bytes.Buffer, v any) error {
+	buf.Reset()
+	enc := json.NewEncoder(buf)
+	enc.SetEscapeHTML(false)
+	return enc.Encode(v)
 }
 
 // Close flushes the file and records its checksum.
@@ -200,6 +236,10 @@ func (f *FileWriter) Close() error {
 	if err != nil {
 		return fmt.Errorf("exportfmt: %s: %w", f.name, err)
 	}
+	if f.w.names == nil {
+		f.w.names = map[string]bool{}
+	}
+	f.w.names[f.name] = true
 	f.w.files = append(f.w.files, File{Name: f.name, SHA256: hex.EncodeToString(f.sum.Sum(nil)), Bytes: f.bytes, Records: f.records})
 	return nil
 }

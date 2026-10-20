@@ -1,8 +1,12 @@
 package exportfmt
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -59,6 +63,8 @@ type ExportOptions struct {
 	Progress io.Writer
 	// Batch is the number of items read per query (default 100).
 	Batch int
+	// Layout of the item records: LayoutNDJSON (default) or LayoutItems.
+	Layout string
 }
 
 func progressf(w io.Writer, format string, args ...any) {
@@ -71,6 +77,12 @@ func progressf(w io.Writer, format string, args ...any) {
 func Export(ctx context.Context, o ExportOptions) (*Manifest, error) {
 	if o.Batch <= 0 {
 		o.Batch = defaultBatch
+	}
+	if o.Layout == "" {
+		o.Layout = LayoutNDJSON
+	}
+	if o.Layout != LayoutNDJSON && o.Layout != LayoutItems {
+		return nil, fmt.Errorf("exportfmt: unknown layout %q (use %s or %s)", o.Layout, LayoutNDJSON, LayoutItems)
 	}
 	w, err := NewWriter(o.Dir)
 	if err != nil {
@@ -141,15 +153,29 @@ func exportItems(ctx context.Context, es store.ExportStore, w *Writer, o ExportO
 		hashOf[r.Rev] = r.Hash
 	}
 	used := map[int]bool{}
-	f, err := w.Create("items.ndjson")
-	if err != nil {
-		return nil, err
+	var f *FileWriter
+	if o.Layout == LayoutNDJSON {
+		var err error
+		if f, err = w.Create("items.ndjson"); err != nil {
+			return nil, err
+		}
 	}
-	var after ids.UUID
+	closeFile := func() {
+		if f != nil {
+			_ = f.Close()
+		}
+	}
+	var (
+		after  ids.UUID
+		line   bytes.Buffer
+		pretty bytes.Buffer
+		sum    = sha256.New()
+		size   int64
+	)
 	for {
 		items, err := es.ItemsAfter(ctx, after, o.Batch)
 		if err != nil {
-			_ = f.Close()
+			closeFile()
 			return nil, err
 		}
 		if len(items) == 0 {
@@ -162,7 +188,7 @@ func exportItems(ctx context.Context, es store.ExportStore, w *Writer, o ExportO
 		}
 		versions, err := es.VersionsOf(ctx, list, o.PublishedOnly)
 		if err != nil {
-			_ = f.Close()
+			closeFile()
 			return nil, err
 		}
 		var drafts []store.DraftPart
@@ -181,7 +207,7 @@ func exportItems(ctx context.Context, es store.ExportStore, w *Writer, o ExportO
 				v := versions[vi]
 				hash, ok := hashOf[v.SchemaRev]
 				if !ok {
-					_ = f.Close()
+					closeFile()
 					return nil, fmt.Errorf("export: version %d of %s refers to unknown schema revision %d", v.Version, it.ID, v.SchemaRev)
 				}
 				used[v.SchemaRev] = true
@@ -206,8 +232,19 @@ func exportItems(ctx context.Context, es store.ExportStore, w *Writer, o ExportO
 					scanShas(d.Data, shas)
 				}
 			}
-			if err := f.WriteRecord(rec); err != nil {
-				_ = f.Close()
+			if err := encodeLine(&line, rec); err != nil {
+				closeFile()
+				return nil, fmt.Errorf("export: item %s: %w", it.ID, err)
+			}
+			sum.Write(line.Bytes())
+			size += int64(line.Len())
+			if f != nil {
+				err = f.writeLine(line.Bytes())
+			} else {
+				err = writeItemFile(w, rec, line.Bytes(), &pretty)
+			}
+			if err != nil {
+				closeFile()
 				return nil, err
 			}
 			m.Counts.Items++
@@ -218,11 +255,29 @@ func exportItems(ctx context.Context, es store.ExportStore, w *Writer, o ExportO
 			progressf(o.Progress, "items: %d", m.Counts.Items)
 		}
 	}
-	if err := f.Close(); err != nil {
-		return nil, err
+	if f != nil {
+		if err := f.Close(); err != nil {
+			return nil, err
+		}
 	}
+	m.ItemStream = &Stream{SHA256: hex.EncodeToString(sum.Sum(nil)), Bytes: size}
 	progressf(o.Progress, "items: %d (%d versions, %d drafts)", m.Counts.Items, m.Counts.Versions, m.Counts.Drafts)
 	return used, nil
+}
+
+// itemFileName is where an item lives in the items layout.
+func itemFileName(typ string, id ids.UUID) string {
+	return "items/" + typ + "/" + id.String() + ".json"
+}
+
+// writeItemFile writes the record (its compact line) indented by two spaces, ending with a newline.
+func writeItemFile(w *Writer, rec ItemRecord, line []byte, buf *bytes.Buffer) error {
+	buf.Reset()
+	if err := json.Indent(buf, bytes.TrimSuffix(line, []byte{'\n'}), "", "  "); err != nil {
+		return fmt.Errorf("export: item %s: %w", rec.ID, err)
+	}
+	buf.WriteByte('\n')
+	return w.WriteFile(itemFileName(rec.Type, rec.ID), buf.Bytes())
 }
 
 func doc(b []byte) []byte {

@@ -271,11 +271,28 @@ type urlType struct{}
 
 func (urlType) Name() string { return "url" }
 
-func (urlType) Compile(*Options) (Shape, Config, error) {
-	return Shape{Base: BaseString, Format: "url"}, urlConfig{}, nil
+func (urlType) Compile(o *Options) (Shape, Config, error) {
+	relative, _ := o.Bool("relative")
+	return Shape{Base: BaseString, Format: "url"}, urlConfig{relative: relative}, nil
 }
 
-type urlConfig struct{}
+// urlConfig validates a url; relative also accepts a root-relative path such as /docs/start?x=1#top.
+type urlConfig struct{ relative bool }
+
+// isRootRelative reports whether s is a path starting with a single slash, with an optional query and fragment,
+// and no whitespace, control characters or backslashes.
+func isRootRelative(s string) bool {
+	if len(s) < 1 || s[0] != '/' || (len(s) > 1 && (s[1] == '/' || s[1] == '\\')) {
+		return false
+	}
+	for _, r := range s {
+		if r == '\\' || unicode.IsSpace(r) || unicode.IsControl(r) {
+			return false
+		}
+	}
+	u, err := url.Parse(s)
+	return err == nil && u.Scheme == "" && u.Host == ""
+}
 
 func isUUID(s string) bool {
 	if len(s) != 36 {
@@ -295,7 +312,7 @@ func isUUID(s string) bool {
 	return true
 }
 
-func (urlConfig) Validate(v any, _ Mode, r *Report) {
+func (c urlConfig) Validate(v any, _ Mode, r *Report) {
 	s, ok := v.(string)
 	if !ok {
 		typeErr(r, "a string")
@@ -310,15 +327,28 @@ func (urlConfig) Validate(v any, _ Mode, r *Report) {
 		}
 		return
 	}
+	if c.relative && strings.HasPrefix(s, "/") {
+		if !isRootRelative(s) {
+			r.Fail("format", "must be a root-relative path (one leading slash, no spaces or backslashes)")
+		}
+		return
+	}
 	u, err := url.Parse(s)
 	if err != nil || strings.ContainsAny(s, "\\\x00\t\r\n") || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		r.Fail("format", "must be an absolute http(s) URL or item:<id>")
+		if c.relative {
+			r.Fail("format", "must be an absolute http(s) URL, a root-relative path or item:<id>")
+		} else {
+			r.Fail("format", "must be an absolute http(s) URL or item:<id>")
+		}
 	}
 }
 
 func (urlConfig) IsEmpty(v any) bool { return v == "" }
 
-func (urlConfig) JSONSchema() map[string]any {
+func (c urlConfig) JSONSchema() map[string]any {
+	if c.relative {
+		return map[string]any{"type": "string", "description": "Absolute http(s) URL, root-relative path, or item:<id>."}
+	}
 	return map[string]any{"type": "string", "description": "Absolute http(s) URL, or item:<id>."}
 }
 

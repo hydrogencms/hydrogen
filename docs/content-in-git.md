@@ -42,6 +42,12 @@ git add content && git commit
 half-written directory. When the content did not change it leaves the files alone (the export's timestamp does not
 make a diff). It works while the server runs.
 
+Each item is one indented file, `content/items/<type>/<id>.json`, holding its history and drafts, so `git diff` shows
+the lines an edit changed. Deleting an item deletes its file. The other records (`modules/*.ndjson`,
+`content_migrations.ndjson`, `uploads.ndjson`) stay one per line. A directory saved by Hydrogen 0.2.0 holds
+`items.ndjson`; it still loads, and the next `content:save` converts it once. The fingerprint does not depend on the
+layout, so the old directory is not reported as changed.
+
 After `git pull` or a checkout that changes `content/`, restart `hydrogen dev` (or run `serve`): the start loads the
 new content. Users and sessions are not part of an export, so loading a changed directory also resets them; the
 first-run link creates the administrator again.
@@ -64,6 +70,15 @@ The last row prints the two ways out:
 - keep the database: `hydrogen content:save`, then review the change with `git diff content`;
 - keep the directory: `hydrogen content:load -force`, which moves the database to a backup first.
 
+## Schema changes
+
+The directory and the schema come from the same checkout, so a start that rebuilds the database imports content saved
+under an earlier schema. Additive changes (a new optional field) just work, with no `content:save` needed first.
+Breaking changes (a removed or retyped field, see [schema](schema.md)) need a content migration: the start applies
+the migrations it finds to the fresh database, in production too, because the database is a disposable copy and
+`content/` stays as it is. Without a migration the start fails and says so. Write the migration, run `hydrogen dev` (or
+`content:migrate`) to apply it, then `content:save` and commit `content/` so later starts have nothing to migrate.
+
 The check is cheap. The marker also holds the newest audit event it saw, so a restart that finds no newer content
 event does not export anything. Sign-ins and changes to users, roles and tokens do not count. Only when a content
 event is newer does the start export the database to a scratch directory and compare fingerprints, and an edit that
@@ -80,9 +95,11 @@ fingerprinted from its manifest and the sizes of its files; the checksums are ve
 
 ## Backups
 
-A database is never deleted. Before it is replaced the server (or `content:load`) closes it and moves the database
-file and its `-wal` and `-shm` files to `backups/<UTC timestamp>/` next to it (by default `.work/backups/…`), and
-logs the path. Delete old backups yourself.
+A database is never deleted. Before it is replaced the server (or `content:load`) checks that the directory can be
+imported (checksums, modules, media storage), then closes the database and moves the database file and its `-wal` and
+`-shm` files to `backups/<UTC timestamp>/` next to it (by default `.work/backups/…`), and logs the path. If the
+import still fails, the new database is removed and the backup moved back, and the error says so. Delete old backups
+yourself.
 
 ## CI
 

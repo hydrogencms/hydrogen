@@ -202,3 +202,20 @@ func TestFingerprintIgnoresWhenAndWhereAnExportWasMade(t *testing.T) {
 		t.Fatal("fingerprint ignores file checksums")
 	}
 }
+
+func TestFingerprintIgnoresTheItemLayout(t *testing.T) {
+	old := Manifest{Format: 2, SchemaHash: "s", Counts: Counts{Items: 2}, Files: []File{
+		{Name: "content_migrations.ndjson", SHA256: "m", Records: 0},
+		{Name: "items.ndjson", SHA256: "x", Bytes: 30, Records: 2},
+		{Name: "schema/revisions/a.json", SHA256: "r", Bytes: 9}}}
+	split := old
+	split.ItemStream = &Stream{SHA256: "x", Bytes: 30}
+	split.Files = []File{old.Files[0], {Name: "items/note/a.json", SHA256: "1", Bytes: 20}, {Name: "items/note/b.json", SHA256: "2", Bytes: 20}, old.Files[2]}
+	if old.Fingerprint() != split.Fingerprint() {
+		t.Fatal("the item layout changes the fingerprint")
+	}
+	split.ItemStream.SHA256 = "y"
+	if old.Fingerprint() == split.Fingerprint() {
+		t.Fatal("the fingerprint ignores the item records")
+	}
+}

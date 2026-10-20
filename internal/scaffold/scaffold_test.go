@@ -96,7 +96,7 @@ func TestWriteStatic(t *testing.T) {
 	}
 	for _, f := range []string{"go.mod", "main.go", "hydrogen.go", "hydrogen.yaml", "modules_gen.go", "config/app.yaml", "config/channels.yaml",
 		"schema/types.yaml", "schema/blocks.yaml", ".gitignore", "README.md", ".github/workflows/deploy.yml",
-		"content/manifest.json", "content/items.ndjson", "content/schema/compiled.json", "content/modules/pages.ndjson",
+		"content/manifest.json", "content/schema/compiled.json", "content/modules/pages.ndjson",
 		"site/package.json", "site/astro.config.mjs", "site/tsconfig.json", "site/public/favicon.svg", "site/src/env.d.ts", "site/src/hydrogen.ts",
 		"site/src/pages/[...path].astro", "site/src/pages/404.astro", "site/src/layouts/Layout.astro", "site/src/templates/Page.astro",
 		"site/src/components/registry.ts", "site/src/components/blocks/Hero.astro", "site/src/components/blocks/Text.astro",

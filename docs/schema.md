@@ -80,7 +80,7 @@ Items of a `list`'s `of:` cannot use `required`, `translatable`, `index`, `when`
 | `datetime` | RFC 3339, `"2026-10-14T09:30:00Z"`. | `min`, `max`. |
 | `slug` | Lower-case letters, digits and single dashes (non-ASCII letters allowed). | `max` (default 120), `from` (a sibling string or text field to derive it from). |
 | `email` | An email address. | none |
-| `url` | An absolute `http(s)` URL, or `item:<id>` to link another item. | none |
+| `url` | An absolute `http(s)` URL, or `item:<id>` to link another item. | `relative: true` also accepts a root-relative path (`/docs/start?a=1#top`: one leading slash, no spaces or backslashes), for a site's own links. |
 | `ref` | The id of another item. | `to` (required: the types allowed), `on_delete`: `block` (default), `nullify` or `warn`. |
 | `list` | An ordered list. | `of` (required: a field spec for the items), `min`, `max`. |
 | `group` | A nested object. | `fields` (inline) or `use` (the name of a reusable group); not both. |

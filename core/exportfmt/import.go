@@ -68,23 +68,11 @@ func Import(ctx context.Context, o ImportOptions) (*ImportResult, error) {
 	if o.Batch <= 0 {
 		o.Batch = defaultBatch
 	}
-	r, err := Open(o.Dir)
+	r, mods, err := check(o)
 	if err != nil {
-		return nil, err
-	}
-	progressf(o.Progress, "verifying %d files", len(r.Manifest().Files))
-	if err := r.Verify(); err != nil {
 		return nil, err
 	}
 	man := r.Manifest()
-	if want := o.Content.Schema().Hash(); man.SchemaHash != want && !o.AllowSchemaChange {
-		return nil, fmt.Errorf("%w: the export was made under schema %s, this project's is %s (use -allow-schema-change to import anyway)",
-			ErrSchemaMismatch, short(man.SchemaHash), short(want))
-	}
-	mods, err := matchModules(r, o.Modules)
-	if err != nil {
-		return nil, err
-	}
 	err = store.ViewConsistent(ctx, o.DB, func(tx store.Tx) error {
 		es, err := store.ExportOf(tx)
 		if err != nil {
@@ -103,9 +91,6 @@ func Import(ctx context.Context, o ImportOptions) (*ImportResult, error) {
 		return nil, err
 	}
 
-	if r.Has("uploads.ndjson") && o.Files == nil {
-		return nil, errors.New("exportfmt: the export holds uploaded files, but this project has no media storage")
-	}
 	res := &ImportResult{Modules: map[string]int{}}
 	if err := importUploads(ctx, o, r, res); err != nil {
 		return nil, err
@@ -153,6 +138,42 @@ func Import(ctx context.Context, o ImportOptions) (*ImportResult, error) {
 	}
 	progressf(o.Progress, "imported %d items (%d versions, %d drafts), %d content migrations", res.Items, res.Versions, res.Drafts, res.ContentMigrations)
 	return res, nil
+}
+
+// Check runs the checks of Import that need no writing: the checksums, the schema, the module files the project
+// can import and the media storage uploads need. A caller that is about to replace a database runs it first, so
+// an export that cannot be imported costs nothing.
+func Check(o ImportOptions) error {
+	_, _, err := check(o)
+	return err
+}
+
+func check(o ImportOptions) (*Reader, []NamedExporter, error) {
+	r, err := Open(o.Dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	progressf(o.Progress, "verifying %d files", len(r.Manifest().Files))
+	if err := r.Verify(); err != nil {
+		return nil, nil, err
+	}
+	if want := o.Content.Schema().Hash(); r.m.SchemaHash != want && !o.AllowSchemaChange {
+		return nil, nil, fmt.Errorf("%w: the export was made under schema %s, this project's is %s (use -allow-schema-change to import anyway)",
+			ErrSchemaMismatch, short(r.m.SchemaHash), short(want))
+	}
+	mods, err := matchModules(r, o.Modules)
+	if err != nil {
+		return nil, nil, err
+	}
+	if r.Has("uploads.ndjson") && o.Files == nil {
+		return nil, nil, errors.New("exportfmt: the export holds uploaded files, but this project has no media storage")
+	}
+	src, err := openItems(r)
+	if err != nil {
+		return nil, nil, err
+	}
+	_ = src.Close()
+	return r, mods, nil
 }
 
 func short(hash string) string {
@@ -210,8 +231,64 @@ func importRevisions(ctx context.Context, o ImportOptions, r *Reader) (map[strin
 	return revs, err
 }
 
+// itemSource streams the item records of either layout.
+type itemSource struct {
+	rr    *RecordReader
+	r     *Reader
+	names []string
+	total int
+}
+
+func openItems(r *Reader) (*itemSource, error) {
+	names := r.Names("items/")
+	slices.Sort(names)
+	if len(names) == 0 && r.m.ItemStream != nil && !r.Has("items.ndjson") {
+		return &itemSource{}, nil // the items layout of an export without items
+	}
+	if len(names) == 0 || r.Has("items.ndjson") {
+		if len(names) > 0 {
+			return nil, errors.New("exportfmt: the export holds both items.ndjson and items/")
+		}
+		rr, err := r.Records("items.ndjson")
+		if err != nil {
+			return nil, err
+		}
+		return &itemSource{rr: rr, total: rr.Total()}, nil
+	}
+	return &itemSource{r: r, names: names, total: len(names)}, nil
+}
+
+func (s *itemSource) Next(rec *ItemRecord) (bool, error) {
+	if s.rr != nil {
+		return s.rr.Next(rec)
+	}
+	if len(s.names) == 0 {
+		return false, nil
+	}
+	name := s.names[0]
+	s.names = s.names[1:]
+	data, err := s.r.ReadFile(name)
+	if err != nil {
+		return false, err
+	}
+	if err := json.Unmarshal(data, rec); err != nil {
+		return false, fmt.Errorf("exportfmt: %s: %w", name, err)
+	}
+	if name != itemFileName(rec.Type, rec.ID) {
+		return false, fmt.Errorf("exportfmt: %s holds item %s of type %s", name, rec.ID, rec.Type)
+	}
+	return true, nil
+}
+
+func (s *itemSource) Close() error {
+	if s.rr != nil {
+		return s.rr.Close()
+	}
+	return nil
+}
+
 func importItems(ctx context.Context, o ImportOptions, r *Reader, revs map[string]int, res *ImportResult) error {
-	rr, err := r.Records("items.ndjson")
+	rr, err := openItems(r)
 	if err != nil {
 		return err
 	}
@@ -264,7 +341,7 @@ func importItems(ctx context.Context, o ImportOptions, r *Reader, revs map[strin
 				before := res.Items
 				res.Items, res.Versions, res.Drafts = res.Items+n, res.Versions+nv, res.Drafts+nd
 				if res.Items/1000 != before/1000 {
-					progressf(o.Progress, "items: %d/%d", res.Items, rr.Total())
+					progressf(o.Progress, "items: %d/%d", res.Items, rr.total)
 				}
 				mu.Unlock()
 			}

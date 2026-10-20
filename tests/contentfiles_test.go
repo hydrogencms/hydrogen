@@ -3,6 +3,7 @@ package tests
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -43,16 +44,28 @@ func (l *lockedBuf) String() string {
 }
 
 // countingExporter counts exports, which is how the tests tell the fast path (no export) from the slow one.
-type countingExporter struct{ n *atomic.Int32 }
+type countingExporter struct {
+	n    *atomic.Int32
+	fail *atomic.Bool
+}
 
 func (c countingExporter) Export(ctx context.Context, _ store.Tx, _ *exportfmt.ModuleWriter) error {
 	c.n.Add(1)
 	return nil
 }
 
-func (countingExporter) Import(context.Context, store.Tx, *exportfmt.ModuleReader) error { return nil }
+// Import fails while the project's failImport is set.
+func (c countingExporter) Import(context.Context, store.Tx, *exportfmt.ModuleReader) error {
+	if c.fail.Load() {
+		return errors.New("import refused by the test")
+	}
+	return nil
+}
 
-type countingModule struct{ n *atomic.Int32 }
+type countingModule struct {
+	n    *atomic.Int32
+	fail *atomic.Bool
+}
 
 func (countingModule) Name() string { return "exportcount" }
 func (m countingModule) Register(r *kernel.Registry) error {
@@ -71,6 +84,10 @@ type gitProject struct {
 	exports atomic.Int32
 	logs    lockedBuf
 	listed  string
+	// env is the environment name (default dev); migrations are the registered content migrations.
+	env        string
+	migrations []content.Migration
+	failImport atomic.Bool
 }
 
 func newGitProject(t *testing.T, databaseURL string) *gitProject {
@@ -106,10 +123,44 @@ func (p *gitProject) write(rel, data string) {
 }
 
 func (p *gitProject) configure(b *hydrogen.Builder) {
-	b.Use(sqlite.Module(), postgres.Module(), countingModule{&p.exports})
+	b.Use(sqlite.Module(), postgres.Module(), countingModule{&p.exports, &p.failImport})
+	for _, m := range p.migrations {
+		b.Migration(m)
+	}
 	b.Command(kernel.Command{Name: "test:add", Run: func(ctx context.Context, app *kernel.App, args []string) error {
 		_, err := app.Services().Content.Create(ctx, content.CreateInput{Type: "note", Fields: map[string]any{"title": args[0]}})
 		return err
+	}})
+	b.Command(kernel.Command{Name: "test:add-body", Run: func(ctx context.Context, app *kernel.App, args []string) error {
+		_, err := app.Services().Content.Create(ctx, content.CreateInput{Type: "note", Fields: map[string]any{"title": args[0], "body": args[1]}})
+		return err
+	}})
+	b.Command(kernel.Command{Name: "test:publish", Run: func(ctx context.Context, app *kernel.App, args []string) error {
+		if _, err := app.Services().Content.EnsureSchemaRev(ctx); err != nil {
+			return err
+		}
+		res, err := app.Services().Content.List(ctx, content.ListOptions{Type: "note", Limit: 100})
+		if err != nil {
+			return err
+		}
+		for _, it := range res.Items {
+			if _, err := app.Services().Content.Publish(ctx, it.ID, content.PublishOptions{}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}})
+	b.Command(kernel.Command{Name: "test:rm", Run: func(ctx context.Context, app *kernel.App, args []string) error {
+		res, err := app.Services().Content.List(ctx, content.ListOptions{Type: "note", Limit: 100})
+		if err != nil {
+			return err
+		}
+		for _, it := range res.Items {
+			if it.Name == args[0] {
+				return app.Services().Content.Trash(ctx, it.ID)
+			}
+		}
+		return errors.New("no such item")
 	}})
 	b.Command(kernel.Command{Name: "test:titles", Run: func(ctx context.Context, app *kernel.App, args []string) error {
 		res, err := app.Services().Content.List(ctx, content.ListOptions{Type: "note", Limit: 100})
@@ -134,7 +185,22 @@ func (p *gitProject) configure(b *hydrogen.Builder) {
 
 func (p *gitProject) options(stdout *bytes.Buffer) hydrogen.RunOptions {
 	p.clk.Advance(time.Second)
-	return hydrogen.RunOptions{Config: &config.Options{Dir: filepath.Join(p.root, "config"), Env: config.DevEnv, LookupEnv: func(k string) (string, bool) { return p.url, k == "DATABASE_URL" }},
+	env := config.DevEnv
+	if p.env != "" {
+		env = p.env
+	}
+	lookup := func(k string) (string, bool) {
+		switch k {
+		case "DATABASE_URL":
+			return p.url, true
+		case "MANAGE_TOKEN":
+			return "test-manage-token-for-production", true
+		case "PREVIEW_SECRET":
+			return "0123456789abcdef0123456789abcdef", true
+		}
+		return "", false
+	}
+	return hydrogen.RunOptions{Config: &config.Options{Dir: filepath.Join(p.root, "config"), Env: env, LookupEnv: lookup},
 		Stdout: stdout, Stderr: &p.logs, Clock: p.clk, PasswordIterations: 1000}
 }
 

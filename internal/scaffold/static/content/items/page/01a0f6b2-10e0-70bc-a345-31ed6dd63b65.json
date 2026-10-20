@@ -1,0 +1,133 @@
+{
+  "id": "01a0f6b2-10e0-70bc-a345-31ed6dd63b65",
+  "type": "page",
+  "mainLocale": "en",
+  "publishedVersion": 1,
+  "createdAt": "2026-10-01T09:01:00Z",
+  "updatedAt": "2026-10-01T09:05:00Z",
+  "createdBy": "system",
+  "updatedBy": "system",
+  "versions": [
+    {
+      "version": 1,
+      "schema": "0286002b84aaaab7bdd9de6c2f8ef55cfca85b022ccdf4afc3915dba1dcdcb06",
+      "createdAt": "2026-10-01T09:05:00Z",
+      "createdBy": "system",
+      "shared": {
+        "body": [
+          {
+            "id": "01a0f6b4-d000-7389-8017-e5bd6d000347",
+            "props": {
+              "body": {
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "text": "The pages of this site were written in the admin and saved to the content directory. Start at the ",
+                        "type": "text"
+                      },
+                      {
+                        "marks": [
+                          {
+                            "attrs": {
+                              "href": "item:01a0f6b1-2680-76f4-a787-babb602ad25a"
+                            },
+                            "type": "link"
+                          }
+                        ],
+                        "text": "home page",
+                        "type": "text"
+                      },
+                      {
+                        "text": ".",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "paragraph"
+                  },
+                  {
+                    "content": [
+                      {
+                        "text": "A build starts the CMS on that directory and renders every page to a file.",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "paragraph"
+                  },
+                  {
+                    "content": [
+                      {
+                        "content": [
+                          {
+                            "content": [
+                              {
+                                "text": "Add pages and blocks in the admin.",
+                                "type": "text"
+                              }
+                            ],
+                            "type": "paragraph"
+                          }
+                        ],
+                        "type": "listItem"
+                      },
+                      {
+                        "content": [
+                          {
+                            "content": [
+                              {
+                                "text": "Run hydrogen content:save, then commit and push.",
+                                "type": "text"
+                              }
+                            ],
+                            "type": "paragraph"
+                          }
+                        ],
+                        "type": "listItem"
+                      },
+                      {
+                        "content": [
+                          {
+                            "content": [
+                              {
+                                "text": "The workflow in .github/workflows builds and deploys the site.",
+                                "type": "text"
+                              }
+                            ],
+                            "type": "paragraph"
+                          }
+                        ],
+                        "type": "listItem"
+                      }
+                    ],
+                    "type": "bulletList"
+                  }
+                ],
+                "type": "doc"
+              },
+              "heading": "How this site is made"
+            },
+            "type": "text"
+          },
+          {
+            "id": "01a0f6b4-d000-738a-a6e6-91a655232187",
+            "props": {
+              "text": "Add a block type in schema/blocks.yaml and a component in site/src/components/blocks.",
+              "tone": "note"
+            },
+            "type": "callout"
+          }
+        ],
+        "description": "How this site is made.",
+        "slug": "about",
+        "title": "About"
+      },
+      "locales": [
+        {
+          "locale": "en",
+          "name": "About",
+          "data": {}
+        }
+      ]
+    }
+  ]
+}

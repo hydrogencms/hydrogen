@@ -247,51 +247,57 @@ func ensureMigrated(ctx context.Context, app *kernel.App) (bool, error) {
 
 // reconcileContentFiles runs at the start of serve, before the server accepts requests. It may replace the app
 // (the database is closed, backed up and rebuilt); the returned app is the one to serve.
-func reconcileContentFiles(ctx context.Context, b *Builder, o RunOptions, app *kernel.App) (*kernel.App, error) {
+// rebuilt reports that the database was (re)built from the directory by this start.
+func reconcileContentFiles(ctx context.Context, b *Builder, o RunOptions, app *kernel.App) (_ *kernel.App, rebuilt bool, _ error) {
 	cf, err := contentFilesOf(app)
 	if cf == nil || err != nil {
-		return app, err
+		return app, false, err
 	}
 	log := app.Services().Log
 	if ok, err := ensureMigrated(ctx, app); !ok || err != nil {
-		return app, err
+		return app, false, err
 	}
 	a, err := cf.assess(ctx, app)
 	if err != nil {
-		return app, err
+		return app, false, err
 	}
 	switch a.verdict {
 	case vNothing:
 	case vImport:
 		if err := cf.importInto(ctx, app); err != nil {
-			return app, err
+			return app, false, err
 		}
 		log.Info("content loaded from "+cf.dir, "dir", cf.dir)
+		return app, true, nil
 	case vInSync:
-		return app, cf.record(a.dirFP, a.newest)
+		return app, false, cf.record(a.dirFP, a.newest)
 	case vUnchanged:
 		if a.newest != a.marker.Audit {
-			return app, cf.record(a.marker.Fingerprint, a.newest)
+			return app, false, cf.record(a.marker.Fingerprint, a.newest)
 		}
 	case vReload:
 		log.Info(cf.dir + " changed; loading it into the database")
-		return cf.replace(ctx, b, o, app)
+		fresh, err := cf.replace(ctx, b, o, app)
+		return fresh, err == nil, err
 	case vKeep:
 		log.Warn("keeping your edits; they are not in "+cf.dir+" yet (run hydrogen content:save, then commit)", "dir", cf.dir)
 		if a.newest != a.marker.DirtyAudit {
 			m := *a.marker
 			m.DirtyAudit = a.newest
-			return app, contentfiles.WriteMarker(cf.db, m)
+			return app, false, contentfiles.WriteMarker(cf.db, m)
 		}
 	case vConflict:
-		return app, cf.conflictError()
+		return app, false, cf.conflictError()
 	}
-	return app, nil
+	return app, false, nil
 }
 
-// importInto imports the directory into the (empty, migrated) database of app and records the marker.
+// importInto imports the directory into the (empty, migrated) database of app and records the marker. The
+// directory and the schema come from the same checkout, so a schema that differs from the one the content was
+// saved under is not an error here: serve reports the changes that need a content migration and applies the
+// migrations that exist.
 func (c *contentFiles) importInto(ctx context.Context, app *kernel.App) error {
-	if _, err := app.Import(ctx, c.dir, kernel.ImportOptions{}); err != nil {
+	if _, err := app.Import(ctx, c.dir, kernel.ImportOptions{AllowSchemaChange: true}); err != nil {
 		return fmt.Errorf("load %s: %w", c.dir, err)
 	}
 	fp, _, err := contentfiles.Fingerprint(c.dir)
@@ -305,8 +311,12 @@ func (c *contentFiles) importInto(ctx context.Context, app *kernel.App) error {
 	return c.record(fp, audit)
 }
 
-// replace moves the database to backups/<timestamp>, then rebuilds it from the directory.
+// replace rebuilds the database from the directory: it checks the directory, moves the database to
+// backups/<timestamp> and imports into a new one. When the import fails the previous database is moved back.
 func (c *contentFiles) replace(ctx context.Context, b *Builder, o RunOptions, app *kernel.App) (*kernel.App, error) {
+	if err := app.CheckImport(c.dir, kernel.ImportOptions{AllowSchemaChange: true}); err != nil {
+		return app, fmt.Errorf("load %s: %w (the database is unchanged)", c.dir, err)
+	}
 	s := app.Services()
 	clk, log := s.Clock, s.Log
 	if err := app.Close(); err != nil {
@@ -316,9 +326,25 @@ func (c *contentFiles) replace(ctx context.Context, b *Builder, o RunOptions, ap
 	if err != nil {
 		return nil, fmt.Errorf("back up the database: %w", err)
 	}
+	fresh, err := c.rebuild(ctx, b, o)
+	if err != nil {
+		if backup == "" {
+			return nil, err
+		}
+		if rerr := contentfiles.Restore(c.db, backup); rerr != nil {
+			return nil, fmt.Errorf("%w; restoring the previous database from %s also failed: %v", err, backup, rerr)
+		}
+		return nil, fmt.Errorf("%w (the previous database was restored)", err)
+	}
 	if backup != "" {
 		log.Info("the previous database is kept", "path", backup)
 	}
+	log.Info("content loaded from "+c.dir, "dir", c.dir)
+	return fresh, nil
+}
+
+// rebuild imports the directory into a new database.
+func (c *contentFiles) rebuild(ctx context.Context, b *Builder, o RunOptions) (*kernel.App, error) {
 	fresh, err := newApp(ctx, b, o)
 	if err != nil {
 		return nil, err
@@ -331,7 +357,6 @@ func (c *contentFiles) replace(ctx context.Context, b *Builder, o RunOptions, ap
 		_ = fresh.Close()
 		return nil, err
 	}
-	log.Info("content loaded from "+c.dir, "dir", c.dir)
 	return fresh, nil
 }
 
@@ -361,12 +386,12 @@ func contentSave(ctx context.Context, app *kernel.App, o RunOptions, args []stri
 		return err
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
-	m, err := app.Export(ctx, tmp, kernel.ExportOptions{Version: Version()})
+	m, err := app.Export(ctx, tmp, kernel.ExportOptions{Version: Version(), Layout: exportfmt.LayoutItems})
 	if err != nil {
 		return err
 	}
 	fp := m.Fingerprint()
-	if cur, found, err := contentfiles.Fingerprint(cf.dir); err == nil && found && cur == fp {
+	if cur, found, err := contentfiles.Fingerprint(cf.dir); err == nil && found && cur == fp && !oldLayout(cf.dir) {
 		if err := cf.record(fp, newest); err != nil {
 			return err
 		}
@@ -381,6 +406,13 @@ func contentSave(ctx context.Context, app *kernel.App, o RunOptions, args []stri
 	}
 	_, err = fmt.Fprintf(o.Stdout, "saved %d items (%d versions, %d drafts) to %s; commit it to publish\n", m.Counts.Items, m.Counts.Versions, m.Counts.Drafts, cf.dir)
 	return err
+}
+
+// oldLayout reports whether dir keeps its items in items.ndjson (written before the per-item layout), which
+// content:save converts.
+func oldLayout(dir string) bool {
+	r, err := exportfmt.Open(dir)
+	return err == nil && r.Has("items.ndjson")
 }
 
 // contentLoad replaces the database with the directory's content. It may replace the app.
@@ -431,12 +463,18 @@ func contentLoad(ctx context.Context, b *Builder, o RunOptions, app *kernel.App,
 			if err := cf.importInto(ctx, app); err != nil {
 				return app, err
 			}
+			if err := readyContent(ctx, app, true); err != nil {
+				return app, err
+			}
 			_, err := fmt.Fprintf(o.Stdout, "loaded %s\n", cf.dir)
 			return app, err
 		}
 	}
 	app, err = cf.replace(ctx, b, o, app)
 	if err != nil {
+		return app, err
+	}
+	if err := readyContent(ctx, app, true); err != nil {
 		return app, err
 	}
 	_, err = fmt.Fprintf(o.Stdout, "loaded %s\n", cf.dir)

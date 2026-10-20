@@ -183,7 +183,8 @@ An export is a directory of NDJSON files, a manifest with SHA-256 checksums (ver
 anything) and the uploaded files. It also holds each module's data (the page tree, redirects). Users, roles, tokens,
 sessions and the audit log are not exported: create administrators again with `users:create-admin`. Import refuses a
 non-empty database, and an export made under a different schema unless you pass `-allow-schema-change`. An export can
-move a site between SQLite and Postgres. Exports never hold trashed items.
+move a site between SQLite and Postgres. Exports never hold trashed items. `export -layout items` writes one indented
+file per item instead of `items.ndjson` (what [content in git](content-in-git.md) uses); import reads both.
 
 ## Operating
 

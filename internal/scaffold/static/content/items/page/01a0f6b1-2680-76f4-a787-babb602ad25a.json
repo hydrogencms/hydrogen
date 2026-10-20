@@ -1,0 +1,85 @@
+{
+  "id": "01a0f6b1-2680-76f4-a787-babb602ad25a",
+  "type": "page",
+  "mainLocale": "en",
+  "publishedVersion": 1,
+  "createdAt": "2026-10-01T09:00:00Z",
+  "updatedAt": "2026-10-01T09:03:00Z",
+  "createdBy": "system",
+  "updatedBy": "system",
+  "versions": [
+    {
+      "version": 1,
+      "schema": "0286002b84aaaab7bdd9de6c2f8ef55cfca85b022ccdf4afc3915dba1dcdcb06",
+      "createdAt": "2026-10-01T09:03:00Z",
+      "createdBy": "system",
+      "shared": {
+        "body": [
+          {
+            "id": "01a0f6b2-fb40-75b0-97e6-9e7c7f5c7785",
+            "props": {
+              "buttonLabel": "About this site",
+              "buttonLink": "01a0f6b2-10e0-70bc-a345-31ed6dd63b65",
+              "heading": "Welcome to your new site",
+              "subheading": "Edit this page in the admin, save the content, commit it and push: GitHub Pages publishes the result."
+            },
+            "type": "hero"
+          },
+          {
+            "id": "01a0f6b2-fb40-75b1-bbb8-2c46e227a7a3",
+            "props": {
+              "heading": "What you get"
+            },
+            "slots": {
+              "items": [
+                {
+                  "id": "01a0f6b2-fb40-75b2-9dbe-b20140cd068a",
+                  "props": {
+                    "text": "The content lives in the content directory of the repository, so every change is reviewed and versioned like code.",
+                    "title": "Content in git"
+                  },
+                  "type": "feature"
+                },
+                {
+                  "id": "01a0f6b2-fb40-75b3-bbc0-f3a52559d6f0",
+                  "props": {
+                    "text": "Astro builds plain HTML from the published content. There is no server to run or pay for.",
+                    "title": "A static site"
+                  },
+                  "type": "feature"
+                },
+                {
+                  "id": "01a0f6b2-fb40-75b4-af50-d6c9eeeb3b40",
+                  "props": {
+                    "text": "Editors work in the admin with a live preview and never touch the repository.",
+                    "title": "An editor for everyone"
+                  },
+                  "type": "feature"
+                }
+              ]
+            },
+            "type": "features"
+          },
+          {
+            "id": "01a0f6b2-fb40-75b5-9667-2bb2d3c90681",
+            "props": {
+              "text": "This is starter content. Change it in the admin, or replace it with your own.",
+              "tone": "tip"
+            },
+            "type": "callout"
+          }
+        ],
+        "description": "A static website with its content in git.",
+        "slug": "home",
+        "title": "Home"
+      },
+      "locales": [
+        {
+          "locale": "en",
+          "name": "Home",
+          "data": {}
+        }
+      ]
+    }
+  ]
+}

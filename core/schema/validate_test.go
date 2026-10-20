@@ -39,6 +39,7 @@ types:
       sl:   { type: slug, max: 10 }
       em:   { type: email }
       u:    { type: url }
+      ur:   { type: url, relative: true }
       r:    { type: ref, to: [person] }
       l:    { type: list, of: { type: string, max: 3 }, min: 2, max: 3 }
       lg:   { type: list, of: { type: group, fields: { x: { type: string, required: true } } } }
@@ -107,6 +108,19 @@ func TestValidate(t *testing.T) {
 		{"email", `{"em":"A <a@b.co>"}`, ModeDraft, []string{"em:format"}},
 		{"url", `{"u":"ftp://x"}`, ModeDraft, []string{"u:format"}},
 		{"url item", `{"u":"item:` + id1 + `"}`, ModeDraft, nil},
+		{"url relative off", `{"u":"/docs"}`, ModeDraft, []string{"u:format"}},
+		{"url relative path", `{"ur":"/docs/getting-started/?a=1&b=2#top"}`, ModeDraft, nil},
+		{"url relative root", `{"ur":"/"}`, ModeDraft, nil},
+		{"url relative absolute", `{"ur":"https://a.co/x"}`, ModeDraft, nil},
+		{"url relative item", `{"ur":"item:` + id1 + `"}`, ModeDraft, nil},
+		{"url relative protocol", `{"ur":"//evil.co/x"}`, ModeDraft, []string{"ur:format"}},
+		{"url relative backslash start", `{"ur":"/\\evil.co"}`, ModeDraft, []string{"ur:format"}},
+		{"url relative backslash", `{"ur":"/a\\b"}`, ModeDraft, []string{"ur:format"}},
+		{"url relative space", `{"ur":"/a b"}`, ModeDraft, []string{"ur:format"}},
+		{"url relative control", `{"ur":"/a\u0001b"}`, ModeDraft, []string{"ur:format"}},
+		{"url relative newline", `{"ur":"/a\nb"}`, ModeDraft, []string{"ur:format"}},
+		{"url relative no slash", `{"ur":"docs/a"}`, ModeDraft, []string{"ur:format"}},
+		{"url relative scheme", `{"ur":"javascript:alert(1)"}`, ModeDraft, []string{"ur:format"}},
 		{"url bad item", `{"u":"item:nope"}`, ModeDraft, []string{"u:format"}},
 		{"ref", `{"r":"nope"}`, ModeDraft, []string{"r:format"}},
 		{"list", `{"l":["abcd",1,null]}`, ModeDraft, []string{"l[0]:max_length", "l[1]:type", "l[2]:type"}},
