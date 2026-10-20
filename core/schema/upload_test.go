@@ -166,3 +166,30 @@ func TestParseSize(t *testing.T) {
 		}
 	}
 }
+
+func TestURLItemRefs(t *testing.T) {
+	s := mustCompile(t, `
+blocks:
+  cta:
+    props:
+      link: { type: group, fields: { url: { type: url, relative: true } } }
+types:
+  page:
+    fields:
+      more: { type: url }
+      links: { type: list, of: { type: url } }
+      body: { type: blocks, allow: [cta] }
+`)
+	p, _ := s.Type("page")
+	refs := s.Refs(p, map[string]any{"more": "item:" + id1, "links": []any{"https://x.example", "item:" + id2},
+		"body": []any{map[string]any{"type": "cta", "props": map[string]any{"link": map[string]any{"url": "item:" + id1}}}}})
+	want := []string{"more", "links[1]", "body[0].props.link.url"}
+	if len(refs) != len(want) {
+		t.Fatalf("refs = %+v", refs)
+	}
+	for i, r := range refs {
+		if r.Path != want[i] || r.Kind != "link" || r.OnDelete != "warn" {
+			t.Errorf("ref %d = %+v", i, r)
+		}
+	}
+}

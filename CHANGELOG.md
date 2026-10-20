@@ -29,6 +29,9 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Fixed
 
+- `url` fields holding `item:<id>` (top level, in lists, groups and block props) are item references like rich text
+  links: delivery resolves them in `links` and deleting the target warns. Existing content needs
+  `hydrogen content:reindex` to pick them up.
 - Custom routes of the site module collect the cache tags of reads made while the template renders, not only
   those of the route function.
 - Draft preview on sites with `trailingSlash: 'always'`: the preview hand-off, the path it returns to and the exit URL

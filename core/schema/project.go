@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Refs lists item references in document order: ref fields and rich text item: links.
+// Refs lists item references in document order: ref fields, url fields holding item:<id> and rich text item: links.
 func (s *Schema) Refs(t *Type, doc map[string]any) []RefValue {
 	var out []RefValue
 	for _, f := range t.Fields {
@@ -27,6 +27,12 @@ func collectRefs(f *Field, v any, path string, out []RefValue) []RefValue {
 		out = f.Config.(*blocksConfig).refs(v, path, out)
 	case BaseRichText:
 		out = richLinks(v, path, out)
+	case BaseString:
+		if s, ok := v.(string); ok && f.Shape.Format == "url" {
+			if id, ok := strings.CutPrefix(s, "item:"); ok && id != "" {
+				out = append(out, RefValue{Path: path, To: id, Kind: "link", OnDelete: "warn"})
+			}
+		}
 	case BaseList:
 		if list, ok := v.([]any); ok && f.Of != nil {
 			for i, e := range list {
