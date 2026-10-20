@@ -1,6 +1,6 @@
 {
   "name": "@hydrogencms/next",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Next.js App Router adapter for Hydrogen",
   "type": "module",
   "sideEffects": false,
@@ -35,10 +35,10 @@
     "react": "^19.0.0"
   },
   "dependencies": {
-    "@hydrogencms/bridge": "^0.2.0",
-    "@hydrogencms/client": "^0.2.0",
-    "@hydrogencms/router": "^0.2.0",
-    "@hydrogencms/react": "^0.2.0"
+    "@hydrogencms/bridge": "^0.2.1",
+    "@hydrogencms/client": "^0.2.1",
+    "@hydrogencms/router": "^0.2.1",
+    "@hydrogencms/react": "^0.2.1"
   },
   "devDependencies": {
     "next": "^16.4.1",

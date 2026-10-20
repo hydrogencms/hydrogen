@@ -6,6 +6,8 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-20
+
 ### Added
 
 - Static sites preview drafts in `astro dev`: `@hydrogencms/astro` renders the CMS page routes on demand in dev only
