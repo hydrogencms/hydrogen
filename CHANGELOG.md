@@ -6,6 +6,44 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Static sites preview drafts in `astro dev`: `@hydrogencms/astro` renders the CMS page routes on demand in dev only
+  (`devRoutes`, default `src/pages/[...path].astro` and `404.astro`) and adds the preview route and the bridge, so the
+  admin's preview pane shows the draft. `astro build` stays fully static.
+- `url` fields take `relative: true` to also accept root-relative paths (`/docs/start?x#top`); the static scaffold's
+  button link uses it.
+- `hydrogen export -layout items` writes one indented JSON file per item (`items/<type>/<id>.json`).
+- Channel info in the delivery API carries the channel's `frontend`.
+
+### Changed
+
+- **Content in git:** `content:save` writes one indented file per item (`content/items/<type>/<id>.json`), so a git
+  diff shows the lines an edit changed. Directories in the 0.2.0 layout (`items.ndjson`) still load, are not reported
+  as changed, and are converted by the next `content:save`.
+- A start that rebuilds the database from `content.files` accepts content saved under an earlier schema: additive
+  changes need no `content:save` first, and content migrations apply to the fresh database in any environment.
+  Breaking changes without a migration fail with what to do.
+- `content:load` and the reload at start check the directory before they back up the database, and move the backup
+  back when the import still fails.
+- `POST /preview-tokens` picks the channel when the project has one (or one serves the item's type); otherwise it
+  answers `channel is required (one of: …)`.
+- `href()` in `@hydrogencms/astro` follows Astro's `trailingSlash`, treats the channels' frontend origins as the site,
+  and a static build warns once when Astro's `site` and a channel's frontend differ. It also adds Astro's `base` to the
+  preview hand-off and exit URLs.
+- The static scaffold and the Astro starter use Astro 7, the static scaffold turns share links off, and its layout
+  carries the preview markers and the bridge in drafts.
+- The admin hides Share when `delivery.share_links` is off, and explains under the home page's slug that it is not
+  part of any URL.
+
+### Fixed
+
+- A fresh start of a static site failed with a schema mismatch after any schema change committed without
+  `content:save`, breaking its CI build.
+- `content:load` suggested `-allow-schema-change`, a flag only `import` has.
+- `docs/configuration.md` gave `delivery.cache_bytes` as `32MiB`; it takes bytes as an integer. The pages module's
+  management routes are now in `docs/management-api.md`.
+
 ## [0.2.0] - 2026-10-20
 
 ### Added
