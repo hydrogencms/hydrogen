@@ -219,8 +219,9 @@ func TestSiteExportFullAndIncremental(t *testing.T) {
 		if err != nil || res.Rendered < 1 || res.Rendered > 3 || len(res.Written) != 0 || len(res.Removed) != 0 {
 			t.Errorf("incremental export: %v %+v", err, res)
 		}
-		if e.read("en/en/tags/a/index.html") == "" || e.manifest().Files["en/en/tags/a/index.html"].Hash != before.Files["en/en/tags/a/index.html"].Hash {
-			t.Error("an unrelated page changed")
+		// custom routes are tagged with what their layout reads too: the tag page shows the renamed page in its nav
+		if !strings.Contains(e.read("en/en/tags/a/index.html"), "About us") {
+			t.Error("a custom route page kept the stale navigation")
 		}
 		_ = homeBefore
 

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"io/fs"
 	"regexp"
@@ -68,10 +69,11 @@ type Extensions struct {
 	themes map[string]Theme
 	routes []*CustomRoute
 	comps  map[string]ComponentFunc
+	funcs  template.FuncMap
 }
 
 func newExtensions() *Extensions {
-	x := &Extensions{themes: map[string]Theme{}, comps: map[string]ComponentFunc{}}
+	x := &Extensions{themes: map[string]Theme{}, comps: map[string]ComponentFunc{}, funcs: template.FuncMap{}}
 	x.themes[starterName] = Starter()
 	return x
 }

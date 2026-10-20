@@ -46,7 +46,10 @@ func (r *Request) URL(path string) string {
 }
 
 // LinkTo is the URL path of an item this site shows (its page, or its collection route); "" when it has none.
-func (r *Request) LinkTo(it *Item) string {
+func (r *Request) LinkTo(it *Item) string { return r.srv.linkPath(r.ch, it) }
+
+// linkPath is the URL path of an item this site shows (its page, or its collection route); "" when it has none.
+func (s *server) linkPath(ch *channel.Channel, it *Item) string {
 	if it == nil {
 		return ""
 	}
@@ -55,9 +58,10 @@ func (r *Request) LinkTo(it *Item) string {
 			return u.EscapedPath()
 		}
 	}
-	if rt := r.srv.detail(it.Type); rt != nil && r.ch.AllowsCollection(it.Type) {
+	if rt := s.detail(it.Type); rt != nil && ch.AllowsCollection(it.Type) {
 		if p, ok := rt.build(it.ID, it.Fields); ok {
-			return r.URL(p)
+			rel, _ := s.pages.SiteURL(ch, p)
+			return rel
 		}
 	}
 	return ""
@@ -420,6 +424,9 @@ func (c *Client) Items(typ string, q url.Values) (items []*Item, hasMore bool, e
 	if err != nil {
 		return nil, false, err
 	}
+	if l == nil {
+		return nil, false, nil
+	}
 	return l.Items, l.HasMore, nil
 }
 
@@ -445,13 +452,17 @@ func (s *server) runCustom(rc *reqCtx, hit *customHit) *result {
 
 func (s *server) customResult(rc *reqCtx, hit *customHit, resp *Response) *result {
 	res := &result{header: resp.Headers, custom: true}
-	tags := rc.f.tagList()
-	if len(resp.Tags) > 0 {
-		tags = append(tags, resp.Tags...)
-		slices.Sort(tags)
-		tags = slices.Compact(tags)
+	// the template's own reads (items, query…) tag the page too, so the tags are final after rendering
+	tags := func() []string {
+		tags := rc.f.tagList()
+		if len(resp.Tags) > 0 {
+			tags = append(tags, resp.Tags...)
+			slices.Sort(tags)
+			tags = slices.Compact(tags)
+		}
+		return tags
 	}
-	res.tags = tags
+	res.tags = tags()
 	res.cacheable = resp.Cacheable
 	status := resp.Status
 	if resp.Redirect != "" {
@@ -495,6 +506,6 @@ func (s *server) customResult(rc *reqCtx, hit *customHit, resp *Response) *resul
 	if err != nil {
 		return s.internal(rc, err)
 	}
-	res.status, res.body = status, s.finish(rc, body)
+	res.status, res.body, res.tags = status, s.finish(rc, body), tags()
 	return res
 }

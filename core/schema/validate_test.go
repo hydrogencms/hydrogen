@@ -184,7 +184,7 @@ func TestRichText(t *testing.T) {
 			{"type":"blockquote","content":[{"type":"paragraph"}]},
 			{"type":"codeBlock","attrs":{"language":"go"},"content":[` + text(``) + `]},{"type":"horizontalRule"}]`, nil},
 		{"mailto and item", `[{"type":"paragraph","content":[` + text(`,"marks":[{"type":"link","attrs":{"href":"mailto:a@b.co"}}]`) + `,` + text(`,"marks":[{"type":"link","attrs":{"href":"item:`+id1+`"}}]`) + `]}]`, nil},
-		{"unknown node", `[{"type":"table"}]`, []string{"rt.content[0]:richtext"}},
+		{"unknown node", `[{"type":"video"}]`, []string{"rt.content[0]:richtext"}},
 		{"bad child", `[{"type":"listItem"}]`, []string{"rt.content[0]:richtext"}},
 		{"text at root", `[` + text(``) + `]`, []string{"rt.content[0]:richtext"}},
 		{"empty text", `[{"type":"paragraph","content":[{"type":"text","text":""}]}]`, []string{"rt.content[0].content[0]:richtext"}},
@@ -249,6 +249,64 @@ func TestRichText(t *testing.T) {
 	ordered := `[{"type":"orderedList","content":[{"type":"listItem"}]}]`
 	if errs := s.Validate(rich, richDoc(t, ordered), ModeDraft); len(errs) != 1 {
 		t.Errorf("orderedList allowed: %v", errs)
+	}
+}
+
+func TestRichTextTablesImagesMarks(t *testing.T) {
+	s := mustCompile(t, typesFixture+"  rich:\n    fields:\n      all: { type: richtext }\n      some: { type: richtext, marks: [bold], nodes: [paragraph] }\n      tbl: { type: richtext, nodes: [paragraph, table] }\n")
+	typ, _ := s.Type("rich")
+	cell := func(kind, attrs string) string {
+		return `{"type":"` + kind + `",` + attrs + `"content":[{"type":"paragraph"}]}`
+	}
+	table := func(c string) string {
+		return `[{"type":"table","content":[{"type":"tableRow","content":[` + c + `]}]}]`
+	}
+	img := func(attrs string) string { return `[{"type":"image","attrs":` + attrs + `}]` }
+	mark := func(m string) string {
+		return `[{"type":"paragraph","content":[{"type":"text","text":"x","marks":[{"type":"` + m + `"}]}]}]`
+	}
+	tests := []struct {
+		name, field, content string
+		want                 []string
+	}{
+		{"table", "all", table(cell("tableHeader", ``) + "," + cell("tableCell", `"attrs":{"colspan":2,"rowspan":1,"colwidth":[100,0]},`)), nil},
+		{"nested table", "all", table(`{"type":"tableCell","content":` + table(cell("tableCell", ``)) + `}`), nil},
+		{"table allowed", "tbl", table(cell("tableCell", ``)), nil},
+		{"table not allowed", "some", table(cell("tableCell", ``)), []string{"F.content[0]:richtext"}},
+		{"cell at root", "all", `[` + cell("tableCell", ``) + `]`, []string{"F.content[0]:richtext"}},
+		{"row in table only", "all", `[{"type":"table","content":[` + cell("tableCell", ``) + `]}]`, []string{"F.content[0].content[0]:richtext"}},
+		{"colspan zero", "all", table(cell("tableCell", `"attrs":{"colspan":0},`)), []string{"F.content[0].content[0].content[0]:richtext"}},
+		{"colspan float", "all", table(cell("tableCell", `"attrs":{"colspan":1.5},`)), []string{"F.content[0].content[0].content[0]:richtext"}},
+		{"colwidth string", "all", table(cell("tableCell", `"attrs":{"colwidth":["a"]},`)), []string{"F.content[0].content[0].content[0]:richtext"}},
+		{"cell attr", "all", table(cell("tableCell", `"attrs":{"x":1},`)), []string{"F.content[0].content[0].content[0]:richtext"}},
+		{"image", "all", img(`{"src":"https://a.b/c.png","alt":"a","title":"t","width":10,"height":20}`), nil},
+		{"image relative", "all", img(`{"src":"/assets/abc/x.png"}`), nil},
+		{"image in list", "all", `[{"type":"bulletList","content":[{"type":"listItem","content":` + img(`{"src":"/a.png"}`) + `}]}]`, nil},
+		{"image no src", "all", img(`{"alt":"a"}`), []string{"F.content[0]:richtext"}},
+		{"image javascript", "all", img(`{"src":"javascript:alert(1)"}`), []string{"F.content[0]:richtext"}},
+		{"image data", "all", img(`{"src":"data:image/png;base64,AA"}`), []string{"F.content[0]:richtext"}},
+		{"image protocol relative", "all", img(`{"src":"//evil.com/a.png"}`), []string{"F.content[0]:richtext"}},
+		{"image backslash", "all", img(`{"src":"/\\\\evil.com"}`), []string{"F.content[0]:richtext"}},
+		{"image size", "all", img(`{"src":"/a.png","width":0}`), []string{"F.content[0]:richtext"}},
+		{"image attr", "all", img(`{"src":"/a.png","class":"x"}`), []string{"F.content[0]:richtext"}},
+		{"image no attrs", "all", `[{"type":"image"}]`, nil},
+		{"underline", "all", mark("underline"), nil},
+		{"strike", "all", mark("strike"), nil},
+		{"superscript", "all", mark("superscript"), nil},
+		{"subscript", "all", mark("subscript"), nil},
+		{"mark not allowed", "some", mark("underline"), []string{"F.content[0].content[0].marks[0]:richtext"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := codes(s.Validate(typ, doc(t, `{"`+tc.field+`":{"type":"doc","content":`+tc.content+`}}`), ModeDraft))
+			var want []string
+			for _, w := range tc.want {
+				want = append(want, strings.Replace(w, "F.", tc.field+".", 1))
+			}
+			if !reflect.DeepEqual(got, want) && (len(got) > 0 || len(want) > 0) {
+				t.Fatalf("errors = %v, want %v", got, want)
+			}
+		})
 	}
 }
 

@@ -56,7 +56,7 @@ func (m *module) check(ctx context.Context, svc *kernel.Services, out io.Writer,
 	if err != nil {
 		return err
 	}
-	c.src = &sources{chain: chain, dir: m.cfg.Dir, comps: m.ext.comps}
+	c.src = &sources{chain: chain, dir: m.cfg.Dir, comps: m.ext.comps, funcs: m.ext.funcs}
 	if c.eng, err = loadEngine(c.src, true); err != nil {
 		c.fail("%v", err)
 		return c.result()

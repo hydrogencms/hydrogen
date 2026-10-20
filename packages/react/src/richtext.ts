@@ -1,6 +1,6 @@
 import { createElement, Fragment } from 'react'
 import type { ReactNode } from 'react'
-import { linkHref } from '@hydrogencms/client/richtext'
+import { cellAttrs, imageAttrs, linkHref, tags } from '@hydrogencms/client/richtext'
 import type { PMNode } from '@hydrogencms/client/richtext'
 
 export type { PMMark, PMNode } from '@hydrogencms/client/richtext'
@@ -17,11 +17,6 @@ export interface RichTextProps {
   render?: RenderOverrides
 }
 
-const tags: Record<string, string> = {
-  paragraph: 'p', bulletList: 'ul', listItem: 'li', blockquote: 'blockquote', horizontalRule: 'hr', hardBreak: 'br',
-  bold: 'strong', italic: 'em', code: 'code',
-}
-
 export function RichText(p: RichTextProps): ReactNode {
   const { links, resolveLink, render } = p
   const wrap = (type: string, attrs: Record<string, any>, children: ReactNode, key?: number): ReactNode => {
@@ -34,6 +29,12 @@ export function RichText(p: RichTextProps): ReactNode {
       case 'link': {
         const href = linkHref(attrs, { links, resolveLink })
         return href ? createElement('a', { key, href }, children) : createElement(Fragment, { key }, children)
+      }
+      case 'table': return createElement('table', { key }, createElement('tbody', null, children))
+      case 'tableCell': case 'tableHeader': return createElement(type === 'tableCell' ? 'td' : 'th', { key, colSpan: cellAttrs(attrs).colspan, rowSpan: cellAttrs(attrs).rowspan }, children)
+      case 'image': {
+        const img = imageAttrs(attrs)
+        return img ? createElement('img', { key, ...img }) : null
       }
       case 'horizontalRule': case 'hardBreak': return createElement(tags[type]!, { key })
       default: {

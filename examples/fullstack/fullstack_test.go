@@ -368,6 +368,14 @@ func TestCustomRoutesAndTheme(t *testing.T) {
 		if !strings.Contains(r.header.Get("Surrogate-Key"), "c:post") {
 			t.Errorf("search tags = %q", r.header.Get("Surrogate-Key"))
 		}
+		// /latest: a template reading content with `items`; the page carries the listed posts' tags
+		lt := s.get("/en/latest")
+		if lt.status != 200 || !strings.Contains(lt.body, `<ol class="latest">`) || !strings.Contains(lt.body, `<a href="/en/blog/hello-world">HELLO, WORLD</a>`) {
+			t.Fatalf("/en/latest: %d %s", lt.status, lt.body)
+		}
+		if tag := "i:" + s.itemID("post", "Hello, world"); !strings.Contains(lt.header.Get("Surrogate-Key"), tag) || !strings.Contains(lt.header.Get("Surrogate-Key"), "c:post") {
+			t.Errorf("latest tags = %q, want %s", lt.header.Get("Surrogate-Key"), tag)
+		}
 		if none := s.get("/en/search?q=zzzzqqq"); none.status != 200 || !strings.Contains(none.body, "Nothing matched.") {
 			t.Errorf("empty search: %d", none.status)
 		}
@@ -737,7 +745,7 @@ func TestConfigIsValidated(t *testing.T) {
 		{"channels.yaml", "render: go", "render: php", `render must be "go"`},
 		{"app.yaml", "theme: fullstack", "theme: nope", `unknown theme "nope"`},
 		{"app.yaml", "theme: fullstack", "theme: Bad_Name", "must be a theme name"},
-		{"channels.yaml", ", /search, /colophon]", ", /colophon]", "/search is not on a reserved path of channel en"},
+		{"channels.yaml", ", /search, /colophon, /latest]", ", /colophon, /latest]", "/search is not on a reserved path of channel en"},
 		{"app.yaml", "root: en", "root: fr", "is not a channel with render"},
 		{"app.yaml", `type: post, template: posts`, `type: post`, "a listing needs a template"},
 		{"app.yaml", `/blog/{slug}`, `/blog/{slug}/{x}`, "at most one {param}"},

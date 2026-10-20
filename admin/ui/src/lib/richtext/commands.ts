@@ -4,7 +4,8 @@ import { InputRule, inputRules, textblockTypeInputRule, undoInputRule, wrappingI
 import { keymap } from 'prosemirror-keymap';
 import type { MarkType, NodeType, Schema } from 'prosemirror-model';
 import { liftListItem, splitListItem, wrapInList } from 'prosemirror-schema-list';
-import { EditorState, type Command, type Plugin } from 'prosemirror-state';
+import { EditorState, NodeSelection, Selection, type Command, type Plugin } from 'prosemirror-state';
+import { goToNextCell, tableEditing } from 'prosemirror-tables';
 
 /** An ancestor of the selection of one of the given types. */
 export function inside(state: EditorState, type?: NodeType): boolean {
@@ -70,6 +71,46 @@ export function insertRule(schema: Schema): Command {
       return true;
     }
     dispatch?.(state.tr.replaceSelectionWith(t.create()).scrollIntoView());
+    return true;
+  };
+}
+
+/** Where a block goes: after the textblock holding the selection, at the nearest level that accepts it. */
+function blockSlot(state: EditorState, type: NodeType): number | null {
+  const { $from, to } = state.selection;
+  if (state.selection instanceof NodeSelection) {
+    const $to = state.doc.resolve(to);
+    return $to.parent.canReplaceWith($to.index(), $to.index(), type) ? to : null;
+  }
+  for (let d = $from.depth; d > 0; d--) {
+    const i = $from.indexAfter(d - 1);
+    if ($from.node(d - 1).canReplaceWith(i, i, type)) return $from.after(d);
+  }
+  return null;
+}
+
+export function insertImage(schema: Schema, attrs: { src: string; alt?: string; title?: string }): Command {
+  const t = schema.nodes.image;
+  return (state, dispatch) => {
+    const at = t && blockSlot(state, t);
+    if (at == null) return false;
+    dispatch?.(state.tr.insert(at, t.create({ src: attrs.src, alt: attrs.alt || null, title: attrs.title || null })).scrollIntoView());
+    return true;
+  };
+}
+
+/** A table of rows x cols cells (the first row holds header cells), with the cursor in its first cell. */
+export function insertTable(schema: Schema, rows = 3, cols = 3): Command {
+  const { table, tableRow, tableCell, tableHeader } = schema.nodes;
+  return (state, dispatch) => {
+    const at = table && blockSlot(state, table);
+    if (at == null) return false;
+    if (dispatch) {
+      const row = (type: NodeType) => tableRow.create(null, Array.from({ length: cols }, () => type.createAndFill()!));
+      const node = table.create(null, Array.from({ length: rows }, (_, i) => row(i === 0 && tableHeader ? tableHeader : tableCell)));
+      const tr = state.tr.insert(at, node);
+      dispatch(tr.setSelection(Selection.near(tr.doc.resolve(at + 3))).scrollIntoView());
+    }
     return true;
   };
 }
@@ -162,6 +203,10 @@ export function plugins({ schema, openLink, history: h }: PluginOptions): Plugin
   if (m.bold) keys['Mod-b'] = toggleMark(m.bold);
   if (m.italic) keys['Mod-i'] = toggleMark(m.italic);
   if (m.code) keys['Mod-e'] = toggleMark(m.code);
+  if (m.underline) keys['Mod-u'] = toggleMark(m.underline);
+  if (m.strike) keys['Shift-Mod-x'] = toggleMark(m.strike);
+  if (m.superscript) keys['Mod-.'] = toggleMark(m.superscript);
+  if (m.subscript) keys['Mod-,'] = toggleMark(m.subscript);
   if (m.link && openLink) {
     keys['Mod-k'] = () => {
       openLink();
@@ -178,6 +223,10 @@ export function plugins({ schema, openLink, history: h }: PluginOptions): Plugin
   if (n.orderedList) keys['Shift-Ctrl-9'] = toggleList(schema, 'orderedList');
   if (n.hardBreak) keys['Shift-Enter'] = chainCommands(exitCode, hardBreak(schema));
   if (n.listItem) keys.Enter = splitListItem(n.listItem);
+  if (n.table) {
+    keys.Tab = goToNextCell(1);
+    keys['Shift-Tab'] = goToNextCell(-1);
+  }
 
   const rules: InputRule[] = [];
   if (n.heading) {
@@ -190,5 +239,5 @@ export function plugins({ schema, openLink, history: h }: PluginOptions): Plugin
   if (n.blockquote) rules.push(wrappingInputRule(/^\s*>\s$/, n.blockquote));
   if (n.codeBlock) rules.push(textblockTypeInputRule(/^```$/, n.codeBlock));
 
-  return [inputRules({ rules }), keymap(keys), keymap(baseKeymap), ...(h?.plugins ?? [history()])];
+  return [inputRules({ rules }), keymap(keys), keymap(baseKeymap), ...(n.table ? [tableEditing()] : []), ...(h?.plugins ?? [history()])];
 }

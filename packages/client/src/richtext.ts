@@ -26,9 +26,28 @@ export function linkHref(attrs: Record<string, any>, o: RichTextOptions = {}): s
   return safeHref(h.startsWith('item:') ? o.resolveLink?.(h) ?? o.links?.[h.slice(5)] ?? o.links?.[h] : h)
 }
 
-const tags: Record<string, string> = {
+/** The checked `src` of an image node: http(s) or root-relative (not protocol-relative), anything else undefined. */
+export function imageSrc(u: string | undefined): string | undefined {
+  const s = u?.trim()
+  return s && !/[\\\u0000-\u001f\u007f]/.test(s) && /^(\/(?!\/)|https?:\/\/)/i.test(s) ? s : undefined
+}
+
+const num = (v: any, max: number): number | undefined => (v >= 1 && v <= max ? Math.floor(v) : undefined)
+
+/** The attributes of an image node, or undefined when its `src` is unsafe. */
+export function imageAttrs(a: Record<string, any>): Record<string, string | number | undefined> | undefined {
+  const src = imageSrc(a.src)
+  return src ? { src, alt: String(a.alt ?? ''), title: a.title || undefined, width: num(a.width, 1e5), height: num(a.height, 1e5), loading: 'lazy' } : undefined
+}
+
+/** `colspan` and `rowspan` of a table cell, left out when 1. */
+export const cellAttrs = (a: Record<string, any>): Record<string, number | undefined> =>
+  ({ colspan: a.colspan > 1 ? num(a.colspan, 1000) : undefined, rowspan: a.rowspan > 1 ? num(a.rowspan, 1000) : undefined })
+
+export const tags: Record<string, string> = {
   paragraph: 'p', bulletList: 'ul', listItem: 'li', blockquote: 'blockquote', horizontalRule: 'hr', hardBreak: 'br',
-  bold: 'strong', italic: 'em', code: 'code',
+  bold: 'strong', italic: 'em', code: 'code', underline: 'u', strike: 's', superscript: 'sup', subscript: 'sub',
+  tableRow: 'tr',
 }
 const VOID = new Set(['hr', 'br'])
 
@@ -43,6 +62,12 @@ export function richTextNodes(doc: PMNode | null | undefined, o: RichTextOptions
       case 'link': {
         const href = linkHref(a, o)
         return href ? [{ tag: 'a', attrs: { href }, kids }] : kids
+      }
+      case 'table': return [{ tag: 'table', attrs: {}, kids: [{ tag: 'tbody', attrs: {}, kids }] }]
+      case 'tableCell': case 'tableHeader': return [{ tag: type === 'tableCell' ? 'td' : 'th', attrs: cellAttrs(a), kids }]
+      case 'image': {
+        const attrs = imageAttrs(a)
+        return attrs ? [{ tag: 'img', attrs }] : []
       }
       default: {
         const t = tags[type]

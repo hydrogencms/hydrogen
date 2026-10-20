@@ -10,11 +10,13 @@ type richtextType struct{}
 
 func (richtextType) Name() string { return "richtext" }
 
-func richMarkNames() []string { return []string{"bold", "code", "italic", "link"} }
+func richMarkNames() []string {
+	return []string{"bold", "code", "italic", "link", "strike", "subscript", "superscript", "underline"}
+}
 
 func richNodeNames() []string {
 	return []string{"blockquote", "bulletList", "codeBlock", "hardBreak", "heading", "horizontalRule",
-		"orderedList", "paragraph"}
+		"image", "orderedList", "paragraph", "table"}
 }
 
 func (richtextType) Compile(o *Options) (Shape, Config, error) {
@@ -48,6 +50,8 @@ func (c *richtextConfig) allowsNode(t string) bool {
 	switch t {
 	case "listItem":
 		return slices.Contains(c.nodes, "bulletList") || slices.Contains(c.nodes, "orderedList")
+	case "tableRow", "tableCell", "tableHeader":
+		return slices.Contains(c.nodes, "table")
 	case "text":
 		return true
 	}
@@ -207,19 +211,16 @@ func (k *rtCheck) attrs(n map[string]any, t string) {
 		k.fail("attrs must be an object")
 		return
 	}
-	allowed := ""
-	switch t {
-	case "heading":
-		allowed = "level"
-	case "codeBlock":
-		allowed = "language"
-	}
 	for _, key := range sortedKeys(attrs) {
-		if key != allowed {
+		if !slices.Contains(nodeAttrNames[t], key) {
 			k.fail("%s does not take attribute %q", t, key)
 		}
 	}
 	switch t {
+	case "tableCell", "tableHeader":
+		k.cellAttrs(attrs)
+	case "image":
+		k.imageAttrs(attrs)
 	case "heading":
 		if lv, ok := intOf(attrs["level"]); !ok || lv < 1 || lv > 6 {
 			k.fail("heading level must be 1 to 6")
@@ -231,6 +232,72 @@ func (k *rtCheck) attrs(n map[string]any, t string) {
 			}
 		}
 	}
+}
+
+var nodeAttrNames = map[string][]string{
+	"heading":     {"level"},
+	"codeBlock":   {"language"},
+	"tableCell":   {"colspan", "rowspan", "colwidth"},
+	"tableHeader": {"colspan", "rowspan", "colwidth"},
+	"image":       {"src", "alt", "title", "width", "height"},
+}
+
+func (k *rtCheck) cellAttrs(attrs map[string]any) {
+	for _, key := range [...]string{"colspan", "rowspan"} {
+		if v, ok := attrs[key]; ok {
+			if n, ok := intOf(v); !ok || n < 1 || n > 1000 {
+				k.fail("%s must be an integer from 1 to 1000", key)
+			}
+		}
+	}
+	raw, ok := attrs["colwidth"]
+	if !ok || raw == nil {
+		return
+	}
+	list, isList := raw.([]any)
+	if !isList || len(list) == 0 || len(list) > 1000 {
+		k.fail("colwidth must be a list of column widths")
+		return
+	}
+	for _, e := range list {
+		if n, ok := intOf(e); !ok || n < 0 || n > 100000 {
+			k.fail("colwidth entries must be integers from 0 to 100000")
+			return
+		}
+	}
+}
+
+func (k *rtCheck) imageAttrs(attrs map[string]any) {
+	if src, _ := attrs["src"].(string); !validImageSrc(src) {
+		k.fail("image needs attrs.src: an http(s) URL or a root-relative path")
+	}
+	for _, key := range [...]string{"alt", "title"} {
+		if v, ok := attrs[key]; ok && v != nil {
+			if s, isStr := v.(string); !isStr || strings.IndexByte(s, 0) >= 0 {
+				k.fail("image %s must be a string", key)
+			}
+		}
+	}
+	for _, key := range [...]string{"width", "height"} {
+		if v, ok := attrs[key]; ok && v != nil {
+			if n, ok := intOf(v); !ok || n < 1 || n > 100000 {
+				k.fail("image %s must be an integer from 1 to 100000", key)
+			}
+		}
+	}
+}
+
+// validImageSrc accepts absolute http(s) URLs and root-relative paths such as the media library's
+// /assets/{sha}/{name}. Protocol-relative ("//host"), backslashes and control characters are refused like in links.
+func validImageSrc(s string) bool {
+	if s == "" || strings.ContainsFunc(s, func(r rune) bool { return r == '\\' || r < 0x20 || r == 0x7f }) {
+		return false
+	}
+	if strings.HasPrefix(s, "/") {
+		return !strings.HasPrefix(s, "//")
+	}
+	u, err := url.Parse(s)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
 func (k *rtCheck) text(n map[string]any) {
@@ -268,7 +335,7 @@ func (k *rtCheck) text(n map[string]any) {
 func (k *rtCheck) mark(m map[string]any, before []any) {
 	t, _ := m["type"].(string)
 	switch t {
-	case "bold", "italic", "code", "link":
+	case "bold", "italic", "code", "link", "underline", "strike", "superscript", "subscript":
 	default:
 		k.fail("unknown mark type %q", t)
 		return
@@ -315,7 +382,7 @@ func validHref(h string) bool {
 func validRichNode(t string) bool {
 	switch t {
 	case "paragraph", "heading", "bulletList", "orderedList", "listItem", "blockquote", "codeBlock",
-		"horizontalRule", "hardBreak", "text":
+		"horizontalRule", "hardBreak", "text", "image", "table", "tableRow", "tableCell", "tableHeader":
 		return true
 	}
 	return false
@@ -323,8 +390,13 @@ func validRichNode(t string) bool {
 
 func childTypes(parent string) []string {
 	switch parent {
-	case "doc", "blockquote", "listItem":
-		return []string{"paragraph", "heading", "bulletList", "orderedList", "blockquote", "codeBlock", "horizontalRule"}
+	case "doc", "blockquote", "listItem", "tableCell", "tableHeader":
+		return []string{"paragraph", "heading", "bulletList", "orderedList", "blockquote", "codeBlock", "horizontalRule",
+			"image", "table"}
+	case "table":
+		return []string{"tableRow"}
+	case "tableRow":
+		return []string{"tableCell", "tableHeader"}
 	case "bulletList", "orderedList":
 		return []string{"listItem"}
 	case "paragraph", "heading":
@@ -361,7 +433,7 @@ func richHasContent(v any) bool {
 	case "text":
 		s, _ := n["text"].(string)
 		return s != ""
-	case "horizontalRule", "hardBreak":
+	case "horizontalRule", "hardBreak", "image":
 		return true
 	}
 	list, _ := n["content"].([]any)

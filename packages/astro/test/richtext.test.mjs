@@ -37,3 +37,19 @@ test('overrides replace a node type; empty and missing docs render nothing', () 
   assert.equal(richTextHtml(null), '')
   assert.equal(richTextHtml({ type: 'doc' }), '')
 })
+
+const tbl = (img) => ({ type: 'doc', content: [
+  { type: 'table', content: [
+    { type: 'tableRow', content: [{ type: 'tableHeader', attrs: { colspan: 2, rowspan: 1 }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'h' }] }] }] },
+    { type: 'tableRow', content: [{ type: 'tableCell', attrs: { rowspan: 3 }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'u', marks: [{ type: 'underline' }, { type: 'strike' }, { type: 'superscript' }, { type: 'subscript' }] }] }] }] },
+  ] },
+  img,
+] })
+
+test('tables, extra marks and images', () => {
+  assert.equal(
+    richTextHtml(tbl({ type: 'image', attrs: { src: '/a.png?x=1&y=2', alt: 'A"', title: 'T' } })),
+    '<table><tbody><tr><th colspan="2"><p>h</p></th></tr><tr><td rowspan="3"><p><u><s><sup><sub>u</sub></sup></s></u></p></td></tr></tbody></table><img src="/a.png?x=1&amp;y=2" alt="A&quot;" title="T" loading="lazy">',
+  )
+  assert.equal(richTextHtml(tbl({ type: 'image', attrs: { src: 'javascript:x' } })).endsWith('</table>'), true)
+})

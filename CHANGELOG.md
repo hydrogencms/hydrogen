@@ -6,6 +6,17 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Site module templates: generic functions (`dict`, `list`, arithmetic, `seq`, `default`, string helpers, `date`,
+  `json`, `first`, `last`), project functions with `site.Funcs`, reading helpers `items`, `item` and `query` (they tag
+  the page like any read), `partial` for computed template names, and `View.Client()` for Go components.
+- Rich text: the marks `underline`, `strike`, `superscript` and `subscript`, tables (`table`, with rows and `tableCell`/
+  `tableHeader` cells carrying `colspan`, `rowspan` and `colwidth`) and block-level `image` nodes (`src` as an http(s)
+  URL or root-relative path, `alt`, `title`, `width`, `height`). The admin editor has buttons, a table menu and an
+  image popover (`prosemirror-tables`, in the lazy editor chunk); the site module and the `client`, `react` and `astro`
+  renderers output them. The `@hydrogencms/client/richtext` size budget is 1.25 KB.
+
 ### Changed
 
 - The static scaffold's dev site runs on `127.0.0.1:4321` (`server.host`, channel `frontend`), like `hydrogen dev`, so
@@ -17,6 +28,8 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Fixed
 
+- Custom routes of the site module collect the cache tags of reads made while the template renders, not only
+  those of the route function.
 - Draft preview on sites with `trailingSlash: 'always'`: the preview hand-off, the path it returns to and the exit URL
   follow it, and `astro dev` adds the slash to the CMS's preview URLs instead of answering 404.
 - In the static scaffold the admin (`127.0.0.1`) and the dev site (`localhost`) were different sites, so the browser

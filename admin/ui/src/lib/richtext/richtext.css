@@ -234,6 +234,50 @@
   text-decoration-style: dotted;
 }
 
+.h-rte__doc table {
+  width: 100%;
+  margin: 0 0 var(--h-space-3);
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.h-rte__doc td,
+.h-rte__doc th {
+  position: relative;
+  min-width: 3em;
+  padding: var(--h-space-1) var(--h-space-2);
+  border: 1px solid var(--h-border-strong);
+  vertical-align: top;
+}
+.h-rte__doc th {
+  background: var(--h-surface-2);
+  font-weight: 600;
+  text-align: start;
+}
+.h-rte__doc td > :last-child,
+.h-rte__doc th > :last-child {
+  margin-bottom: 0;
+}
+.h-rte__doc .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--h-accent);
+  opacity: 0.18;
+  pointer-events: none;
+}
+.h-rte__doc img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 0 var(--h-space-3);
+}
+.h-rte__doc img.ProseMirror-selectednode {
+  outline: 2px solid var(--h-accent);
+}
+.h-rte__doc u {
+  text-underline-offset: 2px;
+}
+
 /* ProseMirror base rules (the library ships them as a stylesheet; only what the schema needs). */
 .h-rte__doc .ProseMirror-gapcursor {
   display: none;

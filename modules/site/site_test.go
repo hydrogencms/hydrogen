@@ -1,6 +1,7 @@
 package site
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -39,6 +40,31 @@ func TestRichText(t *testing.T) {
 	}
 	if renderRichText(nil, nil) != "" || renderRichText("text", nil) != "" {
 		t.Error("a non-document renders something")
+	}
+}
+
+func TestRichTextTablesImagesMarks(t *testing.T) {
+	var doc any
+	src := `{"type":"doc","content":[
+	{"type":"table","content":[
+	 {"type":"tableRow","content":[{"type":"tableHeader","attrs":{"colspan":2,"rowspan":1},"content":[{"type":"paragraph","content":[{"type":"text","text":"h"}]}]}]},
+	 {"type":"tableRow","content":[{"type":"tableCell","attrs":{"rowspan":3,"colwidth":[100]},"content":[{"type":"paragraph","content":[
+	  {"type":"text","text":"u","marks":[{"type":"underline"},{"type":"strike"}]},
+	  {"type":"text","text":"2","marks":[{"type":"superscript"}]},
+	  {"type":"text","text":"3","marks":[{"type":"subscript"}]}]}]}]}]},
+	{"type":"image","attrs":{"src":"https://a.b/x.png?a=1&b=2","alt":"a\"b","title":"t","width":10,"height":20}},
+	{"type":"image","attrs":{"src":"/assets/x/y.png"}},
+	{"type":"image","attrs":{"src":"javascript:alert(1)"}},
+	{"type":"image","attrs":{"src":"//evil.com/x.png"}},
+	{"type":"image","attrs":{"src":"data:image/png;base64,AA"}}]}`
+	if err := json.Unmarshal([]byte(src), &doc); err != nil {
+		t.Fatal(err)
+	}
+	want := `<table><tbody><tr><th colspan="2"><p>h</p></th></tr><tr><td rowspan="3"><p><u><s>u</s></u><sup>2</sup><sub>3</sub></p></td></tr></tbody></table>` +
+		`<img src="https://a.b/x.png?a=1&amp;b=2" alt="a&#34;b" title="t" width="10" height="20" loading="lazy">` +
+		`<img src="/assets/x/y.png" alt="" loading="lazy">`
+	if got := renderRichText(doc, nil); got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
 	}
 }
 

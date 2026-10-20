@@ -92,6 +92,16 @@ describe('rich text', () => {
   });
 });
 
+describe('rich text tables and images', () => {
+  const table = (cell: string) => ({ type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell', content: [para('a')] }, { type: 'tableCell', content: [para(cell)] }] }] });
+  it('shows a changed cell as one table row and an image by its source', () => {
+    const r = diffRich(doc(table('b')), doc(table('c'), { type: 'image', attrs: { src: '/a.png', alt: 'A' } }));
+    expect(r.rows.map((x) => [x.status, x.node])).toEqual([['changed', 'table'], ['added', 'image']]);
+    expect(r.rows[0]!.segs.some((s) => s.k === 'ins' && s.text.includes('c'))).toBe(true);
+    expect(r.rows[1]!.segs).toEqual([{ k: 'ins', text: '[image: A /a.png]' }]);
+  });
+});
+
 describe('diffValue', () => {
   it('is null for equal and equally empty values', () => {
     expect(diffValue(f('t', 'string'), 'a', 'a')).toBeNull();

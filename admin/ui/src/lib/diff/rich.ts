@@ -33,8 +33,10 @@ export function textOf(n: Node | undefined): string {
   if (!n) return '';
   if (n.type === 'text') return n.text ?? '';
   if (n.type === 'hardBreak' || n.type === 'hard_break') return '\n';
+  if (n.type === 'image') return `[image: ${[n.attrs?.alt, n.attrs?.src].filter(Boolean).join(' ')}]`;
   const kids = n.content ?? [];
   const parts = kids.map(textOf);
+  if (n.type === 'tableRow') return parts.join(' | ');
   return kids.every((k) => INLINE.has(k.type ?? '')) ? parts.join('') : parts.join('\n');
 }
 

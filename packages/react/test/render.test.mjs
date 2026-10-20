@@ -123,3 +123,14 @@ test('Image: variant, defaults, focal point, overrides', async () => {
   assert.equal(o, '<img loading="lazy" decoding="sync" src="/o.jpg" alt="X" style="color:red"/>')
   assert.match(html(h(Image, { asset: a, style: { color: 'red' } })), /style="object-position:25% 50%;color:red"/)
 })
+
+test('RichText tables, extra marks and images', () => {
+  const cell = (type, attrs, text, marks) => ({ type, attrs, content: [{ type: 'paragraph', content: [{ type: 'text', text, marks }] }] })
+  const d = (src) => ({ type: 'doc', content: [
+    { type: 'table', content: [{ type: 'tableRow', content: [cell('tableHeader', { colspan: 2, rowspan: 1 }, 'h'), cell('tableCell', { rowspan: 3 }, 'u', [{ type: 'underline' }, { type: 'subscript' }])] }] },
+    { type: 'image', attrs: { src, alt: 'A', width: 5 } },
+  ] })
+  assert.equal(rt(d('/a.png')),
+    '<table><tbody><tr><th colSpan="2"><p>h</p></th><td rowSpan="3"><p><u><sub>u</sub></u></p></td></tr></tbody></table><img src="/a.png" alt="A" width="5" loading="lazy"/>')
+  assert.ok(!rt(d('javascript:x')).includes('<img'))
+})

@@ -32,6 +32,11 @@ func register(h *hydrogen.Builder) {
 			Data: searchData{Query: "sample", Results: []result{{Name: "A page", URL: "/sample", Excerpt: "An excerpt"}}}}
 	})
 
+	// /latest reads its content itself: routes/latest.html calls the `items` helper.
+	site.Handle(h, "GET /latest", func(*site.Request) (*site.Response, error) {
+		return &site.Response{Template: "routes/latest.html", Title: "Latest", Cacheable: true}, nil
+	}).Sample(func() *site.Response { return &site.Response{Template: "routes/latest.html", Title: "Latest"} })
+
 	// /colophon is one fixed page of a static export, rendered by a templ component.
 	site.Handle(h, "GET /colophon", func(*site.Request) (*site.Response, error) {
 		return &site.Response{Template: "routes/colophon.html", Title: "Colophon", Cacheable: true}, nil

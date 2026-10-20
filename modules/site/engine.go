@@ -10,7 +10,7 @@ import (
 
 // helpers are the template functions that need the page being rendered; parsing needs their names, rendering
 // a clone of the set with the real ones.
-var helpers = []string{"blocks", "richtext", "link", "t", "meta", "nav", "breadcrumbs", "asset", "edit", "setting", "component"}
+var helpers = []string{"blocks", "partial", "items", "item", "query", "richtext", "link", "t", "meta", "nav", "breadcrumbs", "asset", "edit", "setting", "component"}
 
 // engine is the parsed template set: the shared files (layout, partials, blocks) in one set and a clone of
 // it with each page-like template parsed on top.
@@ -32,6 +32,7 @@ type sources struct {
 	chain []Theme
 	dir   string
 	comps map[string]ComponentFunc
+	funcs template.FuncMap
 }
 
 func isPageTemplate(name string) bool {
@@ -48,7 +49,7 @@ func loadEngine(src *sources, strict bool) (*engine, error) {
 	for _, h := range helpers {
 		stubs[h] = func(...any) string { return "" }
 	}
-	e.base = template.New("").Funcs(stubs)
+	e.base = template.New("").Funcs(builtinFuncs()).Funcs(src.funcs).Funcs(stubs)
 	if strict {
 		e.base.Option("missingkey=error")
 	}

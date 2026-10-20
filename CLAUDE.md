@@ -78,7 +78,8 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   notifications, and serves `/__hydrogen/bridge.js` (embedded copy of `packages/bridge`'s IIFE: `make site-bridge`,
   verified by `site-bridge-check` in `make check`) and fingerprinted assets. Templates: project `site/templates`
   over the embedded `themes/starter` by file name (`layout.html`, `pages/<type>.html` or `pages/default.html`,
-  `collections/<template>.html`, `blocks/<type>.html`, `404.html`; block roots carry `{{.Attrs}}`). Config
+  `collections/<template>.html`, `blocks/<type>.html`, `404.html`; block roots carry `{{.Attrs}}`). Template
+  functions (built-ins, `site.Funcs`), `items`/`item`/`query`/`partial` helpers (reads tag the page). Config
   `modules.site` (`dir`, `admin_url` (required outside dev), `preview_csp`, `cache_bytes`, `root`, `routes`).
   Preview pages send a strict CSP and `Referrer-Policy: no-referrer`, and carry `<meta name="hydrogen-preview">`
   with the SHA-256 of the token. Same-origin hosting is trusted by default (project code and theme scripts run with

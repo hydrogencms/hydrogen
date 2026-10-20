@@ -39,6 +39,64 @@ Collection listing routes are paged: `/blog` is page 1 and `/blog/page/2` the ne
 template gets `.Pager` (`.Page`, `.Prev`, `.Next`; nil on a single page); the starter theme shows it with
 `partials/pager.html`.
 
+## Template functions
+
+Every template has these generic functions. They are pure and never mark a string as safe HTML, so
+`html/template` still escapes everything by its context. The subject comes last, so they chain:
+`{{.Title | truncate 40 "…"}}`.
+
+| Function | Meaning |
+| --- | --- |
+| `dict "k" v …`, `list a b …` | a `map[string]any` from key/value pairs; a list |
+| `add`, `sub`, `mul`, `div`, `mod` | arithmetic on ints and floats (JSON numbers are floats). The result is an int when both operands are whole numbers (`div` only when exact: `7 \| div 2` is 3.5); dividing by zero is an error, `mod` needs integers |
+| `seq n`, `seq a b` | `0..n-1`; `a..b` included (descending when `a > b`); at most 10000 numbers |
+| `default d v` | `v`, or `d` when `v` is empty (nil, "", 0, false, empty list or map) |
+| `lower`, `upper`, `title`, `trim` | case (title: each word's first letter) and surrounding space |
+| `contains needle s` | substring of a string, or element of a list |
+| `hasPrefix p s`, `hasSuffix p s` | |
+| `split sep s`, `join sep list`, `replace old new s` | |
+| `truncate n s`, `truncate n "…" s` | at most `n` characters (runes, ellipsis included) |
+| `date layout v` | formats a `time.Time` or a string (RFC 3339 or `2006-01-02`) with a Go layout; "" when `v` is not a date |
+| `json v` | the JSON text, for `data-*` attributes (inside `<script>` pass the value itself: `html/template` already encodes it as JSON) |
+| `first list`, `last list` | the element, or nil |
+
+`len`, `index`, `slice`, `eq`, `printf` and the other functions of Go templates are available as usual.
+
+Projects add their own with `site.Funcs`, available when templates are parsed and rendered, including in themes:
+
+```go
+site.Funcs(h, template.FuncMap{"initials": func(name string) string { return … }})
+```
+
+A function returns one value, or a value and an error. A name that collides with a built-in, a page helper (`blocks`,
+`partial`, `items`, `item`, `query`, `richtext`, `link`, `t`, `meta`, `nav`, `breadcrumbs`, `asset`, `edit`, `setting`,
+`component`), a Go template function or another registration fails start-up and `config:check`. A module that
+`Require`s `site` calls `kernel.Lookup[*site.Extensions](r).AddFuncs(m)`.
+
+## Reading content in templates
+
+These helpers read in process, as a public client of the channel (drafts when previewing), in the page's locale.
+Everything they read tags the page, so publishing a listed item purges it (and the static export re-renders it).
+Identical calls within one render ask the delivery API once.
+
+- `items "post" (dict "limit" 4 "sort" "-slug" "where[category][eq]" "news")` returns the items (`[]*Item`, each with
+  `.Path` so `{{link .}}` works). Dict values are strings, numbers, booleans or lists (repeated parameters); an
+  unknown field or a 5xx answer is an error.
+- `item "id"` returns one item or nil.
+- `query "/tree" (dict "depth" 3)` returns the decoded JSON (`map[string]any`) of a delivery path (`/tree`,
+  `/search`, …) when it answers 200, else nil; a 5xx answer is an error.
+- `partial "blocks/hero/wide.html" data` executes a template by a computed name (Go's `{{template}}` needs a
+  constant) and returns its HTML; `data` defaults to the page's view. A missing template is an error in
+  `site:check` and a logged, empty result when serving. Partials may nest up to 32 levels.
+
+```html
+{{range items "post" (dict "limit" 3 "sort" "-slug")}}<a href="{{link .}}">{{.Name}}</a>{{end}}
+{{partial (printf "blocks/imageBoxes/%s.html" .Props.view) .}}
+```
+
+In `site:check` the reading helpers return empty results (no database). Go components use `v.Client()`, the same
+client with `Get`, `Items` and `Item`.
+
 ## Themes
 
 A theme is a `site.Theme{Name, FS, Base}`; `FS` holds `templates/`, `assets/` and `translations/` and `Base` names

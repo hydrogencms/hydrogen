@@ -1,0 +1,8 @@
+{{define "content"}}
+<div class="container narrow page-head">
+<h1 class="page-title">{{.Title}}</h1>
+<ol class="latest">
+{{range items "post" (dict "limit" 3 "sort" "slug")}}<li><a href="{{link .}}">{{.Name | upper | truncate 40 "…"}}</a></li>
+{{end}}</ol>
+</div>
+{{end}}

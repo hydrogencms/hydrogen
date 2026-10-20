@@ -27,6 +27,19 @@ export function normalizeHref(raw: string): string {
   return /^[^\s/]+\.[^\s/]+/.test(v) ? `https://${v}` : v;
 }
 
+/** src rules of the server: http(s) URL or root-relative path (not protocol-relative); no backslashes or control characters. */
+export function validImageSrc(s: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  if (!s || /[\\\u0000-\u001f\u007f]/.test(s)) return false;
+  if (s.startsWith('/')) return !s.startsWith('//');
+  try {
+    const u = new URL(s);
+    return (u.protocol === 'http:' || u.protocol === 'https:') && u.host !== '';
+  } catch {
+    return false;
+  }
+}
+
 const headingTag = (level: number) => `h${Math.min(6, Math.max(1, level))}` as 'h1';
 
 export function buildSchema(cfg: RichConfig = {}): Schema {
@@ -36,7 +49,7 @@ export function buildSchema(cfg: RichConfig = {}): Schema {
 
   const text = ['paragraph', 'heading'].filter(node);
   if (text.length === 0) throw new Error('a rich text field must allow paragraph or heading nodes');
-  const blocks = [...text, ...['bulletList', 'orderedList', 'blockquote', 'codeBlock', 'horizontalRule'].filter(node)];
+  const blocks = [...text, ...['bulletList', 'orderedList', 'blockquote', 'codeBlock', 'horizontalRule', 'image', 'table'].filter(node)];
   const inline = ['text', ...(node('hardBreak') ? ['hardBreak'] : [])].join('|');
   const any = blocks.join('|');
 
@@ -85,6 +98,67 @@ export function buildSchema(cfg: RichConfig = {}): Schema {
   if (node('horizontalRule')) {
     nodes.horizontalRule = { group: 'block', parseDOM: [{ tag: 'hr' }], toDOM: () => ['hr'] };
   }
+  if (node('image')) {
+    const attr = (d: HTMLElement, k: string) => d.getAttribute(k) || null;
+    const size = (d: HTMLElement, k: string) => {
+      const v = Number(d.getAttribute(k));
+      return Number.isInteger(v) && v >= 1 ? v : null;
+    };
+    nodes.image = {
+      attrs: { src: {}, alt: { default: null }, title: { default: null }, width: { default: null }, height: { default: null } },
+      group: 'block',
+      draggable: true,
+      parseDOM: [
+        {
+          tag: 'img[src]',
+          getAttrs: (d) => {
+            const src = d.getAttribute('src') ?? '';
+            return validImageSrc(src) ? { src, alt: attr(d, 'alt'), title: attr(d, 'title'), width: size(d, 'width'), height: size(d, 'height') } : false;
+          },
+        },
+      ],
+      toDOM: (n) => ['img', { src: n.attrs.src, alt: n.attrs.alt ?? '', title: n.attrs.title ?? undefined, width: n.attrs.width ?? undefined, height: n.attrs.height ?? undefined }],
+    };
+  }
+  if (node('table')) {
+    // Same attributes and roles as prosemirror-tables' tableNodes, so its commands and plugins work on them.
+    const cellAttrs = {
+      colspan: { default: 1 },
+      rowspan: { default: 1 },
+      colwidth: { default: null },
+    };
+    const cell = (tag: string, role: string): NodeSpec => ({
+      attrs: cellAttrs,
+      content: `(${any})+`,
+      tableRole: role,
+      isolating: true,
+      parseDOM: [
+        {
+          tag,
+          getAttrs: (d) => {
+            const span = (k: string) => {
+              const v = Number(d.getAttribute(k));
+              return Number.isInteger(v) && v >= 1 && v <= 1000 ? v : 1;
+            };
+            const w = d.getAttribute('data-colwidth');
+            const colwidth = w && /^\d+(,\d+)*$/.test(w) ? w.split(',').map(Number) : null;
+            return { colspan: span('colspan'), rowspan: span('rowspan'), colwidth: colwidth && colwidth.length === span('colspan') ? colwidth : null };
+          },
+        },
+      ],
+      toDOM: (n) => {
+        const a: Record<string, string> = {};
+        if (n.attrs.colspan !== 1) a.colspan = String(n.attrs.colspan);
+        if (n.attrs.rowspan !== 1) a.rowspan = String(n.attrs.rowspan);
+        if (n.attrs.colwidth) a['data-colwidth'] = (n.attrs.colwidth as number[]).join(',');
+        return [tag, a, 0];
+      },
+    });
+    nodes.table = { content: 'tableRow+', group: 'block', tableRole: 'table', isolating: true, parseDOM: [{ tag: 'table' }], toDOM: () => ['table', ['tbody', 0]] };
+    nodes.tableRow = { content: '(tableCell|tableHeader)*', tableRole: 'row', parseDOM: [{ tag: 'tr' }], toDOM: () => ['tr', 0] };
+    nodes.tableCell = cell('td', 'cell');
+    nodes.tableHeader = cell('th', 'header_cell');
+  }
   if (node('hardBreak')) {
     nodes.hardBreak = { inline: true, group: 'inline', selectable: false, parseDOM: [{ tag: 'br' }], toDOM: () => ['br'] };
   }
@@ -108,6 +182,18 @@ export function buildSchema(cfg: RichConfig = {}): Schema {
       parseDOM: [{ tag: 'a[href]', getAttrs: (d) => (validHref(d.getAttribute('href') ?? '') ? { href: d.getAttribute('href') } : false) }],
       toDOM: (m) => ['a', { href: m.attrs.href, rel: 'noreferrer' }, 0],
     };
+  }
+  if (mark('strike')) {
+    marks.strike = { parseDOM: [{ tag: 's' }, { tag: 'del' }, { tag: 'strike' }, { style: 'text-decoration=line-through' }], toDOM: () => ['s', 0] };
+  }
+  if (mark('subscript')) {
+    marks.subscript = { excludes: 'superscript', parseDOM: [{ tag: 'sub' }, { style: 'vertical-align=sub' }], toDOM: () => ['sub', 0] };
+  }
+  if (mark('superscript')) {
+    marks.superscript = { excludes: 'subscript', parseDOM: [{ tag: 'sup' }, { style: 'vertical-align=super' }], toDOM: () => ['sup', 0] };
+  }
+  if (mark('underline')) {
+    marks.underline = { parseDOM: [{ tag: 'u' }, { style: 'text-decoration=underline' }], toDOM: () => ['u', 0] };
   }
   return new Schema({ nodes, marks });
 }
@@ -135,13 +221,13 @@ export function toStored(doc: PMNode): StoredNode {
   return clean(doc.toJSON() as StoredNode);
 }
 
-/** Mirrors the server's IsEmpty: no text, rule or break anywhere. */
+/** Mirrors the server's IsEmpty: no text, rule, image or break anywhere. */
 export function isEmptyDoc(v: unknown): boolean {
   const has = (n: unknown): boolean => {
     if (!n || typeof n !== 'object') return false;
     const o = n as StoredNode;
     if (o.type === 'text') return !!o.text;
-    if (o.type === 'horizontalRule' || o.type === 'hardBreak') return true;
+    if (o.type === 'horizontalRule' || o.type === 'hardBreak' || o.type === 'image') return true;
     return (o.content ?? []).some(has);
   };
   return !has(v);

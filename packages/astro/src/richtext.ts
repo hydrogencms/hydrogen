@@ -1,4 +1,4 @@
-import { linkHref } from '@hydrogencms/client/richtext'
+import { cellAttrs, imageAttrs, linkHref, tags } from '@hydrogencms/client/richtext'
 import type { PMNode, RichTextOptions as LinkOptions } from '@hydrogencms/client/richtext'
 
 export type { PMMark, PMNode } from '@hydrogencms/client/richtext'
@@ -13,9 +13,8 @@ export interface RichTextOptions extends LinkOptions {
 const E: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
 export const escapeHtml = (s: string): string => s.replace(/[&<>"']/g, (c) => E[c]!)
 
-const tags: Record<string, string> = {
-  paragraph: 'p', bulletList: 'ul', listItem: 'li', blockquote: 'blockquote', bold: 'strong', italic: 'em', code: 'code',
-}
+const attrList = (a: Record<string, string | number | undefined>): string =>
+  Object.entries(a).map(([k, v]) => (v === undefined ? '' : ` ${k}="${escapeHtml(String(v))}"`)).join('')
 
 /** The HTML of a ProseMirror rich text document; text and attributes are escaped, links go through the item's `links`. */
 export function richTextHtml(doc: PMNode | null | undefined, o: RichTextOptions = {}): string {
@@ -32,6 +31,15 @@ export function richTextHtml(doc: PMNode | null | undefined, o: RichTextOptions 
       case 'link': {
         const href = linkHref(attrs, o)
         return href ? `<a href="${escapeHtml(href)}">${inner}</a>` : inner
+      }
+      case 'table': return `<table><tbody>${inner}</tbody></table>`
+      case 'tableCell': case 'tableHeader': {
+        const t = type === 'tableCell' ? 'td' : 'th'
+        return `<${t}${attrList(cellAttrs(attrs))}>${inner}</${t}>`
+      }
+      case 'image': {
+        const img = imageAttrs(attrs)
+        return img ? `<img${attrList(img)}>` : ''
       }
       case 'horizontalRule': return '<hr>'
       case 'hardBreak': return '<br>'

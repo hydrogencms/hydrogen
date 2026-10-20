@@ -72,7 +72,7 @@ Items of a `list`'s `of:` cannot use `required`, `translatable`, `index`, `when`
 | --- | --- | --- |
 | `string` | One line of text. | `min`, `max` (characters), `pattern` (a regular expression). |
 | `text` | Multi-line text. | `min`, `max`. |
-| `richtext` | A ProseMirror document. | `marks` (any of `bold`, `code`, `italic`, `link`), `nodes` (`blockquote`, `bulletList`, `codeBlock`, `hardBreak`, `heading`, `horizontalRule`, `orderedList`, `paragraph`). Without them everything is allowed. |
+| `richtext` | A ProseMirror document. | `marks` (any of `bold`, `code`, `italic`, `link`, `strike`, `subscript`, `superscript`, `underline`), `nodes` (`blockquote`, `bulletList`, `codeBlock`, `hardBreak`, `heading`, `horizontalRule`, `image`, `orderedList`, `paragraph`, `table`). `table` allows rows and cells (`tableRow`, `tableCell`, `tableHeader` with `colspan`, `rowspan`, `colwidth`); `image` is a block with `src` (an http(s) URL or a root-relative path such as `/assets/…`), `alt`, `title`, `width` and `height`. Without the options everything is allowed. |
 | `number` | A JSON number. | `integer`, `min`, `max`. |
 | `boolean` | `true` or `false`. | none |
 | `enum` | One of a fixed set of strings. | `values` (required, unique). |

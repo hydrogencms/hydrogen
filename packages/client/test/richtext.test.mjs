@@ -46,3 +46,23 @@ test('linkHref resolves item links through resolveLink, then links', () => {
   assert.equal(linkHref({ href: 'javascript:1' }), undefined)
   assert.equal(linkHref({}), undefined)
 })
+
+const tbl = (img) => ({ type: 'doc', content: [
+  { type: 'table', content: [
+    { type: 'tableRow', content: [{ type: 'tableHeader', attrs: { colspan: 2, rowspan: 1 }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'h' }] }] }] },
+    { type: 'tableRow', content: [{ type: 'tableCell', attrs: { rowspan: 3 }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'u', marks: [{ type: 'underline' }, { type: 'strike' }, { type: 'superscript' }, { type: 'subscript' }] }] }] }] },
+  ] },
+  img,
+] })
+
+test('tables, extra marks and images', () => {
+  const out = richTextNodes(tbl({ type: 'image', attrs: { src: 'https://a.b/x.png', alt: 'A', width: 10 } }))
+  const th = out[0].kids[0].kids[0].kids[0]
+  assert.deepEqual([out[0].tag, out[0].kids[0].tag, th.tag, th.attrs], ['table', 'tbody', 'th', { colspan: 2, rowspan: undefined }])
+  const td = out[0].kids[0].kids[1].kids[0]
+  assert.equal(td.attrs.rowspan, 3)
+  assert.deepEqual(['u', 's', 'sup', 'sub'].reduce(([n, tags], tag) => [n.kids[0], [...tags, n.tag]], [td.kids[0].kids[0], []])[1], ['u', 's', 'sup', 'sub'])
+  assert.deepEqual(out[1], { tag: 'img', attrs: { src: 'https://a.b/x.png', alt: 'A', title: undefined, width: 10, height: undefined, loading: 'lazy' } })
+  for (const src of ['javascript:x', 'data:image/png;base64,AA', '//evil.test/a.png', '/\\evil', '']) assert.deepEqual(richTextNodes(tbl({ type: 'image', attrs: { src } })).slice(1), [])
+  assert.equal(richTextNodes(tbl({ type: 'image', attrs: { src: '/assets/x/y.png' } }))[1].attrs.src, '/assets/x/y.png')
+})

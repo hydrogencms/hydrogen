@@ -8,6 +8,7 @@
   import type { Command } from 'prosemirror-state';
   import { EditorState } from 'prosemirror-state';
   import { EditorView } from 'prosemirror-view';
+  import { addColumnAfter, addColumnBefore, addRowAfter, addRowBefore, deleteColumn, deleteRow, deleteTable, isInTable, mergeCells, splitCell, toggleHeaderRow } from 'prosemirror-tables';
   import './richtext.css';
   import { t } from '../i18n';
   import '../messages/richtext';
@@ -18,7 +19,8 @@
   import Menu, { type MenuItem } from '../ui/Menu.svelte';
   import Popover from '../ui/Popover.svelte';
   import Textarea from '../ui/Textarea.svelte';
-  import { blockOf, inside, insertRule, link as linkCommands, markActive, plugins, toggleBlock, toggleList, toggleQuote } from './commands';
+  import { blockOf, inside, insertImage, insertRule, insertTable, link as linkCommands, markActive, plugins, toggleBlock, toggleList, toggleQuote } from './commands';
+  import ImageForm from './ImageForm.svelte';
   import LinkForm from './LinkForm.svelte';
   import { buildSchema, fromStored, isEmptyDoc, toStored } from './schema';
   import type { RichTextProps } from './types';
@@ -85,6 +87,13 @@
   let broken = $state(false);
   let linkBtn = $state<HTMLElement>();
   let linkOpen = $state(false);
+  let imageOpen = $state(false);
+  const extraMarks = [
+    ['underline', 'U'],
+    ['strike', `${shift}${mod}X`],
+    ['superscript', '.'],
+    ['subscript', ','],
+  ] as const;
 
   const stamp = (v: unknown) => (v === undefined || v === null || isEmptyDoc(v) ? '' : JSON.stringify(v));
 
@@ -215,6 +224,7 @@
       boldOk: !!m.bold && can(toggleMark(m.bold)),
       italicOk: !!m.italic && can(toggleMark(m.italic)),
       codeOk: !!m.code && can(toggleMark(m.code)),
+      extra: Object.fromEntries(extraMarks.map(([k]) => [k, { on: markActive(st, m[k]), ok: !!m[k] && can(toggleMark(m[k])) }])) as Record<string, { on: boolean; ok: boolean }>,
       link: !!linkApi?.hrefAt(st),
       linkOk: !!m.link && !st.selection.$from.parent.type.spec.code,
       bullet: inside(st, n.bulletList),
@@ -235,6 +245,26 @@
   const n = $derived(schema?.nodes ?? {});
   const m = $derived(schema?.marks ?? {});
   const headings = $derived(n.heading ? [2, 3, 4] : []);
+
+  const tableItems = $derived.by<MenuItem[]>(() => {
+    void tick;
+    const st = view?.state;
+    if (!schema || !n.table) return [];
+    const item = (key: string, cmd: Command, separator = false): MenuItem => ({ label: t(`richtext.${key}`), separator, disabled: !st || !cmd(st), onselect: () => run(cmd) });
+    return [
+      item('tableInsert', insertTable(schema)),
+      item('rowBefore', addRowBefore, true),
+      item('rowAfter', addRowAfter),
+      item('rowDelete', deleteRow),
+      item('colBefore', addColumnBefore, true),
+      item('colAfter', addColumnAfter),
+      item('colDelete', deleteColumn),
+      item('cellMerge', mergeCells, true),
+      item('cellSplit', splitCell),
+      item('headerRow', toggleHeaderRow),
+      { ...item('tableDelete', deleteTable, true), danger: true, disabled: !st || !isInTable(st) },
+    ];
+  });
 
   const styleItems = $derived.by<MenuItem[]>(() => {
     if (!schema) return [];
@@ -355,7 +385,7 @@
             {#snippet trigger()}{styleLabel}<Icon name="chevron-down" size={14} />{/snippet}
           </Menu>
         {/if}
-        {#if m.bold || m.italic || m.code || m.link}<span class="h-rte__sep" role="separator" aria-orientation="vertical"></span>{/if}
+        {#if m.bold || m.italic || m.code || m.link || m.underline || m.strike || m.superscript || m.subscript}<span class="h-rte__sep" role="separator" aria-orientation="vertical"></span>{/if}
         {#if m.bold}
           <button type="button" class="h-rte__btn" aria-label={t('richtext.bold')} aria-pressed={s?.bold ?? false} title={hint(t('richtext.bold'), `${mod}B`)} disabled={!s?.boldOk} onmousedown={(e) => e.preventDefault()} onclick={() => run(toggleMark(m.bold))}>{@render ico('bold')}</button>
         {/if}
@@ -365,6 +395,11 @@
         {#if m.code}
           <button type="button" class="h-rte__btn" aria-label={t('richtext.code')} aria-pressed={s?.code ?? false} title={hint(t('richtext.code'), `${mod}E`)} disabled={!s?.codeOk} onmousedown={(e) => e.preventDefault()} onclick={() => run(toggleMark(m.code))}>{@render ico('code')}</button>
         {/if}
+        {#each extraMarks as [k, key] (k)}
+          {#if m[k]}
+            <button type="button" class="h-rte__btn" aria-label={t(`richtext.${k}`)} aria-pressed={s?.extra[k]?.on ?? false} title={hint(t(`richtext.${k}`), k === 'strike' ? key : `${mod}${key}`)} disabled={!s?.extra[k]?.ok} onmousedown={(e) => e.preventDefault()} onclick={() => run(toggleMark(m[k]))}>{@render ico(k)}</button>
+          {/if}
+        {/each}
         {#if m.link}
           <span class="h-rte__linkwrap" bind:this={linkBtn} role="presentation">
             <Popover label={t('richtext.linkTitle')} triggerClass="h-rte__btn {s?.link ? 'h-rte__btn--on' : ''}" bind:open={linkOpen}>
@@ -386,7 +421,7 @@
             </Popover>
           </span>
         {/if}
-        {#if n.bulletList || n.orderedList || n.blockquote || n.codeBlock || n.horizontalRule}<span class="h-rte__sep" role="separator" aria-orientation="vertical"></span>{/if}
+        {#if n.bulletList || n.orderedList || n.blockquote || n.codeBlock || n.horizontalRule || n.image || n.table}<span class="h-rte__sep" role="separator" aria-orientation="vertical"></span>{/if}
         {#if n.bulletList}
           <button type="button" class="h-rte__btn" aria-label={t('richtext.bulletList')} aria-pressed={s?.bullet ?? false} title={hint(t('richtext.bulletList'), `${shift}Ctrl+8`)} onmousedown={(e) => e.preventDefault()} onclick={() => run(toggleList(schema!, 'bulletList'))}><Icon name="list" size={16} /></button>
         {/if}
@@ -401,6 +436,24 @@
         {/if}
         {#if n.horizontalRule}
           <button type="button" class="h-rte__btn" aria-label={t('richtext.horizontalRule')} title={t('richtext.horizontalRule')} onmousedown={(e) => e.preventDefault()} onclick={() => run(insertRule(schema!))}><Icon name="minus" size={16} /></button>
+        {/if}
+        {#if n.image}
+          <Popover label={t('richtext.imageTitle')} triggerClass="h-rte__btn" bind:open={imageOpen}>
+            {#snippet trigger()}<Icon name="image" size={16} /><span class="h-sr">{t('richtext.image')}</span>{/snippet}
+            {#snippet children(close)}
+              <ImageForm
+                onapply={(src, alt) => {
+                  close();
+                  run(insertImage(schema!, { src, alt }));
+                }}
+              />
+            {/snippet}
+          </Popover>
+        {/if}
+        {#if n.table}
+          <Menu items={tableItems} label={t('richtext.table')} align="start" triggerClass="h-rte__btn">
+            {#snippet trigger()}{@render ico('table')}{/snippet}
+          </Menu>
         {/if}
       {/if}
       <span class="h-spacer"></span>

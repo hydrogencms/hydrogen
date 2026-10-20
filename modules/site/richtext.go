@@ -74,6 +74,18 @@ func (w richWriter) node(n map[string]any) {
 		w.sb.WriteString("<pre><code" + class + ">")
 		w.children(n)
 		w.sb.WriteString("</code></pre>")
+	case "table":
+		w.wrap("table", "", n, "tbody")
+	case "tableRow":
+		w.wrap("tr", "", n)
+	case "tableCell", "tableHeader":
+		tag := "td"
+		if typ == "tableHeader" {
+			tag = "th"
+		}
+		w.wrap(tag, cellAttrs(attrs), n)
+	case "image":
+		w.image(attrs)
 	case "horizontalRule":
 		w.sb.WriteString("<hr>")
 	case "hardBreak":
@@ -83,10 +95,51 @@ func (w richWriter) node(n map[string]any) {
 	}
 }
 
-func (w richWriter) wrap(tag, attr string, n map[string]any) {
+func (w richWriter) wrap(tag, attr string, n map[string]any, inner ...string) {
 	w.sb.WriteString("<" + tag + attr + ">")
+	for _, i := range inner {
+		w.sb.WriteString("<" + i + ">")
+	}
 	w.children(n)
+	for _, i := range inner {
+		w.sb.WriteString("</" + i + ">")
+	}
 	w.sb.WriteString("</" + tag + ">")
+}
+
+var markTags = map[string]string{"underline": "u", "strike": "s", "superscript": "sup", "subscript": "sub"}
+
+func cellAttrs(attrs map[string]any) string {
+	out := ""
+	for _, k := range [...]string{"colspan", "rowspan"} {
+		if f, ok := attrs[k].(float64); ok && f > 1 && f <= 1000 {
+			out += " " + k + `="` + strconv.Itoa(int(f)) + `"`
+		}
+	}
+	return out
+}
+
+// image keeps http(s) and root-relative sources; anything else drops the image.
+func (w richWriter) image(attrs map[string]any) {
+	src, _ := attrs["src"].(string)
+	src = safeHref(strings.TrimSpace(src))
+	l := strings.ToLower(src)
+	rooted := strings.HasPrefix(src, "/") && !strings.HasPrefix(src, "//")
+	if !rooted && !strings.HasPrefix(l, "http:") && !strings.HasPrefix(l, "https:") {
+		return
+	}
+	w.sb.WriteString(`<img src="` + html.EscapeString(src) + `"`)
+	alt, _ := attrs["alt"].(string)
+	w.sb.WriteString(` alt="` + html.EscapeString(alt) + `"`)
+	if t, _ := attrs["title"].(string); t != "" {
+		w.sb.WriteString(` title="` + html.EscapeString(t) + `"`)
+	}
+	for _, k := range [...]string{"width", "height"} {
+		if f, ok := attrs[k].(float64); ok && f >= 1 && f <= 100000 {
+			w.sb.WriteString(" " + k + `="` + strconv.Itoa(int(f)) + `"`)
+		}
+	}
+	w.sb.WriteString(` loading="lazy">`)
 }
 
 func (w richWriter) text(n map[string]any) {
@@ -109,6 +162,10 @@ func (w richWriter) text(n map[string]any) {
 		case "code":
 			w.sb.WriteString("<code>")
 			closers = append(closers, "</code>")
+		case "underline", "strike", "superscript", "subscript":
+			tag := markTags[typ]
+			w.sb.WriteString("<" + tag + ">")
+			closers = append(closers, "</"+tag+">")
 		case "link":
 			attrs, _ := m["attrs"].(map[string]any)
 			href := w.href(attrs)

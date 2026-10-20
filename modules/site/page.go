@@ -99,6 +99,10 @@ type page struct {
 	t        *template.Template
 	siteName string
 	ctx      context.Context
+	f        *fetcher // nil in site:check
+	itemPath func(*Item) string
+	memo     map[string]any
+	depth    int
 }
 
 func (p *page) context() context.Context {
@@ -111,6 +115,10 @@ func (p *page) context() context.Context {
 func (p *page) funcs() template.FuncMap {
 	return template.FuncMap{
 		"blocks":      p.blocksFn,
+		"partial":     p.partialFn,
+		"items":       p.itemsFn,
+		"item":        p.itemFn,
+		"query":       p.queryFn,
 		"richtext":    p.richtextFn,
 		"link":        p.linkFn,
 		"t":           p.tFn,
