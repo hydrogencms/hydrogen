@@ -1,6 +1,8 @@
 .work/
 .DS_Store
 /bin/
+# go build ./cmd/hydrogen at the root writes the CLI here (the release script builds into bin/)
+/hydrogen
 node_modules/
 *.test
 coverage.out
