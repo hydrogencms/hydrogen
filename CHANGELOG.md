@@ -6,6 +6,23 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The static scaffold's dev site runs on `127.0.0.1:4321` (`server.host`, channel `frontend`), like `hydrogen dev`, so
+  the admin's preview frame is the same site and keeps the preview cookie.
+- A block or token change counts as accounted only when every type whose documents can hold the block (directly or
+  through slots) has a content migration listing it; the start names the types still missing.
+- A static build warns about a `site`/frontend origin mismatch before Astro lists the pages, on a line of its own. The
+  `@hydrogencms/astro` size budget is 8 KB.
+
+### Fixed
+
+- Draft preview on sites with `trailingSlash: 'always'`: the preview hand-off, the path it returns to and the exit URL
+  follow it, and `astro dev` adds the slash to the CMS's preview URLs instead of answering 404.
+- In the static scaffold the admin (`127.0.0.1`) and the dev site (`localhost`) were different sites, so the browser
+  dropped the preview cookie in the admin's frame and Preview showed the published page.
+- A migration for one type accounted for a block change in every type, so items of the other types kept the old shape.
+
 ## [0.2.1] - 2026-10-20
 
 ### Added

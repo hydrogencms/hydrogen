@@ -188,6 +188,7 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   `content.files` directories use the per-item export layout (`items/<type>/<id>.json`; `Manifest.ItemStream` keeps
   the fingerprint layout-independent); a start that rebuilds from them imports with `AllowSchemaChange` and lets
   `readyContent` apply migrations. `@hydrogencms/astro` flips its `devRoutes` to on-demand in `astro dev` only.
+  The admin and the dev site must be one site (both `127.0.0.1`), or the browser drops the preview cookie in the frame.
 - `tests/`: integration tests of core services on every adapter. `examples/minimal`: the smallest project.
   `examples/multisite`: two sites, five web channels, an app channel. `examples/headless`: no pages module; `web`
   channel preview patterns, `app` token channel, drafts previewed through delivery. `examples/content`: every field
@@ -229,6 +230,8 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 
 ## Gotchas
 
+- A block or token change in the schema is accounted only by a migration per type that can hold the block
+  (`holdersOf` in core/content/breaking.go): `Migrate` rewrites one type per migration.
 - Contract for H1 packages: `planning/design/content-core.md` (Deviations section records every agreed change).
 - Generated code (`gen/`, `internal/codegen/testdata/*.golden`) is never edited by hand: `hydrogen generate`,
   `go test ./codegen -update`.
