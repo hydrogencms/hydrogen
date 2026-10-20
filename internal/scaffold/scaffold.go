@@ -33,10 +33,10 @@ func staticOmits(rel string) bool {
 
 // ReleaseVersion is the latest released version of the hydrogen modules: what a new project requires when the
 // CLI itself is not a release build.
-const ReleaseVersion = "v0.1.0"
+const ReleaseVersion = "v0.2.0"
 
 // npmRange is the version range of the @hydrogencms npm packages a new project depends on (the release's).
-const npmRange = "^0.1.0"
+const npmRange = "^0.2.0"
 
 type Options struct {
 	Dir     string // target directory; must not exist or be empty

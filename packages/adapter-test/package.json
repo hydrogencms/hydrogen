@@ -1,6 +1,6 @@
 {
   "name": "@hydrogencms/adapter-test",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Conformance suite for Hydrogen frontend adapters: run it against a frontend and a CMS loaded with the starter fixture",
   "type": "module",
   "sideEffects": false,

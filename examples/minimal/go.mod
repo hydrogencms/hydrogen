@@ -3,9 +3,9 @@ module github.com/hydrogencms/hydrogen/examples/minimal
 go 1.26.0
 
 require (
-	github.com/hydrogencms/hydrogen v0.1.0
-	github.com/hydrogencms/hydrogen/modules/postgres v0.1.0
-	github.com/hydrogencms/hydrogen/modules/sqlite v0.1.0
+	github.com/hydrogencms/hydrogen v0.2.0
+	github.com/hydrogencms/hydrogen/modules/postgres v0.2.0
+	github.com/hydrogencms/hydrogen/modules/sqlite v0.2.0
 )
 
 require (

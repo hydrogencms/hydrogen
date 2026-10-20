@@ -1,6 +1,6 @@
 {
   "name": "@hydrogencms/astro",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Astro adapter for Hydrogen: integration, route-resolving middleware, preview, revalidation and block components",
   "type": "module",
   "sideEffects": false,
@@ -38,9 +38,9 @@
     "astro": "^6.0.0 || ^7.0.0"
   },
   "dependencies": {
-    "@hydrogencms/bridge": "^0.1.0",
-    "@hydrogencms/client": "^0.1.0",
-    "@hydrogencms/router": "^0.1.0"
+    "@hydrogencms/bridge": "^0.2.0",
+    "@hydrogencms/client": "^0.2.0",
+    "@hydrogencms/router": "^0.2.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

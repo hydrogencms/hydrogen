@@ -6,6 +6,8 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-20
+
 ### Added
 
 - **Content in git.** `content.files: <dir>` keeps the content as a committed export with a SQLite database as the
