@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import '../messages/preview';
   import { api, ApiError } from '../api/client';
+  import { config } from '../config';
   import { t } from '../i18n';
   import Badge from '../ui/Badge.svelte';
   import Button from '../ui/Button.svelte';
@@ -275,7 +276,7 @@
 
   // ---- sharing
   let shareOpen = $state(false);
-  const canShare = $derived(!!shares && session.can('content.preview.share', { type: typeName }));
+  const canShare = $derived(!!shares && config().shareLinks !== false && session.can('content.preview.share', { type: typeName }));
 
   let noticed = $state(sessionStorage.getItem('h.preview.noticed') === '1');
   function dismissNotice() {

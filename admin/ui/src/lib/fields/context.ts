@@ -19,6 +19,8 @@ export interface FieldCtx {
   loading?(name: string): boolean;
   /** A collaboration session is bound: values may change under the editor from other people's edits. */
   collab?(): boolean;
+  /** The item is the root page of a site's tree (its URL is `/`). */
+  isHome?(): boolean;
   /** Set when the locale being edited inherits from another. */
   readonly overlay?: OverlayCtx;
 }

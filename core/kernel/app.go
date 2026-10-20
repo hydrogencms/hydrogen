@@ -786,7 +786,8 @@ func (a *App) mountAdmin(mux *http.ServeMux) error {
 	if !s.Core.Admin.Enabled {
 		return nil
 	}
-	o := admin.Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: delivery.Prefix, Pages: slices.Contains(a.ModuleNames(), "pages"), Collab: s.Collab != nil}
+	o := admin.Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: delivery.Prefix, Pages: slices.Contains(a.ModuleNames(), "pages"), Collab: s.Collab != nil,
+		NoShareLinks: !s.Core.Delivery.ShareLinks}
 	o.FrameOrigins = frameOrigins(s, a.reg)
 	if s.Media != nil {
 		base := s.Media.PublicBase()

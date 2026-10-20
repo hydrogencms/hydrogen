@@ -42,6 +42,7 @@ type Options struct {
 	DeliveryPrefix string // delivery API, for config.json
 	Pages          bool   // the pages module is on
 	Collab         bool   // co-editing is on (collab.enabled)
+	NoShareLinks   bool   // delivery.share_links is off: the admin hides Share
 	// Media is set when the media service is on: the upload limit and where files are served.
 	Media *Media
 	// DevURL, when set, proxies everything except config.json to a dev server (Vite) instead of serving dist.
@@ -115,15 +116,21 @@ func Handler(prefix string, dist fs.FS, o Options) http.Handler {
 		o.Extensions, _ = Compose(prefix, nil, "")
 	}
 	h.files = o.Extensions.files
+	var shareLinks *bool
+	if o.NoShareLinks {
+		off := false
+		shareLinks = &off
+	}
 	h.config, _ = json.Marshal(struct {
 		APIPrefix      string      `json:"apiPrefix"`
 		Prefix         string      `json:"prefix"`
 		Pages          bool        `json:"pages"`
 		Collab         bool        `json:"collab"`
 		DeliveryPrefix string      `json:"deliveryPrefix"`
+		ShareLinks     *bool       `json:"shareLinks,omitempty"`
 		Media          *Media      `json:"media,omitempty"`
 		Extensions     *Extensions `json:"extensions"`
-	}{o.APIPrefix, prefix, o.Pages, o.Collab, o.DeliveryPrefix, o.Media, o.Extensions})
+	}{o.APIPrefix, prefix, o.Pages, o.Collab, o.DeliveryPrefix, shareLinks, o.Media, o.Extensions})
 	h.proxy = devProxy(o.DevURL)
 	h.xdev = devProxy(o.ElementsDevURL)
 	if b, err := fs.ReadFile(dist, "index.html"); err == nil {

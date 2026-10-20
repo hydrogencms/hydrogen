@@ -53,6 +53,9 @@ export function autoSlug(current: string, prev: string, next: string): string {
   return current === '' || current === slugify(prev) ? slugify(next) : current;
 }
 
+/** Whether one of an item's page routes is a site's root (`/`): the home page, whose slug is never in a URL. */
+export const isHomePage = (routes: { path: string; state: string }[]): boolean => routes.some((r) => r.state === 'current' && r.path === '/');
+
 /** Name of the sibling a slug is generated from: `options.from`, else the first `{placeholder}` of the pattern. */
 export function slugSource(field: CompiledField, namePattern?: string): string | undefined {
   const from = field.options?.from;

@@ -97,6 +97,13 @@ func TestConfigJSON(t *testing.T) {
 	}
 }
 
+func TestConfigJSONShareLinksOff(t *testing.T) {
+	w := get(Handler("/admin", dist(), Options{NoShareLinks: true}), "GET", "/admin/config.json")
+	if !strings.Contains(w.Body.String(), `"shareLinks":false`) {
+		t.Fatalf("config.json: %s", w.Body)
+	}
+}
+
 func TestConfigJSONMedia(t *testing.T) {
 	w := get(Handler("/admin", dist(), Options{APIPrefix: "/api/manage/v1", DeliveryPrefix: "/api/deliver/v1",
 		Media: &Media{MaxUpload: 52428800, AssetBase: "https://cdn.example.com/assets"}}), "GET", "/admin/config.json")

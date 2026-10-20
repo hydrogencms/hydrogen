@@ -12,6 +12,7 @@
   import Badge from '../ui/Badge.svelte';
   import Button from '../ui/Button.svelte';
   import '../messages/overlays';
+  import '../messages/pages';
   import { t } from '../i18n';
 
   let {
@@ -44,6 +45,8 @@
   );
   // A part another editor is still seeding: the fields wait, read-only, until its first state arrives.
   const loading = $derived(!!ctx.loading?.(/^[^.[]+/.exec(path)?.[0] ?? path));
+  // The home page's slug never reaches a URL; say so (the field stays editable: the page could move).
+  const homeHint = $derived(field.shape.format === 'slug' && path === field.name && ctx.isHome?.() ? t('pages.homeSlugHint') : '');
   const readonly = $derived(ctx.readonly || !!field.admin?.readonly || loading || inherited);
 </script>
 
@@ -93,7 +96,7 @@
     {:else if nested}
       <GroupWidget {field} bind:value={cur, put} {path} {readonly} />
     {:else}
-      <Field label={field.label} description={field.description} error={ctx.error(path)} required={field.required}>
+      <Field label={field.label} description={[field.description, homeHint].filter(Boolean).join(' ') || undefined} error={ctx.error(path)} required={field.required}>
         {#snippet children(c)}
           <Scalar {field} bind:value={cur, put} {doc} {path} {readonly} control={c} />
         {/snippet}

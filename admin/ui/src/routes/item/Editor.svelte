@@ -19,7 +19,7 @@
   import Fields from '../../lib/fields/Fields.svelte';
   import { setContext, untrack, type Component } from 'svelte';
   import '../../lib/messages/preview';
-  import { copyTranslatable, fieldsPatch, hydrate, initialValues, cleanDoc, jsonEqual, overlayState, overrideValue, resolvedDoc, unroutedErrors, viewValues, type Doc } from '../../lib/fields/logic';
+  import { copyTranslatable, fieldsPatch, isHomePage, hydrate, initialValues, cleanDoc, jsonEqual, overlayState, overrideValue, resolvedDoc, unroutedErrors, viewValues, type Doc } from '../../lib/fields/logic';
   import { itemLocales, knownLocales, localeState, overlayNote } from '../../lib/fields/locales';
   import { Form } from '../../lib/form.svelte';
   import { t } from '../../lib/i18n';
@@ -373,7 +373,29 @@
       : undefined,
   );
 
+  // The home page (route `/`) shows a hint under its slug; its paths are the lightest data that tells.
+  let homePage = $state(false);
+  const homeId = $derived(data?.id);
+  const homeVersion = $derived(data?.version);
+  $effect(() => {
+    const id = homeId;
+    void homeVersion;
+    if (!id || !config().pages || !session.can('pages.read')) {
+      homePage = false;
+      return;
+    }
+    const ctl = new AbortController();
+    api
+      .get('/pages/items/{id}/paths', { params: { id }, signal: ctl.signal })
+      .then((r) => (homePage = isHomePage(r.items as { path: string; state: string }[])))
+      .catch(() => {
+        if (!ctl.signal.aborted) homePage = false;
+      });
+    return () => ctl.abort();
+  });
+
   provideFields({
+    isHome: () => homePage,
     get overlay() {
       return overlay;
     },

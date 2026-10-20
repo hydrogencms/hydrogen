@@ -69,6 +69,7 @@ export const pages: Record<string, string> = {
   'pages.segmentHelp': 'The mount’s own segment below its parent.',
   'pages.collection': 'Collection',
   'pages.route': 'Route pattern',
+  'pages.homeSlugHint': "This is the home page: its URL is the site's root, so the slug isn't used.",
   'pages.routeHelp': 'Relative to the mount, for example {publishDate:yyyy}/{slug}.',
   'pages.filter': 'Filter',
   'pages.filterHelp': 'One field=value per line; separate several accepted values with commas.',

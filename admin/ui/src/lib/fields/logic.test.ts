@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CompiledField } from '../types.svelte';
 import type { Doc } from './logic';
 import {
-  autoSlug, hydrate, cleanDoc, copyTranslatable, errorFieldNames, evalWhen, fieldAtPath, fieldsPatch, fromLocalInput, isSlug,
+  autoSlug, isHomePage, hydrate, cleanDoc, copyTranslatable, errorFieldNames, evalWhen, fieldAtPath, fieldsPatch, fromLocalInput, isSlug,
   joinPath, listAdd, listMove, listRemove, mergePatch, parsePath, slugify, slugSource, toLocalInput,
   runPool, unroutedErrors, viewValues, overlayState, resolvedDoc, overrideValue,
 } from './logic';
@@ -252,5 +252,13 @@ describe('overlays', () => {
     expect(overrideValue(fs[0]!, undefined)).toBe('');
     expect(overrideValue(fs[3]!, undefined)).toEqual([]);
     expect(overrideValue(f('n', 'number', { translatable: true }), undefined)).toBeNull();
+  });
+});
+
+describe('isHomePage', () => {
+  it('is true for a current route at the root only', () => {
+    expect(isHomePage([{ path: '/', state: 'current' }])).toBe(true);
+    expect(isHomePage([{ path: '/about', state: 'current' }, { path: '/', state: 'alias' }])).toBe(false);
+    expect(isHomePage([])).toBe(false);
   });
 });
