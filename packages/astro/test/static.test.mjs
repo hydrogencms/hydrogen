@@ -224,6 +224,13 @@ test('on-demand dev requests of a static site: base stripped, cookies read, site
   assert.equal(loc.pathname, '/sub/api/hydrogen/preview')
   assert.equal(loc.searchParams.get('path'), '/sub/en/about')
   assert.equal(c.locals.hydrogen.exitUrl('/en'), '/sub/api/hydrogen/preview?exit=1&path=%2Fsub%2Fen')
+  // with trailingSlash: 'always' Astro serves the preview route and the pages only with a slash
+  h.configure({ base: '/sub', site: SITE, devStatic: true, trailingSlash: 'always' })
+  const q = await h.middleware(ctx('/sub/en/about/?preview=' + 'b'.repeat(40)), async () => new Response('page'))
+  const ql = new URL(q.headers.get('location'), 'http://x')
+  assert.equal(ql.pathname, '/sub/api/hydrogen/preview/')
+  assert.equal(ql.searchParams.get('path'), '/sub/en/about/')
+  assert.equal(c.locals.hydrogen.exitUrl('/en?x=1'), '/sub/api/hydrogen/preview/?exit=1&path=%2Fsub%2Fen%2F%3Fx%3D1')
 })
 
 test('href: the channels\' frontend origins are this site; trailingSlash is followed for pages', async () => {
@@ -270,4 +277,27 @@ test('a static build warns once when the site and a channel frontend differ in o
   }
   assert.equal(warnings.length, 1)
   assert.match(warnings[0], /differs from the frontend of channel shop \(http:\/\/localhost:4321\)/)
+})
+
+test('astro dev with trailingSlash always: preview URLs get the slash before Astro routes them', () => {
+  const dev = setup({ output: 'static', trailingSlash: 'always' }, 'dev')
+  const used = []
+  // a post hook, after Astro's, puts it in front of the stack
+  const stack = [{ route: '', handle: 'astro' }]
+  dev.vite.plugins[1].configureServer({ middlewares: { stack } })()
+  assert.equal(stack.length, 2)
+  used.push(stack[0].handle)
+  const run = (method, url) => {
+    const res = { statusCode: 200, headers: {}, setHeader(k, v) { this.headers[k] = v }, end() {} }
+    let passed = false
+    used[0]({ method, url }, res, () => (passed = true))
+    return passed ? 'next' : `${res.statusCode} ${res.headers.location}`
+  }
+  assert.equal(run('GET', '/sub/en/about?preview=abc&x=1'), '307 /sub/en/about/?preview=abc&x=1')
+  assert.equal(run('GET', '/sub/en/about/?preview=abc'), 'next')
+  assert.equal(run('GET', '/sub/en/about?x=1'), 'next')
+  assert.equal(run('GET', '/file.txt?preview=abc'), 'next')
+  assert.equal(run('POST', '/sub/en/about?preview=abc'), 'next')
+  assert.equal(setup({ output: 'static' }, 'dev').vite.plugins.length, 1)
+  assert.equal(setup({ output: 'static', trailingSlash: 'always' }, 'build').vite.plugins.length, 1)
 })

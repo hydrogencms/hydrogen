@@ -7,5 +7,5 @@ channels:
   web:
     languages: [en]
     site: main
-    frontend: "${env:SITE_URL:-http://localhost:4321}"
+    frontend: "${env:SITE_URL:-http://127.0.0.1:4321}"
     match: { prefix: / }

@@ -134,7 +134,7 @@ func TestWriteStatic(t *testing.T) {
 	}
 	has("go.mod", "module example.com/docs", "github.com/hydrogencms/hydrogen/modules/sqlite => ")
 	has("config/app.yaml", "files: content", "sqlite:.work/hydrogen.db")
-	has("config/channels.yaml", `frontend: "${env:SITE_URL:-http://localhost:4321}"`, "match: { prefix: / }", "site: main")
+	has("config/channels.yaml", `frontend: "${env:SITE_URL:-http://127.0.0.1:4321}"`, "match: { prefix: / }", "site: main")
 	has(".gitignore", "/.work/", "/site/node_modules/", "/site/dist/", "/site/.astro/")
 	has("site/package.json", `"@hydrogencms/astro": "file:`, `"@hydrogencms/client": "file:`, `"@hydrogencms/bridge": "file:`, "packages/astro")
 	has("site/astro.config.mjs", "output: 'static'", "process.env.SITE_URL", "process.env.SITE_BASE")

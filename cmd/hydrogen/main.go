@@ -135,7 +135,7 @@ func newProject(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	}
 	fmt.Fprintf(stdout, "Created %s. Next:\n  cd %s\n  hydrogen dev    # then open the link it prints to create your admin account\n", dir, dir)
 	if *static {
-		fmt.Fprint(stdout, "  cd site && npm install && npm run dev    # in a second terminal: the site on http://localhost:4321\n")
+		fmt.Fprint(stdout, "  cd site && npm install && npm run dev    # in a second terminal: the site on http://127.0.0.1:4321\n")
 	}
 	return nil
 }

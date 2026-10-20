@@ -216,10 +216,11 @@ export function createHydrogen(o: HydrogenOptions) {
     })
     if (!other) return
     warned = true
-    console.warn(`hydrogen: the site's origin (${own}) differs from the frontend of channel ${other.name} (${other.frontend}), so the CMS's canonical and hreflang URLs name the frontend: set both to one origin (the scaffold reads SITE_URL for both)`)
+    console.warn(`hydrogen: the site's origin (${own}) differs from the frontend of channel ${other.name} (${other.frontend}): CMS canonical and hreflang URLs name the frontend; give both one origin (SITE_URL)`)
   }
 
-  const exitUrl = (path: string) => `${withBase(previewRoute)}?exit=1&path=${encodeURIComponent(withBase(path))}`
+  // the preview route and the paths it returns to follow trailingSlash, or Astro answers 404 for them
+  const exitUrl = (path: string) => `${slash(withBase(previewRoute))}?exit=1&path=${encodeURIComponent(slash(withBase(path)))}`
 
   /**
    * Asks the CMS about the request and decides what a page can no longer change: redirects with the CMS's status,
@@ -242,7 +243,7 @@ export function createHydrogen(o: HydrogenOptions) {
     if (!pre && pv !== null && (ctx.request.method === 'GET' || ctx.request.method === 'HEAD') && pathname !== previewRoute) {
       u.searchParams.delete('preview')
       const rest = u.searchParams.toString()
-      return redirect(`${withBase(previewRoute)}?${new URLSearchParams({ token: validToken(pv) ? pv : '', path: withBase(pathname) + (rest ? '?' + rest : '') })}`, 307, true)
+      return redirect(`${slash(withBase(previewRoute))}?${new URLSearchParams({ token: validToken(pv) ? pv : '', path: slash(withBase(pathname)) + (rest ? '?' + rest : '') })}`, 307, true)
     }
 
     const token = pre ? undefined : tokenFromCookie(ctx.cookies.get(PREVIEW_COOKIE)?.value)
@@ -356,6 +357,9 @@ export function createHydrogen(o: HydrogenOptions) {
      */
     async staticPaths(a: { param?: string } = {}): Promise<{ params: Record<string, string | undefined> }[]> {
       const all = await channelInfos()
+      // here, before Astro logs the pages it renders, so the warning gets a line of its own
+      const own = ownOrigin()
+      if (own) warnOrigins(all, own)
       const jobs = all.flatMap((info) => info.languages.flatMap((locale) => info.collections.map((type) => ({ info, locale, type }))))
       const found = new Set<string>()
       await pool(jobs, STATIC_CONCURRENCY, async ({ info, locale, type }) => {

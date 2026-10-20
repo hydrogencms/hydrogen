@@ -157,7 +157,7 @@ For a website that GitHub Pages (or any static host) serves, with the content ke
 hydrogen new -static mysite
 cd mysite
 hydrogen dev                                # the CMS; open the link it prints to create your administrator
-cd site && npm install && npm run dev       # in a second terminal: the site on http://localhost:4321
+cd site && npm install && npm run dev       # in a second terminal: the site on http://127.0.0.1:4321
 ```
 
 The project has page and block types (`schema/`), starter content (`content/`), an Astro site (`site/`) built with

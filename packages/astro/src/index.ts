@@ -29,6 +29,30 @@ interface RouteSetup {
   route: { component: string; prerender?: boolean }
 }
 
+type DevHandler = (req: { method?: string; url?: string }, res: DevResponse, next: () => void) => void
+interface DevServer {
+  middlewares: { stack: { route: string; handle: DevHandler }[] }
+}
+interface DevResponse {
+  statusCode: number
+  setHeader(name: string, value: string): void
+  end(): void
+}
+
+// a dev request of a preview URL whose page path lacks the trailing slash: redirect to the path with it
+function slashPreview(req: { method?: string; url?: string }, res: DevResponse, next: () => void) {
+  const url = req.url ?? ''
+  const q = url.indexOf('?')
+  const path = q < 0 ? url : url.slice(0, q)
+  if ((req.method === 'GET' || req.method === 'HEAD') && q >= 0 && /[?&]preview=/.test(url.slice(q)) && !path.endsWith('/') && !/\.[^/]+$/.test(path)) {
+    res.statusCode = 307
+    res.setHeader('location', path + '/' + url.slice(q))
+    res.end()
+    return
+  }
+  next()
+}
+
 const INSTANCE = 'virtual:hydrogen/instance'
 const BRIDGE = 'virtual:hydrogen/bridge'
 const ENV = 'virtual:hydrogen/env'
@@ -78,6 +102,14 @@ export default function hydrogen(o: HydrogenIntegrationOptions = {}) {
                     : id === '\0' + BRIDGE ? `export default ${JSON.stringify(bridge)}`
                     : undefined,
               },
+              // The CMS's preview URLs have no trailing slash, and `astro dev` answers 404 for them before any
+              // middleware runs when trailingSlash is 'always' (a production server redirects): add it. Astro puts its
+              // dev middlewares first from a post hook, so this one goes in front of them from a later post hook.
+              ...(command === 'dev' && config.trailingSlash === 'always'
+                ? [{ name: 'hydrogen-preview-slash', configureServer: (server: DevServer) => () => {
+                    server.middlewares.stack.unshift({ route: '', handle: slashPreview })
+                  } }]
+                : []),
             ],
           },
         })

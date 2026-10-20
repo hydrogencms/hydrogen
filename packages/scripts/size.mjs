@@ -17,7 +17,7 @@ const entries = [
   ['next', 'next', 7.25],
   ['sveltekit', 'sveltekit', 7],
   ['nuxt', 'nuxt', 7],
-  ['astro', 'astro', 7.5],
+  ['astro', 'astro', 8],
   ['admin-sdk', 'admin-sdk', 5],
   ['hook', 'hook', 2],
 ]

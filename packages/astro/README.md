@@ -96,7 +96,11 @@ to the project root, replacing the default) when your pages live elsewhere. Do n
 `getStaticPaths` props (Starlight and other injected routes). The layout must emit the preview markers when
 `Astro.locals.hydrogen.draft`: use `<Head />`, or copy what `hydrogen new -static`'s `Layout.astro` does (robots,
 `hydrogen-preview` meta, the bridge script via `h.href('/__hydrogen/bridge.js')`, and `data-h-root` on `<main>`).
-The CMS's share links point at the dev server, so turn them off (`delivery.share_links: false`).
+The CMS's share links point at the dev server, so turn them off (`delivery.share_links: false`). Serve the admin and
+the dev site from the same host name (`hydrogen dev` uses `127.0.0.1`, so `server: { host: '127.0.0.1' }` and a
+channel `frontend` on `127.0.0.1`): `localhost` and `127.0.0.1` are different sites, and the browser drops the preview
+cookie inside the admin's frame. With `trailingSlash: 'always'` the dev server adds the slash to preview URLs, which
+the CMS builds without one.
 
 Unknown paths are rewritten to your `404` page, which is built once as `404.html` and not resolved itself. Reserved
 paths (`reserved` in the channel, relative to its prefix) pass through: the middleware answers 404 for every other
@@ -147,5 +151,6 @@ webhook out to each, or rely on `ttl`.
 
 ## Size
 
-`dist/*.js` is held to a 7.5 KB gzip budget like the other adapters (`npm run size`). The components are source files
-that Astro compiles in the consumer's build; they are thin wrappers over `dist` helpers and are not counted.
+`dist/*.js` is held to an 8 KB gzip budget (`npm run size`); the dev preview of static sites is most of what it adds
+over the other adapters. The components are source files that Astro compiles in the consumer's build; they are thin
+wrappers over `dist` helpers and are not counted.
