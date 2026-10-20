@@ -213,14 +213,13 @@ else
 fi
 
 echo
-echo "Push (not run; the root tag triggers the GitHub release workflow, which requires the tag on release; GitHub"
-echo "accepts the release branch only once CI passed on the commit, so push main and wait for CI first):"
-if [ "$branch" = main ]; then
-	echo "  git push --atomic origin main release ${tags[*]}"
-else
-	echo "  git push --atomic origin release ${tags[*]}"
-	echo "then bring the hotfix to main: git switch main && git merge release"
-fi
+echo "Push (not run). GitHub accepts the release branch only once CI passed on the commit, so push main and wait for"
+echo "CI first. The root tag goes alone, after the branch: it triggers the release workflow (which requires the tag on"
+echo "release), and GitHub starts no workflow for tags pushed more than three at a time."
+heads=main
+[ "$branch" = main ] || heads=""
+echo "  git push --atomic origin $heads release ${tags[*]:1} && git push origin ${tags[0]}"
+[ "$branch" = main ] || echo "then bring the hotfix to main: git switch main && git merge release"
 echo
 echo "Publish to npm (not run): the release workflow does it with provenance when the repository variable"
 echo "NPM_PUBLISH is true; by hand, after 'npm login' and a build (cd packages && npm ci && npm run build):"
