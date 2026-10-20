@@ -661,6 +661,7 @@ describe('collaboration convergence', () => {
     }
     const ms = performance.now() - t0;
     console.log(`collab fuzz: ${RUNS} runs in ${Math.round(ms)} ms, ${dups} concurrent block moves, ${claimLosts} lost claims, ${restarts} restarts, ${pmEdits} ProseMirror edits`);
-    expect(ms).toBeLessThan(40_000);
+    // a guard against slowdowns, not a benchmark: shared CI runners take about 40 s for what a laptop does in 10
+    expect(ms).toBeLessThan(process.env.CI ? 80_000 : 40_000);
   }, 120_000);
 });
