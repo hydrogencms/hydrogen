@@ -4,8 +4,10 @@
 # Releases live on the `release` branch. Cut one from main (--tag fast-forwards release to it) or, for a hotfix,
 # from release itself (merge release back into main afterwards).
 #
-#   scripts/release.sh v0.1.0                 dry run: checks everything, prints the tags and commands
-#   scripts/release.sh v0.1.0 --tag           also creates the tags locally
+#   scripts/release.sh v0.2.0 --bump          set every version to v0.2.0 (go.mod, package.json, lockfile, bridge,
+#                                             scaffold, a dated CHANGELOG section), check, and stop: review and commit
+#   scripts/release.sh v0.2.0                 dry run: checks everything, prints the tags and commands
+#   scripts/release.sh v0.2.0 --tag           also creates the tags locally
 #   --skip-gates                              skip `make check` and the e2e gates
 #   --allow-dirty                             dry runs only: tolerate a dirty tree (refused with --tag)
 set -euo pipefail
@@ -19,17 +21,19 @@ GATES=(sdk conformance admin-e2e next-e2e site-export-e2e wasm-e2e)
 CORE=github.com/hydrogencms/hydrogen
 
 usage() {
-	sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
 	exit 2
 }
 
 version=""
 tag=0
+bump=0
 skip_gates=0
 allow_dirty=0
 for arg in "$@"; do
 	case "$arg" in
 	--tag) tag=1 ;;
+	--bump) bump=1 ;;
 	--skip-gates) skip_gates=1 ;;
 	--allow-dirty) allow_dirty=1 ;;
 	-h | --help) usage ;;
@@ -52,6 +56,35 @@ if [ "$tag" = 1 ] && [ "$allow_dirty" = 1 ]; then
 	echo "release: --allow-dirty is for dry runs; it cannot be combined with --tag" >&2
 	exit 1
 fi
+if [ "$bump" = 1 ] && [ "$tag" = 1 ]; then
+	echo "release: --bump changes files; commit them and pass CI before --tag" >&2
+	exit 1
+fi
+
+# Every version the checks below expect, rewritten in place (sed -i.bak works with BSD and GNU sed).
+bump_versions() {
+	local f
+	edit() { f=$1; shift; sed -E -i.bak "$@" "$f" && rm "$f.bak"; }
+	while IFS= read -r f; do
+		case "$f" in */testdata/*) continue ;; esac
+		edit "$f" -e "s#^([[:space:]]*(require[[:space:]]+)?$CORE[^ ]*[[:space:]]+)v[^ ]+( // indirect)?\$#\1$version\3#"
+	done < <(git ls-files '*go.mod')
+	for p in "${NPM_ORDER[@]}"; do
+		edit "packages/$p/package.json" -e "s#^(  \"version\": \")[^\"]*#\1$npmver#" \
+			-e "s#(\"@hydrogencms/[a-z-]+\": \")\^[^\"]*#\1^$npmver#g"
+	done
+	edit packages/bridge/src/index.ts -e "s#^(export const SDK = '@hydrogencms/bridge@)[^']*#\1$npmver#"
+	edit internal/scaffold/scaffold.go -e "s#^(const ReleaseVersion = \")[^\"]*#\1$version#" \
+		-e "s#^(const npmRange = \"\^)[^\"]*#\1$npmver#"
+	if ! grep -q "^## \[$npmver\]" CHANGELOG.md; then
+		grep -q '^## \[Unreleased\]' CHANGELOG.md || { echo "release: CHANGELOG.md has no [Unreleased] section to release" >&2; exit 1; }
+		awk -v v="$npmver" -v d="$(date +%Y-%m-%d)" \
+			'!done && /^## \[Unreleased\]/ { print; print ""; print "## [" v "] - " d; done = 1; next } { print }' \
+			CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+	fi
+	(cd packages && npm install --package-lock-only --ignore-scripts --no-audit --no-fund >/dev/null)
+	make site-bridge >/dev/null
+}
 
 branch=$(git rev-parse --abbrev-ref HEAD)
 case "$branch" in
@@ -72,6 +105,11 @@ if [ -n "$(git status --porcelain)" ]; then
 	else
 		bad "the working tree is not clean"
 	fi
+fi
+if [ "$bump" = 1 ]; then
+	[ "$fail" = 0 ] || { echo "release: nothing changed" >&2; exit 1; }
+	bump_versions
+	echo "Set every version to $version; checking."
 fi
 
 # Go modules to tag: the root and every module under modules/ with its own go.mod.
@@ -141,6 +179,16 @@ if [ "$fail" != 0 ]; then
 	exit 1
 fi
 echo "Versions consistent: $version (go modules), $npmver (npm)."
+if [ "$bump" = 1 ]; then
+	cat <<-EOF
+
+	Next (nothing is committed):
+	  git diff                                  review; write the CHANGELOG section's summary if it needs one
+	  git commit -am "Release $version" && git push origin main
+	  wait for CI (ci-ok) on that commit, then: scripts/release.sh $version --tag
+	EOF
+	exit 0
+fi
 
 if [ "$skip_gates" = 1 ]; then
 	echo "Skipping gates (--skip-gates)."

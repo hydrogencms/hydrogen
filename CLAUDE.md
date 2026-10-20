@@ -170,7 +170,9 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   `docs/site.md`, `docs/site-export.md`, `docs/site-proxy.md`. Contract: `planning/design/fullstack-h10f.md`.
 - Docs and releases (H10g): `docs/` holds the public docs as Markdown (index in `docs/README.md`). The website
   (hydrogencms/website, GitHub Pages) publishes them from the `release` branch; new pages go into its `sidebar.mjs`. Releases:
-  `scripts/release.sh <version>` (checks, never bumps, every go.mod/package.json version, `ReleaseVersion` in
+  `scripts/release.sh <version> --bump` sets every version (go.mod requires, package.json versions and ranges, the
+  lockfile, the bridge's SDK constant and its iife copy, `ReleaseVersion`/`npmRange`, a dated CHANGELOG section);
+  `scripts/release.sh <version>` (checks every go.mod/package.json version, `ReleaseVersion` in
   internal/scaffold and the CHANGELOG section, runs the gates, `--tag` creates the module tags locally, prints the
   push command). Releases are cut on `main`: `--tag` fast-forwards `release` and the release workflow rejects
   tags not on `release`; a GitHub ruleset keeps `release` fast-forward only and requires CI's `ci-ok` check. Hotfixes:

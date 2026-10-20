@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/hydrogencms/hydrogen/internal/scaffold"
 )
 
 const fixtureModule = "example.com/hydrogen-fixture"
@@ -137,7 +139,7 @@ func TestAddRemoveCatalog(t *testing.T) {
 	}
 
 	mustHy(t, "add", "postgres")
-	has(t, "go.mod", "github.com/hydrogencms/hydrogen/modules/postgres v0.1.0")
+	has(t, "go.mod", "github.com/hydrogencms/hydrogen/modules/postgres "+scaffold.ReleaseVersion)
 	has(t, "go.mod", "github.com/hydrogencms/hydrogen/modules/postgres => ")
 	has(t, "hydrogen.yaml", "  - sqlite\n  - images\n  - postgres\n")
 

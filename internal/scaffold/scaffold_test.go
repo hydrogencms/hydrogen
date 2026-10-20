@@ -66,7 +66,7 @@ func TestWriteAdminStarter(t *testing.T) {
 		t.Errorf("svelte.config.js:\n%s", svelte)
 	}
 	pkg, _ := os.ReadFile(filepath.Join(dir, "admin/package.json"))
-	if !strings.Contains(string(pkg), `"@hydrogencms/admin-sdk": "^0.1.0"`) {
+	if !strings.Contains(string(pkg), `"@hydrogencms/admin-sdk": "`+npmRange+`"`) {
 		t.Errorf("package.json:\n%s", pkg)
 	}
 	readme, _ := os.ReadFile(filepath.Join(dir, "README.md"))
@@ -148,7 +148,7 @@ func TestWriteStatic(t *testing.T) {
 		t.Fatal(err)
 	}
 	pkg, _ := os.ReadFile(filepath.Join(published, "site/package.json"))
-	if !strings.Contains(string(pkg), `"@hydrogencms/astro": "^0.1.0"`) || strings.Contains(string(pkg), "bridge") || strings.Contains(string(pkg), "file:") {
+	if !strings.Contains(string(pkg), `"@hydrogencms/astro": "`+npmRange+`"`) || strings.Contains(string(pkg), "bridge") || strings.Contains(string(pkg), "file:") {
 		t.Errorf("site/package.json:\n%s", pkg)
 	}
 }
