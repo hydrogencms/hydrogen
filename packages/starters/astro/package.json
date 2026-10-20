@@ -10,12 +10,12 @@
     "typecheck": "npx --yes @astrojs/check"
   },
   "dependencies": {
-    "@astrojs/node": "^10.1.4",
+    "@astrojs/node": "^11.1.9",
     "@hydrogencms/astro": "file:../../astro",
     "@hydrogencms/bridge": "file:../../bridge",
     "@hydrogencms/client": "file:../../client",
     "@hydrogencms/router": "file:../../router",
-    "astro": "^6.4.8"
+    "astro": "^7.2.10"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

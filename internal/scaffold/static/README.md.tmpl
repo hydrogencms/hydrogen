@@ -21,8 +21,13 @@ cd site && npm install && npm run dev      # the site on http://localhost:4321
 ```
 
 `hydrogen dev` prints a link that creates the first administrator. Open it, choose a password, and edit pages in the
-admin (http://127.0.0.1:8080/admin). Publish a page, then reload the site. `hydrogen dev` also regenerates `gen/`
-(typed code, the site imports its TypeScript types) when the schema changes.
+admin (http://127.0.0.1:8080/admin). Preview shows drafts of the page you edit while `npm run dev` runs; publish a
+page, then reload the site. `hydrogen dev` also regenerates `gen/` (typed code, the site imports its TypeScript types)
+when the schema changes.
+
+Preview works only in `npm run dev`: there `site/src/pages/[...path].astro` and `404.astro` render on demand (the
+integration's `devRoutes` option lists more, if you add page routes). `npm run build` stays fully static. Share links
+are off (`delivery.share_links` in `config/app.yaml`) because they would point at the local dev server.
 {{if .Core}}
 The `@hydrogencms/*` packages in `site/package.json` are `file:` dependencies on your hydrogen checkout; build its
 `packages/` first (`npm run build` there).

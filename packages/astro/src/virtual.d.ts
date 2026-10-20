@@ -8,6 +8,6 @@ declare module 'virtual:hydrogen/bridge' {
   export default source
 }
 declare module 'virtual:hydrogen/env' {
-  const env: { base: string; site?: string }
+  const env: { base: string; site?: string; trailingSlash?: string; devStatic?: boolean }
   export default env
 }

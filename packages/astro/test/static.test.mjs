@@ -137,9 +137,12 @@ test('href prefixes the base on own URLs and leaves other origins alone', () => 
   assert.equal(plain.href('/en'), '/en')
 })
 
-const setup = (config) => {
-  const out = { routes: [], middleware: [], vite: undefined }
-  hydrogenIntegration().hooks['astro:config:setup']({
+const setup = (config, command = 'build', o = {}) => {
+  const out = { routes: [], middleware: [], vite: undefined, hooks: undefined }
+  const integration = hydrogenIntegration(o)
+  out.hooks = integration.hooks
+  integration.hooks['astro:config:setup']({
+    command,
     config: { root: new URL('file:///proj/'), base: '/', ...config },
     updateConfig: (c) => (out.vite = c.vite),
     addMiddleware: (m) => out.middleware.push(m),
@@ -155,7 +158,7 @@ test('the integration injects the on-demand routes only with a server', () => {
   assert.deepEqual(stat.routes, [])
   assert.equal(stat.middleware.length, 1)
   const plugin = stat.vite.plugins[0]
-  assert.equal(plugin.load('\0virtual:hydrogen/env'), 'export default {"base":"/sub","site":"https://www.acme.com"}')
+  assert.equal(plugin.load('\0virtual:hydrogen/env'), 'export default {"base":"/sub","site":"https://www.acme.com","devStatic":false}')
   // static with an adapter (hybrid) is a server build
   assert.equal(setup({ output: 'static', adapter: {} }).routes.length, 3)
 })
@@ -173,4 +176,98 @@ test('a frontend that carries the base: paths without it, links and redirects ge
     String(url).includes('/route') ? json(200, { located: { kind: 'redirect', resolution: { status: 301, location: SITE + '/sub/en/new' } } }) : route(url, init)
   const { res } = await run(h, '/sub/en/old')
   assert.equal(res.headers.get('location'), '/sub/en/new')
+})
+
+test('astro dev of a static site: preview and bridge routes, the page routes render on demand', () => {
+  const dev = setup({ output: 'static', trailingSlash: 'always' }, 'dev')
+  assert.deepEqual(dev.routes, ['/api/hydrogen/preview', '/__hydrogen/bridge.js'])
+  assert.match(dev.vite.plugins[0].load('\0virtual:hydrogen/env'), /"trailingSlash":"always","devStatic":true/)
+  const route = (component) => {
+    const r = { component, prerender: true }
+    dev.hooks['astro:route:setup']({ route: r })
+    return r.prerender
+  }
+  assert.equal(route('src/pages/[...path].astro'), false)
+  assert.equal(route('/proj/src/pages/404.astro'), false)
+  assert.equal(route('src/pages/blog/[slug].astro'), true)
+  assert.equal(route('node_modules/starlight/index.astro'), true)
+  const custom = setup({ output: 'static' }, 'dev', { devRoutes: ['./src/pages/[lang]/[...path].astro'] })
+  const r = { component: 'src/pages/[lang]/[...path].astro', prerender: true }
+  custom.hooks['astro:route:setup']({ route: r })
+  assert.equal(r.prerender, false)
+  // a build leaves every route alone
+  const build = setup({ output: 'static' }, 'build')
+  const b = { component: 'src/pages/[...path].astro', prerender: true }
+  build.hooks['astro:route:setup']({ route: b })
+  assert.equal(b.prerender, true)
+})
+
+test('on-demand dev requests of a static site: base stripped, cookies read, site origin, preview route with the base', async () => {
+  const h = make({ base: '/sub' })
+  h.configure({ base: '/sub', site: SITE, devStatic: true })
+  const jar = new Map([['hydrogen-preview', 'a'.repeat(40)]])
+  const ctx = (path) => ({
+    request: new Request('http://localhost:4321' + path),
+    cookies: { get: (k) => (jar.has(k) ? { value: jar.get(k) } : undefined) },
+    locals: {},
+    isPrerendered: false,
+  })
+  const c = ctx('/sub/en/about/')
+  const res = await h.middleware(c, async () => new Response('page'))
+  assert.equal(res.headers.get('cache-control'), 'private, no-store')
+  assert.equal(c.locals.hydrogen.draft, true)
+  assert.match(decodeURIComponent(routeCalls().at(-1)), /url=https:\/\/www\.acme\.com\/en\/about(&|$)/)
+  jar.clear()
+  const p = await h.middleware(ctx('/sub/en/about?preview=' + 'b'.repeat(40)), async () => new Response('page'))
+  assert.equal(p.status, 307)
+  const loc = new URL(p.headers.get('location'), 'http://x')
+  assert.equal(loc.pathname, '/sub/api/hydrogen/preview')
+  assert.equal(loc.searchParams.get('path'), '/sub/en/about')
+  assert.equal(c.locals.hydrogen.exitUrl('/en'), '/sub/api/hydrogen/preview?exit=1&path=%2Fsub%2Fen')
+})
+
+test('href: the channels\' frontend origins are this site; trailingSlash is followed for pages', async () => {
+  const saved = CHANNELS.en
+  CHANNELS.en = { ...saved, frontend: 'http://localhost:4321' }
+  const h = make({ channels: ['en'] })
+  await h.staticPaths().catch(() => {})
+  h.configure({ site: SITE })
+  CHANNELS.en = saved
+  assert.equal(h.href('http://localhost:4321/en/about'), '/en/about')
+  assert.equal(h.href('http://localhost:3000/en'), 'http://localhost:3000/en')
+  const t = (mode, input) => {
+    const x = make()
+    x.configure({ base: '/sub', trailingSlash: mode })
+    return x.href(input)
+  }
+  assert.equal(t('always', '/en/about?a=1#x'), '/sub/en/about/?a=1#x')
+  assert.equal(t('always', '/en/'), '/sub/en/')
+  assert.equal(t('always', '/'), '/sub/')
+  assert.equal(t('always', '/favicon.svg'), '/sub/favicon.svg')
+  assert.equal(t('always', 'https://other.test/en'), 'https://other.test/en')
+  assert.equal(t('never', '/en/about/?a=1'), '/sub/en/about?a=1')
+  assert.equal(t('never', '/'), '/sub')
+  assert.equal(t('ignore', '/en/about/'), '/sub/en/about/')
+  const root = make()
+  root.configure({ trailingSlash: 'never' })
+  assert.equal(root.href('/'), '/')
+})
+
+test('a static build warns once when the site and a channel frontend differ in origin', async () => {
+  const saved = CHANNELS.shop
+  CHANNELS.shop = { ...saved, options: { site: 's' }, frontend: 'http://localhost:4321' }
+  const warnings = []
+  const warn = console.warn
+  console.warn = (m) => warnings.push(m)
+  try {
+    const h = make({ channels: ['shop'] })
+    h.configure({ site: SITE })
+    await run(h, '/shop')
+    await run(h, '/shop/x')
+  } finally {
+    console.warn = warn
+    CHANNELS.shop = saved
+  }
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /differs from the frontend of channel shop \(http:\/\/localhost:4321\)/)
 })

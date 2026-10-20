@@ -144,10 +144,17 @@ export function createHydrogen(o: HydrogenOptions) {
   let infos: { at: number; p: Promise<ChannelInfo[]> } | undefined
   // the channels' match hosts, which href() treats as this site's own
   const hosts = new Set<string>()
+  // the origins of the channels' frontends, which are this site by definition
+  const frontends = new Set<string>()
   function channelInfos(): Promise<ChannelInfo[]> {
     if (infos && performance.now() - infos.at < TTL) return infos.p
     const p = Promise.all(names.map(async (n) => (await clientOf(n).channel(n)).data))
-    p.then((all) => all.forEach((c) => c.options.match?.host && hosts.add(c.options.match.host)), () => {})
+    p.then((all) => all.forEach((c) => {
+      if (c.options.match?.host) hosts.add(c.options.match.host)
+      try {
+        if (c.frontend) frontends.add(new URL(c.frontend).origin)
+      } catch {}
+    }), () => {})
     p.catch(() => (infos = undefined))
     infos = { at: performance.now(), p }
     return p
@@ -156,6 +163,10 @@ export function createHydrogen(o: HydrogenOptions) {
   // Astro's `base` (no trailing slash) and `site`, set by the integration's middleware entry
   let base = trimBase(o.base)
   let site: URL | undefined
+  let trailing = 'ignore'
+  // `astro dev` of a static site: the page routes render on demand, but the site is still the static one
+  let devStatic = false
+  let warned = false
   const ownOrigin = () => (o.origin ? o.origin.replace(/\/+$/, '') : site?.origin)
   // a channel's frontend may carry the base already: CMS URLs then hold it, and it is never added twice
   const stripBase = (path: string) => (base && (path === base || path.startsWith(base + '/')) ? path.slice(base.length) || '/' : path)
@@ -173,18 +184,42 @@ export function createHydrogen(o: HydrogenOptions) {
     return decodeURIComponent(path).replace(/^\/+|\/+$/g, '')
   }
 
+  // Astro's trailingSlash for a page path (not for files, not before ? or #)
+  function slash(url: string): string {
+    if (trailing !== 'always' && trailing !== 'never') return url
+    const i = url.search(/[?#]/)
+    const path = i < 0 ? url : url.slice(0, i)
+    const tail = i < 0 ? '' : url.slice(i)
+    if (trailing === 'always') return (path.endsWith('/') || /\.[^/]+$/.test(path) ? path : path + '/') + tail
+    return (path.length > 1 ? path.replace(/\/+$/, '') || '/' : path) + tail
+  }
+
   function href(url: string): string {
-    if (url.startsWith('/') && !url.startsWith('//')) return withBase(url)
+    if (url.startsWith('/') && !url.startsWith('//')) return slash(withBase(url))
     let u: URL
     try {
       u = new URL(url)
     } catch {
       return url
     }
-    return u.origin === ownOrigin() || hosts.has(u.hostname) ? withBase(u.pathname) + u.search + u.hash : url
+    return u.origin === ownOrigin() || hosts.has(u.hostname) || frontends.has(u.origin) ? slash(withBase(u.pathname)) + u.search + u.hash : url
   }
 
-  const exitUrl = (path: string) => `${previewRoute}?exit=1&path=${encodeURIComponent(path)}`
+  function warnOrigins(all: ChannelInfo[], own: string) {
+    if (warned) return
+    const other = all.find((c) => {
+      try {
+        return c.frontend && new URL(c.frontend).origin !== own
+      } catch {
+        return false
+      }
+    })
+    if (!other) return
+    warned = true
+    console.warn(`hydrogen: the site's origin (${own}) differs from the frontend of channel ${other.name} (${other.frontend}), so the CMS's canonical and hreflang URLs name the frontend: set both to one origin (the scaffold reads SITE_URL for both)`)
+  }
+
+  const exitUrl = (path: string) => `${withBase(previewRoute)}?exit=1&path=${encodeURIComponent(withBase(path))}`
 
   /**
    * Asks the CMS about the request and decides what a page can no longer change: redirects with the CMS's status,
@@ -195,8 +230,10 @@ export function createHydrogen(o: HydrogenOptions) {
     const u = new URL(ctx.request.url)
     // a prerendering build has no visitor: no cookies (so no preview), and the request carries Astro's base
     const pre = ctx.isPrerendered === true
+    // a build and a dev request of a static site look alike to the CMS: the path without Astro's base, the site's origin
+    const fixed = pre || devStatic
     // (Astro asks for directory pages with a trailing slash, which the CMS would redirect away)
-    const pathname = pre ? stripBase(u.pathname).replace(/\/+$/, '') || '/' : u.pathname
+    const pathname = fixed ? stripBase(u.pathname).replace(/\/+$/, '') || '/' : u.pathname
     // a rewrite (the 404 page) enters the middleware again: the first pass has decided
     if (skip(pathname) || ctx.locals.hydrogen) return next()
 
@@ -205,7 +242,7 @@ export function createHydrogen(o: HydrogenOptions) {
     if (!pre && pv !== null && (ctx.request.method === 'GET' || ctx.request.method === 'HEAD') && pathname !== previewRoute) {
       u.searchParams.delete('preview')
       const rest = u.searchParams.toString()
-      return redirect(`${previewRoute}?${new URLSearchParams({ token: validToken(pv) ? pv : '', path: pathname + (rest ? '?' + rest : '') })}`, 307, true)
+      return redirect(`${withBase(previewRoute)}?${new URLSearchParams({ token: validToken(pv) ? pv : '', path: withBase(pathname) + (rest ? '?' + rest : '') })}`, 307, true)
     }
 
     const token = pre ? undefined : tokenFromCookie(ctx.cookies.get(PREVIEW_COOKIE)?.value)
@@ -262,7 +299,7 @@ export function createHydrogen(o: HydrogenOptions) {
 
     // a build has no visitor headers either (Astro warns on access)
     const headers = pre ? undefined : ctx.request.headers
-    const origin = pre ? (ownOrigin() ?? ctx.site?.origin ?? u.origin) : originOf(ctx.request.headers, o.origin, o.trustForwarded)
+    const origin = fixed ? (ownOrigin() ?? ctx.site?.origin ?? u.origin) : originOf(ctx.request.headers, o.origin, o.trustForwarded)
     const url = origin + (pathname || '/')
     let all: ChannelInfo[]
     try {
@@ -271,6 +308,7 @@ export function createHydrogen(o: HydrogenOptions) {
       h.unavailable = true
       return next()
     }
+    if (pre) warnOrigins(all, origin)
     h.channel = o.channels ? matchSite(url, all, headers)?.channel.name : o.channel
     if (!h.channel) return done(await notFound())
     let r: Resolved
@@ -285,7 +323,7 @@ export function createHydrogen(o: HydrogenOptions) {
         // (a prerendered one becomes a meta-refresh page at the requested path; the base is part of its target)
         const to = new URL(r.location, origin + here)
         if (!to.search) to.search = u.search
-        return redirect(to.origin === origin ? (pre ? withBase(to.pathname) : to.pathname) + to.search + to.hash : to.href, r.status, h.draft)
+        return redirect(to.origin === origin ? (fixed ? withBase(to.pathname) : to.pathname) + to.search + to.hash : to.href, r.status, h.draft)
       }
       case 'notFound':
         return done(await notFound())
@@ -302,9 +340,11 @@ export function createHydrogen(o: HydrogenOptions) {
     middleware,
 
     /** @internal Astro's `base` and `site`, handed over by the integration's middleware entry */
-    configure(a: { base?: string; site?: string }) {
+    configure(a: { base?: string; site?: string; trailingSlash?: string; devStatic?: boolean }) {
       base = trimBase(a.base ?? o.base)
       site = a.site ? new URL(a.site) : undefined
+      trailing = a.trailingSlash ?? 'ignore'
+      devStatic = a.devStatic === true
     },
 
     href,

@@ -52,8 +52,8 @@ Add `src/pages/404.astro` (the middleware rewrites unknown URLs to it with statu
 
 ## Static sites
 
-With `output: 'static'` and no Astro adapter the integration installs the middleware only: preview, the revalidation
-webhook and the bridge need a server, so they are not available (rebuild when content changes). While Astro
+With `output: 'static'` and no Astro adapter, `astro build` stays fully static: the integration installs the
+middleware only (no preview route, no bridge, no revalidation webhook; rebuild when content changes). While Astro
 prerenders, the middleware never reads cookies, strips Astro's `base` from the path, and asks the CMS about
 `origin` (the option) or else Astro's `site` or else the request's origin: set one of them to the origin the
 channels' `frontend` uses (a channel that matches by host needs it). The channel's `frontend` may include the base
@@ -85,12 +85,30 @@ cannot be listed (a singleton) is skipped; any other failure fails the build. Us
 not `export const …`: Astro keeps a whole frontmatter at module level for the latter and `Astro.locals` is unavailable
 there.
 
+**Draft preview in `astro dev`.** A prerendered page sees no cookies and no query string, so a static site could not
+show drafts. In `astro dev` (and only there) the integration therefore adds `/api/hydrogen/preview` and
+`/__hydrogen/bridge.js` and renders the CMS page routes on demand, through Astro's `astro:route:setup` hook. The
+admin's Preview then works like on an SSR site: `?preview=<token>` sets the cookie, the page shows the draft, and the
+bridge reloads it on save. Editors of a content-in-git project run the admin locally next to `npm run dev`, which is
+where this matters. The routes that render on demand are `src/pages/[...path].astro` and `src/pages/404.astro` (a
+rewrite to the 404 page needs it on demand too); list others with `hydrogen({ devRoutes: [...] })` (paths relative
+to the project root, replacing the default) when your pages live elsewhere. Do not list routes that rely on
+`getStaticPaths` props (Starlight and other injected routes). The layout must emit the preview markers when
+`Astro.locals.hydrogen.draft`: use `<Head />`, or copy what `hydrogen new -static`'s `Layout.astro` does (robots,
+`hydrogen-preview` meta, the bridge script via `h.href('/__hydrogen/bridge.js')`, and `data-h-root` on `<main>`).
+The CMS's share links point at the dev server, so turn them off (`delivery.share_links: false`).
+
 Unknown paths are rewritten to your `404` page, which is built once as `404.html` and not resolved itself. Reserved
 paths (`reserved` in the channel, relative to its prefix) pass through: the middleware answers 404 for every other
 path it does not know, so list the pages your frontend owns (`/blog/*`) as reserved and give them their own
 routes. A CMS redirect becomes Astro's meta-refresh page at the requested path, pointing to the target with the
 base. Directory pages are resolved without their trailing slash. Header matchers cannot work in a build (there are no
 request headers).
+
+The channel's `frontend` is this site by definition: URLs on its origin are internal even when Astro's `site`
+differs, and a build warns once when the two origins differ (canonical and hreflang URLs from the CMS name the
+frontend's). Align them, for example one `SITE_URL` for both. `href()` follows Astro's `trailingSlash` for page paths
+(`'always'` adds `/` unless the path has a file extension, `'never'` removes it except for the root; `?` and `#` stay).
 
 Links: wrap CMS URLs (`item.links`, `item.url`, tree nodes) in `Astro.locals.hydrogen.href(url)` (also
 `hydrogen.href`, after the middleware ran): own-origin and absolute-path URLs get the base, other origins stay.
@@ -129,5 +147,5 @@ webhook out to each, or rely on `ttl`.
 
 ## Size
 
-`dist/*.js` is held to a 7 KB gzip budget like the other adapters (`npm run size`). The components are source files
+`dist/*.js` is held to a 7.5 KB gzip budget like the other adapters (`npm run size`). The components are source files
 that Astro compiles in the consumer's build; they are thin wrappers over `dist` helpers and are not counted.

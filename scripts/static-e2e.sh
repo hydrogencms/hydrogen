@@ -10,6 +10,7 @@ work="$root/.work/static-e2e"
 site_url=https://example.github.io
 site_base=/demo
 pid=
+devpid=
 export GOWORK=off
 
 fail() {
@@ -18,8 +19,13 @@ fail() {
   exit 1
 }
 stop() {
+  stopdev
   [ -n "$pid" ] && kill "$pid" 2>/dev/null && wait "$pid" 2>/dev/null || true
   pid=
+}
+stopdev() {
+  [ -n "$devpid" ] && { pkill -P "$devpid" 2>/dev/null; kill "$devpid" 2>/dev/null; wait "$devpid" 2>/dev/null; } || true
+  devpid=
 }
 trap stop EXIT
 
@@ -88,6 +94,42 @@ curl -fsS -X POST "$B/singletons/siteSettings/publish" -H 'Authorization: Bearer
 diff -rq "$work/content-before" "$demo/content" >/dev/null && fail "content/ did not change"
 grep -rq 'Edited through the management API' "$demo/content" || fail "content/ lacks the edit"
 build_site
+check "$dist/index.html" 'Edited through the management API'
+
+echo "== draft preview in astro dev, the build stays static"
+site_port=$(port)
+site=http://127.0.0.1:$site_port
+home=$(curl -fsS "$cms/api/deliver/v1/route?channel=web&url=$site_url/" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).item.id))") || fail "route of the home page"
+curl -fsS -X PATCH "$B/items/$home" -H 'Authorization: Bearer dev-token' -H 'Content-Type: application/json' \
+  -d '{"locale":"en","fields":{"title":"Draft title from the e2e"}}' >/dev/null || fail "PATCH the home page draft"
+minted=$(curl -fsS -X POST "$B/preview-tokens" -H 'Authorization: Bearer dev-token' -H 'Content-Type: application/json' \
+  -d "{\"item\":\"$home\",\"channel\":\"web\"}") || fail "preview token"
+token=$(printf '%s' "$minted" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).token))")
+[ -n "$token" ] || fail "no preview token in $minted"
+(cd "$demo/site" && exec env HYDROGEN_URL="$cms" SITE_URL="$site_url" SITE_BASE="$site_base" npm run dev -- --host 127.0.0.1 --port "$site_port" >"$work/site-dev.log" 2>&1) &
+devpid=$!
+for _ in $(seq 300); do
+  curl -fsS -o /dev/null "$site$site_base/" 2>/dev/null && break
+  kill -0 "$devpid" 2>/dev/null || { tail -n 20 "$work/site-dev.log"; fail "astro dev exited"; }
+  sleep 0.2
+done
+curl -fsS "$site$site_base/" >"$work/dev-public.html" || { tail -n 20 "$work/site-dev.log"; fail "dev site"; }
+check "$work/dev-public.html" 'Edited through the management API'
+if grep -q 'Draft title from the e2e\|hydrogen/bridge.js' "$work/dev-public.html"; then fail "a visitor sees the draft or the bridge"; fi
+jar="$work/jar.txt"
+curl -fsS -L -c "$jar" -b "$jar" "$site$site_base/?preview=$token" >"$work/dev-preview.html" || { tail -n 20 "$work/site-dev.log"; fail "preview request"; }
+check "$work/dev-preview.html" 'Draft title from the e2e'
+check "$work/dev-preview.html" 'src="/demo/__hydrogen/bridge.js"'
+check "$work/dev-preview.html" 'name="hydrogen-preview"'
+curl -fsS "$site$site_base/__hydrogen/bridge.js" | grep -q . || fail "the bridge script is not served"
+curl -fsS -b "$jar" "$site$site_base/about" >"$work/dev-about.html" || fail "preview of a second page"
+check "$work/dev-about.html" 'name="hydrogen-preview"'
+check "$work/dev-about.html" 'href="/demo/"'
+stopdev
+curl -fsS -X DELETE "$B/items/$home/draft" -H 'Authorization: Bearer dev-token' >/dev/null || true
+build_site
+[ ! -e "$dist/api" ] && [ ! -e "$dist/__hydrogen" ] || fail "the build has preview routes"
+if grep -rq 'hydrogen/bridge.js\|Draft title from the e2e' "$dist"; then fail "the build shows preview markup or the draft"; fi
 check "$dist/index.html" 'Edited through the management API'
 stop
 

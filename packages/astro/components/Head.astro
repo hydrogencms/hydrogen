@@ -11,4 +11,4 @@ const draft = !!h?.draft
 {description && <meta name="description" content={description} />}
 {draft && <meta name="robots" content="noindex, nofollow" />}
 {draft && h.previewHash && <meta name="hydrogen-preview" content={h.previewHash} />}
-{draft && <script is:inline src="/__hydrogen/bridge.js" data-auto="" data-admin-origin={h.adminOrigin} data-mode="reload" defer></script>}
+{draft && <script is:inline src={h.href("/__hydrogen/bridge.js")} data-auto="" data-admin-origin={h.adminOrigin} data-mode="reload" defer></script>}

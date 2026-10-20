@@ -18,5 +18,7 @@ modules:
     sites: [main]
 
 delivery:
+  # Share links would point at the local dev server; a static site is previewed in `npm run dev` next to the admin.
+  share_links: false
   # Signs preview tokens: at least 32 characters; required outside dev (dev derives it from manage.token).
   preview_secret: ${env:PREVIEW_SECRET:-}

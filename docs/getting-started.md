@@ -166,6 +166,10 @@ them to `content/`, commit and push: the workflow starts the CMS on the committe
 it. Set Pages > Source to GitHub Actions once. The generated README has the details; [content in
 git](content-in-git.md) explains how the directory and the local database stay in step.
 
+Drafts preview in the admin while `npm run dev` runs: in dev only, the page routes render on demand and the site adds
+the preview route and the bridge. `npm run build` stays fully static, with no preview code in `dist`. Share links are
+off, because they would point at your local dev server.
+
 ## Where to next
 
 - [Concepts](concepts.md): how items, drafts, locales, channels and pages fit together.

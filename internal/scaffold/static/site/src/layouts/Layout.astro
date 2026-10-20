@@ -19,6 +19,9 @@ const fullTitle = title === s.siteName ? title : `${title} | ${s.siteName}`
     <link rel="icon" href={h.href('/favicon.svg')} type="image/svg+xml" />
     <title>{fullTitle}</title>
     {description && <meta name="description" content={description} />}
+    {h.draft && <meta name="robots" content="noindex, nofollow" />}
+    {h.draft && h.previewHash && <meta name="hydrogen-preview" content={h.previewHash} />}
+    {h.draft && <script is:inline src={h.href('/__hydrogen/bridge.js')} data-auto="" data-admin-origin={h.adminOrigin} data-mode="reload" defer></script>}
     {noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />}
   </head>
   <body>
@@ -33,7 +36,7 @@ const fullTitle = title === s.siteName ? title : `${title} | ${s.siteName}`
         </nav>
       </div>
     </header>
-    <main id="main"><slot /></main>
+    <main id="main" data-h-root><slot /></main>
     <footer class="site-footer">
       <div class="wrap">{s.footerText && <p>{s.footerText}</p>}</div>
     </footer>
