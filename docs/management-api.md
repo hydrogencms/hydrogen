@@ -104,10 +104,30 @@ curl -s -X POST  $B/items/$ID/publish -H "$A" -H 'Content-Type: application/json
 | Previews | `POST /preview-tokens`, `/preview-shares`, `/preview-relay/{item}` | [share links](share-links.md) |
 | Collaboration | `/collab/items/{id}/…` | [collaboration](collaboration.md) |
 | Media | `POST /uploads` | [media](media.md) |
-| Pages | the page tree, mounts, routes and redirects, when the module is on | |
+| Pages | the page tree, mounts, routes and redirects, when the module is on | [below](#pages) |
 
-`POST /preview-tokens {"channel", "item"?, "locale"?, "ttl"?}` mints a delivery preview token (at most an hour) and,
-for an item, the frontend URL to show it at.
+`POST /preview-tokens {"channel"?, "item"?, "locale"?, "ttl"?}` mints a delivery preview token (at most an hour) and,
+for an item, the frontend URL to show it at. `channel` may be left out when the project has one channel (or, with an
+item, one channel that serves its type); otherwise the answer is `400` listing the channels to choose from.
+
+### Pages
+
+With the pages module, the page tree of each site is managed here (a node is a `page` placing an item, a `mount`
+of a collection, or a `link`). Reads need `pages.read`, writes `pages.edit`; a mount also needs `pages.mount`.
+
+| Route | Policy | Body or query | Does |
+| --- | --- | --- | --- |
+| `GET /pages/sites` | `pages.read` | | The sites the caller can see: `{items: [name]}`. |
+| `GET /pages/sites/{site}/tree` | `pages.read` | `locale`, `parent` (node id), `depth` (1 to 10, default 1) | The children of `parent`, or of the root with `root` in the answer. |
+| `POST /pages/sites/{site}/nodes` | `pages.edit` | `kind` `page`: `item`, `parent`, `after`. `mount`: `parent`, `segment`, `collection`, `route`, `filter`, `canonical`, `label`, `after`. `link`: `parent`, `label`, one of `item`, `node` or `url`, `after` | Add a node; `201` with the node. |
+| `GET /pages/nodes/{id}` | `pages.read` | | One node. |
+| `PATCH /pages/nodes/{id}` | `pages.edit` | `parent`, `after` (a sibling id, or `null` for first), `hidden`, `mount` or `link` (a new spec) | Move, reorder or update a node. |
+| `DELETE /pages/nodes/{id}` | `pages.edit` | | Delete a mount or link node (`204`). |
+| `GET /pages/sites/{site}/resolve` | `pages.read` | `path` (required), `locale` | What a path resolves to: a page, a redirect or nothing. |
+| `GET /pages/items/{id}/paths` | `pages.read` | | Every route of an item, with its state. |
+| `GET /pages/locate` | `pages.read` | `url` (required), `header.<Name>` to simulate request headers | Find the site, locale and page a URL belongs to through the web channels. |
+
+The routes are in the OpenAPI document with their schemas.
 
 ## Administration
 

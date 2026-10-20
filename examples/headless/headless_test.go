@@ -267,6 +267,28 @@ func scenario(t *testing.T, s *server) {
 		}
 	})
 
+	t.Run("channel is optional when one channel serves the item", func(t *testing.T) {
+		var settings struct {
+			ID string `json:"id"`
+		}
+		s.must(s.do("PATCH", "/singletons/settings", map[string]any{"locale": "en", "fields": map[string]any{"siteTitle": "Acme"}}, &settings), 200, "settings")
+		status, m := s.mint(map[string]any{"item": settings.ID})
+		if s.must(status, 200, "mint settings without a channel"); m.Token == "" || !strings.HasPrefix(m.URL, frontend+"/?") {
+			t.Errorf("settings: %+v", m)
+		}
+		post := s.create("post", "en", map[string]any{"title": "Both", "slug": "both"})
+		for _, body := range []map[string]any{{"item": post}, {}} {
+			var e struct {
+				Error struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if status := s.do("POST", "/preview-tokens", body, &e); status != 400 || !strings.Contains(e.Error.Message, "channel is required (one of: app, web)") {
+				t.Errorf("%v: status %d, %+v", body, status, e)
+			}
+		}
+	})
+
 	t.Run("locale", func(t *testing.T) {
 		s.must(s.do("PATCH", "/items/"+hello, map[string]any{"locale": "de", "fields": map[string]any{"title": "Hallo", "slug": "hallo-welt"}}, nil), 200, "translate")
 		status, m := s.mint(map[string]any{"channel": "web", "item": hello, "locale": "de"})

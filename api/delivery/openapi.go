@@ -21,6 +21,7 @@ func openAPI(s *schema.Schema, extra []Route, withSearch bool) obj {
 		"ChannelInfo": obj{"type": "object", "required": []any{"name", "languages", "collections", "options"},
 			"properties": obj{"name": openapi.Str(""), "languages": obj{"type": "array", "items": openapi.Str("")},
 				"collections": obj{"type": "array", "items": openapi.Str("")},
+				"frontend":    obj{"type": "string", "description": "Origin (and base path) of the frontend the channel serves, when it has one."},
 				"options":     obj{"type": "object", "additionalProperties": true, "description": "Public channel options of modules."}}},
 	}
 	schemas["Asset"] = assetSchema()

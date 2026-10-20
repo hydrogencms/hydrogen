@@ -159,10 +159,11 @@ func (a *API) PreviewTokenRoute() manage.Route {
 				"module: the item's route), else the channel's preview pattern for its collection. It is absent when " +
 				"none resolves; a channel without a frontend gives a path.",
 			"requestBody": m{"required": true, "content": m{"application/json": m{"schema": m{
-				"type": "object", "required": []any{"channel"}, "additionalProperties": false,
+				"type": "object", "additionalProperties": false,
 				"properties": m{
-					"channel": m{"type": "string"},
-					"item":    m{"type": "string", "format": "uuid"},
+					"channel": m{"type": "string",
+						"description": "Required unless the project has one channel (or, with item, one channel that serves its type)."},
+					"item": m{"type": "string", "format": "uuid"},
 					"locale": m{"type": "string",
 						"description": "A language of the channel; default the item's main locale if the channel serves it, else its first language."},
 					"ttl": m{"oneOf": []any{m{"type": "integer", "minimum": 1, "maximum": 3600}, m{"type": "string"}},
@@ -198,9 +199,9 @@ func (a *API) mintHandler(w http.ResponseWriter, r *http.Request) {
 		manage.Fail(w, r, err)
 		return
 	}
-	ch, ok := a.o.Channels.Get(in.Channel)
-	if !ok {
-		manage.Fail(w, r, manage.BadRequest("unknown channel %q", in.Channel))
+	ch, err := a.mintChannel(r.Context(), in.Channel, item)
+	if err != nil {
+		manage.Fail(w, r, err)
 		return
 	}
 	if in.Locale != "" && !slices.Contains(ch.Languages, in.Locale) {
@@ -216,7 +217,7 @@ func (a *API) mintHandler(w http.ResponseWriter, r *http.Request) {
 		manage.Fail(w, r, err)
 		return
 	}
-	tok, exp, err := a.MintPreviewToken(in.Channel, item, ttl)
+	tok, exp, err := a.MintPreviewToken(ch.Name, item, ttl)
 	if err != nil {
 		manage.Fail(w, r, manage.BadRequest("%s", strings.TrimPrefix(err.Error(), "delivery: ")))
 		return
@@ -233,6 +234,36 @@ func (a *API) mintHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	manage.WriteJSON(w, http.StatusOK, out)
+}
+
+// mintChannel is the named channel; without a name, the only channel (for an item: the only one that serves
+// its type).
+func (a *API) mintChannel(ctx context.Context, name string, item ids.UUID) (*channel.Channel, error) {
+	if name != "" {
+		ch, ok := a.o.Channels.Get(name)
+		if !ok {
+			return nil, manage.BadRequest("unknown channel %q", name)
+		}
+		return ch, nil
+	}
+	all := a.o.Channels.All()
+	cands := all
+	if len(all) > 1 && !item.IsZero() {
+		if v, err := a.o.Content.Get(ctx, item, content.GetOptions{Draft: true}); err == nil {
+			cands = slices.DeleteFunc(slices.Clone(all), func(ch *channel.Channel) bool { return !ch.AllowsCollection(v.Type) })
+		}
+	}
+	if len(cands) == 1 {
+		return cands[0], nil
+	}
+	if len(cands) == 0 {
+		cands = all
+	}
+	names := make([]string, len(cands))
+	for i, ch := range cands {
+		names[i] = ch.Name
+	}
+	return nil, manage.BadRequest("channel is required (one of: %s)", strings.Join(names, ", "))
 }
 
 // previewURL resolves where the channel's frontend shows the item: the registered resolvers first, then the

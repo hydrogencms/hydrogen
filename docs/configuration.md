@@ -117,7 +117,7 @@ See [access](access.md) for users, roles and tokens.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `preview_secret` | none | Signs preview tokens. At least 32 characters; required outside `dev`. Secret. |
-| `cache_bytes` | `32MiB` | Size of the in-process response cache, in bytes. `0` turns it off. |
+| `cache_bytes` | `33554432` (32 MiB) | Size of the in-process response cache, in bytes (an integer, no unit). `0` turns it off. |
 | `share_links` | `true` | Lets editors create [share links](share-links.md). |
 | `share_default_ttl`, `share_max_ttl` | `24h`, `168h` | Lifetime of a new share link and the longest one allowed (at most `720h`). |
 

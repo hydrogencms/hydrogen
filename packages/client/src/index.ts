@@ -92,6 +92,8 @@ export interface ChannelInfo {
   name: string
   languages: string[]
   collections: string[]
+  /** the frontend this channel serves (origin, maybe a base path), when the channel has one */
+  frontend?: string
   options: ChannelOptions
 }
 

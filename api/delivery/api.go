@@ -388,7 +388,11 @@ func (a *API) channelInfo(ch *channel.Channel) ([]byte, error) {
 			opts[n] = v
 		}
 	}
-	b, err := marshal(map[string]any{"name": ch.Name, "languages": ch.Languages, "collections": colls, "options": opts})
+	info := map[string]any{"name": ch.Name, "languages": ch.Languages, "collections": colls, "options": opts}
+	if ch.Frontend != "" {
+		info["frontend"] = ch.Frontend
+	}
+	b, err := marshal(info)
 	if err != nil {
 		return nil, fmt.Errorf("delivery: encode info of channel %s (a public channel option must be JSON-encodable): %w", ch.Name, err)
 	}

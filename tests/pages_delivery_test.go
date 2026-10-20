@@ -566,6 +566,7 @@ func TestPagesDeliveryChannelInfoAndOpenAPI(t *testing.T) {
 		deq(t, "match", field(opts, "match", "prefix"), "/en")
 		deq(t, "match host", field(opts, "match", "host"), "a.test")
 		deq(t, "reserved", opts["reserved"].([]any)[0], "/cart")
+		deq(t, "frontend", j["frontend"], "https://front.a.test")
 		_, j = e.getJSON("/channels/jobs", 200)
 		deq(t, "site", field(j, "options", "site"), "careers")
 		_, j = e.getJSON("/openapi.json", 200)
