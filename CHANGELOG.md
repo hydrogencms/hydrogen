@@ -17,6 +17,8 @@ All notable changes to Hydrogen are documented here. The format follows
   URL or root-relative path, `alt`, `title`, `width`, `height`). The admin editor has buttons, a table menu and an
   image popover (`prosemirror-tables`, in the lazy editor chunk); the site module and the `client`, `react` and `astro`
   renderers output them. The `@hydrogencms/client/richtext` size budget is 1.25 KB.
+- `DEVELOPMENT.md`: how to run a working copy of Hydrogen with content, the admin and a frontend (fullstack in one
+  process, the CMS with a JavaScript starter, the admin with hot reload, a project of your own on the checkout).
 
 ### Changed
 
@@ -26,6 +28,9 @@ All notable changes to Hydrogen are documented here. The format follows
   through slots) has a content migration listing it; the start names the types still missing.
 - A static build warns about a `site`/frontend origin mismatch before Astro lists the pages, on a line of its own. The
   `@hydrogencms/astro` size budget is 8 KB.
+- `hydrogen users:create-admin` prompts `Enter password:` when it reads the password from stdin
+  (`HYDROGEN_ADMIN_PASSWORD` unset).
+- The starter schema's `post` type has an indexed `date` field.
 
 ### Fixed
 
@@ -43,6 +48,9 @@ All notable changes to Hydrogen are documented here. The format follows
 - In the static scaffold the admin (`127.0.0.1`) and the dev site (`localhost`) were different sites, so the browser
   dropped the preview cookie in the admin's frame and Preview showed the published page.
 - A migration for one type accounted for a block change in every type, so items of the other types kept the old shape.
+- Admin: menus, popovers and the bulk bar slid in from their own offset (a full width sideways for end-aligned menus);
+  they drop down from their trigger, or up when opened or flipped above it.
+- Next.js starter: the blog page did not load; it lists posts by `date` (newest first) instead of `publishedAt`.
 
 ## [0.2.1] - 2026-10-20
 
