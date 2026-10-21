@@ -24,11 +24,13 @@
   let btn = $state<HTMLButtonElement>();
   let box = $state<HTMLElement>();
   let pos = $state({ top: 0, left: 0 });
+  let above = $state(false);
   const uid = $props.id();
 
   function show() {
     const r = btn!.getBoundingClientRect();
     pos = { top: r.bottom + 4, left: align === 'end' ? r.right : r.left };
+    above = false;
     open = true;
   }
   function hide(refocus = true) {
@@ -46,6 +48,7 @@
     const anchor = align === 'end' ? r.right : r.left;
     const left = align === 'end' ? Math.max(b.width + 8, Math.min(anchor, innerWidth - 8)) : Math.max(8, Math.min(anchor, innerWidth - b.width - 8));
     if (top !== pos.top || left !== pos.left) pos = { top, left };
+    above = top < r.top;
   });
 
   $effect(() => {
@@ -71,6 +74,7 @@
     id="{uid}-p"
     class="h-pop"
     class:h-pop--end={align === 'end'}
+    class:h-pop--above={above}
     role="dialog"
     aria-label={label}
     tabindex="-1"

@@ -16,7 +16,7 @@
 @keyframes h-pop {
   from {
     opacity: 0;
-    translate: 0 4px;
+    translate: var(--h-pop-from, 0 4px);
     scale: 0.98;
   }
 }
@@ -802,7 +802,7 @@ a.h-name__title:hover {
   z-index: var(--h-z-nav);
   inset-block-end: var(--h-space-5);
   inset-inline: 50% auto;
-  translate: -50% 0;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: var(--h-space-3);
@@ -1075,6 +1075,9 @@ a.h-name__title:hover {
   background: var(--h-surface);
   box-shadow: var(--h-shadow);
   animation: h-pop var(--h-dur) var(--h-ease);
+  /* Placement uses transform, so the animation's translate adds to it instead of replacing it. */
+  transform-origin: 0 0;
+  --h-pop-from: 0 -4px;
 }
 .h-menu {
   min-width: 12rem;
@@ -1089,13 +1092,17 @@ a.h-name__title:hover {
 }
 .h-menu--end,
 .h-pop--end {
-  translate: -100% 0;
+  transform: translateX(-100%);
 }
 .h-menu--top {
-  translate: 0 -100%;
+  transform: translateY(-100%);
 }
 .h-menu--end.h-menu--top {
-  translate: -100% -100%;
+  transform: translate(-100%, -100%);
+}
+.h-menu--top,
+.h-pop--above {
+  --h-pop-from: 0 4px;
 }
 .h-menu__item {
   display: flex;
@@ -1367,7 +1374,7 @@ a.h-name__title:hover {
   }
   .h-bulkbar {
     inset-inline: var(--h-space-4);
-    translate: none;
+    transform: none;
     justify-content: space-between;
   }
 }
