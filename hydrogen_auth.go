@@ -39,6 +39,7 @@ func createAdmin(ctx context.Context, app *kernel.App, o RunOptions, args []stri
 	}
 	pw := os.Getenv(adminPasswordEnv)
 	if pw == "" {
+		fmt.Print("Enter password: ")
 		line, err := bufio.NewReader(io.LimitReader(o.Stdin, 4096)).ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			return fmt.Errorf("read password: %w", err)
