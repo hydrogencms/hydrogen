@@ -1,4 +1,4 @@
-package hydrogen
+package commands
 
 import (
 	"context"
@@ -30,7 +30,7 @@ func parseDirArgs(fs *flag.FlagSet, args []string) (string, error) {
 	return dir, nil
 }
 
-func exportCommand(ctx context.Context, app *kernel.App, o RunOptions, args []string) error {
+func exportCommand(ctx context.Context, app *kernel.App, o Options, args []string) error {
 	fs := flag.NewFlagSet("export", flag.ContinueOnError)
 	fs.SetOutput(o.Stderr)
 	published := fs.Bool("published-only", false, "export only the published version of each published item (no history, no drafts)")
@@ -47,7 +47,7 @@ func exportCommand(ctx context.Context, app *kernel.App, o RunOptions, args []st
 	return err
 }
 
-func importCommand(ctx context.Context, app *kernel.App, o RunOptions, args []string) error {
+func importCommand(ctx context.Context, app *kernel.App, o Options, args []string) error {
 	fs := flag.NewFlagSet("import", flag.ContinueOnError)
 	fs.SetOutput(o.Stderr)
 	allow := fs.Bool("allow-schema-change", false, "import an export made under a different schema")

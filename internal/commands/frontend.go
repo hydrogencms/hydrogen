@@ -1,4 +1,4 @@
-package hydrogen
+package commands
 
 import (
 	"bytes"
@@ -24,7 +24,7 @@ const redirectType = "redirect"
 // channel allows needs a template (failure). A collection mounted in the page tree needs one too (warning, and
 // with -db only for real mounts; without it every other collection the channel allows is listed as a warning).
 // It needs no database unless -db is given.
-func checkFrontend(ctx context.Context, b *Builder, o RunOptions, args []string) error {
+func checkFrontend(ctx context.Context, mods []kernel.Module, o Options, args []string) error {
 	fs := flag.NewFlagSet("check-frontend", flag.ContinueOnError)
 	fs.SetOutput(o.Stderr)
 	file := fs.String("templates", "", `JSON file {"templates": ["page", "article"]} listing the frontend's templates (required)`)
@@ -44,7 +44,7 @@ func checkFrontend(ctx context.Context, b *Builder, o RunOptions, args []string)
 	if err != nil {
 		return err
 	}
-	sc, set, modules, err := kernel.Inspect(cfg, b.all()...)
+	sc, set, modules, err := kernel.Inspect(cfg, mods...)
 	if err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ func checkFrontend(ctx context.Context, b *Builder, o RunOptions, args []string)
 	}
 	var mounts map[string]map[string]bool // site -> mounted collections
 	if *withDB && slices.Contains(modules, "pages") {
-		app, err := newApp(ctx, b, o)
+		app, err := newApp(ctx, mods, o)
 		if err != nil {
 			return err
 		}

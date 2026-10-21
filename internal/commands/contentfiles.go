@@ -1,4 +1,4 @@
-package hydrogen
+package commands
 
 import (
 	"context"
@@ -248,7 +248,7 @@ func ensureMigrated(ctx context.Context, app *kernel.App) (bool, error) {
 // reconcileContentFiles runs at the start of serve, before the server accepts requests. It may replace the app
 // (the database is closed, backed up and rebuilt); the returned app is the one to serve.
 // rebuilt reports that the database was (re)built from the directory by this start.
-func reconcileContentFiles(ctx context.Context, b *Builder, o RunOptions, app *kernel.App) (_ *kernel.App, rebuilt bool, _ error) {
+func reconcileContentFiles(ctx context.Context, mods []kernel.Module, o Options, app *kernel.App) (_ *kernel.App, rebuilt bool, _ error) {
 	cf, err := contentFilesOf(app)
 	if cf == nil || err != nil {
 		return app, false, err
@@ -277,7 +277,7 @@ func reconcileContentFiles(ctx context.Context, b *Builder, o RunOptions, app *k
 		}
 	case vReload:
 		log.Info(cf.dir + " changed; loading it into the database")
-		fresh, err := cf.replace(ctx, b, o, app)
+		fresh, err := cf.replace(ctx, mods, o, app)
 		return fresh, err == nil, err
 	case vKeep:
 		log.Warn("keeping your edits; they are not in "+cf.dir+" yet (run hydrogen content:save, then commit)", "dir", cf.dir)
@@ -313,7 +313,7 @@ func (c *contentFiles) importInto(ctx context.Context, app *kernel.App) error {
 
 // replace rebuilds the database from the directory: it checks the directory, moves the database to
 // backups/<timestamp> and imports into a new one. When the import fails the previous database is moved back.
-func (c *contentFiles) replace(ctx context.Context, b *Builder, o RunOptions, app *kernel.App) (*kernel.App, error) {
+func (c *contentFiles) replace(ctx context.Context, mods []kernel.Module, o Options, app *kernel.App) (*kernel.App, error) {
 	if err := app.CheckImport(c.dir, kernel.ImportOptions{AllowSchemaChange: true}); err != nil {
 		return app, fmt.Errorf("load %s: %w (the database is unchanged)", c.dir, err)
 	}
@@ -326,7 +326,7 @@ func (c *contentFiles) replace(ctx context.Context, b *Builder, o RunOptions, ap
 	if err != nil {
 		return nil, fmt.Errorf("back up the database: %w", err)
 	}
-	fresh, err := c.rebuild(ctx, b, o)
+	fresh, err := c.rebuild(ctx, mods, o)
 	if err != nil {
 		if backup == "" {
 			return nil, err
@@ -344,8 +344,8 @@ func (c *contentFiles) replace(ctx context.Context, b *Builder, o RunOptions, ap
 }
 
 // rebuild imports the directory into a new database.
-func (c *contentFiles) rebuild(ctx context.Context, b *Builder, o RunOptions) (*kernel.App, error) {
-	fresh, err := newApp(ctx, b, o)
+func (c *contentFiles) rebuild(ctx context.Context, mods []kernel.Module, o Options) (*kernel.App, error) {
+	fresh, err := newApp(ctx, mods, o)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +362,7 @@ func (c *contentFiles) rebuild(ctx context.Context, b *Builder, o RunOptions) (*
 
 // contentSave writes the database's content to content.files and records the sync marker. Identical content
 // leaves the files alone.
-func contentSave(ctx context.Context, app *kernel.App, o RunOptions, args []string) error {
+func contentSave(ctx context.Context, app *kernel.App, o Options, args []string) error {
 	if len(args) > 0 {
 		return errors.New("content:save takes no arguments")
 	}
@@ -416,7 +416,7 @@ func oldLayout(dir string) bool {
 }
 
 // contentLoad replaces the database with the directory's content. It may replace the app.
-func contentLoad(ctx context.Context, b *Builder, o RunOptions, app *kernel.App, args []string) (*kernel.App, error) {
+func contentLoad(ctx context.Context, mods []kernel.Module, o Options, app *kernel.App, args []string) (*kernel.App, error) {
 	fs := flag.NewFlagSet("content:load", flag.ContinueOnError)
 	fs.SetOutput(o.Stderr)
 	force := fs.Bool("force", false, "replace the database even when it holds changes that are not saved to the directory")
@@ -470,7 +470,7 @@ func contentLoad(ctx context.Context, b *Builder, o RunOptions, app *kernel.App,
 			return app, err
 		}
 	}
-	app, err = cf.replace(ctx, b, o, app)
+	app, err = cf.replace(ctx, mods, o, app)
 	if err != nil {
 		return app, err
 	}
