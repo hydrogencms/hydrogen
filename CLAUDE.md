@@ -349,6 +349,12 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - Schema lives in project files; never hand-edit generated code.
 - No raw CSS or HTML in content; style through design tokens.
 - Comments: minimal; only where the implementation is non-obvious.
-- Branch `main` for all work; `release` holds only released commits and moves only through
-  `scripts/release.sh --tag` (or a hotfix PR into it), never by direct commits. Commit by default once the full gate passes (`make tidy vet lint test smoke`): each milestone,
-  and checkpoints within one. Push only when asked. Commits: no "Generated with Claude Code" footer.
+- One pull request per issue, into `main`, from a branch named after it (`issue-25-delivery-fields`; `Closes #25`).
+  Commit on that branch once the full gate passes (`make tidy vet lint test smoke`), push it and open the pull
+  request with `.github/pull_request_template.md`. Its body assesses the change against the core principle and the
+  rules here (numbers for budgets and hot paths) and lists every compromise: what principle it bends, why the
+  capability is worth it, what bounds the cost ("None" if none). A pull request that breaks a principle without
+  listing it, or whose compromises don't fit, is rejected. Process for people: `CONTRIBUTING.md`. Never put
+  `planning/` content in a pull request. `release` holds only released commits and moves only through
+  `scripts/release.sh --tag` (or a hotfix PR into it), never by direct commits; tags and publishing stay the
+  user's call. Commits: no "Generated with Claude Code" footer.
