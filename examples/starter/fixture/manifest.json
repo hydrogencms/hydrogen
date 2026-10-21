@@ -1,8 +1,8 @@
 {
-  "format": 1,
+  "format": 2,
   "hydrogen": "fixture",
   "dialect": "sqlite",
-  "schemaHash": "bb6356e5ef312d4cfa5f0df1896f5143b8b8a6653e51d29496321bab01e6f89d",
+  "schemaHash": "664e0be417e8d4501878df6f9ee90b47849582cafef2deb3cce232890e1af036",
   "createdAt": "2026-10-01T09:54:00Z",
   "counts": {
     "items": 13,
@@ -14,6 +14,10 @@
       "pages": 32
     }
   },
+  "itemStream": {
+    "sha256": "7bbe4d8a65d8e0d19fae1127ad70c873c26c0f2a6b78fed2245390236fbdd82d",
+    "bytes": 22689
+  },
   "files": [
     {
       "name": "content_migrations.ndjson",
@@ -22,7 +26,7 @@
     },
     {
       "name": "items.ndjson",
-      "sha256": "b8bfc84f6ece31fb52afef42b0796d840832d034ce03b654799f60aaf68b6e5a",
+      "sha256": "7bbe4d8a65d8e0d19fae1127ad70c873c26c0f2a6b78fed2245390236fbdd82d",
       "bytes": 22689,
       "records": 13
     },
@@ -34,13 +38,13 @@
     },
     {
       "name": "schema/compiled.json",
-      "sha256": "bb6356e5ef312d4cfa5f0df1896f5143b8b8a6653e51d29496321bab01e6f89d",
-      "bytes": 7238
+      "sha256": "664e0be417e8d4501878df6f9ee90b47849582cafef2deb3cce232890e1af036",
+      "bytes": 7338
     },
     {
-      "name": "schema/revisions/bb6356e5ef312d4cfa5f0df1896f5143b8b8a6653e51d29496321bab01e6f89d.json",
-      "sha256": "f6a07347cb2ceaf0a4abedecaea9744ae6c0e18ce589268106ac24a0986900df",
-      "bytes": 7369,
+      "name": "schema/revisions/664e0be417e8d4501878df6f9ee90b47849582cafef2deb3cce232890e1af036.json",
+      "sha256": "2e61435f42dd5b89fa569b30cb9259e77a92914ab84cfb2b5d2a42b3224f126b",
+      "bytes": 7469,
       "records": 1
     }
   ]
