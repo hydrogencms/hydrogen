@@ -91,6 +91,8 @@ Start at the [documentation index](docs/README.md).
 
 ## Development
 
+To run your working copy with content, the admin and a frontend, see [DEVELOPMENT.md](DEVELOPMENT.md).
+
 ```sh
 make build test vet lint   # every Go module in the repository
 make db-up                 # Postgres 17 on localhost:5436 for the Postgres adapter tests
