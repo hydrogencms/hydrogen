@@ -54,6 +54,8 @@ type ListOptions struct {
 	Total bool
 	// Include (delivery only) adds the items the results reference to the answer, 1 to 3 levels deep.
 	Include int
+	// Fields: delivery, only these fields in each item (dot paths walk into groups); management API, their values per summary.
+	Fields []string
 	// IfNoneMatch (delivery only) sends If-None-Match; a matching ETag gives a result whose Meta.NotModified is true.
 	IfNoneMatch string
 }
@@ -62,11 +64,13 @@ type ListOptions struct {
 type GetOptions struct {
 	Locale string
 	// Include (delivery only) adds referenced items, 1 to 3 levels deep.
-	Include     int
+	Include int
+	// Fields (delivery only): only these fields in the item; include and links follow just them.
+	Fields      []string
 	IfNoneMatch string
 }
 
-// query builds the query string in a fixed order (channel, locale, include, filters, q, sort, limit, offset),
+// query builds the query string in a fixed order (channel, locale, include, fields, filters, q, sort, limit, offset),
 // so equal requests give equal URLs and caches key on them. Brackets stay literal.
 type query struct{ parts []string }
 
@@ -85,6 +89,9 @@ func (o *ListOptions) encode(q *query) error {
 	}
 	if o.Include > 0 {
 		q.add("include", strconv.Itoa(o.Include))
+	}
+	if err := addFields(q, o.Fields); err != nil {
+		return err
 	}
 	for _, f := range o.Where {
 		if f.Field == "" || strings.ContainsAny(f.Field, "[]&=#") {
@@ -128,9 +135,9 @@ func (o *ListOptions) encode(q *query) error {
 	return nil
 }
 
-func (o *GetOptions) encode(q *query) {
+func (o *GetOptions) encode(q *query) error {
 	if o == nil {
-		return
+		return nil
 	}
 	if o.Locale != "" {
 		q.add("locale", o.Locale)
@@ -138,6 +145,20 @@ func (o *GetOptions) encode(q *query) {
 	if o.Include > 0 {
 		q.add("include", strconv.Itoa(o.Include))
 	}
+	return addFields(q, o.Fields)
+}
+
+func addFields(q *query, fields []string) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	for _, f := range fields {
+		if f == "" || strings.ContainsAny(f, ",&=#") {
+			return fmt.Errorf("hydrogen: invalid field %q", f)
+		}
+	}
+	q.add("fields", strings.Join(fields, ","))
+	return nil
 }
 
 func filterValue(v any) (string, error) {

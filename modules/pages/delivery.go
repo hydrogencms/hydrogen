@@ -205,19 +205,25 @@ func (d *deliverer) route(w http.ResponseWriter, r *http.Request) {
 
 // navNode is a node of the delivery navigation.
 type navNode struct {
-	ID    ids.UUID  `json:"id"`
-	Kind  string    `json:"kind"`
-	Item  *ids.UUID `json:"item,omitempty"`
-	Type  string    `json:"type,omitempty"`
-	Name  string    `json:"name"`
-	Path  string    `json:"path,omitempty"`
-	URL   string    `json:"url,omitempty"`
-	Nodes []navNode `json:"nodes,omitempty"`
+	ID     ids.UUID        `json:"id"`
+	Kind   string          `json:"kind"`
+	Item   *ids.UUID       `json:"item,omitempty"`
+	Type   string          `json:"type,omitempty"`
+	Name   string          `json:"name"`
+	Path   string          `json:"path,omitempty"`
+	URL    string          `json:"url,omitempty"`
+	Fields json.RawMessage `json:"fields,omitempty"`
+	Nodes  []navNode       `json:"nodes,omitempty"`
 }
 
 // tree answers GET /tree?site=&locale=&depth=: published, visible navigation in the channel's locale.
 func (d *deliverer) tree(w http.ResponseWriter, r *http.Request) {
-	if err := checkParams(r, "site", "depth"); err != nil {
+	if err := checkParams(r, "site", "depth", "fields"); err != nil {
+		delivery.Fail(w, r, err)
+		return
+	}
+	fields, err := delivery.FieldsParam(r)
+	if err != nil {
 		delivery.Fail(w, r, err)
 		return
 	}
@@ -263,10 +269,64 @@ func (d *deliverer) tree(w http.ResponseWriter, r *http.Request) {
 	}
 	delivery.Tag(r, tags...)
 	nav := navNodes(wc, nodes, urls)
+	if fields != nil {
+		var pageItems []ids.UUID
+		collectPageItems(nav, &pageItems)
+		if err := attachFields(r, locale, fields, nav, pageItems); err != nil {
+			delivery.Fail(w, r, err)
+			return
+		}
+	}
 	if nav == nil {
 		nav = []navNode{}
 	}
 	delivery.WriteJSON(w, r, http.StatusOK, map[string]any{"site": site, "locale": locale, "nodes": nav})
+}
+
+func collectPageItems(nodes []navNode, out *[]ids.UUID) {
+	for _, n := range nodes {
+		if n.Kind == KindPage && n.Item != nil {
+			*out = append(*out, *n.Item)
+		}
+		collectPageItems(n.Nodes, out)
+	}
+}
+
+// attachFields loads the page items in one batch, projected, and puts each one's fields on its node.
+func attachFields(r *http.Request, locale string, f *delivery.Fields, nodes []navNode, list []ids.UUID) error {
+	if len(list) == 0 {
+		return nil
+	}
+	payloads, err := delivery.ItemsFields(r, locale, f, list...)
+	if err != nil {
+		return err
+	}
+	byItem := make(map[ids.UUID]json.RawMessage, len(list))
+	for i, raw := range payloads {
+		if raw == nil {
+			continue
+		}
+		var it struct {
+			Fields json.RawMessage `json:"fields"`
+		}
+		if err := json.Unmarshal(raw, &it); err != nil {
+			return err
+		}
+		if len(it.Fields) > 0 {
+			byItem[list[i]] = it.Fields
+		}
+	}
+	setFields(nodes, byItem)
+	return nil
+}
+
+func setFields(nodes []navNode, byItem map[ids.UUID]json.RawMessage) {
+	for i := range nodes {
+		if nodes[i].Kind == KindPage && nodes[i].Item != nil {
+			nodes[i].Fields = byItem[*nodes[i].Item]
+		}
+		setFields(nodes[i].Nodes, byItem)
+	}
 }
 
 func collectLinkItems(nodes []TreeNode, out *[]ids.UUID) {

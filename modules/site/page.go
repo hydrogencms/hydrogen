@@ -101,8 +101,10 @@ type page struct {
 	ctx      context.Context
 	f        *fetcher // nil in site:check
 	itemPath func(*Item) string
-	memo     map[string]any
-	depth    int
+	// linkFields names the fields a type's detail route needs in its URLs ("" = every type).
+	linkFields func(typ string) []string
+	memo       map[string]any
+	depth      int
 }
 
 func (p *page) context() context.Context {

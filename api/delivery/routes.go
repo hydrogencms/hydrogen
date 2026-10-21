@@ -85,11 +85,16 @@ func write(w http.ResponseWriter, body []byte) {
 
 func (a *API) getItem(w http.ResponseWriter, r *http.Request) {
 	st := stateOf(r)
-	if err := st.params("include"); err != nil {
+	if err := st.params("include", "fields"); err != nil {
 		Fail(w, r, err)
 		return
 	}
 	depth, err := st.includeDepth()
+	if err != nil {
+		Fail(w, r, err)
+		return
+	}
+	f, err := st.fields()
 	if err != nil {
 		Fail(w, r, err)
 		return
@@ -99,7 +104,7 @@ func (a *API) getItem(w http.ResponseWriter, r *http.Request) {
 		Fail(w, r, errUnavailable())
 		return
 	}
-	list, err := st.load(r.Context(), []ids.UUID{id})
+	list, err := st.load(r.Context(), []ids.UUID{id}, f)
 	if err != nil || len(list) == 0 {
 		Fail(w, r, orUnavailable(err))
 		return
@@ -121,7 +126,7 @@ func (a *API) getByKey(w http.ResponseWriter, r *http.Request) {
 		Fail(w, r, errUnavailable())
 		return
 	}
-	a.byKey(w, r, st, key, "")
+	a.byKey(w, r, st, key, "", nil)
 }
 
 const maxKeyLen = 128
@@ -153,11 +158,12 @@ func (a *API) getSingleton(w http.ResponseWriter, r *http.Request) {
 		Fail(w, r, errUnavailable())
 		return
 	}
-	a.byKey(w, r, st, typ, cachetag.Singleton(typ))
+	a.byKey(w, r, st, typ, cachetag.Singleton(typ), []string{typ})
 }
 
-func (a *API) byKey(w http.ResponseWriter, r *http.Request, st *state, key, tag string) {
-	if err := st.params("include"); err != nil {
+// byKey answers with the item that has key; types are those the item can have (nil: any the channel shows).
+func (a *API) byKey(w http.ResponseWriter, r *http.Request, st *state, key, tag string, types []string) {
+	if err := st.params("include", "fields"); err != nil {
 		Fail(w, r, err)
 		return
 	}
@@ -166,7 +172,12 @@ func (a *API) byKey(w http.ResponseWriter, r *http.Request, st *state, key, tag 
 		Fail(w, r, err)
 		return
 	}
-	it, err := st.loadKey(r.Context(), key)
+	f, err := st.fields(types...)
+	if err != nil {
+		Fail(w, r, err)
+		return
+	}
+	it, err := st.loadKey(r.Context(), key, f)
 	if err != nil || it == nil {
 		Fail(w, r, orUnavailable(err))
 		return
@@ -178,7 +189,7 @@ func (a *API) byKey(w http.ResponseWriter, r *http.Request, st *state, key, tag 
 }
 
 // listParams are the query parameters of a listing besides where[field][op].
-var listParams = []string{"include", "locale", "q", "sort", "limit", "offset", "total", "channel", "preview"}
+var listParams = []string{"include", "fields", "locale", "q", "sort", "limit", "offset", "total", "channel", "preview"}
 
 func (a *API) listItems(w http.ResponseWriter, r *http.Request) {
 	st := stateOf(r)
@@ -200,6 +211,11 @@ func (a *API) listItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wantTotal, err := st.totalFlag()
+	if err != nil {
+		Fail(w, r, err)
+		return
+	}
+	f, err := st.fields(typ)
 	if err != nil {
 		Fail(w, r, err)
 		return
@@ -241,12 +257,16 @@ func (a *API) listItems(w http.ResponseWriter, r *http.Request) {
 		hasMore = len(res.Items) > want
 	}
 	res.Items = res.Items[:min(len(res.Items), want)]
-	items, err := st.loadSummaries(ctx, res.Items)
+	items, err := st.loadSummaries(ctx, res.Items, f)
 	if err != nil {
 		Fail(w, r, err)
 		return
 	}
 	if pv != nil {
+		if err := st.project([]*resolved{pv}, f); err != nil {
+			Fail(w, r, err)
+			return
+		}
 		res.Total++
 		if offset == 0 {
 			items = slices.Insert(items, 0, pv)
@@ -276,7 +296,7 @@ func (st *state) listQuery(typ string) (store.Query, error) {
 	q := url.Values{}
 	for k, v := range st.q {
 		switch k {
-		case "include", "locale", "channel", "preview", "total":
+		case "include", "fields", "locale", "channel", "preview", "total":
 		default:
 			q[k] = v
 		}

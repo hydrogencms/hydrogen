@@ -153,7 +153,7 @@ func (s *server) newPage(rc *reqCtx, locale string, it *Item) (*page, *View) {
 		v.Title = itemTitle(it)
 	}
 	p := &page{ctx: rc.ctx, eng: rc.eng, ch: rc.ch, locale: locale, def: s.svc.Core.Content.DefaultLocale, preview: rc.preview(), log: s.log,
-		view: v, links: map[string]string{}, f: rc.f, itemPath: func(it *Item) string { return s.linkPath(rc.ch, it) }}
+		view: v, links: map[string]string{}, f: rc.f, itemPath: func(it *Item) string { return s.linkPath(rc.ch, it) }, linkFields: func(typ string) []string { return s.linkFields(rc.ch, typ) }}
 	if it != nil {
 		for k, u := range it.Links {
 			p.links[k] = u

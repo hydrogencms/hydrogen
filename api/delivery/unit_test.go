@@ -419,7 +419,7 @@ func TestLoadPicksLocaleAndAlwaysAvailable(t *testing.T) {
 	rd := &fakeReader{rows: []store.Snapshot{de, en, only, never}}
 
 	ch := &channel.Channel{Name: "c", Languages: []string{"de", "en"}}
-	got, err := testState(rd, ch).load(context.Background(), []ids.UUID{uid(1), uid(9)})
+	got, err := testState(rd, ch).load(context.Background(), []ids.UUID{uid(1), uid(9)}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,11 +427,11 @@ func TestLoadPicksLocaleAndAlwaysAvailable(t *testing.T) {
 		t.Errorf("de first: %+v", got)
 	}
 	fr := &channel.Channel{Name: "c", Languages: []string{"fr", "de"}}
-	got, _ = testState(rd, fr).load(context.Background(), []ids.UUID{uid(1)})
+	got, _ = testState(rd, fr).load(context.Background(), []ids.UUID{uid(1)}, nil)
 	if len(got) != 1 || got[0].locale != "de" || !got[0].fallback {
 		t.Errorf("fr then de: %+v", got)
 	}
-	got, _ = testState(rd, &channel.Channel{Name: "c", Languages: []string{"fr"}}).load(context.Background(), []ids.UUID{uid(1), uid(2), uid(3)})
+	got, _ = testState(rd, &channel.Channel{Name: "c", Languages: []string{"fr"}}).load(context.Background(), []ids.UUID{uid(1), uid(2), uid(3)}, nil)
 	if len(got) != 1 || got[0].id != uid(2) || got[0].locale != "en" || !got[0].fallback {
 		t.Errorf("always available only: %+v", got)
 	}

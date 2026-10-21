@@ -28,6 +28,11 @@ type chanSchema struct {
 	meta    map[string]map[string]fieldMeta
 	sdl     string
 	allowed []string // the channel's content types, sorted
+
+	srcs     map[string]map[string]string // content object name → GraphQL field → stored field
+	wrappers map[string]bool              // list types: their items field holds the content items
+	cheap    map[string]string            // content type → a small field to project when a selection needs none
+	anyCheap string
 }
 
 // fieldMeta says how a field of a generated type leads to other items, for sizing the include of a request.
@@ -70,12 +75,15 @@ type builder struct {
 	file   *gql.Object
 	unions map[string]*gql.Union
 	meta   map[string]map[string]fieldMeta
+	srcs   map[string]map[string]string
+	lists  map[string]bool
 	extra  []gql.Type
 }
 
 func buildSchema(sc *schema.Schema, ch *channel.Channel, c caps) (*chanSchema, error) {
 	b := &builder{sc: sc, ch: ch, caps: c, used: map[string]bool{}, objects: map[string]*gql.Object{},
-		names: map[string]string{}, unions: map[string]*gql.Union{}, meta: map[string]map[string]fieldMeta{}}
+		names: map[string]string{}, unions: map[string]*gql.Union{}, meta: map[string]map[string]fieldMeta{},
+		srcs: map[string]map[string]string{}, lists: map[string]bool{}}
 	for _, n := range reservedTypes {
 		b.used[n] = true
 	}
@@ -137,9 +145,16 @@ func buildSchema(sc *schema.Schema, ch *channel.Channel, c caps) (*chanSchema, e
 	if err != nil {
 		return nil, fmt.Errorf("build schema: %w", err)
 	}
-	cs := &chanSchema{schema: s, objects: b.objects, meta: b.meta}
+	cs := &chanSchema{schema: s, objects: b.objects, meta: b.meta, wrappers: b.lists, srcs: map[string]map[string]string{}, cheap: map[string]string{}}
 	for _, t := range b.types {
 		cs.allowed = append(cs.allowed, t.Name)
+		cs.srcs[b.objects[t.Name].Name()] = b.srcs[b.objects[t.Name].Name()]
+		if c := cheapField(t); c != "" {
+			cs.cheap[t.Name] = c
+			if cs.anyCheap == "" {
+				cs.anyCheap = c
+			}
+		}
 	}
 	cs.sdl = printSDL(&s)
 	return cs, nil
@@ -216,6 +231,10 @@ func (b *builder) addFields(out gql.Fields, used map[string]bool, owner string, 
 			}
 		}
 		used[gname] = true
+		if b.srcs[owner] == nil {
+			b.srcs[owner] = map[string]string{}
+		}
+		b.srcs[owner][gname] = f.Name
 		ft := b.fieldType(f, owner+"_"+f.Name, owner, gname)
 		src := f.Name
 		out[gname] = &gql.Field{Type: ft.out, Description: f.Description, Resolve: func(p gql.ResolveParams) (any, error) {
@@ -476,6 +495,7 @@ func (b *builder) listType(t *schema.Type) *gql.Object {
 	obj := b.objects[t.Name]
 	name := b.unique(obj.Name() + "List")
 	b.setMeta(name, "items", fieldMeta{target: obj.Name()})
+	b.lists[name] = true
 	l := gql.NewObject(gql.ObjectConfig{Name: name, Description: "A page of " + obj.Name() + " items.", Fields: gql.Fields{
 		"items":   {Type: gql.NewNonNull(gql.NewList(gql.NewNonNull(obj))), Resolve: listKey("items")},
 		"hasMore": {Type: gql.NewNonNull(gql.Boolean), Description: "Whether another page follows.", Resolve: listKey("hasMore")},

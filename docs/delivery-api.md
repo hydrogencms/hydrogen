@@ -74,6 +74,13 @@ add `?total=true` to also get an exact `total`, which costs a count.
 - **Links.** `links` maps item ids found in rich text and link fields to site paths, and `url` is the item's own
   path, from the pages module or the channel's `links` patterns. Items with neither have no URL.
 - **Shared blocks.** A `shared` block arrives with the shared item's blocks inlined.
+- **Fields.** `?fields=title,seo.title` shows only those fields (a dot path keeps one member of a group); the
+  envelope (`id`, `type`, `key`, `locale`, `version`, `publishedAt`, `name`, `url`, `links`, `fallback`) stays. Use
+  it for menus and cards: fields left out cost no transfer, no decoding, no inlined shared blocks and no expanded
+  assets. `include` and `links` follow the references in the selected fields only; items in `included` are whole.
+  Every path must name a field of the type (of a type the channel shows, for `/items/{id}`, `by-key` and
+  `/search`); empty means every field. Works on `/items/{id}`, `/items/by-key/{key}`, `/singletons/{type}`,
+  listings, `/search` and the pages module's `/tree`.
 
 ### Lists
 
@@ -83,7 +90,7 @@ add `?total=true` to also get an exact `total`, which costs a count.
 | `sort` | Comma-separated fields, `-` for descending: `-publishedOn,name`. Sortable: indexed fields, `name`, `key`, `createdAt`, `updatedAt`, `publishedAt` (the latest publication; never published items last). At most 4. |
 | `where[field][op]=value` | Filter on an indexed field. Ops: `eq` (default), `ne`, `lt`, `lte`, `gt`, `gte`, `in` (comma-separated), `contains`, `exists` (`true` or `false`), `prefix`, `under`. Repeated filters are ANDed, at most 32. |
 | `q` | Full-text words (at most 16). |
-| `include`, `total`, `locale`, `channel`, `preview` | As above. |
+| `include`, `fields`, `total`, `locale`, `channel`, `preview` | As above. |
 
 ```sh
 curl -s 'localhost:8080/api/deliver/v1/collections/article/items?where[publishedOn][gte]=2026-01-01&sort=-publishedOn&limit=10&include=1'
@@ -125,7 +132,8 @@ With the pages module, a channel with `match` serves a page tree:
   or `item` (render `item`), `redirect` (answer `located.resolution.status` with `location`), `not_found`,
   `no_channel` or `reserved` (a path the frontend owns).
 - `GET /tree?depth=2` returns the visible navigation below the site root (`depth` 1 to 10, default 1; `site` picks
-  another site than the channel's).
+  another site than the channel's; `fields=title,seo.title` puts those fields of each page's item on its node as
+  `fields`, in one batch).
 
 [The adapter kit](adapter-kit.md) shows how frontends use them.
 
@@ -155,7 +163,7 @@ Errors share one envelope with the [management API](management-api.md#errors):
 
 | Status | Code | When |
 | --- | --- | --- |
-| 400 | `bad_request` | Unknown or repeated parameter, bad `include`, unknown channel or locale, no channel chosen. |
+| 400 | `bad_request` | Unknown or repeated parameter, bad `include`, unknown field in `fields`, unknown channel or locale, no channel chosen. |
 | 401 | `unauthorized` | A token channel without a valid token, or an invalid or expired preview token. |
 | 404 | `not_found` | Not available, or no such endpoint. |
 | 500 | `internal` | A bug; it is logged. |

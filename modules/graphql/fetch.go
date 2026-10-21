@@ -64,6 +64,7 @@ type fetcher struct {
 	preview  string
 	maxCalls int
 	maxItems int
+	trace    func(request string)
 
 	mu      sync.Mutex
 	calls   int
@@ -104,6 +105,9 @@ func (f *fetcher) get(ctx context.Context, path string, q url.Values) (reply, er
 	q.Set("channel", f.channel)
 	if f.preview != "" {
 		q.Set("preview", f.preview)
+	}
+	if f.trace != nil {
+		f.trace(path + "?" + q.Encode())
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path+"?"+q.Encode(), nil)
 	if err != nil {
@@ -218,8 +222,9 @@ type item struct {
 	fields map[string]any
 	id     string
 	typ    string
-	loc    string // the locale parameter requests for its references carry
-	left   int    // include depth its response was made with: its references are in the registry or unavailable
+	loc    string          // the locale parameter requests for its references carry
+	left   int             // include depth its response was made with: its references are in the registry or unavailable
+	have   map[string]bool // the fields a projection kept; nil when the item is whole
 }
 
 func newItem(m map[string]any, loc string, left int) *item {
@@ -235,21 +240,45 @@ func newItem(m map[string]any, loc string, left int) *item {
 
 func regKey(loc, id string) string { return loc + "\x00" + id }
 
-// register remembers an item for later references; an entry with a deeper include is kept.
+// covers reports whether the item holds every field in need.
+func (it *item) covers(need []string) bool {
+	if it.have == nil {
+		return true
+	}
+	for _, n := range need {
+		if !it.have[n] {
+			return false
+		}
+	}
+	return true
+}
+
+// register remembers an item for later references; a whole item beats a projected one, then a deeper include.
 func (f *fetcher) register(it *item) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	k := regKey(it.loc, it.id)
-	if old := f.items[k]; old == nil || old.left < it.left {
+	old := f.items[k]
+	switch {
+	case old == nil, old.have != nil && it.have == nil:
+		f.items[k] = it
+	case old.have == nil && it.have != nil:
+	case old.left < it.left:
 		f.items[k] = it
 	}
 }
 
-func (f *fetcher) lookup(loc, id string) (*item, bool) {
+// lookup returns the remembered item when it holds the fields in need; partial reports an item that is known
+// but lacks some.
+func (f *fetcher) lookup(loc, id string, need []string) (it *item, absent, partial bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	k := regKey(loc, id)
-	return f.items[k], f.absent[k]
+	it = f.items[k]
+	if it != nil && !it.covers(need) {
+		return nil, false, true
+	}
+	return it, f.absent[k], false
 }
 
 func (f *fetcher) markAbsent(loc, id string) {
@@ -259,7 +288,8 @@ func (f *fetcher) markAbsent(loc, id string) {
 }
 
 // decodeItems reads the items of an answer and registers them with the items it included.
-func (f *fetcher) decodeItems(body map[string]any, primary []any, loc string, depth int) []*item {
+// The items of the answer are projected to the fields in proj (nil: whole); the ones it included never are.
+func (f *fetcher) decodeItems(body map[string]any, primary []any, loc string, depth int, proj []string) []*item {
 	inc, _ := body["included"].(map[string]any)
 	left := depth
 	if len(inc) >= maxIncluded {
@@ -274,6 +304,12 @@ func (f *fetcher) decodeItems(body map[string]any, primary []any, loc string, de
 	for _, v := range primary {
 		if m, ok := v.(map[string]any); ok {
 			it := newItem(m, loc, left)
+			if proj != nil {
+				it.have = make(map[string]bool, len(proj))
+				for _, n := range proj {
+					it.have[n] = true
+				}
+			}
 			f.register(it)
 			out = append(out, it)
 		}
@@ -282,9 +318,12 @@ func (f *fetcher) decodeItems(body map[string]any, primary []any, loc string, de
 }
 
 // loadOne fetches a path that answers {item, included}; nil when the item is not available.
-func (f *fetcher) loadOne(ctx context.Context, path string, q url.Values, loc string, depth int) (*item, error) {
+func (f *fetcher) loadOne(ctx context.Context, path string, q url.Values, loc string, depth int, proj []string) (*item, error) {
 	if q == nil {
 		q = url.Values{}
+	}
+	if proj != nil {
+		q.Set("fields", strings.Join(proj, ","))
 	}
 	if loc != "" {
 		q.Set("locale", loc)
@@ -309,7 +348,7 @@ func (f *fetcher) loadOne(ctx context.Context, path string, q url.Values, loc st
 	if err := decodeBody(rep.body, &body); err != nil {
 		return nil, err
 	}
-	its := f.decodeItems(body, []any{body["item"]}, loc, depth)
+	its := f.decodeItems(body, []any{body["item"]}, loc, depth, proj)
 	if len(its) == 0 {
 		f.markMissing()
 		return nil, nil

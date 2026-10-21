@@ -58,7 +58,7 @@ func (st *state) patternLinks(ctx context.Context, all []*resolved, items []*Ite
 	for i, r := range all {
 		it := items[i]
 		if _, has := it.Extra["url"]; !has {
-			if path, ok := ch.LinkPath(r.typ, r.id.String(), r.locale, fieldReader(r.payload)); ok {
+			if path, ok := ch.LinkPath(r.typ, r.id.String(), r.locale, fieldReader(r.source())); ok {
 				_, abs := st.a.patternURL(ch, path)
 				st.extra(it)["url"] = abs
 			}
@@ -83,7 +83,7 @@ func (st *state) patternLinks(ctx context.Context, all []*resolved, items []*Ite
 			merged[k] = v
 		}
 		for _, x := range got {
-			if path, ok := ch.LinkPath(x.typ, x.id.String(), x.locale, fieldReader(x.payload)); ok {
+			if path, ok := ch.LinkPath(x.typ, x.id.String(), x.locale, fieldReader(x.source())); ok {
 				rel, _ := st.a.patternURL(ch, path)
 				merged[x.id.String()] = rel
 			}

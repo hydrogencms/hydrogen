@@ -44,6 +44,7 @@ func TestListQuerySyntax(t *testing.T) {
 	lr, err := d.List(context.Background(), "article", &client.ListOptions{
 		Locale:  "de",
 		Include: 2,
+		Fields:  []string{"title", "seo.title"},
 		Where: []client.Filter{
 			{Field: "rank", Op: client.Gte, Value: 3},
 			{Field: "title", Value: "a b&c"},
@@ -61,7 +62,7 @@ func TestListQuerySyntax(t *testing.T) {
 	if !lr.HasMore || lr.Total != 0 {
 		t.Errorf("list result %+v", lr)
 	}
-	want := "channel=web&locale=de&include=2&where[rank][gte]=3&where[title]=a+b%26c&where[tag][in]=x%2Cy&where[cover][exists]=true" +
+	want := "channel=web&locale=de&include=2&fields=title%2Cseo.title&where[rank][gte]=3&where[title]=a+b%26c&where[tag][in]=x%2Cy&where[cover][exists]=true" +
 		"&where[at][lt]=2026-01-02T03%3A04%3A05Z&q=go+cms&sort=-rank%2Cname&limit=10&offset=20&total=true"
 	if got.path != "/api/deliver/v1/collections/article/items" || got.rawQuery != want {
 		t.Errorf("request %s?%s\nwant ?%s", got.path, got.rawQuery, want)
@@ -303,5 +304,34 @@ func TestRouteAndTree(t *testing.T) {
 	tr, err := client.NewDelivery(srv.URL).Tree(context.Background(), &client.TreeOptions{Site: "s", Depth: 2})
 	if err != nil || tr.Site != "s" || tr.Nodes[0].Nodes[0].Kind != "mount" || !slices.Equal(tr.Tags, []string{"nav:s", "r:s"}) || got.rawQuery != "site=s&depth=2" {
 		t.Errorf("tree %+v %v %s", tr, err, got.rawQuery)
+	}
+}
+
+func TestFieldsQuery(t *testing.T) {
+	ctx := context.Background()
+	srv, got := stub(t, 200, `{"item":{"id":"i1"}}`, nil)
+	d := client.NewDelivery(srv.URL, client.WithChannel("web"))
+	if _, err := d.Item(ctx, "i1", &client.GetOptions{Include: 1, Fields: []string{"title", "seo.title"}}); err != nil || got.rawQuery != "channel=web&include=1&fields=title%2Cseo.title" {
+		t.Errorf("item %s %v", got.rawQuery, err)
+	}
+	for _, bad := range []string{"", "a,b", "a&b", "a=b", "a#b"} {
+		if _, err := d.Item(ctx, "i1", &client.GetOptions{Fields: []string{bad}}); err == nil {
+			t.Errorf("field %q accepted", bad)
+		}
+		if _, err := d.List(ctx, "post", &client.ListOptions{Fields: []string{bad}}); err == nil {
+			t.Errorf("list field %q accepted", bad)
+		}
+		if _, err := d.Tree(ctx, &client.TreeOptions{Fields: []string{bad}}); err == nil {
+			t.Errorf("tree field %q accepted", bad)
+		}
+	}
+	srv, got = stub(t, 200, `{"site":"s","nodes":[{"id":"1","fields":{"title":"T"}}]}`, nil)
+	tr, err := client.NewDelivery(srv.URL).Tree(ctx, &client.TreeOptions{Depth: 2, Fields: []string{"title"}})
+	if err != nil || got.rawQuery != "depth=2&fields=title" || string(tr.Nodes[0].Fields["title"]) != `"T"` {
+		t.Errorf("tree %s %+v %v", got.rawQuery, tr, err)
+	}
+	srv, got = stub(t, 200, `{"items":[],"total":0}`, nil)
+	if _, err = client.NewManage(srv.URL, "t").List(ctx, "page", &client.ManageListOptions{ListOptions: client.ListOptions{Fields: []string{"title"}}}); err != nil || got.rawQuery != "fields=title" {
+		t.Errorf("manage %s %v", got.rawQuery, err)
 	}
 }

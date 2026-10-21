@@ -26,6 +26,8 @@ export interface GetOptions {
   locale?: string
   /** resolve referenced items to this depth (0..3) into `included` */
   include?: number
+  /** field paths to return, dot paths into groups (`['title', 'seo.title']`); the item's other fields are left out, and include/links follow only the selected fields */
+  fields?: string | string[]
   /** overrides the client's preview token for this call */
   preview?: string
   /** extra request headers (e.g. the visitor's headers that header matchers look at) */
@@ -127,6 +129,8 @@ export interface TreeNode {
   name: string
   path?: string
   url?: string
+  /** the selected fields of the page's item (when `fields` was asked) */
+  fields?: Record<string, unknown>
   nodes?: TreeNode[]
 }
 
@@ -160,6 +164,7 @@ export interface Client<T> {
 export const API_PATH = '/api/deliver/v1'
 
 const enc = encodeURIComponent
+const fieldList = (f?: string | string[]) => (Array.isArray(f) ? f.join(',') : f)
 
 /** Public so adapters and tests can build delivery URLs the same way; applications use the client. Builds a query string: parameters ordered by encoded name (where[...] included), values percent-encoded, empty values dropped. */
 export function buildQuery(p: Record<string, string | number | undefined>, where?: Record<string, Condition | undefined>): string {
@@ -250,7 +255,7 @@ export function createClient<T extends object = Record<string, unknown>>(o: Clie
     return r
   }
 
-  const common = (g?: GetOptions) => ({ channel: o.channel, locale: g?.locale, include: g?.include })
+  const common = (g?: GetOptions) => ({ channel: o.channel, locale: g?.locale, include: g?.include, fields: fieldList(g?.fields) })
 
   async function one<D>(path: string, g?: GetOptions): Promise<Response<Item<D>>> {
     const r = await get<any>(path, buildQuery(common(g)), g)
@@ -273,7 +278,7 @@ export function createClient<T extends object = Record<string, unknown>>(o: Clie
         sort: Array.isArray(l?.sort) ? l.sort.join(',') : l?.sort,
       }, l?.where as Record<string, Condition | undefined>), l),
     route: (url, g) => get('/route', buildQuery({ channel: o.channel, locale: g?.locale, url }), g),
-    tree: (t) => get('/tree', buildQuery({ channel: o.channel, locale: t?.locale, site: t?.site, depth: t?.depth }), t, (b) => b.nodes ?? []),
+    tree: (t) => get('/tree', buildQuery({ channel: o.channel, locale: t?.locale, site: t?.site, depth: t?.depth, fields: fieldList(t?.fields) }), t, (b) => b.nodes ?? []),
     channel: (name, g) => {
       const n = name ?? o.channel
       if (!n) return Promise.reject(new HydrogenError(400, 'bad_request', 'channel name is required'))

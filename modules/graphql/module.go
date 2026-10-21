@@ -27,6 +27,8 @@ type module struct {
 	svc *kernel.Services
 	// observe is called with the number of delivery calls a request made (tests).
 	observe func(calls int)
+	// trace is called with the path and query of every delivery call (tests).
+	trace func(request string)
 
 	mu      sync.Mutex
 	schemas map[string]*chanSchema

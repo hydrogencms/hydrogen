@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	gql "github.com/graphql-go/graphql"
@@ -52,6 +53,7 @@ type reqCtx struct {
 	cs       *chanSchema
 	maxNodes int64
 	nodes    atomic.Int64
+	needs    sync.Map // first *ast.Field of a resolved field → the content fields its selection reads
 }
 
 // spendNodes charges the response-size budget.
@@ -172,15 +174,16 @@ func (rc *reqCtx) resolveRef(parent *node, id string, allowed []string, info gql
 		return nil, fmt.Errorf("no request context")
 	}
 	loc := parent.it.loc
-	it, absent := rc.f.lookup(loc, id)
+	need := rc.selectionOf(info)
+	it, absent, partial := rc.f.lookup(loc, id, need)
 	if it == nil {
-		if absent || parent.it.left > 0 {
+		if absent || (parent.it.left > 0 && !partial) {
 			rc.f.markMissing()
 			return nil, nil
 		}
 		var err error
 		depth := rc.depthOf(info, "")
-		if it, err = rc.f.loadOne(rc.ctx, "/items/"+url.PathEscape(id), nil, loc, depth); err != nil {
+		if it, err = rc.f.loadOne(rc.ctx, "/items/"+url.PathEscape(id), nil, loc, depth, rc.cs.projection(need, "")); err != nil {
 			return nil, err
 		}
 		if it == nil {
@@ -220,7 +223,7 @@ func (b *builder) resolveGet(typ, target string) gql.FieldResolveFn {
 		if id != "" {
 			path = "/items/" + url.PathEscape(id)
 		}
-		it, err := rc.f.loadOne(p.Context, path, nil, rc.locale(p.Args), rc.depthOf(p.Info, target))
+		it, err := rc.f.loadOne(p.Context, path, nil, rc.locale(p.Args), rc.depthOf(p.Info, target), rc.fieldsFor(p.Info, typ))
 		if err != nil || it == nil || it.typ != typ {
 			return nil, err
 		}
@@ -231,7 +234,7 @@ func (b *builder) resolveGet(typ, target string) gql.FieldResolveFn {
 func (b *builder) resolveSingleton(typ, target string) gql.FieldResolveFn {
 	return func(p gql.ResolveParams) (any, error) {
 		rc := reqOf(p.Context)
-		it, err := rc.f.loadOne(p.Context, "/singletons/"+url.PathEscape(typ), nil, rc.locale(p.Args), rc.depthOf(p.Info, target))
+		it, err := rc.f.loadOne(p.Context, "/singletons/"+url.PathEscape(typ), nil, rc.locale(p.Args), rc.depthOf(p.Info, target), rc.fieldsFor(p.Info, typ))
 		if err != nil || it == nil {
 			return nil, err
 		}
@@ -243,7 +246,7 @@ func (b *builder) resolveAny() gql.FieldResolveFn {
 	return func(p gql.ResolveParams) (any, error) {
 		rc := reqOf(p.Context)
 		id, _ := p.Args["id"].(string)
-		it, err := rc.f.loadOne(p.Context, "/items/"+url.PathEscape(id), nil, rc.locale(p.Args), rc.depthOf(p.Info, "Item"))
+		it, err := rc.f.loadOne(p.Context, "/items/"+url.PathEscape(id), nil, rc.locale(p.Args), rc.depthOf(p.Info, "Item"), rc.fieldsFor(p.Info, ""))
 		if err != nil || it == nil {
 			return nil, err
 		}
@@ -278,6 +281,10 @@ func (b *builder) resolveList(typ, target string) gql.FieldResolveFn {
 		if depth > 0 {
 			q.Set("include", strconv.Itoa(depth))
 		}
+		proj := rc.fieldsFor(p.Info, typ)
+		if proj != nil {
+			q.Set("fields", strings.Join(proj, ","))
+		}
 		if err := rc.f.spend(pageSize(p.Args), depth); err != nil {
 			return nil, err
 		}
@@ -297,7 +304,7 @@ func (b *builder) resolveList(typ, target string) gql.FieldResolveFn {
 			return nil, err
 		}
 		prim, _ := body["items"].([]any)
-		nodes, err := rc.nodesOf(rc.f.decodeItems(body, prim, loc, depth))
+		nodes, err := rc.nodesOf(rc.f.decodeItems(body, prim, loc, depth, proj))
 		if err != nil {
 			return nil, err
 		}
@@ -372,7 +379,7 @@ func (b *builder) resolveSearch() gql.FieldResolveFn {
 			return nil, err
 		}
 		prim, _ := body["items"].([]any)
-		nodes, err := rc.nodesOf(rc.f.decodeItems(body, prim, loc, depth))
+		nodes, err := rc.nodesOf(rc.f.decodeItems(body, prim, loc, depth, nil))
 		if err != nil {
 			return nil, err
 		}

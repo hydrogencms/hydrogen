@@ -14,7 +14,7 @@
 // within a few kilobytes. Tags added by modules come on top and are theirs to keep few.
 //
 // Query strings are canonical in the cache key: parameters are ordered by name with the order of repeated
-// values kept; locale, channel, include, limit, offset, q, sort, total and preview may appear once.
+// values kept; locale, channel, include, fields, limit, offset, q, sort, total and preview may appear once.
 package delivery
 
 import (

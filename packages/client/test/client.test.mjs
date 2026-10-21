@@ -73,6 +73,22 @@ test('no channel param without a channel; singleton and by-key paths', async () 
   assert.equal(m.calls[1].url, 'https://x.test/api/deliver/v1/items/by-key/my-key')
 })
 
+test('fields: one comma-joined parameter on item, list and tree, not route', async () => {
+  const m = mock((u) => u.includes('/tree') ? { body: { nodes: [{ id: '1', kind: 'page', name: 'Home', fields: { title: 'T' } }] } } : { body: { item: { id: 'i' }, items: [] } })
+  const c = createClient({ baseUrl: 'https://x.test', channel: 'web', fetch: m.fetch })
+  await c.item('i1', { fields: ['title', 'seo.title'] })
+  await c.singleton('s', { fields: 'title' })
+  await c.list('post', { fields: ['a', 'b'] })
+  const t = await c.tree({ fields: ['title'] })
+  await c.route('/x', { fields: ['title'] })
+  assert.equal(m.calls[0].url, 'https://x.test/api/deliver/v1/items/i1?channel=web&fields=title%2Cseo.title')
+  assert.equal(m.calls[1].url, 'https://x.test/api/deliver/v1/singletons/s?channel=web&fields=title')
+  assert.equal(m.calls[2].url, 'https://x.test/api/deliver/v1/collections/post/items?channel=web&fields=a%2Cb')
+  assert.equal(m.calls[3].url, 'https://x.test/api/deliver/v1/tree?channel=web&fields=title')
+  assert.equal(m.calls[4].url, 'https://x.test/api/deliver/v1/route?channel=web&url=%2Fx')
+  assert.deepEqual(t.data[0].fields, { title: 'T' })
+})
+
 test('route and tree', async () => {
   const m = mock((u) => u.includes('/tree') ? { body: { site: 's', locale: 'en', nodes: [{ id: '1', kind: 'page', name: 'Home' }] } }
     : { body: { located: { kind: 'page' } } })

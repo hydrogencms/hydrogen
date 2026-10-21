@@ -25,8 +25,10 @@ import (
 	"github.com/hydrogencms/hydrogen/modules/sqlite"
 )
 
-var pdSchema = strings.Replace(pagesSchema, "      kind:        { type: string }\n",
-	"      kind:        { type: string }\n      related:     { type: ref, to: [section, article], on_delete: nullify }\n", 1)
+var pdSchema = strings.Replace(strings.Replace(pagesSchema, "      kind:        { type: string }\n",
+	"      kind:        { type: string }\n      related:     { type: ref, to: [section, article], on_delete: nullify }\n", 1),
+	"    children: [section, landing]\n    fields:\n",
+	"    children: [section, landing]\n    fields:\n      seo: { type: group, fields: { title: { type: string }, desc: { type: string } } }\n", 1)
 
 const pdChannels = `
 channels:
@@ -298,6 +300,60 @@ func TestPagesDeliveryRedirects(t *testing.T) {
 			return field(j, "located", "kind") == "redirect"
 		})
 		deq(t, "manual location", field(j, "located", "resolution", "location"), "/en/media")
+	})
+}
+
+func TestPagesDeliveryTreeFields(t *testing.T) {
+	runPD(t, func(t *testing.T, e *pdEnv) {
+		e.update(e.press, "en", `{"seo":{"title":"Press SEO","desc":"hidden"}}`)
+		e.publish(e.press)
+		e.drain()
+		node := func(j map[string]any, name string) map[string]any {
+			for _, n := range j["nodes"].([]any) {
+				if n.(map[string]any)["name"] == name {
+					return n.(map[string]any)
+				}
+			}
+			t.Fatalf("no node %s", name)
+			return nil
+		}
+
+		// Without fields: no fields key, no items loaded.
+		_, j := e.getJSON("/tree?channel=web_en&depth=2", 200)
+		if _, ok := node(j, "Press")["fields"]; ok {
+			t.Error("a tree without fields carries no fields")
+		}
+
+		// Page nodes get the selected fields, a group path keeps one member; links and mounts get none.
+		r, j := e.getJSON("/tree?channel=web_en&depth=2&fields=title,seo.title", 200)
+		pr := node(j, "Press")
+		deq(t, "title", field(pr, "fields", "title"), "Press")
+		deq(t, "seo.title", field(pr, "fields", "seo", "title"), "Press SEO")
+		if g, _ := field(pr, "fields", "seo").(map[string]any); g == nil || g["desc"] != nil {
+			t.Errorf("group projection: %v", pr["fields"])
+		}
+		deq(t, "child", field(pr["nodes"].([]any)[0].(map[string]any), "fields", "title"), "Team")
+		deq(t, "page keeps its path", pr["path"], "/press")
+		for _, n := range []string{"News", "Docs", "Press link"} {
+			if _, ok := node(j, n)["fields"]; ok {
+				t.Errorf("%s has fields", n)
+			}
+		}
+		if !strings.Contains(r.Header().Get("Surrogate-Key"), "i:"+e.press.String()) {
+			t.Errorf("tags %q lack the press item", r.Header().Get("Surrogate-Key"))
+		}
+
+		// An unknown field, an empty one and a repeated parameter.
+		e.wantStatus("/tree?channel=web_en&fields=nope", 400)
+		e.wantStatus("/tree?channel=web_en&fields=seo.nope", 400)
+		_, j = e.getJSON("/tree?channel=web_en&fields=", 200)
+		if _, ok := node(j, "Press")["fields"]; ok {
+			t.Error("empty fields is absent")
+		}
+
+		// A channel limited to some collections.
+		_, j = e.getJSON("/tree?channel=lim&fields=title", 200)
+		deq(t, "lim title", field(node(j, "Press"), "fields", "title"), "Press")
 	})
 }
 

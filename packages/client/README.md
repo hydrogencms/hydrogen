@@ -17,6 +17,7 @@ const cms = createClient<{ post: { title: string } }>({ baseUrl: 'https://cms.ac
 
 const { data: list, tags } = await cms.list('post', { where: { title: { prefix: 'H' } }, sort: '-publishedAt', limit: 10 })
 const { data: item } = await cms.item(list.items[0].id, { include: 1 })
+const { data: card } = await cms.item(list.items[0].id, { fields: ['title', 'seo.title'] })   // only these fields
 const { data: route } = await cms.route('/en/about')   // what lives at a URL: page, item, redirect, not found
 ```
 
