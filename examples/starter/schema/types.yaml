@@ -24,6 +24,7 @@ types:
       slug: { type: slug, from: title, translatable: true, index: true }
       excerpt: { type: text, translatable: true }
       body: { type: blocks, allow: [richText, callout, image, shared], max: 60, translatable: true }
+      date: { type: date, index: true}
 
   sharedBlock:
     label: Shared block

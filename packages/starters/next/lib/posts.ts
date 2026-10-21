@@ -9,5 +9,5 @@ export async function postBySlug(client: Client<HydrogenTypes>, channel: string,
 }
 
 export async function posts(channel: string) {
-  return (await (await hydrogen.clientFor(channel)).list('post', { locale: channel, sort: '-publishedAt', limit: 50 })).data.items
+  return (await (await hydrogen.clientFor(channel)).list('post', { locale: channel, sort: '-date', limit: 50 })).data.items
 }
