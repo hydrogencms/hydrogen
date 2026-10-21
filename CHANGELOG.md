@@ -17,6 +17,13 @@ All notable changes to Hydrogen are documented here. The format follows
   URL or root-relative path, `alt`, `title`, `width`, `height`). The admin editor has buttons, a table menu and an
   image popover (`prosemirror-tables`, in the lazy editor chunk); the site module and the `client`, `react` and `astro`
   renderers output them. The `@hydrogencms/client/richtext` size budget is 1.25 KB.
+- Delivery field projection: `?fields=title,seo.title` on `/items/{id}`, `/items/by-key/{key}`, `/singletons/{type}`,
+  listings, `/search` and the pages module's `/tree` (which then puts the selected fields of each page's item on its
+  node, in one batch). Items keep their envelope, `fields` holds the selection; fields left out are not inlined,
+  expanded, encoded, cached or decoded, and `include` and `links` follow the selected fields only. Modules use
+  `delivery.FieldsParam` and `delivery.ItemsFields`. The site module's `items`, `item` and `query` helpers take
+  `fields` (and keep detail-route links working), the GraphQL module projects every request to the fields a query
+  selects, and `@hydrogencms/client` and `api/client` gain a `fields` option.
 - `DEVELOPMENT.md`: how to run a working copy of Hydrogen with content, the admin and a frontend (fullstack in one
   process, the CMS with a JavaScript starter, the admin with hot reload, a project of your own on the checkout).
 

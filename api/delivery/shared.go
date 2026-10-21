@@ -228,7 +228,7 @@ func (st *state) loadFor(ctx context.Context, r *resolved, want []ids.UUID) ([]*
 	defer func() { st.eff = old }()
 	st.eff = narrowTo(st.m.ch, r.locale)
 	if !r.draft {
-		return st.load(ctx, want)
+		return st.load(ctx, want, nil)
 	}
 	var got []*resolved
 	for _, id := range want {

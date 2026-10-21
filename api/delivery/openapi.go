@@ -43,7 +43,7 @@ func openAPI(s *schema.Schema, extra []Route, withSearch bool) obj {
 		if t.Singleton {
 			schemas["ItemResponse_"+t.Name] = itemResponse(openapi.SchemaRef("Item_" + t.Name))
 			paths["/singletons/"+t.Name] = obj{"get": obj{"operationId": "get" + n, "summary": "Read " + t.Label,
-				"parameters": openapi.Params("Channel", "Locale", "Include", "Preview"),
+				"parameters": openapi.Params("Channel", "Locale", "Include", "Fields", "Preview"),
 				"responses":  responses(openapi.OKResp("The singleton.", openapi.SchemaRef("ItemResponse_"+t.Name)), "400", "401", "404")}}
 			continue
 		}
@@ -51,7 +51,7 @@ func openAPI(s *schema.Schema, extra []Route, withSearch bool) obj {
 		paths["/collections/"+t.Name+"/items"] = obj{"get": obj{"operationId": "list" + n, "summary": "List " + t.Label + " items",
 			"description": filterNote(t) + " A preview token for one item also lists that item when it was never published and its draft matches " +
 				"the filters (not with q): it comes first on the first page, regardless of sort.",
-			"parameters": openapi.Params("Channel", "Locale", "Include", "Preview", "Q", "Sort", "Limit", "Offset", "Total", "Where"),
+			"parameters": openapi.Params("Channel", "Locale", "Include", "Fields", "Preview", "Q", "Sort", "Limit", "Offset", "Total", "Where"),
 			"responses":  responses(openapi.OKResp("A page of items.", openapi.SchemaRef("ListResponse_"+t.Name)), "400", "401", "404")}}
 	}
 	if len(itemRefs) > 0 {
@@ -61,10 +61,10 @@ func openAPI(s *schema.Schema, extra []Route, withSearch bool) obj {
 	}
 	schemas["ItemResponse"] = itemResponse(openapi.SchemaRef("Item"))
 	paths["/items/{id}"] = obj{"get": obj{"operationId": "getItem", "summary": "Read an item",
-		"parameters": append([]any{openapi.Ref("parameters", "ItemId")}, openapi.Params("Channel", "Locale", "Include", "Preview")...),
+		"parameters": append([]any{openapi.Ref("parameters", "ItemId")}, openapi.Params("Channel", "Locale", "Include", "Fields", "Preview")...),
 		"responses":  responses(openapi.OKResp("The item.", openapi.SchemaRef("ItemResponse")), "400", "401", "404")}}
 	paths["/items/by-key/{key}"] = obj{"get": obj{"operationId": "getItemByKey", "summary": "Read an item by its key",
-		"parameters": append([]any{openapi.Ref("parameters", "ItemKey")}, openapi.Params("Channel", "Locale", "Include", "Preview")...),
+		"parameters": append([]any{openapi.Ref("parameters", "ItemKey")}, openapi.Params("Channel", "Locale", "Include", "Fields", "Preview")...),
 		"responses":  responses(openapi.OKResp("The item.", openapi.SchemaRef("ItemResponse")), "400", "401", "404")}}
 	if withSearch {
 		schemas["SearchResponse"] = searchResponse()
@@ -74,7 +74,7 @@ func openAPI(s *schema.Schema, extra []Route, withSearch bool) obj {
 				"items and hits are parallel arrays: hits[i] describes items[i]; hits whose item the channel cannot show are left out of " +
 				"both while total stays the engine's. Preview tokens search the published content only. Responses are purged when any " +
 				"searched type publishes. " + "Indexed fields for where and facets are those declared with index: true.",
-			"parameters": append(openapi.Params("Channel", "Locale", "Include", "Preview", "Where"),
+			"parameters": append(openapi.Params("Channel", "Locale", "Include", "Fields", "Preview", "Where"),
 				obj{"name": "q", "in": "query", "required": true, "schema": obj{"type": "string", "minLength": 1, "maxLength": maxSearchText},
 					"description": "The words to find."},
 				obj{"name": "type", "in": "query", "schema": openapi.Str(""),
@@ -131,7 +131,7 @@ func itemSchema(typeName string, fields obj) obj {
 	}
 	return obj{"type": "object", "additionalProperties": true,
 		"required": []any{"id", "type", "locale", "version", "publishedAt", "name", "fields"},
-		"description": "The stored payload; modules may add more keys (pages: url, links). fallback is true when the shown " +
+		"description": "The stored payload (with fields=, only the selected fields); modules may add more keys (pages: url, links). fallback is true when the shown " +
 			"locale is not the one asked for.",
 		"properties": obj{"id": openapi.Str("uuid"), "type": typ, "key": openapi.Str(""), "locale": openapi.Str(""), "version": obj{"type": "integer"},
 			"publishedAt": openapi.Str("date-time"), "name": openapi.Str(""), "fields": fields, "fallback": obj{"type": "boolean"}}}
@@ -177,6 +177,9 @@ func parameterDocs(s *schema.Schema) obj {
 			"description": "Narrow to a language of the channel; the channel's other languages follow as fallbacks."},
 		"Include": obj{"name": "include", "in": "query", "schema": obj{"type": "integer", "minimum": 0, "maximum": maxInclude},
 			"description": "Resolve referenced items to this depth (at most 100 items) into included."},
+		"Fields": obj{"name": "fields", "in": "query", "schema": openapi.Str(""),
+			"description": "Comma-separated fields to show (a dot path keeps one member of a group); the others are left out " +
+				"of fields, and include and links follow the selected fields only. Included items are whole."},
 		"Preview": obj{"name": "preview", "in": "query", "schema": openapi.Str(""),
 			"description": "A preview token (or the X-Hydrogen-Preview header): draft content, never cached."},
 		"ItemId":  obj{"name": "id", "in": "path", "required": true, "schema": openapi.Str("uuid")},

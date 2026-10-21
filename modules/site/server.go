@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -207,6 +208,19 @@ func (s *server) detail(typ string) *route {
 		}
 	}
 	return nil
+}
+
+// linkFields lists the fields the detail route of typ builds its URLs from, or of every detail route of the
+// channel's collections for "".
+func (s *server) linkFields(ch *channel.Channel, typ string) []string {
+	var out []string
+	for _, rt := range s.routes {
+		if rt.param != "" && rt.param != "id" && (typ == "" || rt.Type == typ) && ch.AllowsCollection(rt.Type) && !slices.Contains(out, rt.param) {
+			out = append(out, rt.param)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // warnSameOrigin tells when a previewed page shares its origin with the admin: the page's scripts could then

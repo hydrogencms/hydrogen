@@ -231,6 +231,57 @@ func TestReadHelpers(t *testing.T) {
 	}
 }
 
+func TestReadHelpersFields(t *testing.T) {
+	var last url.Values
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		last = r.URL.Query()
+		switch r.URL.Path {
+		case "/collections/post/items":
+			_, _ = w.Write([]byte(`{"items":[{"id":"1","type":"post","name":"One","fields":{"title":"One","slug":"one"}}],"hasMore":false}`))
+		case "/items/1":
+			_, _ = w.Write([]byte(`{"item":{"id":"1","type":"post","name":"One","fields":{"title":"One","slug":"one"}}}`))
+		case "/tree":
+			_, _ = w.Write([]byte(`{"nodes":[{"name":"A","fields":{"title":"A"}}]}`))
+		default:
+			w.WriteHeader(404)
+		}
+	})
+	rt, err := parseRoute(Route{Path: "/blog/{slug}", Type: "post"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &server{routes: []*route{rt}}
+	f := &fetcher{h: h, hdr: http.Header{}, channel: "web", tags: map[string]bool{}}
+	web := &channel.Channel{Name: "web", Languages: []string{"en"}}
+	p := &page{f: f, locale: "en", linkFields: func(typ string) []string { return srv.linkFields(web, typ) },
+		itemPath: func(it *Item) string { p, _ := rt.build(it.ID, it.Fields); return p }}
+
+	items, err := p.itemsFn("post", map[string]any{"fields": "title,seo.title"})
+	if err != nil || len(items) != 1 || items[0].Path != "/blog/one" || last.Get("fields") != "title,seo.title,slug" {
+		t.Fatalf("items = %v %v fields=%q", items, err, last.Get("fields"))
+	}
+	if _, err := p.itemsFn("post", map[string]any{"fields": "slug,title"}); err != nil || last.Get("fields") != "slug,title" {
+		t.Errorf("a field already selected is not repeated: %q %v", last.Get("fields"), err)
+	}
+	if _, err := p.itemsFn("post"); err != nil || last.Has("fields") {
+		t.Errorf("no projection without fields: %v", last)
+	}
+	it, err := p.itemFn("1", map[string]any{"fields": "title"})
+	if err != nil || it == nil || it.Path != "/blog/one" || last.Get("fields") != "title,slug" || last.Get("locale") != "en" {
+		t.Fatalf("item = %v %v %v", it, err, last)
+	}
+	if _, err := p.itemFn("1"); err != nil || last.Has("fields") {
+		t.Errorf("item without a projection: %v %v", last, err)
+	}
+	if _, err := p.itemFn("1", map[string]any{"limit": 1}); err == nil {
+		t.Error("an unsupported item parameter was accepted")
+	}
+	if m, err := p.queryFn("/tree", map[string]any{"fields": "title"}); err != nil || last.Get("fields") != "title" ||
+		m["nodes"].([]any)[0].(map[string]any)["fields"] == nil {
+		t.Errorf("tree = %v %v", m, err)
+	}
+}
+
 func writeFile(t *testing.T, dir, name, data string) {
 	t.Helper()
 	p := filepath.Join(dir, name)

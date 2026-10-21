@@ -38,7 +38,8 @@ func opTreeDelivery() obj {
 	node := obj{"type": "object", "required": []any{"id", "kind", "name"}, "properties": obj{
 		"id": strS(""), "kind": obj{"type": "string", "enum": []any{"page", "mount", "link"}}, "item": strS(""),
 		"type": strS(""), "name": strS(""), "path": strS(""), "url": strS(""),
-		"nodes": obj{"type": "array", "items": obj{"type": "object"}},
+		"fields": obj{"type": "object", "description": "With the fields parameter: the page item's selected fields."},
+		"nodes":  obj{"type": "array", "items": obj{"type": "object"}},
 	}}
 	resp := deliveryErrors()
 	resp["200"] = obj{"description": "Visible navigation below the site root, ordered by position.",
@@ -51,6 +52,7 @@ func opTreeDelivery() obj {
 			dref("parameters", "Channel"), dref("parameters", "Locale"), dref("parameters", "Preview"),
 			obj{"name": "site", "in": "query", "schema": strS(""), "description": "Default: the channel's site."},
 			obj{"name": "depth", "in": "query", "schema": obj{"type": "integer", "minimum": 1, "maximum": 10, "default": 1}},
+			obj{"name": "fields", "in": "query", "schema": strS(""), "description": "Comma-separated field paths of the page items to put on their nodes (dot paths walk into groups). Without it, nodes carry no fields."},
 		},
 		"responses": resp}
 }

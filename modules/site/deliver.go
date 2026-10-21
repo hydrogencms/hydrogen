@@ -150,6 +150,10 @@ func (f *fetcher) item(ctx context.Context, id string, withPreview bool, locale 
 	if locale != "" {
 		q.Set("locale", locale)
 	}
+	return f.itemQuery(ctx, id, withPreview, q)
+}
+
+func (f *fetcher) itemQuery(ctx context.Context, id string, withPreview bool, q url.Values) (*Item, error) {
 	rep := f.get(ctx, "/items/"+url.PathEscape(id), q, withPreview)
 	if rep.status != http.StatusOK {
 		return nil, replyError(rep)

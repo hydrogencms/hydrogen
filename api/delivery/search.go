@@ -24,7 +24,7 @@ const (
 )
 
 // searchParams are the query parameters of /search besides where[field][op].
-var searchParams = []string{"q", "type", "facets", "sort", "limit", "offset", "include", "highlight", "locale", "channel", "preview"}
+var searchParams = []string{"q", "type", "facets", "sort", "limit", "offset", "include", "fields", "highlight", "locale", "channel", "preview"}
 
 // searchTypes are the types the channel can search: its collections that are searchable.
 func (a *API) searchTypes(st *state) []string {
@@ -163,6 +163,11 @@ func (a *API) searchItems(w http.ResponseWriter, r *http.Request) {
 		Fail(w, r, err)
 		return
 	}
+	f, err := st.fields(req.Types...)
+	if err != nil {
+		Fail(w, r, err)
+		return
+	}
 	ctx := r.Context()
 	for _, t := range req.Types {
 		st.tags = append(st.tags, cachetag.Collection(t))
@@ -178,7 +183,7 @@ func (a *API) searchItems(w http.ResponseWriter, r *http.Request) {
 	for i, h := range res.Hits {
 		list[i] = h.Item
 	}
-	items, err := st.load(ctx, list)
+	items, err := st.load(ctx, list, f)
 	if err != nil {
 		Fail(w, r, err)
 		return

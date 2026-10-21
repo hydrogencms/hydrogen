@@ -149,6 +149,7 @@ func (m *module) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	f := newFetcher(m.svc.Delivery.Handler(), r, ch.Name, m.cfg.MaxCalls, m.cfg.MaxItems)
+	f.trace = m.trace
 	rc := &reqCtx{ctx: r.Context(), f: f, cs: cs, maxNodes: int64(m.cfg.MaxNodes)}
 	res := gql.Execute(gql.ExecuteParams{
 		Schema:        cs.schema,

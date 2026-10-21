@@ -83,9 +83,11 @@ type Resolution struct {
 
 // TreeOptions selects navigation.
 type TreeOptions struct {
-	Site        string // default: the channel's site
-	Locale      string
-	Depth       int // 0: the API's default
+	Site   string // default: the channel's site
+	Locale string
+	Depth  int // 0: the API's default
+	// Fields adds the listed fields of each page's item to the nodes (TreeNode.Fields).
+	Fields      []string
 	IfNoneMatch string
 }
 
@@ -99,14 +101,16 @@ type TreeResult struct {
 
 // TreeNode is one navigation entry.
 type TreeNode struct {
-	ID    string     `json:"id"`
-	Kind  string     `json:"kind"` // page, mount, link
-	Item  string     `json:"item"`
-	Type  string     `json:"type"`
-	Name  string     `json:"name"`
-	Path  string     `json:"path"`
-	URL   string     `json:"url"`
-	Nodes []TreeNode `json:"nodes"`
+	ID   string `json:"id"`
+	Kind string `json:"kind"` // page, mount, link
+	Item string `json:"item"`
+	Type string `json:"type"`
+	Name string `json:"name"`
+	Path string `json:"path"`
+	URL  string `json:"url"`
+	// Fields holds the selected fields of the page's item when TreeOptions.Fields was set.
+	Fields map[string]json.RawMessage `json:"fields"`
+	Nodes  []TreeNode                 `json:"nodes"`
 }
 
 // ChannelResult is the public description of a channel.
@@ -147,7 +151,9 @@ func (d *Delivery) get(ctx context.Context, path string, q *query, etag string, 
 
 func (d *Delivery) one(ctx context.Context, path string, o *GetOptions) (*ItemResult, error) {
 	q := d.base()
-	o.encode(q)
+	if err := o.encode(q); err != nil {
+		return nil, err
+	}
 	var body struct {
 		Item     json.RawMessage            `json:"item"`
 		Included map[string]json.RawMessage `json:"included"`
@@ -241,6 +247,9 @@ func (d *Delivery) Tree(ctx context.Context, o *TreeOptions) (*TreeResult, error
 		}
 		if o.Depth > 0 {
 			q.add("depth", strconv.Itoa(o.Depth))
+		}
+		if err := addFields(q, o.Fields); err != nil {
+			return nil, err
 		}
 		etag = o.IfNoneMatch
 	}

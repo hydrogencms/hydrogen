@@ -87,9 +87,15 @@ Identical calls within one render ask the delivery API once.
 - `items "post" (dict "limit" 4 "sort" "-slug" "where[category][eq]" "news")` returns the items (`[]*Item`, each with
   `.Path` so `{{link .}}` works). Dict values are strings, numbers, booleans or lists (repeated parameters); an
   unknown field or a 5xx answer is an error.
-- `item "id"` returns one item or nil.
+- `item "id"` returns one item or nil. It takes the same kind of dict for `fields` and `locale`.
 - `query "/tree" (dict "depth" 3)` returns the decoded JSON (`map[string]any`) of a delivery path (`/tree`,
   `/search`, …) when it answers 200, else nil; a 5xx answer is an error.
+- `fields` (on `items`, `item` and `query "/tree"`, `"/search"`) keeps only some fields of the items:
+  `items "post" (dict "fields" "title,image,seo.title")`. Use it for menus, cards and teasers, which would
+  otherwise load, encode and decode whole documents with their blocks; with `/tree`, each page node gets those
+  fields of its item as `fields`. A dot path keeps one member of a group, and an unknown field is an error. Links
+  keep working: `items` and `item` also fetch the field a collection's detail route puts in its URL (`slug` for
+  `/blog/{slug}`), and an item with a page keeps its page URL.
 - `partial "blocks/hero/wide.html" data` executes a template by a computed name (Go's `{{template}}` needs a
   constant) and returns its HTML; `data` defaults to the page's view. A missing template is an error in
   `site:check` and a logged, empty result when serving. Partials may nest up to 32 levels. `hasTemplate "name"`

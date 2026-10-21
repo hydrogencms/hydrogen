@@ -390,7 +390,7 @@ func (a *API) channelByName(r *http.Request) (*chanMeta, *manage.Error) {
 
 // singleValued are the parameters that may appear once; a repeat would make the canonical cache key depend on
 // which value wins.
-var singleValued = [...]string{"locale", "channel", "include", "limit", "offset", "q", "sort", "total", "preview"}
+var singleValued = [...]string{"locale", "channel", "include", "fields", "limit", "offset", "q", "sort", "total", "preview"}
 
 // narrow rejects repeated single-valued parameters, then applies ?locale=: that language first, then the
 // channel's own order after it.

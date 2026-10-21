@@ -78,3 +78,15 @@ func TestMatcherOverlaps(t *testing.T) {
 		}
 	}
 }
+
+func TestSetFieldsSkipsUnavailable(t *testing.T) {
+	a, b := ids.UUID{1}, ids.UUID{2}
+	nodes := []navNode{
+		{Kind: KindPage, Item: &a, Nodes: []navNode{{Kind: KindPage, Item: &b}}},
+		{Kind: KindMount},
+	}
+	setFields(nodes, map[ids.UUID]json.RawMessage{a: json.RawMessage(`{"title":"A"}`)})
+	if string(nodes[0].Fields) != `{"title":"A"}` || nodes[0].Nodes[0].Fields != nil || nodes[1].Fields != nil {
+		t.Errorf("fields: %+v", nodes)
+	}
+}

@@ -29,7 +29,16 @@ type resolved struct {
 	// expanded themselves (an asset's own asset fields stay ids), so they never carry it.
 	assetsDone bool
 	extra      []byte
-	etag       string // the store's hex SHA-256 of payload; empty for drafts
+	etag       string // the store's hex SHA-256 of payload; empty for drafts and projections
+	full       []byte // the whole payload of a projected item
+}
+
+// source is the item's whole payload, before any projection.
+func (r *resolved) source() []byte {
+	if r.full != nil {
+		return r.full
+	}
+	return r.payload
 }
 
 func cmpUUID(a, b ids.UUID) int { return bytes.Compare(a[:], b[:]) }
@@ -87,8 +96,9 @@ func (st *state) pickAll(rows []store.Snapshot, into map[ids.UUID]*resolved) {
 }
 
 // load returns the requested items as the channel shows them, in request order; unavailable items are left
-// out. Items a preview token covers come from their drafts, the others from the published snapshots.
-func (st *state) load(ctx context.Context, list []ids.UUID) ([]*resolved, error) {
+// out. Items a preview token covers come from their drafts, the others from the published snapshots. f projects
+// them (nil: every field).
+func (st *state) load(ctx context.Context, list []ids.UUID, f *Fields) ([]*resolved, error) {
 	got := make(map[ids.UUID]*resolved, len(list))
 	rest := make([]ids.UUID, 0, len(list))
 	st.prefetchRelays(ctx, list)
@@ -122,6 +132,9 @@ func (st *state) load(ctx context.Context, list []ids.UUID) ([]*resolved, error)
 			st.look(id, r.typ)
 			out = append(out, r)
 		}
+	}
+	if err := st.project(out, f); err != nil {
+		return nil, err
 	}
 	if err := st.inline(ctx, out); err != nil {
 		return nil, err
@@ -185,7 +198,7 @@ func (st *state) resolveDraft(ctx context.Context, v *content.View) (*resolved, 
 }
 
 // loadKey returns the item with a key as the channel shows it.
-func (st *state) loadKey(ctx context.Context, key string) (*resolved, error) {
+func (st *state) loadKey(ctx context.Context, key string, f *Fields) (*resolved, error) {
 	if st.preview != nil {
 		v, err := st.a.o.Content.GetByKey(ctx, key, content.GetOptions{Draft: true})
 		if err != nil {
@@ -194,7 +207,7 @@ func (st *state) loadKey(ctx context.Context, key string) (*resolved, error) {
 			}
 			return nil, err
 		}
-		list, err := st.load(ctx, []ids.UUID{v.ID})
+		list, err := st.load(ctx, []ids.UUID{v.ID}, f)
 		if err != nil || len(list) == 0 {
 			return nil, err
 		}
@@ -218,13 +231,16 @@ func (st *state) loadKey(ctx context.Context, key string) (*resolved, error) {
 		return nil, nil
 	}
 	st.look(r.id, r.typ)
+	if err := st.project([]*resolved{r}, f); err != nil {
+		return nil, err
+	}
 	return r, st.inline(ctx, []*resolved{r})
 }
 
 // loadSummaries loads listed items. Published listings fetch exactly the locale each item shows, one query per
 // distinct locale. Items are known to be available (the query filters on the channel's languages), so one
 // missing here was unpublished since the query ran.
-func (st *state) loadSummaries(ctx context.Context, items []store.ItemSummary) ([]*resolved, error) {
+func (st *state) loadSummaries(ctx context.Context, items []store.ItemSummary, f *Fields) ([]*resolved, error) {
 	for _, it := range items {
 		st.look(it.ID, it.Type)
 	}
@@ -233,7 +249,7 @@ func (st *state) loadSummaries(ctx context.Context, items []store.ItemSummary) (
 		for i, it := range items {
 			list[i] = it.ID
 		}
-		return st.load(ctx, list)
+		return st.load(ctx, list, f)
 	}
 	got, err := st.fetchLocales(ctx, items)
 	if err != nil {
@@ -251,6 +267,9 @@ func (st *state) loadSummaries(ctx context.Context, items []store.ItemSummary) (
 		if r != nil {
 			out = append(out, r)
 		}
+	}
+	if err := st.project(out, f); err != nil {
+		return nil, err
 	}
 	if err := st.inline(ctx, out); err != nil {
 		return nil, err
@@ -346,7 +365,7 @@ func (st *state) include(ctx context.Context, primary []*resolved, depth int) ([
 		var loaded []*resolved
 		for len(want) > 0 && len(out)+len(loaded) < maxIncluded {
 			n := min(len(want), maxIncluded-len(out)-len(loaded))
-			got, err := st.load(ctx, want[:n])
+			got, err := st.load(ctx, want[:n], nil)
 			if err != nil {
 				return nil, err
 			}
@@ -475,6 +494,10 @@ func appendIncluded(dst []byte, inc []*resolved) []byte {
 // channel's own order when locale is empty or not one of its languages), with fallback and decorator keys
 // spliced in, or nil when the item isn't available on the channel. Every id asked for is tagged on the response, shown or not.
 func Items(r *http.Request, locale string, list ...ids.UUID) ([]json.RawMessage, error) {
+	return items(r, locale, nil, list)
+}
+
+func items(r *http.Request, locale string, f *Fields, list []ids.UUID) ([]json.RawMessage, error) {
 	st := stateOf(r)
 	if st == nil {
 		return nil, errors.New("delivery: Items called outside a delivery route")
@@ -484,7 +507,7 @@ func Items(r *http.Request, locale string, list ...ids.UUID) ([]json.RawMessage,
 	if locale != "" && slices.Contains(st.m.ch.Languages, locale) {
 		st.eff = narrowTo(st.m.ch, locale)
 	}
-	res, err := st.load(r.Context(), list)
+	res, err := st.load(r.Context(), list, f)
 	if err != nil {
 		return nil, err
 	}

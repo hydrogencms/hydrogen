@@ -95,6 +95,10 @@ An item that is not published or not visible on the channel is `null`, like a 40
 }
 ```
 
+Only the fields a query selects are fetched: the module asks the delivery API for those fields (`?fields=`), so large
+fields such as rich text and blocks that are not selected are not encoded, cached or decoded. A query it cannot
+analyse (a fragment on a union, say) and the `search` field fetch whole items.
+
 Variables work as usual:
 
 ```graphql

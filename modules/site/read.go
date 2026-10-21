@@ -99,6 +99,7 @@ func (p *page) itemsFn(typ string, args ...any) ([]*Item, error) {
 	if q.Get("locale") == "" && p.locale != "" {
 		q.Set("locale", p.locale)
 	}
+	p.withLinkFields(q, typ)
 	v, err := p.remember("items:"+typ+"?"+q.Encode(), func() (any, error) {
 		l, err := p.f.list(p.context(), typ, q, p.f.preview != "")
 		if err != nil || l == nil {
@@ -115,13 +116,47 @@ func (p *page) itemsFn(typ string, args ...any) ([]*Item, error) {
 	return v.([]*Item), nil
 }
 
-// itemFn reads one item by id; nil when it is not available.
-func (p *page) itemFn(id string) (*Item, error) {
+// withLinkFields adds the fields an item's detail route puts in its URL to a projection, so listed items keep
+// their links: of the route of typ, or of every detail route when the type is not known yet.
+func (p *page) withLinkFields(q url.Values, typ string) {
+	if q.Get("fields") == "" || p.linkFields == nil {
+		return
+	}
+	have := map[string]bool{}
+	for _, f := range strings.Split(q.Get("fields"), ",") {
+		have[strings.TrimSpace(f)] = true
+	}
+	out := q.Get("fields")
+	for _, f := range p.linkFields(typ) {
+		if !have[f] {
+			have[f] = true
+			out += "," + f
+		}
+	}
+	q.Set("fields", out)
+}
+
+// itemFn reads one item by id; nil when it is not available. The optional dict takes fields (a projection, see
+// items) and locale.
+func (p *page) itemFn(id string, args ...any) (*Item, error) {
 	if p.f == nil || id == "" {
 		return nil, nil
 	}
-	v, err := p.remember("item:"+id, func() (any, error) {
-		it, err := p.f.item(p.context(), id, p.f.preview != "", p.locale)
+	q, err := params(args)
+	if err != nil {
+		return nil, fmt.Errorf("item %s: %w", id, err)
+	}
+	for k := range q {
+		if k != "fields" && k != "locale" {
+			return nil, fmt.Errorf("item %s: parameter %s is not supported (fields, locale)", id, k)
+		}
+	}
+	if q.Get("locale") == "" && p.locale != "" {
+		q.Set("locale", p.locale)
+	}
+	p.withLinkFields(q, "")
+	v, err := p.remember("item:"+id+"?"+q.Encode(), func() (any, error) {
+		it, err := p.f.itemQuery(p.context(), id, p.f.preview != "", q)
 		return p.withPath(it), err
 	})
 	if err != nil {
