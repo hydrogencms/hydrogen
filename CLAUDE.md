@@ -14,13 +14,15 @@ It is its own git repository: commit planning changes there (`git -C planning â€
 
 ## Layout
 
-- Core module `github.com/hydrogencms/hydrogen` at the repo root: `hydrogen*.go` (the root package: project entry
-  point and commands), `cmd/hydrogen` (developer CLI).
+- Core module `github.com/hydrogencms/hydrogen` at the repo root: `hydrogen.go` (the root package: only the project
+  entry point's public API, `Builder`, `Main`, `Run`, `RunOptions`, `Version`), `internal/commands` (every project
+  command behind `Run`: serve, migrate, config:check, export/import, content files, check-frontend, users, tokens;
+  new commands go there, not into the root), `cmd/hydrogen` (developer CLI).
 - Grouping: `core/` holds the services and the libraries modules and projects build on (`kernel`, `config`,
   `store` (interfaces; `core/store/storetest` is the adapter conformance suite), `content`, `schema`, `channel`,
   `access`, `hooks`, `outbox`, `audit`, `jobs`, `cachetag`, `exportfmt`, `clock`, `ids`); `api/` the HTTP APIs and
   the Go client (`manage`, `delivery`, `openapi`, `webhook`, `client`); `features/` the built-in editorial
-  features (`collab`, `media`, `release`, `review`); `internal/` what only hydrogen itself uses (`codegen`,
+  features (`collab`, `media`, `release`, `review`); `internal/` what only hydrogen itself uses (`commands`, `codegen`,
   `scaffold`, `devwatch`); `modules/` optional modules; `packages/` the npm packages and `packages/starters`.
 - `modules/<name>`: optional modules. Those with third-party dependencies have their own `go.mod`
   (`modules/sqlite`: modernc.org/sqlite; `modules/postgres`: pgx). `go.work` joins everything for development;
@@ -44,7 +46,7 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   `Registry.PreviewURL` resolver (pages: the item's route), else the channel's `preview` pattern, plus
   `?preview=<token>`), `core/cachetag/` (tags and the `cache.purge` consumer), `api/webhook/` (signed
   `Hydrogen-Signature`), `core/jobs/` (cron jobs under a lock), `core/kernel/endpoints.go` (`/api/x`), export/import
-  (`core/exportfmt/`, `core/store/export.go`, `hydrogen_export.go`), `api/client/` (Go client), `hydrogen_frontend.go`
+  (`core/exportfmt/`, `core/store/export.go`, `internal/commands/export.go`), `api/client/` (Go client), `internal/commands/frontend.go`
   (`check-frontend`). Pages adds `/route` and `/tree`. Contract: `planning/design/delivery-h4.md`.
 - Access (H5a): `core/access/` (principals, RBAC policies and limitations, code access rules, passwords, sessions, API
   tokens, `Authenticator`, `Checker`, `Admin` for users/groups/roles/tokens/audit), `store.AuthStore` (migration

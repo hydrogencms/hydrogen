@@ -1,4 +1,4 @@
-package hydrogen
+package commands
 
 import (
 	"bufio"
@@ -30,7 +30,7 @@ func requireMigrated(ctx context.Context, app *kernel.App) error {
 
 // createAdmin makes (or resets) a user with the administrator role. The password never appears in arguments or
 // output.
-func createAdmin(ctx context.Context, app *kernel.App, o RunOptions, args []string) error {
+func createAdmin(ctx context.Context, app *kernel.App, o Options, args []string) error {
 	if len(args) != 1 || strings.HasPrefix(args[0], "-") {
 		return errors.New("usage: users:create-admin <login> (password from " + adminPasswordEnv + " or one line of stdin)")
 	}
@@ -72,7 +72,7 @@ func (l *listFlag) Set(v string) error {
 
 // createToken makes an API token with the named roles and prints its secret, once, as the only line on
 // stdout; the token's id goes to stderr.
-func createToken(ctx context.Context, app *kernel.App, o RunOptions, args []string) error {
+func createToken(ctx context.Context, app *kernel.App, o Options, args []string) error {
 	fs := flag.NewFlagSet("tokens:create", flag.ContinueOnError)
 	fs.SetOutput(o.Stderr)
 	name := fs.String("name", "", "token name (required)")
