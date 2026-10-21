@@ -452,7 +452,7 @@
         {/if}
         {#if n.table}
           <Menu items={tableItems} label={t('richtext.table')} align="start" triggerClass="h-rte__btn">
-            {#snippet trigger()}{@render ico('table')}{/snippet}
+            {#snippet trigger()}{@render ico('table')}<span class="h-sr">{t('richtext.table')}</span>{/snippet}
           </Menu>
         {/if}
       {/if}
