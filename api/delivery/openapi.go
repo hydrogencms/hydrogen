@@ -221,7 +221,7 @@ func filterNote(t *schema.Type) string {
 		}
 	}
 	if len(idx) == 0 {
-		return "No fields are indexed; filter and sort on name, key, createdAt and updatedAt."
+		return "No fields are indexed; filter and sort on name, key, createdAt and updatedAt (sort also on publishedAt)."
 	}
 	return "Indexed fields for where and sort: " + strings.Join(idx, ", ") + "."
 }

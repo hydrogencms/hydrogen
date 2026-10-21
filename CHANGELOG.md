@@ -30,7 +30,6 @@ All notable changes to Hydrogen are documented here. The format follows
   `@hydrogencms/astro` size budget is 8 KB.
 - `hydrogen users:create-admin` prompts `Enter password:` when it reads the password from stdin
   (`HYDROGEN_ADMIN_PASSWORD` unset).
-- The starter schema's `post` type has an indexed `date` field.
 
 ### Fixed
 
@@ -48,9 +47,11 @@ All notable changes to Hydrogen are documented here. The format follows
 - In the static scaffold the admin (`127.0.0.1`) and the dev site (`localhost`) were different sites, so the browser
   dropped the preview cookie in the admin's frame and Preview showed the published page.
 - A migration for one type accounted for a block change in every type, so items of the other types kept the old shape.
+- Listings (delivery and management API, Local API) sort by `publishedAt`, the latest publication, with never
+  published items last. They answered 400 `unknown field "publishedAt"`, so the blog listing of every starter (Next.js,
+  SvelteKit, Nuxt, Astro) failed. The frontend conformance suite checks that `/blog` links every post.
 - Admin: menus, popovers and the bulk bar slid in from their own offset (a full width sideways for end-aligned menus);
   they drop down from their trigger, or up when opened or flipped above it.
-- Next.js starter: the blog page did not load; it lists posts by `date` (newest first) instead of `publishedAt`.
 
 ## [0.2.1] - 2026-10-20
 

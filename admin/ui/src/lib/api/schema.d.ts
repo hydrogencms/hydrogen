@@ -335,7 +335,7 @@ export interface paths {
         };
         /**
          * List Article items
-         * @description No fields are indexed; filter and sort on name, key, createdAt and updatedAt.
+         * @description No fields are indexed; filter and sort on name, key, createdAt and updatedAt (sort also on publishedAt).
          */
         get: operations["listArticle"];
         put?: never;
@@ -356,7 +356,7 @@ export interface paths {
         };
         /**
          * List Landing items
-         * @description No fields are indexed; filter and sort on name, key, createdAt and updatedAt.
+         * @description No fields are indexed; filter and sort on name, key, createdAt and updatedAt (sort also on publishedAt).
          */
         get: operations["listLanding"];
         put?: never;
@@ -377,7 +377,7 @@ export interface paths {
         };
         /**
          * List Page items
-         * @description No fields are indexed; filter and sort on name, key, createdAt and updatedAt.
+         * @description No fields are indexed; filter and sort on name, key, createdAt and updatedAt (sort also on publishedAt).
          */
         get: operations["listPage"];
         put?: never;
@@ -5864,7 +5864,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    channel: string;
+                    /** @description Required unless the project has one channel (or, with item, one channel that serves its type). */
+                    channel?: string;
                     /** Format: uuid */
                     item?: string;
                     /** @description A language of the channel; default the item's main locale if the channel serves it, else its first language. */

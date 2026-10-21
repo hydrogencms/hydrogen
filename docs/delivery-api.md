@@ -80,7 +80,7 @@ add `?total=true` to also get an exact `total`, which costs a count.
 | Parameter | Meaning |
 | --- | --- |
 | `limit`, `offset` | Page size (default 50, at most 500) and start (at most 1,000,000). |
-| `sort` | Comma-separated fields, `-` for descending: `-publishedOn,name`. Sortable: indexed fields, `name`, `key`, `createdAt`, `updatedAt`. At most 4. |
+| `sort` | Comma-separated fields, `-` for descending: `-publishedOn,name`. Sortable: indexed fields, `name`, `key`, `createdAt`, `updatedAt`, `publishedAt` (the latest publication; never published items last). At most 4. |
 | `where[field][op]=value` | Filter on an indexed field. Ops: `eq` (default), `ne`, `lt`, `lte`, `gt`, `gte`, `in` (comma-separated), `contains`, `exists` (`true` or `false`), `prefix`, `under`. Repeated filters are ANDed, at most 32. |
 | `q` | Full-text words (at most 16). |
 | `include`, `total`, `locale`, `channel`, `preview` | As above. |

@@ -182,6 +182,14 @@ export async function runSuite(o: Options): Promise<Report> {
   if (want('blog'))
     for (const ch of channels) {
       if (!posts[ch]!.length) rec.skip('blog', `${ch} posts`, 'the CMS has no posts in this channel')
+      else
+        await rec.check('blog', `${prefixes[ch]}/blog lists every post`, async () => {
+          const r = await get(`${fe}${prefixes[ch]}/blog`, { follow: 2 })
+          equal(r.status, 200, 'status')
+          const linked = new Set(tags(r.body, 'a').map((a) => pathOf(a.attrs.href ?? '').replace(/\/+$/, '')))
+          const missing = posts[ch]!.map((p) => `${prefixes[ch]}/blog/${p.fields.slug}`).filter((p) => !linked.has(p))
+          assert(!missing.length, `no link to ${missing.join(', ')}`)
+        })
       for (const post of posts[ch]!) {
         const path = `${prefixes[ch]}/blog/${post.fields.slug}`
         await rec.check('blog', `${path} renders`, async () => {

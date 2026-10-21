@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hydrogencms/hydrogen/core/content"
 	"github.com/hydrogencms/hydrogen/core/hooks"
@@ -427,6 +428,7 @@ func TestListProjections(t *testing.T) {
 		mk := func(title, js string) *content.View {
 			v := e.create("article", "en", js)
 			e.update(v.ID, "en", fmt.Sprintf(`{"title":%q}`, title))
+			e.clk.Advance(time.Second)
 			return e.publish(v.ID)
 		}
 		a := mk("Alpha", `{"rating":1,"featured":true,"tags":["go","cms"],"publishDate":"2026-01-01T00:00:00Z","day":"2026-02-01","kind":"video"}`)
@@ -486,6 +488,17 @@ func TestListProjections(t *testing.T) {
 		}
 		_, err = e.svc.List(ctx, content.ListOptions{Type: "article", Sort: []content.SortSpec{{Field: "summary"}}})
 		wantErr(t, err, content.ErrBadRequest)
+
+		// publishedAt orders by the latest publication; never published items come last either way
+		e.update(a.ID, "en", `{"rating":2}`)
+		e.clk.Advance(time.Minute)
+		e.publish(a.ID)
+		byPub := func(desc bool, st store.Status) []string {
+			return list(content.ListOptions{Status: st, Sort: []content.SortSpec{{Field: "publishedAt", Desc: desc}}})
+		}
+		eqSlice(t, "publishedAt desc", byPub(true, store.StatusPublished), []string{"Alpha", "Gamma", "Beta"})
+		eqSlice(t, "publishedAt asc", byPub(false, store.StatusPublished), []string{"Beta", "Gamma", "Alpha"})
+		eqSlice(t, "publishedAt drafts last", byPub(true, store.StatusAny), []string{"Alpha", "Gamma", "Beta", "Draft only"})
 		_, err = e.svc.List(ctx, content.ListOptions{Type: "ghost"})
 		wantErr(t, err, content.ErrUnknownType)
 

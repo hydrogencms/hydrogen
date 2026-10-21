@@ -325,7 +325,7 @@ func columnOf(sh schema.Shape) (store.Column, bool) {
 
 func sortOf(t *schema.Type, sp SortSpec) (store.Sort, error) {
 	switch sp.Field {
-	case "name", "createdAt", "updatedAt", "key":
+	case "name", "createdAt", "updatedAt", "key", PublishedAtField:
 		return store.Sort{Field: sp.Field, Desc: sp.Desc}, nil
 	}
 	_, col, err := indexedField(t, sp.Field)
