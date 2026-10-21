@@ -57,8 +57,14 @@ func (m *module) check(ctx context.Context, svc *kernel.Services, out io.Writer,
 		return err
 	}
 	c.src = &sources{chain: chain, dir: m.cfg.Dir, comps: m.ext.comps, funcs: m.ext.funcs}
-	if c.eng, err = loadEngine(c.src, true); err != nil {
+	if c.eng, err = loadEngine(c.src, true, nil); c.eng == nil {
 		c.fail("%v", err)
+		return c.result()
+	}
+	if len(c.eng.errs) > 0 {
+		for _, n := range sortedKeys(c.eng.errs) {
+			c.fail("%v", c.eng.errs[n])
+		}
 		return c.result()
 	}
 	fmt.Fprintf(out, "templates: %d parsed\n", len(c.eng.names))

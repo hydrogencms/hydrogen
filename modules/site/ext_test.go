@@ -112,7 +112,7 @@ func TestThemeLayering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := loadEngine(&sources{chain: chain, dir: dir}, true)
+	e, err := loadEngine(&sources{chain: chain, dir: dir}, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestThemeLayering(t *testing.T) {
 	}
 	// the starter-based chain still has the starter's files, with the project over them
 	sc, _ := x.chain("starter")
-	se, err := loadEngine(&sources{chain: sc, dir: dir}, true)
+	se, err := loadEngine(&sources{chain: sc, dir: dir}, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestComponentLookup(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "templates/pages/viaTemplate.html"), []byte(`{{define "content"}}[{{component "widgets/card.html"}}]{{end}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	e, err := loadEngine(&sources{chain: chain, dir: dir, comps: x.comps}, true)
+	e, err := loadEngine(&sources{chain: chain, dir: dir, comps: x.comps}, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

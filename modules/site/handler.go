@@ -58,7 +58,7 @@ func (s *server) serveSite(w http.ResponseWriter, r *http.Request) {
 	eng := s.engine()
 	p := r.URL.Path
 	if eng == nil && s.loadErr != nil {
-		http.Error(w, "site templates do not parse:\n"+s.loadErr.Error(), http.StatusInternalServerError)
+		http.Error(w, "site templates could not be loaded:\n"+s.loadErr.Error(), http.StatusInternalServerError)
 		return
 	}
 	if eng == nil || s.owned(p) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
+	"strconv"
 	"strings"
 )
 
@@ -24,6 +25,10 @@ type engine struct {
 	strict  bool
 	sources map[string]string
 	comps   map[string]ComponentFunc
+	// errs are the files that do not parse. A shared one is replaced by its last good text (prev's, on a dev
+	// reload) or by a template that fails with the error, so only the pages that use it fail.
+	errs map[string]error
+	good map[string]string // the text each file was parsed from
 }
 
 // sources are what an engine loads: the theme chain (base first), the project's directory and the registered
@@ -39,17 +44,25 @@ func isPageTemplate(name string) bool {
 	return strings.HasPrefix(name, "pages/") || strings.HasPrefix(name, "collections/") || strings.HasPrefix(name, "routes/") || name == "404.html"
 }
 
-func loadEngine(src *sources, strict bool) (*engine, error) {
+// parseErrorFunc is what a shared file that does not parse is replaced by: it fails with the parse error.
+const parseErrorFunc = "hydrogenParseError"
+
+// loadEngine parses the templates file by file. It returns no engine when the files cannot be read; with
+// files that do not parse it returns the engine without them and an error naming each one. prev, when set,
+// gives the last good text of a file that no longer parses.
+func loadEngine(src *sources, strict bool, prev *engine) (*engine, error) {
 	list, err := files(layers(src.chain, src.dir, "templates"), ".html")
 	if err != nil {
 		return nil, err
 	}
-	e := &engine{pages: map[string]*template.Template{}, strict: strict, sources: map[string]string{}, comps: src.comps}
+	e := &engine{pages: map[string]*template.Template{}, strict: strict, sources: map[string]string{}, comps: src.comps,
+		errs: map[string]error{}, good: map[string]string{}}
 	stubs := template.FuncMap{}
 	for _, h := range helpers {
 		stubs[h] = func(...any) string { return "" }
 	}
-	e.base = template.New("").Funcs(builtinFuncs()).Funcs(src.funcs).Funcs(stubs)
+	broken := template.FuncMap{parseErrorFunc: func(name string) (string, error) { return "", e.errs[name] }}
+	e.base = template.New("").Funcs(builtinFuncs()).Funcs(src.funcs).Funcs(stubs).Funcs(broken)
 	if strict {
 		e.base.Option("missingkey=error")
 	}
@@ -66,8 +79,12 @@ func loadEngine(src *sources, strict bool) (*engine, error) {
 			pageFiles = append(pageFiles, pageFile{f.name, string(b)})
 			continue
 		}
-		if _, err := e.base.New(f.name).Parse(string(b)); err != nil {
-			return nil, fmt.Errorf("template %s: %w", f.where, err)
+		// A failed Parse adds nothing to the set but an empty entry for the name, which the next Parse replaces.
+		if e.parse(e.base, f.name, string(b), prev) {
+			continue
+		}
+		if _, err := e.base.New(f.name).Parse("{{" + parseErrorFunc + " " + strconv.Quote(f.name) + "}}"); err != nil {
+			return nil, err
 		}
 	}
 	for _, f := range pageFiles {
@@ -75,10 +92,9 @@ func loadEngine(src *sources, strict bool) (*engine, error) {
 		if err != nil {
 			return nil, err
 		}
-		if _, err := c.New(f.name).Parse(f.src); err != nil {
-			return nil, fmt.Errorf("template %s: %w", e.sources[f.name], err)
+		if e.parse(c, f.name, f.src, prev) {
+			e.pages[f.name] = c
 		}
-		e.pages[f.name] = c
 	}
 	if e.assets, err = loadAssets(src.chain, src.dir); err != nil {
 		return nil, err
@@ -87,7 +103,50 @@ func loadEngine(src *sources, strict bool) (*engine, error) {
 		return nil, err
 	}
 	e.sig = dirSignature(src.dir)
-	return e, nil
+	return e, e.parseErr()
+}
+
+// parse adds a file to a set; when it does not parse, it records the error and falls back on prev's text.
+func (e *engine) parse(set *template.Template, name, text string, prev *engine) bool {
+	_, err := set.New(name).Parse(text)
+	if err == nil {
+		e.good[name] = text
+		return true
+	}
+	e.errs[name] = &parseError{fmt.Errorf("template %s: %w", e.sources[name], err)}
+	if old, ok := prev.lastGood(name); ok && old != text {
+		if _, err := set.New(name).Parse(old); err == nil {
+			e.good[name] = old
+			return true
+		}
+	}
+	return false
+}
+
+// parseError is a file that does not parse; dev pages that fail with one show it.
+type parseError struct{ err error }
+
+func (p *parseError) Error() string { return p.err.Error() }
+func (p *parseError) Unwrap() error { return p.err }
+
+func (e *engine) lastGood(name string) (string, bool) {
+	if e == nil {
+		return "", false
+	}
+	s, ok := e.good[name]
+	return s, ok
+}
+
+// parseErr names every file that does not parse, sorted; nil when all do.
+func (e *engine) parseErr() error {
+	if len(e.errs) == 0 {
+		return nil
+	}
+	msgs := make([]string, 0, len(e.errs))
+	for _, n := range sortedKeys(e.errs) {
+		msgs = append(msgs, e.errs[n].Error())
+	}
+	return fmt.Errorf("%d template(s) do not parse (hydrogen site:check reports every problem):\n%s", len(msgs), strings.Join(msgs, "\n"))
 }
 
 func (e *engine) has(name string) bool {
@@ -95,12 +154,15 @@ func (e *engine) has(name string) bool {
 		return true
 	}
 	if isPageTemplate(name) {
-		return e.pages[name] != nil
+		return e.hasPage(name)
 	}
 	return e.base.Lookup(name) != nil
 }
 
-func (e *engine) hasPage(name string) bool { return e.pages[name] != nil || e.comps[name] != nil }
+// hasPage includes a page that does not parse, so that rendering it fails rather than falls back.
+func (e *engine) hasPage(name string) bool {
+	return e.pages[name] != nil || e.errs[name] != nil || e.comps[name] != nil
+}
 
 // pageTemplate picks pages/<type>.html, else the fallback pages/default.html.
 func (e *engine) pageTemplate(typ string) (string, bool) {
@@ -127,6 +189,9 @@ func (e *engine) render(name string, p *page, v *View) ([]byte, error) {
 		return e.renderComponent(name, f, p, v)
 	}
 	set := e.pages[name]
+	if set == nil && e.errs[name] != nil {
+		return nil, e.errs[name]
+	}
 	if set == nil {
 		return nil, fmt.Errorf("missing template %s", name)
 	}

@@ -98,7 +98,7 @@ func TestProjectFuncs(t *testing.T) {
 	chain, _ := x.chain("starter")
 	dir := t.TempDir()
 	writeFile(t, dir, "templates/partials/p.html", `{{shout "hi"}} {{add 1 1}}`)
-	e, err := loadEngine(&sources{chain: chain, dir: dir, funcs: x.funcs}, true)
+	e, err := loadEngine(&sources{chain: chain, dir: dir, funcs: x.funcs}, true, nil)
 	if err != nil {
 		t.Fatalf("templates using project and built-in functions do not parse: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestProjectFuncs(t *testing.T) {
 	if err := e.base.ExecuteTemplate(&sb, "partials/p.html", nil); err != nil || sb.String() != "HI! 2" {
 		t.Errorf("render = %q %v", sb.String(), err)
 	}
-	if _, err := loadEngine(&sources{chain: chain, dir: dir}, true); err == nil {
+	if _, err := loadEngine(&sources{chain: chain, dir: dir}, true, nil); err == nil {
 		t.Error("a template using an unregistered function parsed")
 	}
 }
@@ -118,7 +118,7 @@ func TestPartial(t *testing.T) {
 	writeFile(t, dir, "templates/blocks/box/a.html", `[A {{.Name}}]`)
 	writeFile(t, dir, "templates/blocks/box.html", `{{partial (printf "blocks/box/%s.html" .Props.view) .Props}}|{{partial "blocks/box/none.html"}}`)
 	writeFile(t, dir, "templates/partials/loop.html", `{{partial "partials/loop.html"}}`)
-	e, err := loadEngine(&sources{chain: chain, dir: dir}, true)
+	e, err := loadEngine(&sources{chain: chain, dir: dir}, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

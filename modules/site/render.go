@@ -18,7 +18,11 @@ import (
 
 func (s *server) internal(rc *reqCtx, err error) *result {
 	s.log.Error("site: render failed", "path", rc.r.URL.Path, "err", err)
-	return &result{status: http.StatusInternalServerError, body: []byte("<!doctype html><title>Error</title><h1>Something went wrong</h1>")}
+	body := "<!doctype html><title>Error</title><h1>Something went wrong</h1>"
+	if pe := (*parseError)(nil); s.dev && errors.As(err, &pe) {
+		body += "<pre>" + html.EscapeString(pe.Error()) + "</pre>"
+	}
+	return &result{status: http.StatusInternalServerError, body: []byte(body)}
 }
 
 func (s *server) adminOrigin(r *http.Request) string {
@@ -105,13 +109,33 @@ func (s *server) notFound(rc *reqCtx) *result {
 	return &result{status: http.StatusNotFound, body: s.finish(rc, body), tags: rc.f.tagList()}
 }
 
-// finish adds the preview scaffolding to a rendered page.
+// finish adds the preview scaffolding to a rendered page and, in dev, the templates that do not parse.
 func (s *server) finish(rc *reqCtx, body []byte) []byte {
+	if s.dev && len(rc.eng.errs) > 0 {
+		body = injectParseErrors(body, rc.eng)
+	}
 	if !rc.preview() {
 		return body
 	}
 	sum := sha256.Sum256([]byte(rc.token))
 	return injectPreview(body, html.EscapeString(s.adminOrigin(rc.r)), hex.EncodeToString(sum[:]))
+}
+
+// injectParseErrors lays the templates that do not parse over a page, before </body>.
+func injectParseErrors(page []byte, e *engine) []byte {
+	var sb strings.Builder
+	sb.WriteString(`<pre data-hydrogen-template-errors style="position:fixed;left:0;right:0;bottom:0;z-index:2147483647;` +
+		`max-height:40vh;overflow:auto;margin:0;padding:12px 16px;background:#3b0d0d;color:#ffe4e4;` +
+		`font:13px/1.45 ui-monospace,monospace;white-space:pre-wrap">`)
+	sb.WriteString("Templates that do not parse (pages that use one without a last good version fail):")
+	for _, n := range sortedKeys(e.errs) {
+		sb.WriteString("\n" + html.EscapeString(e.errs[n].Error()))
+	}
+	sb.WriteString("</pre>")
+	if i := lastIndexFold(page, "</body>"); i >= 0 {
+		return splice(page, i, sb.String())
+	}
+	return append(page, sb.String()...)
 }
 
 // newPage builds the render state of a request: helpers, settings and the view.

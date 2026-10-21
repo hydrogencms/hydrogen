@@ -29,7 +29,7 @@ type server struct {
 	log        *slog.Logger
 	singletons []string // singleton types, sorted
 	proxies    []netip.Prefix
-	loadErr    error // the templates did not parse; fatal outside dev
+	loadErr    error // the templates could not be loaded, or some do not parse outside dev; fatal outside dev
 	ext        *Extensions
 	src        *sources
 	custom     *customSet
@@ -82,11 +82,12 @@ func newServer(cfg *Config, ext *Extensions, s *kernel.Services, ps *pages.Servi
 	if !served {
 		return srv, nil
 	}
-	e, err := loadEngine(srv.src, false)
-	if err != nil {
+	e, err := loadEngine(srv.src, false, nil)
+	if e == nil || (err != nil && !srv.dev) {
 		srv.loadErr = err
 		return srv, nil
 	}
+	srv.logParseErrors(e)
 	srv.eng.Store(e)
 	return srv, nil
 }
@@ -120,15 +121,17 @@ func checkRoutes(routes []*route, s *schema.Schema) error {
 }
 
 // engine returns the current templates; in dev it reloads them when files under the site directory change.
+// A file that no longer parses keeps its last good version.
 func (s *server) engine() *engine {
 	e := s.eng.Load()
 	if e == nil && s.dev && s.loadErr != nil {
-		ne, err := loadEngine(s.src, false)
-		if err != nil {
+		ne, err := loadEngine(s.src, false, nil)
+		if ne == nil {
 			s.loadErr = err
 			return nil
 		}
 		s.loadErr = nil
+		s.logParseErrors(ne)
 		s.eng.Store(ne)
 		return ne
 	}
@@ -139,8 +142,8 @@ func (s *server) engine() *engine {
 	if sig == e.sig {
 		return e
 	}
-	ne, err := loadEngine(s.src, false)
-	if err != nil {
+	ne, err := loadEngine(s.src, false, e)
+	if ne == nil {
 		s.log.Error("site: templates not reloaded", "err", err)
 		kept := *e
 		kept.sig = sig
@@ -151,8 +154,22 @@ func (s *server) engine() *engine {
 	if s.cache != nil {
 		s.cache.clear()
 	}
-	s.log.Info("site: templates reloaded")
+	if !s.logParseErrors(ne) {
+		s.log.Info("site: templates reloaded")
+	}
 	return ne
+}
+
+// logParseErrors logs each template that does not parse; true when there is one.
+func (s *server) logParseErrors(e *engine) bool {
+	for _, n := range sortedKeys(e.errs) {
+		kept := "pages that use it fail"
+		if _, ok := e.good[n]; ok {
+			kept = "serving its last good version"
+		}
+		s.log.Error("site: template does not parse; "+kept, "err", e.errs[n])
+	}
+	return len(e.errs) > 0
 }
 
 // start applies cache purges until ctx ends. The delivery cache is purged first: a page must not be rebuilt

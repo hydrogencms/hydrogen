@@ -29,6 +29,10 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Fixed
 
+- Site module: a template that does not parse no longer takes the whole site down. Templates are parsed file by file;
+  in dev only the pages that use a broken file fail (with the error on the page), a hot reload keeps the file's last
+  good version, and every page shows the parse errors over it. Outside dev the server still refuses to start, now
+  naming every file that does not parse. `site:check` reports them all at once.
 - `url` fields holding `item:<id>` (top level, in lists, groups and block props) are item references like rich text
   links: delivery resolves them in `links` and deleting the target warns. Existing content needs
   `hydrogen content:reindex` to pick them up.

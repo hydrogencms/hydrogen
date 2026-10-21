@@ -22,6 +22,11 @@ modules:
 custom route against sample data (with `-db`: against the published content too). `hydrogen config:check`
 validates the theme, its bases and the custom routes' reserved paths without a database.
 
+Templates are parsed file by file. Outside dev the server refuses to start while a file does not parse and names
+each one. In dev a broken file fails only the pages that use it (the error is on the page and in the log); after a
+reload the file's last good version is served instead, and every page shows the parse errors over it until they are
+fixed.
+
 ## Layers
 
 Files are found by name in layers; a later layer replaces an earlier one's file of the same name:
