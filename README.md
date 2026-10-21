@@ -91,7 +91,8 @@ Start at the [documentation index](docs/README.md).
 
 ## Development
 
-To run your working copy with content, the admin and a frontend, see [DEVELOPMENT.md](DEVELOPMENT.md).
+To run your working copy with content, the admin and a frontend, see [DEVELOPMENT.md](DEVELOPMENT.md). How
+changes are proposed and assessed (one pull request per issue, against the core principles): [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```sh
 make build test vet lint   # every Go module in the repository
