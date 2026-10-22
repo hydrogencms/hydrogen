@@ -50,6 +50,9 @@ All notable changes to Hydrogen are documented here. The format follows
   in dev only the pages that use a broken file fail (with the error on the page), a hot reload keeps the file's last
   good version, and every page shows the parse errors over it. Outside dev the server still refuses to start, now
   naming every file that does not parse. `site:check` reports them all at once.
+- Site module in dev: the site directory is checked for template and asset changes at most every 250 ms instead of
+  walked on every request (about 5 ms per request with 2,000 files), and a page rendered with templates a reload
+  has since replaced is no longer stored in the page cache.
 - `url` fields holding `item:<id>` (top level, in lists, groups and block props) are item references like rich text
   links: delivery resolves them in `links` and deleting the target warns. Existing content needs
   `hydrogen content:reindex` to pick them up.

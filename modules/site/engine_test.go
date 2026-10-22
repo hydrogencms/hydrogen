@@ -2,10 +2,13 @@ package site
 
 import (
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/clock"
 )
 
 func TestTemplatesParseFileByFile(t *testing.T) {
@@ -78,5 +81,40 @@ func TestTemplatesParseFileByFile(t *testing.T) {
 	}
 	if out, _ := render(e, "pages/bad.html"); out != "<body>bad v1</body>" {
 		t.Errorf("last good page across reloads = %q", out)
+	}
+}
+
+func TestDevReloadIsThrottled(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "templates/layout.html", `v1`)
+	src := &sources{dir: dir}
+	clk := clock.NewManual(time.Unix(0, 0))
+	s := &server{cfg: &Config{Dir: dir}, src: src, dev: true, clock: clk, log: slog.New(slog.DiscardHandler), cache: newPageCache(1 << 20)}
+	first, err := loadEngine(src, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.eng.Store(first)
+	if s.engine() != first {
+		t.Fatal("an unchanged directory reloaded the templates")
+	}
+
+	gen := s.cache.generation()
+	writeFile(t, dir, "templates/layout.html", `v2, longer`)
+	if s.engine() != first {
+		t.Error("checked the directory again within devCheckEvery")
+	}
+	clk.Advance(devCheckEvery)
+	e := s.engine()
+	if e == first || e.good["layout.html"] != `v2, longer` {
+		t.Fatalf("change not picked up after devCheckEvery: %q", e.good["layout.html"])
+	}
+	// a page rendered with the replaced templates is not stored
+	s.cache.put(&cached{key: "k", body: []byte("old")}, gen)
+	if s.cache.get("k") != nil {
+		t.Error("page rendered before the reload stored")
+	}
+	if s.engine() != e {
+		t.Error("checked the directory again within devCheckEvery")
 	}
 }

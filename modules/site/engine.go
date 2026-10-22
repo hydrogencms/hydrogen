@@ -21,7 +21,7 @@ type engine struct {
 	names   []string                      // every template file, sorted
 	trans   translations
 	assets  *assetSet
-	sig     string
+	sig     uint64
 	strict  bool
 	sources map[string]string
 	comps   map[string]ComponentFunc

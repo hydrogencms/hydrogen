@@ -8,10 +8,13 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/hydrogencms/hydrogen/core/cachetag"
 	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/clock"
 	"github.com/hydrogencms/hydrogen/core/config"
 	"github.com/hydrogencms/hydrogen/core/kernel"
 	"github.com/hydrogencms/hydrogen/core/schema"
@@ -27,6 +30,9 @@ type server struct {
 	eng        atomic.Pointer[engine]
 	cache      *pageCache
 	dev        bool
+	clock      clock.Clock
+	checking   sync.Mutex   // one dev check of the site directory at a time
+	nextCheck  atomic.Int64 // unix nanoseconds before which dev does not check the site directory again
 	log        *slog.Logger
 	singletons []string // singleton types, sorted
 	proxies    []netip.Prefix
@@ -66,7 +72,7 @@ func newServer(cfg *Config, ext *Extensions, s *kernel.Services, ps *pages.Servi
 	if err != nil {
 		return nil, err
 	}
-	srv := &server{proxies: proxies, cfg: cfg, svc: s, pages: ps, routes: routes, log: s.Log, dev: s.Env == config.DevEnv,
+	srv := &server{proxies: proxies, cfg: cfg, svc: s, pages: ps, routes: routes, log: s.Log, dev: s.Env == config.DevEnv, clock: s.Clock,
 		ext: ext, custom: custom, src: &sources{chain: chain, dir: cfg.Dir, comps: ext.comps, funcs: ext.funcs}}
 	if cfg.CacheBytes > 0 {
 		srv.cache = newPageCache(cfg.CacheBytes)
@@ -121,11 +127,28 @@ func checkRoutes(routes []*route, s *schema.Schema) error {
 	return errors.Join(errs...)
 }
 
-// engine returns the current templates; in dev it reloads them when files under the site directory change.
-// A file that no longer parses keeps its last good version.
+// devCheckEvery bounds how often dev walks the site directory for changes: once per request burst, not per
+// request.
+const devCheckEvery = 250 * time.Millisecond
+
+// engine returns the current templates; in dev it reloads them when files under the site directory change,
+// checking at most every devCheckEvery. A file that no longer parses keeps its last good version.
 func (s *server) engine() *engine {
 	e := s.eng.Load()
-	if e == nil && s.dev && s.loadErr != nil {
+	if !s.dev {
+		return e
+	}
+	now := s.clock.Now().UnixNano()
+	if now < s.nextCheck.Load() || !s.checking.TryLock() {
+		return e
+	}
+	defer s.checking.Unlock()
+	if now < s.nextCheck.Load() {
+		return s.eng.Load()
+	}
+	defer func() { s.nextCheck.Store(s.clock.Now().Add(devCheckEvery).UnixNano()) }()
+	e = s.eng.Load()
+	if e == nil && s.loadErr != nil {
 		ne, err := loadEngine(s.src, false, nil)
 		if ne == nil {
 			s.loadErr = err
@@ -136,8 +159,8 @@ func (s *server) engine() *engine {
 		s.eng.Store(ne)
 		return ne
 	}
-	if e == nil || !s.dev {
-		return e
+	if e == nil {
+		return nil
 	}
 	sig := dirSignature(s.cfg.Dir)
 	if sig == e.sig {
