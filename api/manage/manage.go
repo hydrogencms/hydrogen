@@ -157,6 +157,7 @@ type api struct {
 	typesJSON    []byte
 	typeJSON     map[string][]byte
 	blocksJSON   []byte
+	richTextJSON []byte
 	openapi      []byte
 	etag         string
 }
@@ -174,6 +175,7 @@ var coreRoutes = []route{
 	{"GET", "/types", Authenticated, (*api).listTypes},
 	{"GET", "/types/{type}", Authenticated, (*api).getType},
 	{"GET", "/blocks", Authenticated, (*api).listBlocks},
+	{"GET", "/richtext", Authenticated, (*api).listRichText},
 	{"GET", "/collections/{type}/items", access.PolicyContentRead, (*api).listItems},
 	{"POST", "/collections/{type}/items", access.PolicyContentCreate, (*api).createItem},
 	{"GET", "/collections/{type}/facets", access.PolicyContentRead, (*api).facets},

@@ -13,8 +13,9 @@
   let Impl = $state<Component<RichTextProps> | null>(null);
   let failed = $state(false);
   onMount(() => {
-    import('./Editor.svelte').then(
-      (m) => (Impl = m.default as unknown as Component<RichTextProps>),
+    // The custom nodes are fetched with the editor, so a document that holds them never shows as broken first.
+    Promise.all([import('./Editor.svelte'), import('./custom.svelte').then((m) => m.richCatalog.load())]).then(
+      ([m]) => (Impl = m.default as unknown as Component<RichTextProps>),
       () => (failed = true),
     );
   });

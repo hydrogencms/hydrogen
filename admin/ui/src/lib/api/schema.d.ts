@@ -1284,6 +1284,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/richtext": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the custom rich text nodes and marks */
+        get: operations["listRichText"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/roles": {
         parameters: {
             query?: never;
@@ -2107,6 +2124,48 @@ export interface components {
         RestoreVersionRequest: {
             /** @description Locales of the version to restore; default all of them. The shared part is always restored. */
             locales?: string[];
+        };
+        RichTextCatalog: {
+            marks: {
+                attrs: {
+                    /** @description A string, integer or boolean matching the type. */
+                    default?: unknown;
+                    max?: number;
+                    maxLength?: number;
+                    min?: number;
+                    name: string;
+                    required: boolean;
+                    /** @enum {string} */
+                    type: "string" | "enum" | "int" | "bool" | "url";
+                    values?: string[];
+                }[];
+                label: string;
+                name: string;
+                tag: string;
+            }[];
+            nodes: {
+                attrs: {
+                    /** @description A string, integer or boolean matching the type. */
+                    default?: unknown;
+                    max?: number;
+                    maxLength?: number;
+                    min?: number;
+                    name: string;
+                    required: boolean;
+                    /** @enum {string} */
+                    type: "string" | "enum" | "int" | "bool" | "url";
+                    values?: string[];
+                }[];
+                /** @enum {string} */
+                content: "blocks" | "inline" | "none" | "parts";
+                inline: boolean;
+                label: string;
+                name: string;
+                /** @description Another node names this one as a part. */
+                part: boolean;
+                parts: string[];
+                tag: string;
+            }[];
         };
         Role: {
             /** Format: date-time */
@@ -6912,6 +6971,28 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listRichText: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The schema's richtext: declaration: nodes and marks with tags, content rules and typed attributes; empty lists when none is declared. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RichTextCatalog"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listRoles: {

@@ -35,6 +35,9 @@ func (s *Schema) MarshalJSON() ([]byte, error) {
 		}
 		doc["tokens"] = tokens
 	}
+	if rt := s.richDecl(); rt != nil {
+		doc["richtext"] = rt
+	}
 	return canonical(doc)
 }
 

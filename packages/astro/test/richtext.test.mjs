@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { richTextHtml } from '../dist/richtext.js'
@@ -10,7 +11,7 @@ test('blocks, marks and escaping', () => {
   const doc = { type: 'doc', content: [
     { type: 'heading', attrs: { level: 2 }, content: [t('A <b> & "c"')] },
     { type: 'paragraph', content: [t('x', { type: 'bold' }, { type: 'italic' }), t(' y')] },
-    { type: 'orderedList', attrs: { order: 3 }, content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [t('i')] }] }] },
+    { type: 'orderedList', attrs: { start: 3 }, content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [t('i')] }] }] },
     { type: 'codeBlock', attrs: { language: 'js"x' }, content: [t('1 < 2')] },
     { type: 'horizontalRule' },
   ] }
@@ -52,4 +53,11 @@ test('tables, extra marks and images', () => {
     '<table><tbody><tr><th colspan="2"><p>h</p></th></tr><tr><td rowspan="3"><p><u><s><sup><sub>u</sub></sup></s></u></p></td></tr></tbody></table><img src="/a.png?x=1&amp;y=2" alt="A&quot;" title="T" loading="lazy">',
   )
   assert.equal(richTextHtml(tbl({ type: 'image', attrs: { src: 'javascript:x' } })).endsWith('</table>'), true)
+})
+
+const fixture = JSON.parse(readFileSync(new URL('../../client/test/fixtures/richtext-ext.json', import.meta.url), 'utf8'))
+for (const c of fixture) test('fixture: ' + c.name, () => assert.equal(richTextHtml(c.doc, c.options), c.html))
+
+test('render overrides get the attrs and the inner HTML', () => {
+  assert.equal(richTextHtml(p(t('a', { type: 'bold' })), { render: { bold: (a, html) => `<b>${html}</b>`, paragraph: (a, html) => `<div>${html}</div>` } }), '<div><b>a</b></div>')
 })

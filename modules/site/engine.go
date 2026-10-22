@@ -19,6 +19,7 @@ type engine struct {
 	base    *template.Template
 	pages   map[string]*template.Template // pages/*, collections/*, 404.html
 	names   []string                      // every template file, sorted
+	rich    map[string]bool               // node and mark types with a richtext/<type>.html override; nil when none
 	trans   translations
 	assets  *assetSet
 	sig     string
@@ -101,6 +102,16 @@ func loadEngine(src *sources, strict bool, prev *engine) (*engine, error) {
 	}
 	if e.trans, err = loadTranslations(src.chain, src.dir); err != nil {
 		return nil, err
+	}
+	for _, n := range e.names {
+		if t, ok := strings.CutPrefix(n, "richtext/"); ok {
+			if t, ok = strings.CutSuffix(t, ".html"); ok && t != "" && !strings.Contains(t, "/") {
+				if e.rich == nil {
+					e.rich = map[string]bool{}
+				}
+				e.rich[t] = true
+			}
+		}
 	}
 	e.sig = dirSignature(src.dir)
 	return e, e.parseErr()

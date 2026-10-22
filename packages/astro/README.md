@@ -127,7 +127,7 @@ Published as `.astro` source (Astro compiles them in your project): `@hydrogencm
 |---|---|
 | `Head` | in `<head>`: title, canonical, hreflang alternates, `noindex` and the token proof (`<meta name="hydrogen-preview">`) plus the bridge script in preview. `<Head title description />` for your own routes |
 | `Blocks` | `<Blocks blocks={item.fields.body} registry={registry} path="fields/body" preview={preview} links={item.links} />` |
-| `RichText` | `<RichText doc={…} links={item.links} />`: escaped HTML, `item:<id>` links through `links`, unsafe URLs dropped; `render` overrides a node type |
+| `RichText` | `<RichText doc={…} links={item.links} />`: escaped HTML, `item:<id>` links through `links`, unsafe URLs dropped; `render` overrides a node type; `schema` and `classes` style custom nodes and marks (`rt-<name>`, `data-*`) and any type |
 | `Image` | `<Image asset={…} preset="card" />` (client's `imageProps`: variant, srcset, focal point) |
 | `Field` | `<Field path="fields/title" preview={preview}>…</Field>`: wraps editable inline content in `data-h-path` in preview only |
 

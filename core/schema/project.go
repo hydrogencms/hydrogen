@@ -2,6 +2,7 @@ package schema
 
 import (
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -72,7 +73,8 @@ func richLinks(v any, path string, out []RefValue) []RefValue {
 		mm, _ := m.(map[string]any)
 		attrs, _ := mm["attrs"].(map[string]any)
 		if href, _ := attrs["href"].(string); mm["type"] == "link" && strings.HasPrefix(href, "item:") {
-			out = append(out, RefValue{Path: path, To: strings.TrimPrefix(href, "item:"), Kind: "link", OnDelete: "warn"})
+			id, _, _ := strings.Cut(strings.TrimPrefix(href, "item:"), "#")
+			out = append(out, RefValue{Path: path, To: id, Kind: "link", OnDelete: "warn"})
 		}
 	}
 	children, _ := n["content"].([]any)
@@ -235,10 +237,22 @@ func richBlock(v any, sb *strings.Builder) {
 		richInline(children, &line)
 		addText(sb, strings.TrimSpace(line.String()))
 	default:
+		if slices.ContainsFunc(children, richIsInline) {
+			var line strings.Builder
+			richInline(children, &line)
+			addText(sb, strings.TrimSpace(line.String()))
+			return
+		}
 		for _, c := range children {
 			richBlock(c, sb)
 		}
 	}
+}
+
+// richIsInline is true for the text of a custom node with inline content.
+func richIsInline(v any) bool {
+	n, _ := v.(map[string]any)
+	return n["type"] == "text" || n["type"] == "hardBreak"
 }
 
 func richInline(children []any, sb *strings.Builder) {

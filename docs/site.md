@@ -37,7 +37,7 @@ Files are found by name in layers; a later layer replaces an earlier one's file 
 
 Each layer may hold `templates/`, `assets/` and `translations/`. Templates are `layout.html`, `404.html`,
 `pages/<type>.html` (else `pages/default.html`), `collections/<template>.html`, `blocks/<type>.html`,
-`routes/<name>.html` (custom routes) and any partials. Translation files (`translations/en.yaml`) merge key by key
+`richtext/<type>.html` (rich text overrides), `routes/<name>.html` (custom routes) and any partials. Translation files (`translations/en.yaml`) merge key by key
 across layers. Assets are served under fingerprinted URLs (`{{asset "site.css"}}`).
 
 Collection listing routes are paged: `/blog` is page 1 and `/blog/page/2` the next, `limit` items each. A listing
@@ -110,6 +110,43 @@ Identical calls within one render ask the delivery API once.
 
 In `site:check` the reading helpers return empty results (no database). Go components use `v.Client()`, the same
 client with `Get`, `Items` and `Item`.
+
+## Rich text
+
+`{{richtext .Fields.body}}` renders a rich text field (a Go component calls `v.RichText(doc)`). Text is escaped, links
+are checked (http(s), mailto, relative, `#anchor`; `item:<id>#frag` resolves the item's URL on this site and appends
+the fragment, and a link without a URL keeps its text), and images must be http(s) or root-relative. Alignment,
+anchors (`id`), ordered list `start`, tight lists and `target: _blank` links render as stored.
+
+Options go in a dict:
+
+```html
+{{richtext .Fields.body (dict "classes" (dict "paragraph" "lead" "link" "underline") "wrap" "div" "wrapClass" "prose")}}
+```
+
+- `classes` maps a node or mark type (`paragraph`, `heading`, `bold`, `callout`…) to class tokens (`A-Za-z0-9_ -`;
+  anything else is dropped) added to every element of that type, after `rt-NAME` for custom types. A code block's
+  classes go on `<pre>`.
+- `wrap` (`div`, `section` or `article`) and `wrapClass` put one element around the output, only when it is not empty.
+
+In Go: `v.RichText(doc, site.RichTextOptions{Classes: …, Wrap: "div", WrapClass: "prose"})`.
+
+Custom nodes and marks declared in the schema's `richtext:` key render as their declared tag with `class="rt-NAME"`
+and one `data-ATTR` per attribute, in declaration order (defaults applied, `bool` true as an empty attribute, `url`
+values checked, everything escaped): `<aside class="rt-callout" data-variant="info">…</aside>`. Style them with CSS, or
+replace the element with a template `richtext/<type>.html` (theme or project, like `blocks/<type>.html`), for a built-in
+or a custom type alike:
+
+```html
+{{/* richtext/callout.html */}}
+<aside class="callout callout-{{.Attrs.variant}} {{.Class}}" role="note">{{.Content}}</aside>
+```
+
+It receives `.Type`, `.Attrs` (the stored attributes of a built-in; the declared ones with defaults for a custom
+type), `.Content` (the children, already rendered), `.Class` (the class string the options gave), `.Node` (the raw
+document node) and `.View`. The templates are found once when the set loads, so documents without overrides pay
+nothing for them. `site:check` renders every override over a sample node. A tight list item's paragraphs, a link
+without a usable URL and an image with an unsafe source render no element, so they call no override.
 
 ## Themes
 

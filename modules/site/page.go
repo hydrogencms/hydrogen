@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/hydrogencms/hydrogen/core/channel"
+	"github.com/hydrogencms/hydrogen/core/schema"
 	"github.com/hydrogencms/hydrogen/modules/pages"
 )
 
@@ -104,6 +105,8 @@ type page struct {
 	// linkFields names the fields a type's detail route needs in its URLs ("" = every type).
 	linkFields func(typ string) []string
 	memo       map[string]any
+	rt         *schema.RichText // the project's custom rich text vocabulary; nil renders custom types by convention
+	rtv        *richVocab
 	depth      int
 }
 
@@ -240,8 +243,72 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
-func (p *page) richtextFn(v any) template.HTML {
-	return template.HTML(renderRichText(v, func(id string) string { return p.linkFn(id) })) //nolint:gosec // renderRichText escapes
+// richtextFn renders a rich text document; the options are a dict of classes, wrap and wrapClass.
+func (p *page) richtextFn(v any, opts ...map[string]any) (template.HTML, error) {
+	var o RichTextOptions
+	for _, m := range opts {
+		for k, x := range m {
+			s, _ := x.(string)
+			switch k {
+			case "wrap":
+				o.Wrap = s
+			case "wrapClass":
+				o.WrapClass = s
+			case "classes":
+				switch c := x.(type) {
+				case map[string]string:
+					o.Classes = c
+				case map[string]any:
+					o.Classes = make(map[string]string, len(c))
+					for t, cv := range c {
+						o.Classes[t], _ = cv.(string)
+					}
+				default:
+					return "", fmt.Errorf("richtext: classes must be a dict, got %T", x)
+				}
+			default:
+				return "", fmt.Errorf("richtext: unknown option %q (classes, wrap, wrapClass)", k)
+			}
+		}
+	}
+	return p.richText(v, o)
+}
+
+func (p *page) richText(v any, o RichTextOptions) (template.HTML, error) {
+	c := richConfig{link: func(id string) string { return p.linkFn(id) }, rt: p.vocab(), opts: o, exec: p.richExec, view: p.view}
+	if p.eng != nil {
+		c.over = p.eng.rich
+	}
+	out, err := renderRich(v, c)
+	return template.HTML(out), err //nolint:gosec // renderRich escapes; override output is html/template's
+}
+
+func (p *page) vocab() *richVocab {
+	if p.rtv == nil && p.rt != nil {
+		p.rtv = newRichVocab(p.rt)
+	}
+	return p.rtv
+}
+
+// richExec runs the richtext/<type>.html override of a node or mark type.
+func (p *page) richExec(typ string, d *RichElement) (string, bool, error) {
+	name := "richtext/" + typ + ".html"
+	if err := p.ensureSet(); err != nil {
+		return "", false, err
+	}
+	if p.t.Lookup(name) == nil {
+		return "", false, p.problem("no template %s", name)
+	}
+	if p.depth >= maxPartialDepth {
+		return "", false, fmt.Errorf("%s: nested more than %d levels deep", name, maxPartialDepth)
+	}
+	p.depth++
+	defer func() { p.depth-- }()
+	var buf bytes.Buffer
+	if err := p.t.ExecuteTemplate(&buf, name, d); err != nil {
+		return "", false, err
+	}
+	return buf.String(), true, nil
 }
 
 // linkFn is the URL of a referenced item: an item id (with or without item:), or an item from a listing.
@@ -415,5 +482,15 @@ func (v *View) Edit(path string) template.HTMLAttr { return v.p.editFn(path) }
 // Blocks renders a blocks field of the item, a slot or a block.
 func (v *View) Blocks(x any) (template.HTML, error) { return v.p.blocksFn(x) }
 
-// RichText renders a rich text document.
-func (v *View) RichText(doc any) template.HTML { return v.p.richtextFn(doc) }
+// RichText renders a rich text document; a failing richtext/<type>.html override is logged and renders nothing.
+func (v *View) RichText(doc any, opts ...RichTextOptions) template.HTML {
+	var o RichTextOptions
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	out, err := v.p.richText(doc, o)
+	if err != nil && v.p.log != nil {
+		v.p.log.Warn("site: "+err.Error(), "channel", v.p.ch.Name)
+	}
+	return out
+}

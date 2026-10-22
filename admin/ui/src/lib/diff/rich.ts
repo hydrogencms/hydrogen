@@ -28,12 +28,16 @@ export interface RichDiff {
 }
 
 const INLINE = new Set(['text', 'hardBreak', 'hard_break']);
+// Built-in nodes that can be empty without being leaves.
+const PLAIN = new Set(['paragraph', 'heading', 'bulletList', 'orderedList', 'listItem', 'blockquote', 'codeBlock', 'table', 'tableRow', 'tableCell', 'tableHeader', 'horizontalRule', 'doc']);
 
 export function textOf(n: Node | undefined): string {
   if (!n) return '';
   if (n.type === 'text') return n.text ?? '';
   if (n.type === 'hardBreak' || n.type === 'hard_break') return '\n';
   if (n.type === 'image') return `[image: ${[n.attrs?.alt, n.attrs?.src].filter(Boolean).join(' ')}]`;
+  // A custom leaf (embed, footnote reference) has no text: show its type and attribute values.
+  if (!n.content && n.type && !PLAIN.has(n.type)) return `[${[n.type, ...Object.values(n.attrs ?? {})].join(' ')}]`;
   const kids = n.content ?? [];
   const parts = kids.map(textOf);
   if (n.type === 'tableRow') return parts.join(' | ');

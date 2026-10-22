@@ -16,6 +16,7 @@ import { prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON } from 'y-
 import * as Y from 'yjs';
 import type { CompiledField } from '../types.svelte';
 import { configOf } from '../richtext/config';
+import { richCatalog } from '../richtext/custom.svelte';
 import { buildSchema, isEmptyDoc, toStored } from '../richtext/schema';
 
 type Schema = ReturnType<typeof buildSchema>;
@@ -84,13 +85,14 @@ export function jsonEq(a: unknown, b: unknown): boolean {
 const schemas = new Map<string, Schema>();
 export function richSchema(def?: CompiledField): Schema {
   const c = configOf(def?.options);
-  const key = JSON.stringify([c.marks ?? null, c.nodes ?? null]);
+  const custom = richCatalog.value;
+  const key = JSON.stringify([c.marks ?? null, c.nodes ?? null, custom.nodes.length, custom.marks.length]);
   let s = schemas.get(key);
   if (!s) {
     try {
-      s = buildSchema(c);
+      s = buildSchema(c, custom);
     } catch {
-      s = buildSchema({});
+      s = buildSchema({}, custom);
     }
     schemas.set(key, s);
   }
@@ -99,10 +101,10 @@ export function richSchema(def?: CompiledField): Schema {
 
 /** The stored form of a rich text value as the editor emits it (mark order of the schema, no nulls); undefined when empty. */
 export function canonRich(schema: Schema, v: unknown): unknown {
-  if (v === undefined || v === null || isEmptyDoc(v)) return undefined;
+  if (v === undefined || v === null || isEmptyDoc(v, schema)) return undefined;
   try {
     const n = schema.nodeFromJSON(v);
-    return isEmptyDoc(n.toJSON()) ? undefined : toStored(n);
+    return isEmptyDoc(n.toJSON(), schema) ? undefined : toStored(n);
   } catch {
     return v;
   }
@@ -113,7 +115,7 @@ export function richOf(frag: Y.XmlFragment, schema: Schema): unknown {
 }
 
 function fillRich(frag: Y.XmlFragment, schema: Schema, v: unknown) {
-  const json = v === undefined || v === null || isEmptyDoc(v) ? schema.topNodeType.createAndFill()!.toJSON() : v;
+  const json = v === undefined || v === null || isEmptyDoc(v, schema) ? schema.topNodeType.createAndFill()!.toJSON() : v;
   try {
     prosemirrorJSONToYXmlFragment(schema, json, frag);
   } catch {

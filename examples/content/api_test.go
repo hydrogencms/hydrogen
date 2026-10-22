@@ -168,6 +168,30 @@ func lifecycle(t *testing.T, s *server) {
 	if art.Fields["slug"] != "hello-hydrogen" || art.Fields["rating"] != nil {
 		t.Fatalf("slug from title / null removal: %v", art.Fields)
 	}
+	// Custom rich text nodes and marks from the schema's richtext: key.
+	callout := func(variant string) map[string]any {
+		return map[string]any{"type": "doc", "content": []any{
+			map[string]any{"type": "callout", "attrs": map[string]any{"variant": variant}, "content": []any{
+				map[string]any{"type": "paragraph", "content": []any{map[string]any{"type": "text", "text": "Mind the gap",
+					"marks": []any{map[string]any{"type": "highlight"}}}}}}},
+			map[string]any{"type": "details", "content": []any{
+				map[string]any{"type": "detailsSummary", "content": []any{map[string]any{"type": "text", "text": "More"}}},
+				map[string]any{"type": "detailsBody", "content": []any{map[string]any{"type": "paragraph"}}}}},
+			map[string]any{"type": "embed", "attrs": map[string]any{"url": "https://example.com/v", "caption": "A video"}}}}
+	}
+	s.must(s.do("PATCH", "/items/"+art.ID, map[string]any{"locale": "en", "fields": map[string]any{"body": callout("loud")}}, &bad), 422, "bad callout variant")
+	if len(bad.Error.Fields) != 1 || bad.Error.Fields[0].Path != "body.content[0]" {
+		t.Fatalf("callout errors: %+v", bad.Error.Fields)
+	}
+	s.must(s.do("PATCH", "/items/"+art.ID, map[string]any{"locale": "en", "fields": map[string]any{"body": callout("tip")}}, &art), 200, "custom rich text")
+	var rt struct {
+		Nodes []struct{ Name, Tag string } `json:"nodes"`
+		Marks []struct{ Name, Tag string } `json:"marks"`
+	}
+	s.must(s.do("GET", "/richtext", nil, &rt), 200, "richtext catalog")
+	if len(rt.Nodes) != 5 || rt.Nodes[1].Name != "details" || rt.Nodes[1].Tag != "details" || len(rt.Marks) != 1 || rt.Marks[0].Tag != "mark" {
+		t.Fatalf("richtext catalog: %+v", rt)
+	}
 	s.must(s.do("POST", "/items/"+art.ID+"/publish", map[string]any{}, &art), 200, "publish article")
 	if art.Status != "published" || art.Version != 1 || art.Name != "Hello Hydrogen" {
 		t.Fatalf("published view: %+v", art)
@@ -270,11 +294,11 @@ func TestGeneratedCodeIsCurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 	files, _ := filepath.Glob(filepath.Join(dir, "content", "*.go"))
-	files = append(files, filepath.Join(dir, "types.ts"))
+	files = append(files, filepath.Join(dir, "types.ts"), filepath.Join(dir, "richtext.ts"))
 	for _, f := range files {
 		rel := filepath.Base(f)
 		committed := filepath.Join("gen", "content", rel)
-		if rel == "types.ts" {
+		if rel == "types.ts" || rel == "richtext.ts" {
 			committed = filepath.Join("gen", rel)
 		}
 		want, _ := os.ReadFile(f)

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getContext, untrack } from 'svelte';
+  import { getContext, onMount, tick as flush, untrack } from 'svelte';
   import type { Plugin } from 'prosemirror-state';
   import type * as Y from 'yjs';
   import { COLLAB_CTX, type CollabCtx } from '../collab/context';
@@ -19,10 +19,13 @@
   import Menu, { type MenuItem } from '../ui/Menu.svelte';
   import Popover from '../ui/Popover.svelte';
   import Textarea from '../ui/Textarea.svelte';
-  import { blockOf, inside, insertImage, insertRule, insertTable, link as linkCommands, markActive, plugins, toggleBlock, toggleList, toggleQuote } from './commands';
+  import { applyMark, blockOf, clearMark, customAt, docIds, inside, insertCustom, insertImage, insertRule, insertTable, link as linkCommands, listAt, markActive, markAt, plugins, setAlign, setAnchor, setNodeAttrs, toggleBlock, toggleList, toggleQuote } from './commands';
+  import AttrsForm from './AttrsForm.svelte';
+  import type { RichAttrDef, RichMarkDef, RichNodeDef } from './config';
+  import { richCatalog } from './custom.svelte';
   import ImageForm from './ImageForm.svelte';
   import LinkForm from './LinkForm.svelte';
-  import { buildSchema, fromStored, isEmptyDoc, toStored } from './schema';
+  import { buildSchema, fromStored, ID_RE, isEmptyDoc, toStored } from './schema';
   import type { RichTextProps } from './types';
 
   let {
@@ -52,10 +55,15 @@
   // The schema follows the field's allowlists by value: a parent that rebuilds `config` on every render must
   // not rebuild the editor (that would drop the selection).
   const configKey = $derived(JSON.stringify([config?.marks ?? null, config?.nodes ?? null]));
+  const custom = $derived(richCatalog.value);
+  const defs = $derived(new Map(custom.nodes.map((d) => [d.name, d])));
+  onMount(() => {
+    void richCatalog.load();
+  });
   const schema = $derived.by(() => {
     const [marks, nodes] = JSON.parse(configKey) as [string[] | null, string[] | null];
     try {
-      return buildSchema({ marks: marks ?? undefined, nodes: nodes ?? undefined });
+      return buildSchema({ marks: marks ?? undefined, nodes: nodes ?? undefined }, custom);
     } catch {
       return null;
     }
@@ -95,7 +103,7 @@
     ['subscript', ','],
   ] as const;
 
-  const stamp = (v: unknown) => (v === undefined || v === null || isEmptyDoc(v) ? '' : JSON.stringify(v));
+  const stamp = (v: unknown) => (v === undefined || v === null || isEmptyDoc(v, schema ?? undefined) ? '' : JSON.stringify(v));
 
   function attributes() {
     const doc = view?.state.doc;
@@ -130,7 +138,7 @@
   }
 
   function emit(state: EditorState) {
-    const next = isEmptyDoc(state.doc.toJSON()) ? undefined : toStored(state.doc);
+    const next = isEmptyDoc(state.doc.toJSON(), state.schema) ? undefined : toStored(state.doc);
     lastJSON = stamp(next);
     onchange?.(next);
   }
@@ -232,6 +240,13 @@
       quote: inside(st, n.blockquote),
       codeBlock: b.type === 'codeBlock',
       href: linkApi?.hrefAt(st) ?? '',
+      target: linkApi?.linkAt(st)?.target ?? null,
+      textOk: b.type === 'paragraph' || b.type === 'heading',
+      align: b.align ?? 'left',
+      anchor: b.id,
+      list: listAt(st),
+      node: customAt(st, defs),
+      marks: Object.fromEntries(custom.marks.filter((d) => m[d.name]).map((d) => [d.name, { on: markActive(st, m[d.name]), ok: can(toggleMark(m[d.name])) }])) as Record<string, { on: boolean; ok: boolean }>,
     };
   });
 
@@ -283,6 +298,133 @@
     return n.paragraph ? t('richtext.paragraph') : t('richtext.heading', { level: cur[1] ?? 2 });
   });
 
+  // ---- attributes dialog: inserting or editing a custom node or mark, anchors, list numbering
+  interface Dlg {
+    title: string;
+    attrs: RichAttrDef[];
+    values: Record<string, unknown>;
+    labels?: Record<string, string>;
+    submit: string;
+    removeLabel?: string;
+    check?: (v: Record<string, unknown>) => Record<string, string>;
+    apply: (v: Record<string, unknown>) => Command;
+    remove?: Command;
+  }
+  let dlg = $state.raw<Dlg | null>(null);
+  let dlgOpen = $state(false);
+  const ask = (d: Dlg) => {
+    dlg = d;
+    dlgOpen = true;
+  };
+  async function finish(c: Command) {
+    dlgOpen = false;
+    await flush();
+    run(c);
+  }
+  const anchors = () => (view ? docIds(view.state.doc) : []);
+  const defaults = (d: { attrs: RichAttrDef[] }) => Object.fromEntries(d.attrs.map((a) => [a.name, a.default ?? null]));
+  const needsForm = (d: RichNodeDef) => d.attrs.some((a) => a.required && (a.default === undefined || a.default === null));
+
+  const insertDefs = $derived(custom.nodes.filter((d) => !d.part && schema?.nodes[d.name]));
+  const insertItems = $derived.by<MenuItem[]>(() => {
+    void tick;
+    const st = view?.state;
+    return insertDefs.map((d) => ({
+      label: d.label || d.name,
+      disabled: !st || !schema || !insertCustom(schema, d, defaults(d))(st),
+      onselect: () => {
+        if (!needsForm(d)) return run(insertCustom(schema!, d, defaults(d)));
+        ask({ title: t('richtext.insertTitle', { label: d.label || d.name }), attrs: d.attrs, values: defaults(d), submit: t('richtext.insertApply'), apply: (v) => insertCustom(schema!, d, v) });
+      },
+    }));
+  });
+
+  function editNode() {
+    const at = s?.node;
+    if (!at) return;
+    const { pos, def } = at;
+    ask({
+      title: t('richtext.editNode', { label: def.label || def.name }),
+      attrs: def.attrs,
+      values: at.node.attrs,
+      submit: t('richtext.editApply'),
+      apply: (v) => (st, d) => (st.doc.nodeAt(pos)?.type.name === def.name ? setNodeAttrs(pos, v)(st, d) : false),
+    });
+  }
+
+  const markDefs = $derived(custom.marks.filter((d) => m[d.name]));
+  const markItems = $derived.by<MenuItem[]>(() => {
+    void tick;
+    return markDefs.map((d: RichMarkDef) => ({
+      label: d.label || d.name,
+      checked: s?.marks[d.name]?.on ?? false,
+      toggle: true,
+      disabled: !s?.marks[d.name]?.ok,
+      onselect: () => {
+        if (!d.attrs.length) return run(toggleMark(m[d.name]));
+        const cur = view ? markAt(view.state, m[d.name]) : undefined;
+        ask({
+          title: d.label || d.name,
+          attrs: d.attrs,
+          values: cur?.attrs ?? defaults(d),
+          submit: t('richtext.editApply'),
+          removeLabel: cur ? t('richtext.markRemove', { label: d.label || d.name }) : undefined,
+          apply: (v) => applyMark(m[d.name], v),
+          remove: cur ? clearMark(m[d.name]) : undefined,
+        });
+      },
+    }));
+  });
+
+  const aligns = ['left', 'center', 'right', 'justify'] as const;
+  const layoutItems = $derived.by<MenuItem[]>(() => {
+    const items: MenuItem[] = [];
+    if (!s?.textOk) return items;
+    for (const a of aligns) items.push({ label: t(`richtext.align${a[0].toUpperCase()}${a.slice(1)}`), checked: s.align === a, onselect: () => run(setAlign(a)) });
+    items.push({ label: t('richtext.anchor'), separator: true, onselect: openAnchor });
+    const list = s.list;
+    if (list) {
+      if (list.node.type.name === 'orderedList') items.push({ label: t('richtext.listStart'), onselect: openStart });
+      items.push({ label: t('richtext.listCompact'), checked: !!list.node.attrs.tight, toggle: true, onselect: () => run(setNodeAttrs(list.pos, { tight: list.node.attrs.tight ? null : true })) });
+    }
+    return items;
+  });
+
+  function openAnchor() {
+    if (!view) return;
+    const cur = blockOf(view.state).id;
+    const taken = docIds(view.state.doc).filter((i) => i !== cur);
+    ask({
+      title: t('richtext.anchorTitle'),
+      attrs: [{ name: 'id', type: 'string', maxLength: 64, required: false }],
+      values: { id: cur },
+      labels: { id: t('richtext.anchorId') },
+      submit: t('richtext.anchorApply'),
+      removeLabel: cur ? t('richtext.anchorRemove') : undefined,
+      check: (v): Record<string, string> => {
+        const id = v.id == null ? null : String(v.id);
+        if (id === null) return {};
+        return !ID_RE.test(id) ? { id: t('richtext.anchorBad') } : taken.includes(id) ? { id: t('richtext.anchorTaken') } : {};
+      },
+      apply: (v) => setAnchor((v.id as string | null) ?? null),
+      remove: cur ? setAnchor(null) : undefined,
+    });
+  }
+
+  function openStart() {
+    const list = s?.list;
+    if (!list) return;
+    const { pos } = list;
+    ask({
+      title: t('richtext.listStartTitle'),
+      attrs: [{ name: 'start', type: 'int', min: -1e6, max: 1e6, required: false }],
+      values: { start: list.node.attrs.start ?? 1 },
+      labels: { start: t('richtext.listStartLabel') },
+      submit: t('richtext.editApply'),
+      apply: (v) => setNodeAttrs(pos, { start: v.start === 1 ? null : v.start }),
+    });
+  }
+
   // ---- roving tabindex on the toolbar
   let rover = $state(0);
   const stops = () => [...(bar?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
@@ -319,7 +461,7 @@
   let jsonText = $state('');
   let jsonProblem = $state('');
   function openJson() {
-    const cur = view && !broken ? (isEmptyDoc(view.state.doc.toJSON()) ? undefined : toStored(view.state.doc)) : value;
+    const cur = view && !broken ? (isEmptyDoc(view.state.doc.toJSON(), view.state.schema) ? undefined : toStored(view.state.doc)) : value;
     jsonText = cur === undefined ? '' : JSON.stringify(cur, null, 2);
     jsonProblem = '';
     jsonOpen = true;
@@ -354,7 +496,7 @@
       tick++;
     }
     lastJSON = stamp(v);
-    onchange?.(raw === '' || isEmptyDoc(v) ? undefined : v);
+    onchange?.(raw === '' || isEmptyDoc(v, schema ?? undefined) ? undefined : v);
   }
 
   const menu = $derived<MenuItem[]>(json ? [{ label: t('richtext.editJson'), icon: 'code', onselect: openJson }] : []);
@@ -385,6 +527,11 @@
             {#snippet trigger()}{styleLabel}<Icon name="chevron-down" size={14} />{/snippet}
           </Menu>
         {/if}
+        {#if layoutItems.length}
+          <Menu items={layoutItems} label={t('richtext.layout')} align="start" triggerClass="h-rte__btn">
+            {#snippet trigger()}{@render ico('align')}<span class="h-sr">{t('richtext.layout')}</span>{/snippet}
+          </Menu>
+        {/if}
         {#if m.bold || m.italic || m.code || m.link || m.underline || m.strike || m.superscript || m.subscript}<span class="h-rte__sep" role="separator" aria-orientation="vertical"></span>{/if}
         {#if m.bold}
           <button type="button" class="h-rte__btn" aria-label={t('richtext.bold')} aria-pressed={s?.bold ?? false} title={hint(t('richtext.bold'), `${mod}B`)} disabled={!s?.boldOk} onmousedown={(e) => e.preventDefault()} onclick={() => run(toggleMark(m.bold))}>{@render ico('bold')}</button>
@@ -407,10 +554,12 @@
               {#snippet children(close)}
                 <LinkForm
                   href={s?.href ?? ''}
+                  target={s?.target}
+                  ids={anchors()}
                   {locale}
-                  onapply={(href, text) => {
+                  onapply={(href, text, target) => {
                     close();
-                    run(linkApi!.set(href, text));
+                    run(linkApi!.set(href, text, target));
                   }}
                   onremove={() => {
                     close();
@@ -420,6 +569,11 @@
               {/snippet}
             </Popover>
           </span>
+        {/if}
+        {#if markItems.length}
+          <Menu items={markItems} label={t('richtext.marks')} align="start" triggerClass="h-rte__style">
+            {#snippet trigger()}{t('richtext.marks')}<Icon name="chevron-down" size={14} />{/snippet}
+          </Menu>
         {/if}
         {#if n.bulletList || n.orderedList || n.blockquote || n.codeBlock || n.horizontalRule || n.image || n.table}<span class="h-rte__sep" role="separator" aria-orientation="vertical"></span>{/if}
         {#if n.bulletList}
@@ -456,6 +610,15 @@
           </Menu>
         {/if}
       {/if}
+      {#if !broken && insertItems.length}
+        <span class="h-rte__sep" role="separator" aria-orientation="vertical"></span>
+        <Menu items={insertItems} label={t('richtext.insert')} align="start" triggerClass="h-rte__style">
+          {#snippet trigger()}{t('richtext.insert')}<Icon name="chevron-down" size={14} />{/snippet}
+        </Menu>
+      {/if}
+      {#if !broken && s?.node}
+        <button type="button" class="h-rte__btn" aria-label={t('richtext.editNode', { label: s.node.def.label || s.node.def.name })} title={t('richtext.editNode', { label: s.node.def.label || s.node.def.name })} onmousedown={(e) => e.preventDefault()} onclick={editNode}><Icon name="edit" size={16} /></button>
+      {/if}
       <span class="h-spacer"></span>
       {#if menu.length}<Menu items={menu} label={t('richtext.more')} />{/if}
     </div>
@@ -466,6 +629,13 @@
   {/if}
   <div class="h-rte__host" hidden={broken} bind:this={host}></div>
 </div>
+
+<Dialog bind:open={dlgOpen} title={dlg?.title ?? ''} size="sm">
+  {#if dlg}
+    {@const d = dlg}
+    <AttrsForm attrs={d.attrs} values={d.values} labels={d.labels} submit={d.submit} removeLabel={d.removeLabel} check={d.check} onapply={(v) => finish(d.apply(v))} onremove={d.remove ? () => finish(d.remove!) : undefined} />
+  {/if}
+</Dialog>
 
 <Dialog bind:open={jsonOpen} title={t('richtext.jsonTitle', { field: label })} size="lg">
   <Textarea rows={16} class="h-rte__json" bind:value={jsonText} spellcheck={false} invalid={!!jsonProblem} aria-label={t('richtext.jsonTitle', { field: label })} />

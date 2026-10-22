@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createSSRApp, defineComponent, h } from 'vue'
@@ -51,7 +52,7 @@ test('rich text: structure, item links from `links`, unsafe links dropped', asyn
     { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'T' }] },
     { type: 'paragraph', content: [link('item:abc', 'in'), link('javascript:alert(1)', 'bad'), link('//evil.com', 'proto'), link('item:missing', 'gone'), link('https://a.b/c?d=1&e=2', 'out'),
       { type: 'text', text: 'b', marks: [{ type: 'bold' }] }] },
-    { type: 'orderedList', attrs: { order: 3 }, content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: '<x>' }] }] }] },
+    { type: 'orderedList', attrs: { start: 3 }, content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: '<x>' }] }] }] },
   )
   const html = await render(h(HydrogenRichText, { doc: d, links: { abc: '/en/about' } }))
   assert.equal(html, '<h2>T</h2><p><a href="/en/about">in</a>badprotogone<a href="https://a.b/c?d=1&amp;e=2">out</a><strong>b</strong></p><ol start="3"><li><p>&lt;x&gt;</p></li></ol>')
@@ -62,4 +63,13 @@ test('image: the preset variant, a focal point and the asset alt', async () => {
   const asset = { url: '/a.jpg', width: 10, height: 5, focal: { x: 0.25, y: 0.5 }, fields: { alt: 'A' }, variants: { card: { url: '/v.webp', width: 4, height: 2, type: 'image/webp', srcset: '/v.webp 4w' } } }
   assert.match(await render(h(HydrogenImage, { asset, preset: 'card' })), /<img loading="lazy" decoding="async" src="\/v.webp" srcset="\/v.webp 4w" width="4" height="2" alt="A" style="object-position:25% 50%">/)
   assert.match(await render(h(HydrogenImage, { asset, alt: 'B', class: 'x' })), /src="\/a.jpg"[^>]*alt="B"/)
+})
+
+const fixture = JSON.parse(readFileSync(new URL('../../client/test/fixtures/richtext-ext.json', import.meta.url), 'utf8'))
+// Vue's SSR writes an empty attribute value as a bare name (`data-open`): the same HTML, normalised here
+for (const c of fixture) test('rich text fixture: ' + c.name, async () => assert.equal((await render(h(HydrogenRichText, { doc: c.doc, ...c.options }))).replace(/ (data-[\w-]+)(?=[ >])/g, ' $1=""'), c.html))
+
+test('rich text: render overrides and resolveLink', async () => {
+  const d = doc({ type: 'paragraph', content: [link('item:a', 'x')] })
+  assert.equal(await render(h(HydrogenRichText, { doc: d, resolveLink: (r) => '/r/' + r.slice(5), render: { paragraph: (a, kids) => [{ tag: 'div', attrs: {}, kids }] } })), '<div><a href="/r/a">x</a></div>')
 })

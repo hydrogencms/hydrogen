@@ -58,6 +58,9 @@ func (a *api) buildCaches(extra []Route) error {
 	if a.blocksJSON, err = encode(map[string]any{"blocks": compiled.Blocks, "tokens": compiled.Tokens}); err != nil {
 		return err
 	}
+	if a.richTextJSON, err = encode(richTextResponse(a.sc.RichText())); err != nil {
+		return err
+	}
 	if a.channelsJSON, err = encodeChannels(a.channels); err != nil {
 		return err
 	}

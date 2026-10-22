@@ -23,7 +23,7 @@ func TestRichText(t *testing.T) {
 			map[string]any{"type": "text", "text": "xss", "marks": []any{map[string]any{"type": "link", "attrs": map[string]any{"href": "javascript:alert(1)"}}}},
 			map[string]any{"type": "text", "text": "ext", "marks": []any{map[string]any{"type": "link", "attrs": map[string]any{"href": "https://example.com/?a=1&b=2"}}}},
 		}},
-		map[string]any{"type": "orderedList", "attrs": map[string]any{"order": float64(3)}, "content": []any{
+		map[string]any{"type": "orderedList", "attrs": map[string]any{"start": float64(3)}, "content": []any{
 			map[string]any{"type": "listItem", "content": []any{map[string]any{"type": "paragraph", "content": []any{map[string]any{"type": "text", "text": "x"}}}}},
 		}},
 		map[string]any{"type": "codeBlock", "attrs": map[string]any{"language": "go\"><x"}, "content": []any{map[string]any{"type": "text", "text": "<tag>"}}},
@@ -62,7 +62,7 @@ func TestRichTextTablesImagesMarks(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := `<table><tbody><tr><th colspan="2"><p>h</p></th></tr><tr><td rowspan="3"><p><u><s>u</s></u><sup>2</sup><sub>3</sub></p></td></tr></tbody></table>` +
-		`<img src="https://a.b/x.png?a=1&amp;b=2" alt="a&#34;b" title="t" width="10" height="20" loading="lazy">` +
+		`<img src="https://a.b/x.png?a=1&amp;b=2" alt="a&quot;b" title="t" width="10" height="20" loading="lazy">` +
 		`<img src="/assets/x/y.png" alt="" loading="lazy">`
 	if got := renderRichText(doc, nil); got != want {
 		t.Errorf("got  %s\nwant %s", got, want)

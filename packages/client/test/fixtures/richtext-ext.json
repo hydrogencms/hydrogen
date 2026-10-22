@@ -1,0 +1,1058 @@
+[
+  {
+    "name": "align on paragraph and heading; anything but the four values ignored",
+    "doc": {
+      "type": "doc",
+      "content": [
+        {
+          "type": "paragraph",
+          "attrs": {
+            "align": "center"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "a"
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 2,
+            "align": "right",
+            "id": "top"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "T"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {
+            "align": "evil;color:red"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "x"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {
+            "align": "justify"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "j"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {
+            "align": "left"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "l"
+            }
+          ]
+        }
+      ]
+    },
+    "html": "<p style=\"text-align:center\">a</p><h2 id=\"top\" style=\"text-align:right\">T</h2><p>x</p><p style=\"text-align:justify\">j</p><p style=\"text-align:left\">l</p>"
+  },
+  {
+    "name": "anchor ids follow the pattern",
+    "doc": {
+      "type": "doc",
+      "content": [
+        {
+          "type": "paragraph",
+          "attrs": {
+            "id": "sec-1_a"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "a"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {
+            "id": "1bad"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "b"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {
+            "id": "a b"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "c"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {
+            "id": "x\"y"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "d"
+            }
+          ]
+        }
+      ]
+    },
+    "html": "<p id=\"sec-1_a\">a</p><p>b</p><p>c</p><p>d</p>"
+  },
+  {
+    "name": "ordered list start renders when not 1, order is not read",
+    "doc": {
+      "type": "doc",
+      "content": [
+        {
+          "type": "orderedList",
+          "attrs": {
+            "start": 1
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "attrs": {
+            "start": 3
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "b"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "attrs": {
+            "start": 0
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "c"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "attrs": {
+            "start": -2
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "d"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "attrs": {
+            "order": 5
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "e"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "attrs": {
+            "start": 2000000
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "f"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "html": "<ol><li><p>a</p></li></ol><ol start=\"3\"><li><p>b</p></li></ol><ol start=\"0\"><li><p>c</p></li></ol><ol start=\"-2\"><li><p>d</p></li></ol><ol><li><p>e</p></li></ol><ol><li><p>f</p></li></ol>"
+  },
+  {
+    "name": "tight lists drop the paragraph wrapper of direct children only",
+    "doc": {
+      "type": "doc",
+      "content": [
+        {
+          "type": "bulletList",
+          "attrs": {
+            "tight": true
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "a"
+                    },
+                    {
+                      "type": "text",
+                      "text": "b",
+                      "marks": [
+                        {
+                          "type": "bold"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "c"
+                    }
+                  ]
+                },
+                {
+                  "type": "bulletList",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "type": "listItem",
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "d"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "bulletList",
+          "attrs": {
+            "tight": false
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "e"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "attrs": {
+            "tight": true,
+            "start": 2
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "f"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "html": "<ul><li>a<strong>b</strong></li><li>c<ul><li><p>d</p></li></ul></li></ul><ul><li><p>e</p></li></ul><ol start=\"2\"><li>f</li></ol>"
+  },
+  {
+    "name": "link target",
+    "doc": {
+      "type": "doc",
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "go",
+              "marks": [
+                {
+                  "type": "link",
+                  "attrs": {
+                    "href": "https://x.test/",
+                    "target": "_blank"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": "stay",
+              "marks": [
+                {
+                  "type": "link",
+                  "attrs": {
+                    "href": "https://x.test/",
+                    "target": "_self"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "html": "<p><a href=\"https://x.test/\" target=\"_blank\" rel=\"noopener noreferrer\">go</a><a href=\"https://x.test/\">stay</a></p>"
+  },
+  {
+    "name": "anchors and item links with fragments",
+    "options": {
+      "links": {
+        "abc": "/en/about"
+      }
+    },
+    "doc": {
+      "type": "doc",
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "a",
+              "marks": [
+                {
+                  "type": "link",
+                  "attrs": {
+                    "href": "#sec-1"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": "b",
+              "marks": [
+                {
+                  "type": "link",
+                  "attrs": {
+                    "href": "item:abc#part"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": "c",
+              "marks": [
+                {
+                  "type": "link",
+                  "attrs": {
+                    "href": "item:abc"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": "d",
+              "marks": [
+                {
+                  "type": "link",
+                  "attrs": {
+                    "href": "item:zzz#part"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": "e",
+              "marks": [
+                {
+                  "type": "link",
+                  "attrs": {
+                    "href": "javascript:alert(1)#x"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": "f",
+              "marks": [
+                {
+                  "type": "link",
+                  "attrs": {
+                    "href": "/p#top"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "html": "<p><a href=\"#sec-1\">a</a><a href=\"/en/about#part\">b</a><a href=\"/en/about\">c</a>de<a href=\"/p#top\">f</a></p>"
+  },
+  {
+    "name": "classes on built-in elements, tokens only",
+    "options": {
+      "classes": {
+        "paragraph": "lead",
+        "heading": "big",
+        "bold": "b-x",
+        "link": "a\"b",
+        "bulletList": "list tight",
+        "codeBlock": "pre_x",
+        "horizontalRule": "sep"
+      }
+    },
+    "doc": {
+      "type": "doc",
+      "content": [
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "type": "text",
+              "text": "a",
+              "marks": [
+                {
+                  "type": "bold"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 1,
+            "id": "t"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "H"
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "l",
+              "marks": [
+                {
+                  "type": "link",
+                  "attrs": {
+                    "href": "/x",
+                    "target": "_blank"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "bulletList",
+          "attrs": {},
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "i"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "codeBlock",
+          "attrs": {
+            "language": "go"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "x"
+            }
+          ]
+        },
+        {
+          "type": "horizontalRule"
+        }
+      ]
+    },
+    "html": "<p class=\"lead\"><strong class=\"b-x\">a</strong></p><h1 id=\"t\" class=\"big\">H</h1><p class=\"lead\"><a href=\"/x\" target=\"_blank\" rel=\"noopener noreferrer\">l</a></p><ul class=\"list tight\"><li><p class=\"lead\">i</p></li></ul><pre class=\"pre_x\"><code class=\"language-go\">x</code></pre><hr class=\"sep\">"
+  },
+  {
+    "name": "custom nodes and marks without a schema",
+    "doc": {
+      "type": "doc",
+      "content": [
+        {
+          "type": "callout",
+          "attrs": {
+            "variant": "info"
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "x"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "see"
+            },
+            {
+              "type": "footnoteRef",
+              "attrs": {
+                "n": 3
+              }
+            },
+            {
+              "type": "text",
+              "text": " "
+            },
+            {
+              "type": "text",
+              "text": "hot",
+              "marks": [
+                {
+                  "type": "highlight",
+                  "attrs": {
+                    "tone": "yellow"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "flags",
+          "attrs": {
+            "closed": false,
+            "fooBar": "v",
+            "open": true
+          },
+          "content": []
+        },
+        {
+          "type": "embed",
+          "attrs": {},
+          "content": []
+        },
+        {
+          "type": "bad name\"",
+          "attrs": {},
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "kept"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "odd",
+          "attrs": {
+            "a b": "x",
+            "ok": "y"
+          },
+          "content": []
+        }
+      ]
+    },
+    "html": "<div class=\"rt-callout\" data-variant=\"info\"><p>x</p></div><p>see<span class=\"rt-footnoteRef\" data-n=\"3\"></span> <span class=\"rt-highlight\" data-tone=\"yellow\">hot</span></p><div class=\"rt-flags\" data-foo-bar=\"v\" data-open=\"\"></div><div class=\"rt-embed\"></div><p>kept</p><div class=\"rt-odd\" data-ok=\"y\"></div>"
+  },
+  {
+    "name": "custom nodes and marks with a schema",
+    "options": {
+      "schema": {
+        "nodes": {
+          "callout": {
+            "tag": "aside",
+            "attrs": {
+              "variant": {
+                "type": "enum",
+                "default": "info"
+              },
+              "dismissible": {
+                "type": "bool"
+              }
+            }
+          },
+          "details": {
+            "tag": "details"
+          },
+          "detailsSummary": {
+            "tag": "summary"
+          },
+          "detailsBody": {},
+          "embed": {
+            "tag": "figure",
+            "attrs": {
+              "url": {
+                "type": "url"
+              },
+              "caption": {
+                "type": "string"
+              }
+            }
+          },
+          "footnoteRef": {
+            "inline": true,
+            "attrs": {
+              "n": {
+                "type": "int"
+              }
+            }
+          }
+        },
+        "marks": {
+          "highlight": {
+            "tag": "mark",
+            "attrs": {
+              "tone": {
+                "type": "enum"
+              }
+            }
+          },
+          "plain": {}
+        }
+      }
+    },
+    "doc": {
+      "type": "doc",
+      "content": [
+        {
+          "type": "callout",
+          "attrs": {
+            "dismissible": true
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "x"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "attrs": {
+            "variant": "tip",
+            "dismissible": false,
+            "ghost": "no"
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "y"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "details",
+          "attrs": {},
+          "content": [
+            {
+              "type": "detailsSummary",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Sum"
+                }
+              ]
+            },
+            {
+              "type": "detailsBody",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Body"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "embed",
+          "attrs": {
+            "url": "https://v.test/a?b=1&c=2",
+            "caption": "a & \"b\" <c>"
+          },
+          "content": []
+        },
+        {
+          "type": "embed",
+          "attrs": {
+            "url": "javascript:alert(1)",
+            "caption": "x"
+          },
+          "content": []
+        },
+        {
+          "type": "embed",
+          "attrs": {
+            "url": "//evil.test/x"
+          },
+          "content": []
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "n"
+            },
+            {
+              "type": "footnoteRef",
+              "attrs": {
+                "n": 12
+              }
+            },
+            {
+              "type": "text",
+              "text": "h",
+              "marks": [
+                {
+                  "type": "highlight",
+                  "attrs": {
+                    "tone": "green"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": "p",
+              "marks": [
+                {
+                  "type": "plain"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "blockquote",
+          "content": [
+            {
+              "type": "callout",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "q"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "html": "<aside class=\"rt-callout\" data-variant=\"info\" data-dismissible=\"\"><p>x</p></aside><aside class=\"rt-callout\" data-variant=\"tip\"><p>y</p></aside><details class=\"rt-details\"><summary class=\"rt-detailsSummary\">Sum</summary><div class=\"rt-detailsBody\"><p>Body</p></div></details><figure class=\"rt-embed\" data-url=\"https://v.test/a?b=1&amp;c=2\" data-caption=\"a &amp; &quot;b&quot; &lt;c&gt;\"></figure><figure class=\"rt-embed\" data-caption=\"x\"></figure><figure class=\"rt-embed\"></figure><p>n<span class=\"rt-footnoteRef\" data-n=\"12\"></span><mark class=\"rt-highlight\" data-tone=\"green\">h</mark><span class=\"rt-plain\">p</span></p><blockquote><aside class=\"rt-callout\" data-variant=\"info\"><p>q</p></aside></blockquote>"
+  },
+  {
+    "name": "classes on custom nodes and marks follow rt-name",
+    "options": {
+      "schema": {
+        "nodes": {
+          "callout": {
+            "tag": "aside",
+            "attrs": {
+              "variant": {
+                "type": "enum",
+                "default": "info"
+              },
+              "dismissible": {
+                "type": "bool"
+              }
+            }
+          },
+          "details": {
+            "tag": "details"
+          },
+          "detailsSummary": {
+            "tag": "summary"
+          },
+          "detailsBody": {},
+          "embed": {
+            "tag": "figure",
+            "attrs": {
+              "url": {
+                "type": "url"
+              },
+              "caption": {
+                "type": "string"
+              }
+            }
+          },
+          "footnoteRef": {
+            "inline": true,
+            "attrs": {
+              "n": {
+                "type": "int"
+              }
+            }
+          }
+        },
+        "marks": {
+          "highlight": {
+            "tag": "mark",
+            "attrs": {
+              "tone": {
+                "type": "enum"
+              }
+            }
+          },
+          "plain": {}
+        }
+      },
+      "classes": {
+        "callout": "box wide",
+        "highlight": "hl",
+        "footnoteRef": "fn",
+        "details": "x\"y"
+      }
+    },
+    "doc": {
+      "type": "doc",
+      "content": [
+        {
+          "type": "callout",
+          "attrs": {
+            "variant": "warning"
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "x",
+                  "marks": [
+                    {
+                      "type": "highlight",
+                      "attrs": {
+                        "tone": "yellow"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "footnoteRef",
+                  "attrs": {
+                    "n": 1
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "details",
+          "attrs": {},
+          "content": [
+            {
+              "type": "detailsSummary",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "text",
+                  "text": "s"
+                }
+              ]
+            },
+            {
+              "type": "detailsBody",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "b"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "html": "<aside class=\"rt-callout box wide\" data-variant=\"warning\"><p><mark class=\"rt-highlight hl\" data-tone=\"yellow\">x</mark><span class=\"rt-footnoteRef fn\" data-n=\"1\"></span></p></aside><details class=\"rt-details\"><summary class=\"rt-detailsSummary\">s</summary><div class=\"rt-detailsBody\"><p>b</p></div></details>"
+  }
+]
