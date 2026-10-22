@@ -3,6 +3,7 @@ package site
 import (
 	"container/list"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hydrogencms/hydrogen/core/cachetag"
@@ -14,8 +15,8 @@ type pageCache struct {
 	mu    sync.Mutex
 	max   int64
 	used  int64
-	gen   uint64
-	order *list.List // front = most recently used
+	gen   atomic.Uint64 // written under mu
+	order *list.List    // front = most recently used
 	m     map[string]*list.Element
 	byTag map[string]map[*cached]struct{}
 }
@@ -48,11 +49,7 @@ func (c *pageCache) get(key string) *cached {
 }
 
 // generation counts purges: a page rendered before a purge must not be stored after it.
-func (c *pageCache) generation() uint64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.gen
-}
+func (c *pageCache) generation() uint64 { return c.gen.Load() }
 
 func (c *pageCache) put(e *cached, gen uint64) {
 	e.size = int64(len(e.body)+len(e.key)+len(e.etag)) + entryOverhead
@@ -61,7 +58,7 @@ func (c *pageCache) put(e *cached, gen uint64) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if gen != c.gen || e.size > c.max/4 {
+	if gen != c.gen.Load() || e.size > c.max/4 {
 		return
 	}
 	if old := c.m[e.key]; old != nil {
@@ -101,7 +98,7 @@ func (c *pageCache) remove(e *cached) {
 func (c *pageCache) purge(tags ...string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.gen++
+	c.gen.Add(1)
 	for _, t := range tags {
 		if t == cachetag.All {
 			c.clearLocked()
@@ -116,7 +113,7 @@ func (c *pageCache) purge(tags ...string) {
 func (c *pageCache) clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.gen++
+	c.gen.Add(1)
 	c.clearLocked()
 }
 

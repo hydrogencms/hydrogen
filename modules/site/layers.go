@@ -3,8 +3,10 @@ package site
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"hash/fnv"
 	"io/fs"
 	"net/http"
 	"os"
@@ -185,16 +187,20 @@ func (t translations) text(locale, def, key string, pairs ...any) string {
 }
 
 // dirSignature changes when a file under the project's directory is added, removed or modified.
-func dirSignature(dir string) string {
-	var sb strings.Builder
+func dirSignature(dir string) uint64 {
+	h := fnv.New64a()
+	var buf [16]byte
 	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
 		if info, err := d.Info(); err == nil {
-			fmt.Fprintf(&sb, "%s:%d:%d;", p, info.Size(), info.ModTime().UnixNano())
+			_, _ = h.Write([]byte(p))
+			binary.LittleEndian.PutUint64(buf[:8], uint64(info.Size()))
+			binary.LittleEndian.PutUint64(buf[8:], uint64(info.ModTime().UnixNano()))
+			_, _ = h.Write(buf[:])
 		}
 		return nil
 	})
-	return sb.String()
+	return h.Sum64()
 }

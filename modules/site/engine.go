@@ -22,7 +22,7 @@ type engine struct {
 	rich    map[string]bool               // node and mark types with a richtext/<type>.html override; nil when none
 	trans   translations
 	assets  *assetSet
-	sig     string
+	sig     uint64
 	strict  bool
 	sources map[string]string
 	comps   map[string]ComponentFunc

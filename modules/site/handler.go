@@ -58,6 +58,11 @@ func (s *server) serveSite(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	// Taken before the engine: a page rendered with templates a dev reload has since replaced is not stored.
+	var gen uint64
+	if s.cache != nil {
+		gen = s.cache.generation()
+	}
 	eng := s.engine()
 	p := r.URL.Path
 	if eng == nil && s.loadErr != nil {
@@ -109,13 +114,11 @@ func (s *server) serveSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := ch.Name + "\x00" + r.URL.EscapedPath()
-	var gen uint64
 	if token == "" && s.cache != nil && !noCache(r) {
 		if e := s.cache.get(key); e != nil {
 			s.writeCached(w, r, e)
 			return
 		}
-		gen = s.cache.generation()
 	}
 	rc := &reqCtx{ctx: r.Context(), r: r, ch: ch, rest: rest, raw: raw, f: s.fetcher(r, ch.Name, token), token: token, eng: eng}
 	res := s.resolve(rc)

@@ -27,6 +27,9 @@ each one. In dev a broken file fails only the pages that use it (the error is on
 reload the file's last good version is served instead, and every page shows the parse errors over it until they are
 fixed.
 
+In dev a request checks the site directory (templates, assets, translations) for changes, at most every 250 ms, and
+a reload clears the page cache.
+
 ## Layers
 
 Files are found by name in layers; a later layer replaces an earlier one's file of the same name:
