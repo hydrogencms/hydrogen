@@ -2,9 +2,11 @@ package cachetag
 
 import (
 	"encoding/json"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestItems(t *testing.T) {
@@ -66,5 +68,27 @@ func TestChunks(t *testing.T) {
 	}
 	if got := Chunks([]string{"aaaaaaaaaa", "b"}, 3); !slices.Equal(got, []string{"aaaaaaaaaa", "b"}) {
 		t.Errorf("long tag = %v", got)
+	}
+}
+
+func TestSetHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		ttl          time.Duration
+		tags         []string
+		cc, sk, ctag string
+	}{
+		{"cacheable", 90 * time.Second, []string{"i:b", "c:a", "i:b", "", "bad tag", "x,y"},
+			"public, max-age=0, s-maxage=90, stale-while-revalidate=90", "c:a i:b", "c:a,i:b"},
+		{"sub-second", 1500 * time.Millisecond, nil, "public, max-age=0, s-maxage=1, stale-while-revalidate=1", "", ""},
+		{"revalidate", 0, []string{"a"}, "public, max-age=0, s-maxage=0, stale-while-revalidate=0", "a", "a"},
+		{"no-store", NoStore, []string{"a", "b"}, "no-store", "a b", "a,b"},
+		{"negative", -time.Second, nil, "no-store", "", ""},
+	} {
+		h := http.Header{"Surrogate-Key": {"old"}, "Cache-Tag": {"old"}}
+		SetHeaders(h, tc.ttl, tc.tags)
+		if h.Get("Cache-Control") != tc.cc || h.Get("Surrogate-Key") != tc.sk || h.Get("Cache-Tag") != tc.ctag {
+			t.Errorf("%s: %v", tc.name, h)
+		}
 	}
 }

@@ -24,6 +24,12 @@ All notable changes to Hydrogen are documented here. The format follows
   `delivery.FieldsParam` and `delivery.ItemsFields`. The site module's `items`, `item` and `query` helpers take
   `fields` (and keep detail-route links working), the GraphQL module projects every request to the fields a query
   selects, and `@hydrogencms/client` and `api/client` gain a `fields` option.
+- Site module custom routes answer raw bodies: `site.Response` gains `Partial` (a template or component without the
+  layout: fragments, XML templates), `Body`, `JSON` and `XML`, with `ContentType` and `MaxAge`; a response sets exactly
+  one of them (or `Template`/`Redirect`). Raw answers keep the read tags, `Cacheable`, purges and the static export;
+  `Cacheable` GET answers carry an `ETag` and answer 304. Components render templates with `View.Partial`, and
+  `cachetag.SetHeaders` sets the same cache headers (`Cache-Control`, `Surrogate-Key`, `Cache-Tag`) on `/api/x`
+  endpoints.
 - `DEVELOPMENT.md`: how to run a working copy of Hydrogen with content, the admin and a frontend (fullstack in one
   process, the CMS with a JavaScript starter, the admin with hot reload, a project of your own on the checkout).
 

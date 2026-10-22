@@ -4,8 +4,11 @@ package cachetag
 
 import (
 	"encoding/json"
+	"net/http"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // All purges everything.
@@ -115,4 +118,45 @@ func Chunks(tags []string, limit int) []string {
 		out = append(out, b.String())
 	}
 	return out
+}
+
+// NoStore, as the ttl of SetHeaders, keeps every cache from storing the response.
+const NoStore time.Duration = -1
+
+// SetHeaders sets the cache headers of a response a shared cache may keep for ttl (whole seconds; 0 lets it
+// revalidate every time): Cache-Control, and the tags as Surrogate-Key (space-separated) and Cache-Tag
+// (comma-separated) so CDNs purge it with the rest. A negative ttl (NoStore) sets no-store. Tags are sorted and
+// deduplicated; empty tags and those with whitespace or commas are dropped, and none set no tag headers.
+func SetHeaders(h http.Header, ttl time.Duration, tags []string) {
+	if ttl < 0 {
+		h.Set("Cache-Control", "no-store")
+	} else {
+		n := strconv.FormatInt(int64(ttl/time.Second), 10)
+		h.Set("Cache-Control", "public, max-age=0, s-maxage="+n+", stale-while-revalidate="+n)
+	}
+	h.Del("Surrogate-Key")
+	h.Del("Cache-Tag")
+	if !cleanTags(tags) {
+		tags = slices.DeleteFunc(slices.Clone(tags), badTag)
+		slices.Sort(tags)
+		tags = slices.Compact(tags)
+	}
+	if len(tags) == 0 {
+		return
+	}
+	h.Set("Surrogate-Key", strings.Join(tags, " "))
+	h.Set("Cache-Tag", strings.Join(tags, ","))
+}
+
+func badTag(t string) bool { return t == "" || strings.ContainsAny(t, " \t\r\n,") }
+
+// cleanTags reports tags that are already sorted, unique and valid (the site's and delivery's are), so the
+// common case copies nothing.
+func cleanTags(tags []string) bool {
+	for i, t := range tags {
+		if badTag(t) || (i > 0 && tags[i-1] >= t) {
+			return false
+		}
+	}
+	return true
 }

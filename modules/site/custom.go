@@ -1,7 +1,10 @@
 package site
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/hydrogencms/hydrogen/core/channel"
 )
@@ -67,12 +71,22 @@ func (s *server) linkPath(ch *channel.Channel, it *Item) string {
 	return ""
 }
 
-// Response is what a custom route answers. Without Redirect it renders Template (routes/<name>.html,
-// pages/…, collections/… or a registered component) with the full page context: layout, helpers, meta,
-// navigation, translations, settings and preview; Data is .Data in the template.
+// Response is what a custom route answers: exactly one of Template, Partial, Body, JSON, XML or Redirect.
+// Template (routes/<name>.html, pages/…, collections/… or a registered component) renders with the full page
+// context: layout, helpers, meta, navigation, translations, settings and preview; Data is .Data in it.
 type Response struct {
 	Template string
-	Data     any
+	// Partial renders a template or component like Template, but without the layout and the preview additions
+	// (a fragment, or an XML template with ContentType).
+	Partial string
+	// Body is sent as it is; it needs ContentType. JSON and XML encode a value (XML with the xml.Header prolog).
+	Body []byte
+	JSON any
+	XML  any
+	// ContentType overrides the type of the answer (default text/html for Partial, application/json,
+	// application/xml; charset=utf-8).
+	ContentType string
+	Data        any
 	// Title is .Title (the head title and the 404-style headings use it).
 	Title string
 	// Status defaults to 200, or 302 (303 after a non-GET request) with Redirect.
@@ -84,6 +98,45 @@ type Response struct {
 	// Cacheable lets shared caches keep a successful GET answer (Cache-Control like pages, Surrogate-Key tags);
 	// the default is no-store. The site's own page cache never stores custom routes.
 	Cacheable bool
+	// MaxAge, with Cacheable, is the shared-cache lifetime instead of the channel's delivery.cache_ttl.
+	MaxAge time.Duration
+}
+
+// kinds names the answers a response sets; exactly one is valid.
+func (r *Response) kinds() []string {
+	var k []string
+	for _, c := range []struct {
+		name string
+		set  bool
+	}{{"Template", r.Template != ""}, {"Partial", r.Partial != ""}, {"Body", r.Body != nil}, {"JSON", r.JSON != nil},
+		{"XML", r.XML != nil}, {"Redirect", r.Redirect != ""}} {
+		if c.set {
+			k = append(k, c.name)
+		}
+	}
+	return k
+}
+
+// encode turns a raw answer (Body, JSON, XML) into bytes and its default content type; ok is false for the others.
+func (r *Response) encode() (body []byte, ct string, ok bool, err error) {
+	var buf bytes.Buffer
+	switch {
+	case r.Body != nil:
+		if r.ContentType == "" && r.Headers.Get("Content-Type") == "" {
+			return nil, "", true, errors.New("a Body needs a ContentType")
+		}
+		return r.Body, "", true, nil
+	case r.JSON != nil:
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false)
+		err = enc.Encode(r.JSON)
+		return buf.Bytes(), "application/json", true, err
+	case r.XML != nil:
+		buf.WriteString(xml.Header)
+		err = xml.NewEncoder(&buf).Encode(r.XML)
+		return buf.Bytes(), "application/xml; charset=utf-8", true, err
+	}
+	return nil, "", false, nil
 }
 
 // CustomRoute is a route added with Handle. Its builder methods run before the application starts.
@@ -463,7 +516,13 @@ func (s *server) customResult(rc *reqCtx, hit *customHit, resp *Response) *resul
 		return tags
 	}
 	res.tags = tags()
-	res.cacheable = resp.Cacheable
+	res.cacheable, res.maxAge = resp.Cacheable, resp.MaxAge
+	if k := resp.kinds(); len(k) != 1 {
+		if len(k) == 0 {
+			return s.internal(rc, fmt.Errorf("custom route %s: the response answers nothing (set one of Template, Partial, Body, JSON, XML, Redirect)", hit.route.pattern))
+		}
+		return s.internal(rc, fmt.Errorf("custom route %s: the response sets %s, but only one is allowed", hit.route.pattern, strings.Join(k, " and ")))
+	}
 	status := resp.Status
 	if resp.Redirect != "" {
 		if status == 0 {
@@ -484,8 +543,23 @@ func (s *server) customResult(rc *reqCtx, hit *customHit, resp *Response) *resul
 	if status < 200 || status > 599 || (status >= 300 && status < 400) {
 		return s.internal(rc, fmt.Errorf("custom route %s: status %d needs a Redirect or is invalid", hit.route.pattern, status))
 	}
-	if resp.Template == "" || !rc.eng.has(resp.Template) {
-		return s.internal(rc, fmt.Errorf("custom route %s: template %q does not exist (add site/templates/routes/<name>.html)", hit.route.pattern, resp.Template))
+	if body, ct, ok, err := resp.encode(); ok {
+		if err != nil {
+			return s.internal(rc, fmt.Errorf("custom route %s: %w", hit.route.pattern, err))
+		}
+		res.status, res.body, res.tags = status, body, tags()
+		res.contentType = resp.ContentType
+		if res.contentType == "" && resp.Headers.Get("Content-Type") == "" {
+			res.contentType = ct
+		}
+		return res
+	}
+	name, partial := resp.Template, false
+	if resp.Partial != "" {
+		name, partial = resp.Partial, true
+	}
+	if !rc.eng.has(name) {
+		return s.internal(rc, fmt.Errorf("custom route %s: template %q does not exist (add site/templates/routes/<name>.html)", hit.route.pattern, name))
 	}
 	p, v := s.newPage(rc, rc.ch.Languages[0], nil)
 	p.loadNav = s.navLoader(rc, p)
@@ -502,10 +576,18 @@ func (s *server) customResult(rc *reqCtx, hit *customHit, resp *Response) *resul
 	if resp.Title != "" {
 		p.crumbs = append(p.crumbs, Crumb{Name: resp.Title, URL: v.Path})
 	}
-	body, err := rc.eng.render(resp.Template, p, v)
+	if partial {
+		body, err := rc.eng.renderPartial(name, p, v)
+		if err != nil {
+			return s.internal(rc, err)
+		}
+		res.status, res.body, res.tags, res.contentType = status, body, tags(), resp.ContentType
+		return res
+	}
+	body, err := rc.eng.render(name, p, v)
 	if err != nil {
 		return s.internal(rc, err)
 	}
-	res.status, res.body, res.tags = status, s.finish(rc, body), tags()
+	res.status, res.body, res.tags, res.contentType = status, s.finish(rc, body), tags(), resp.ContentType
 	return res
 }

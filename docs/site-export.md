@@ -113,6 +113,10 @@ run, and after every `-full` run:
 - **command**: runs `argv` without a shell with the work tree appended as the last argument (an argument containing
   `{dir}` gets it substituted instead); `HYDROGEN_EXPORT_DIR` is set too. A non-zero exit fails the export.
 
+A custom route that answers a raw body (`Partial` with a `ContentType`, `Body`, `JSON`, `XML`) is exported to the
+file at its path when the path has an extension (`/feed.xml`, `/search.json`); without one the file gets the
+extension of its content type (`/feed` as `feed.xml`) and the export notes the rewrite your host needs.
+
 ## What static cannot do
 
 Search, forms, personalisation and gated content need a server. Serve those routes from the CMS (they are not

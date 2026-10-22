@@ -166,7 +166,7 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   `packages/starters/*`, each passing `make starter-<name>-e2e`. Framework-neutral server code lives in
   `@hydrogencms/client/server` and `/richtext`, live merging in `@hydrogencms/bridge/merge`; adapters keep only
   glue. Contract: `planning/design/adapters-h10e.md`.
-- Fullstack (H10f): `modules/site` themes (`site.UseTheme`, base chains), custom routes (`site.Handle`), templ-style
+- Fullstack (H10f): `modules/site` themes (`site.UseTheme`, base chains), custom routes (`site.Handle`; raw `Partial`/`Body`/`JSON`/`XML` answers), templ-style
   components (`site.Component`, no templ dependency) and the `site.Exporter` API; `modules/siteexport` (static
   export, incremental via the outbox, redirect formats, dir/s3/command publishers; `make site-export-e2e`);
   `modules/siteproxy` (static or supervised SSR frontend behind the binary; `make site-proxy-e2e`). Docs:
