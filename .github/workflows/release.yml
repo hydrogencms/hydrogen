@@ -1,33 +1,70 @@
 name: release
 
-# Runs only when a root version tag (v0.1.0) is pushed. Sub-module tags (modules/sqlite/v0.1.0) do not match.
+# Run by hand (gh workflow run release.yml -f version=v0.2.0 -f ref=<sha or branch>, see scripts/release.sh). The
+# environment `release` can require a reviewer. The source commit must have a green ci-ok. The workflow builds the admin,
+# records it in a release commit on the release branch, pushes that and the tags (a deploy key: the release branch
+# ruleset lets it bypass, because the release commit has no checks of its own), then publishes.
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, e.g. v0.2.0 (every version in the source must already be set to it)
+        required: true
+      ref:
+        description: Source commit (sha, or a branch such as main or hotfix/v0.2.1)
+        required: true
 
 permissions:
   contents: read
 
+concurrency: release
+
 jobs:
   release:
     runs-on: ubuntu-24.04
+    environment: release
     permissions:
       contents: write
+      checks: read
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
-      - name: Check the tag is on the release branch
-        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/release || { echo "$GITHUB_REF_NAME is not on release" >&2; exit 1; }
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
-      - name: Build and archive the CLI
-        env:
-          TAG: ${{ github.ref_name }}
+      - name: Resolve the source and check its CI
         run: |
           set -euo pipefail
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "$VERSION is not a version like v0.2.0" >&2; exit 1; }
+          sha=$(git rev-parse HEAD)
+          echo "SOURCE=$sha" >> "$GITHUB_ENV"
+          n=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs?check_name=ci-ok" \
+            --jq '[.check_runs[] | select(.conclusion == "success")] | length')
+          [ "$n" -gt 0 ] || { echo "$sha has no successful ci-ok check: wait for CI on it" >&2; exit 1; }
+      - uses: ./.github/actions/toolchain
+      - name: Git identity and push access
+        env:
+          DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$DEPLOY_KEY" ] || { echo "secret RELEASE_DEPLOY_KEY is not set" >&2; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          key="$RUNNER_TEMP/release_key"
+          (umask 077 && printf '%s\n' "$DEPLOY_KEY" > "$key")
+          echo "GIT_SSH_COMMAND=ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" >> "$GITHUB_ENV"
+          git remote set-url origin "git@github.com:$GITHUB_REPOSITORY.git"
+      - name: Release commit, tags and push
+        run: scripts/release-commit.sh "$VERSION" "$SOURCE" --push
+
+      - name: Build and archive the CLI from the release commit
+        env:
+          TAG: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git checkout -q --detach "refs/tags/$TAG^{commit}"
           mkdir -p dist
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
             os=${target%/*}
@@ -50,7 +87,7 @@ jobs:
 
       - name: Release notes from the changelog
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.version }}
         run: |
           set -euo pipefail
           version=${TAG#v}
@@ -66,13 +103,12 @@ jobs:
 
       - name: Create the GitHub release
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.version }}
         run: |
           set -euo pipefail
           prerelease=()
           case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
-          gh release create "$TAG" dist/* --title "Hydrogen $TAG" --notes-file notes.md "${prerelease[@]}"
+          gh release create "$TAG" --verify-tag dist/* --title "Hydrogen $TAG" --notes-file notes.md "${prerelease[@]}"
 
   # Publishes the npm packages with provenance (each package is signed and linked to this workflow run and commit).
   # Off until the repository variable NPM_PUBLISH is "true". Authentication: npm trusted publishing (OIDC; configure
@@ -89,6 +125,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.version }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -104,7 +142,7 @@ jobs:
           npm run size
       - name: Check the tag matches the packages
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.version }}
         run: |
           set -euo pipefail
           . scripts/npm-packages.sh

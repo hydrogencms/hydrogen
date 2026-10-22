@@ -8,6 +8,9 @@ node_modules/
 coverage.out
 planning/
 /packages/*/dist/
+# The built admin is not committed on main: `make admin` builds it, the release workflow records it in release commits
+/admin/dist/*
+!/admin/dist/.keep
 /packages/node_modules/
 # Local media storage of example projects (media.storage.dir, default data/media)
 examples/*/data/

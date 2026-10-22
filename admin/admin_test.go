@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -180,5 +181,32 @@ func TestImageOriginsInCSP(t *testing.T) {
 	}
 	if strings.Contains(c, "img.example.com") || strings.Contains(c, "script-src *") || !strings.Contains(c, "script-src 'self';") {
 		t.Fatalf("invalid origin accepted: %s", c)
+	}
+}
+
+func TestNotBuilt(t *testing.T) {
+	h := Handler("/admin", fstest.MapFS{".keep": {}}, Options{APIPrefix: "/api/manage/v1"})
+	for _, p := range []string{"/admin/", "/admin/index.html", "/admin/content/articles/1"} {
+		w := get(h, "GET", p)
+		if w.Code != 200 || !strings.Contains(w.Body.String(), "make admin") {
+			t.Errorf("%s: %d %s", p, w.Code, w.Body)
+		}
+		if w.Header().Get("Cache-Control") != "no-store" || w.Header().Get("Content-Security-Policy") == "" ||
+			!strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
+			t.Errorf("%s: headers %v", p, w.Header())
+		}
+	}
+	if w := get(h, "GET", "/admin/assets/app.js"); w.Code != 404 {
+		t.Errorf("missing asset: %d", w.Code)
+	}
+	if w := get(h, "GET", "/admin/config.json"); w.Code != 200 || !strings.Contains(w.Body.String(), "apiPrefix") {
+		t.Errorf("config.json: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestBuilt(t *testing.T) {
+	_, err := fs.Stat(Dist(), "index.html")
+	if got := Built(); got != (err == nil) {
+		t.Fatalf("Built() = %v, index.html stat: %v", got, err)
 	}
 }

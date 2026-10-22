@@ -9,7 +9,7 @@ Commands (in `admin/ui`, or `make admin` from the repo root): `npm run dev` (Vit
 `ADMIN_API_URL`, default `http://127.0.0.1:8080`), `npm run check` (svelte-check), `npm test` (vitest + jsdom),
 `npm run build` (into `../dist`), `npm run size` (budgets: initial JS 120 KB gzip, CSS 30 KB gzip; the design aims at 45 KB and 16 KB),
 `npm run types -- <openapi.json>` (regenerate `schema.d.ts`), `npm run e2e` (Playwright, `BASE_URL`,
-`ADMIN_LOGIN`, `ADMIN_PASSWORD`). The Go server embeds `admin/dist`: rebuild the Go binary after `npm run build`.
+`ADMIN_LOGIN`, `ADMIN_PASSWORD`). The Go server embeds `admin/dist` (built, not committed): rebuild the Go binary after `npm run build`.
 
 ## Rules
 

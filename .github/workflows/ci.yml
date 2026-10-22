@@ -22,13 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/toolchain
-        with:
-          node: "false"
       - name: Install golangci-lint
         run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
       - run: make tidy-check
       - run: make vet
       - run: make lint
+      - name: Admin app (the smoke binary embeds it)
+        run: make admin
       - name: Smoke and budgets
         run: make smoke
 
@@ -72,7 +72,7 @@ jobs:
           node: "false"
       - run: make test MODULES="${{ matrix.modules }}" TEST_TIMEOUT=25m
 
-  # The npm packages (build, tests, gzip budgets), then the committed build outputs: they must match a rebuild.
+  # The npm packages (build, tests, gzip budgets), the admin app, then the committed build outputs: they must match a rebuild.
   assets:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -80,8 +80,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/toolchain
       - run: make sdk
-      - name: Admin app (typecheck, unit tests, size budgets) and admin/dist
-        run: make admin-dist-check
+      - name: Admin app (typecheck, unit tests, build, size budgets)
+        run: make admin
       - run: make example-admin-check
       - run: make site-bridge-check
 

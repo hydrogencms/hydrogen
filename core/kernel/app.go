@@ -811,6 +811,9 @@ func (a *App) mountAdmin(mux *http.ServeMux) error {
 		return err
 	}
 	o.Extensions = ext
+	if o.DevURL == "" && !admin.Built() {
+		s.Log.Warn("the admin is not built into this binary: run make admin in the Hydrogen checkout and rebuild, or use a released version", "prefix", s.Core.Admin.Prefix)
+	}
 	if err := handle(mux, s.Core.Admin.Prefix+"/", admin.Handler(s.Core.Admin.Prefix, admin.Dist(), o)); err != nil {
 		return fmt.Errorf("admin.prefix %q: %w", s.Core.Admin.Prefix, err)
 	}

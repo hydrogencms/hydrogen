@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# Prepare a release: verify versions, run the gates, and (with --tag) create the annotated tags locally.
-# Never pushes, never publishes: the push and npm publish commands are printed for you to run.
-# Releases live on the `release` branch. Cut one from main (--tag fast-forwards release to it) or, for a hotfix,
-# from release itself (merge release back into main afterwards).
+# Prepare a release: set and verify versions and run the gates. Never pushes, never publishes.
+# Releases are cut by the release workflow: it builds the admin and records it in a release commit on the `release`
+# branch (scripts/release-commit.sh), tags it, and publishes. Run this from main (or a hotfix/vX.Y.Z branch).
 #
 #   scripts/release.sh v0.2.0 --bump          set every version to v0.2.0 (go.mod, package.json, lockfile, bridge,
 #                                             scaffold, a dated CHANGELOG section), check, and stop: review and commit
-#   scripts/release.sh v0.2.0                 dry run: checks everything, prints the tags and commands
-#   scripts/release.sh v0.2.0 --tag           also creates the tags locally
+#   scripts/release.sh v0.2.0                 dry run: checks everything, runs the gates, prints the dispatch command
+#   scripts/release.sh v0.2.0 --verify        only the version checks (any branch, any tree; used by release-commit.sh)
 #   --skip-gates                              skip `make check` and the e2e gates
-#   --allow-dirty                             dry runs only: tolerate a dirty tree (refused with --tag)
+#   --allow-dirty                             tolerate a dirty tree
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -26,13 +25,14 @@ usage() {
 }
 
 version=""
-tag=0
+verify=0
 bump=0
 skip_gates=0
 allow_dirty=0
 for arg in "$@"; do
 	case "$arg" in
-	--tag) tag=1 ;;
+	--tag) echo "release: --tag is gone: dispatch the release workflow (gh workflow run release.yml -f version=<v> -f ref=<sha>)" >&2; exit 2 ;;
+	--verify) verify=1 ;;
 	--bump) bump=1 ;;
 	--skip-gates) skip_gates=1 ;;
 	--allow-dirty) allow_dirty=1 ;;
@@ -52,12 +52,8 @@ npmver="${version#v}"
 fail=0
 bad() { echo "release: $*" >&2; fail=1; }
 
-if [ "$tag" = 1 ] && [ "$allow_dirty" = 1 ]; then
-	echo "release: --allow-dirty is for dry runs; it cannot be combined with --tag" >&2
-	exit 1
-fi
-if [ "$bump" = 1 ] && [ "$tag" = 1 ]; then
-	echo "release: --bump changes files; commit them and pass CI before --tag" >&2
+if [ "$bump" = 1 ] && [ "$verify" = 1 ]; then
+	echo "release: --bump and --verify cannot be combined" >&2
 	exit 1
 fi
 
@@ -87,23 +83,28 @@ bump_versions() {
 }
 
 branch=$(git rev-parse --abbrev-ref HEAD)
-case "$branch" in
-main)
-	if git rev-parse -q --verify refs/heads/release >/dev/null; then
-		git merge-base --is-ancestor release HEAD || bad "release has commits main lacks: merge release into main first"
+if [ "$verify" = 0 ]; then
+	case "$branch" in
+	main | hotfix/*) ;;
+	*) bad "on branch $branch, releases are cut from main (or a hotfix/vX.Y.Z branch)" ;;
+	esac
+	# The source of the latest release (the first parent of a release commit; a plain commit before release commits
+	# existed) must be in this history, or the release would drop its changes: merge hotfixes back into main.
+	if git rev-parse -q --verify refs/remotes/origin/release >/dev/null; then
+		last=origin/release
+		if git rev-parse -q --verify origin/release^2 >/dev/null && git log -1 --format=%B origin/release | grep -q '^Source: '; then
+			last=origin/release^1
+		fi
+		git merge-base --is-ancestor "$last" HEAD || bad "the latest release's source ($(git rev-parse --short "$last")) is not in this history: merge it (the hotfix branch) into main first"
 	else
-		git rev-parse -q --verify refs/remotes/origin/release >/dev/null || bad "no release branch (git fetch origin release)"
-		git merge-base --is-ancestor origin/release HEAD || bad "origin/release has commits main lacks: merge it into main first"
+		bad "no release branch (git fetch origin release)"
 	fi
-	;;
-release) ;;
-*) bad "on branch $branch, releases are cut from main (or from release for a hotfix)" ;;
-esac
-if [ -n "$(git status --porcelain)" ]; then
-	if [ "$allow_dirty" = 1 ]; then
-		echo "release: warning: dirty tree (--allow-dirty, dry run)" >&2
-	else
-		bad "the working tree is not clean"
+	if [ -n "$(git status --porcelain)" ]; then
+		if [ "$allow_dirty" = 1 ]; then
+			echo "release: warning: dirty tree (--allow-dirty)" >&2
+		else
+			bad "the working tree is not clean"
+		fi
 	fi
 fi
 if [ "$bump" = 1 ]; then
@@ -121,11 +122,11 @@ while IFS= read -r f; do
 	tags+=("$dir/$version")
 done < <(git ls-files 'modules/*/go.mod' | sort)
 
-for t in "${tags[@]}"; do
-	if git rev-parse -q --verify "refs/tags/$t" >/dev/null; then
-		[ "$tag" = 0 ] || bad "tag $t already exists"
-	fi
-done
+if [ "$verify" = 0 ]; then
+	for t in "${tags[@]}"; do
+		! git rev-parse -q --verify "refs/tags/$t" >/dev/null || bad "tag $t already exists"
+	done
+fi
 
 # Every require of a hydrogen module (examples and tests included) is the release version.
 while IFS= read -r f; do
@@ -185,8 +186,12 @@ if [ "$bump" = 1 ]; then
 	Next (nothing is committed):
 	  git diff                                  review; write the CHANGELOG section's summary if it needs one
 	  git commit -am "Release $version" && git push origin main
-	  wait for CI (ci-ok) on that commit, then: scripts/release.sh $version --tag
+	  wait for CI (ci-ok) on that commit, then: scripts/release.sh $version
 	EOF
+	exit 0
+fi
+
+if [ "$verify" = 1 ]; then
 	exit 0
 fi
 
@@ -198,29 +203,23 @@ else
 fi
 
 echo
-if [ "$tag" = 1 ]; then
-	for t in "${tags[@]}"; do
-		git tag -a "$t" -m "Hydrogen $t"
-		echo "tagged $t"
-	done
-	if [ "$branch" = main ]; then
-		git branch -f release HEAD
-		echo "release fast-forwarded to $(git rev-parse --short HEAD)"
-	fi
+echo "Tags the workflow will create on the release commit:"
+printf '  %s\n' "${tags[@]}"
+echo
+echo "Next (not run). The workflow needs a green ci-ok on the commit, so push it and wait for CI first:"
+if [ "$branch" = main ]; then
+	echo "  git push origin main"
 else
-	echo "Dry run: tags that --tag would create at $(git rev-parse --short HEAD):"
-	printf '  %s\n' "${tags[@]}"
+	echo "  git push origin $branch"
 fi
-
+echo "then dispatch the release (the environment's reviewer approves it):"
+echo "  gh workflow run release.yml -f version=$version -f ref=\$(git rev-parse HEAD)"
 echo
-echo "Push (not run). GitHub accepts the release branch only once CI passed on the commit, so push main and wait for"
-echo "CI first. The root tag goes alone, after the branch: it triggers the release workflow (which requires the tag on"
-echo "release), and GitHub starts no workflow for tags pushed more than three at a time."
-heads=main
-[ "$branch" = main ] || heads=""
-echo "  git push --atomic origin $heads release ${tags[*]:1} && git push origin ${tags[0]}"
-[ "$branch" = main ] || echo "then bring the hotfix to main: git switch main && git merge release"
+echo "Hotfix: on a hotfix/<version> branch cut from the last release's source (git switch -c hotfix/$version"
+echo "<previous version>^1), push it, PR the fix into it, run this script there, dispatch with that branch's sha, then"
+echo "merge the hotfix branch into main by PR."
 echo
-echo "Publish to npm (not run): the release workflow does it with provenance when the repository variable"
-echo "NPM_PUBLISH is true; by hand, after 'npm login' and a build (cd packages && npm ci && npm run build):"
+echo "The workflow builds the admin, records it in the release commit, pushes release and the tags, creates the"
+echo "GitHub release and, when the repository variable NPM_PUBLISH is true, publishes the npm packages with provenance."
+echo "By hand (after 'npm login' and a build: cd packages && npm ci && npm run build):"
 echo "  scripts/npm-publish.sh            (order: ${NPM_ORDER[*]})"

@@ -1,4 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
+import { closeSync, openSync } from 'node:fs';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 const goServer = process.env.ADMIN_API_URL ?? 'http://127.0.0.1:8080';
@@ -26,9 +27,20 @@ function devHost(): Plugin {
   };
 }
 
+// emptyOutDir removes the tracked admin/dist/.keep (it keeps go:embed valid on a fresh clone); put it back.
+function keepDist(): Plugin {
+  return {
+    name: 'h-keep-dist',
+    apply: 'build',
+    closeBundle() {
+      closeSync(openSync(new URL('../dist/.keep', import.meta.url), 'a'));
+    },
+  };
+}
+
 export default defineConfig(({ command }) => ({
   base: command === 'serve' && devPrefix ? devPrefix + '/' : './',
-  plugins: [svelte(), devHost()],
+  plugins: [svelte(), devHost(), keepDist()],
   resolve: process.env.VITEST ? { conditions: ['browser'] } : {},
   build: {
     outDir: '../dist',

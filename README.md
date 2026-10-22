@@ -99,7 +99,7 @@ make build test vet lint   # every Go module in the repository
 make db-up                 # Postgres 17 on localhost:5436 for the Postgres adapter tests
 make smoke                 # new project, migrate, serve, with binary size, start-up and memory budgets
 make sdk                   # the npm packages: install, build, test, size budgets
-make admin                 # the admin app: typecheck, tests, build into admin/dist
+make admin                 # the admin app: typecheck, tests, build into admin/dist (run once after cloning)
 make check                 # the full gate: tidy, vet, lint, test, smoke, admin
 ```
 

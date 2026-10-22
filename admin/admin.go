@@ -1,5 +1,7 @@
-// Package admin serves the admin single-page app. The built assets are committed in dist/ and embedded, so a
-// Go build needs no Node. The app only talks to the management API; it learns its prefixes from config.json.
+// Package admin serves the admin single-page app. The built assets in dist/ are embedded: they are not committed on
+// main (make admin builds them) but are part of every release, so a module user's Go build needs no Node. Without
+// them the handler answers a built-in page saying so. The app only talks to the management API; it learns its
+// prefixes from config.json.
 package admin
 
 import (
@@ -28,6 +30,23 @@ func Dist() fs.FS {
 	}
 	return sub
 }
+
+// Built reports whether the embedded dist holds the app (a checkout where make admin has not run does not).
+func Built() bool {
+	_, err := fs.Stat(embedded, "dist/index.html")
+	return err == nil
+}
+
+// notBuilt answers admin pages when dist has no index.html.
+const notBuilt = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hydrogen admin not built</title></head>
+<body style="font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem">
+<h1>The admin is not built into this binary</h1>
+<p>This binary was built from a Hydrogen checkout without the admin app. In that checkout run <code>make admin</code>
+and rebuild, or use a released version of Hydrogen, which includes the built admin.</p>
+<p>The APIs are unaffected.</p></body></html>
+`
 
 // Media is the media section of config.json.
 type Media struct {
@@ -135,6 +154,8 @@ func Handler(prefix string, dist fs.FS, o Options) http.Handler {
 	h.xdev = devProxy(o.ElementsDevURL)
 	if b, err := fs.ReadFile(dist, "index.html"); err == nil {
 		h.index = bytes.ReplaceAll(b, []byte(`="./`), []byte(`="`+prefix+`/`))
+	} else {
+		h.index = []byte(notBuilt)
 	}
 	return h
 }
@@ -169,10 +190,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rel = path.Clean("/" + rel)[1:]
 	switch {
 	case rel == "" || rel == "index.html" || !strings.HasPrefix(rel, "assets/") && !h.exists(rel):
-		if h.index == nil {
-			http.NotFound(w, r)
-			return
-		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write(h.index)

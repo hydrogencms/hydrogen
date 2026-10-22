@@ -1,7 +1,7 @@
 # Go modules in this repository (core first). Every target runs over all of them.
 MODULES := . modules/sqlite modules/postgres modules/wasmhooks modules/graphql tests examples/minimal examples/content examples/headless examples/multisite examples/starter examples/fullstack
 
-.PHONY: starter-fixture static-content static-e2e build test vet lint tidy tidy-check db-up db-down smoke check sdk next-e2e starter-next-e2e starter-sveltekit-e2e starter-nuxt-e2e starter-astro-e2e conformance site-e2e wasm-e2e site-bridge site-bridge-check admin admin-types admin-dist-check admin-e2e example-admin example-admin-check site-proxy-e2e site-export-e2e
+.PHONY: starter-fixture static-content static-e2e build test vet lint tidy tidy-check db-up db-down smoke check sdk next-e2e starter-next-e2e starter-sveltekit-e2e starter-nuxt-e2e starter-astro-e2e conformance site-e2e wasm-e2e site-bridge site-bridge-check admin admin-types admin-e2e example-admin example-admin-check site-proxy-e2e site-export-e2e
 
 build:
 	@for m in $(MODULES); do (cd $$m && go build ./...) || exit 1; done
@@ -102,17 +102,13 @@ site-bridge-check:
 	cd packages && npm install --no-audit --no-fund >/dev/null && npm run build -w bridge >/dev/null
 	@cmp -s packages/bridge/dist/bridge.iife.js modules/site/bridge.iife.js || (echo "modules/site/bridge.iife.js is stale: run make site-bridge"; exit 1)
 
-# Admin app (admin/ui): install, typecheck, unit tests, build into the committed admin/dist, size budgets.
+# Admin app (admin/ui): install, typecheck, unit tests, build into admin/dist (not committed: the release workflow records it in release commits), size budgets.
 admin:
 	scripts/npm-ci.sh admin/ui && cd admin/ui && npm run check && npm test && npm run build && npm run size
 
 # Regenerate admin/ui/src/lib/api/schema.d.ts from a running examples/multisite's OpenAPI document.
 admin-types:
 	./scripts/admin-types.sh
-
-# admin/dist is committed: fail when a rebuild changes it.
-admin-dist-check: admin
-	@test -z "$$(git status --porcelain -- admin/dist)" || (git status --short -- admin/dist; echo "admin/dist is stale: run make admin and commit it"; exit 1)
 
 # Playwright against examples/multisite (SQLite) with a seeded administrator; E2E_KEEP=1 leaves the server up.
 admin-e2e:
@@ -126,4 +122,5 @@ example-admin:
 example-admin-check: example-admin
 	@test -z "$$(git status --porcelain -- examples/content/admin/dist)" || (git status --short -- examples/content/admin/dist; echo "examples/content/admin/dist is stale: run make example-admin and commit it"; exit 1)
 
-check: tidy-check vet lint test smoke admin admin-dist-check example-admin-check site-bridge-check
+# admin comes before smoke: the smoke binary embeds it.
+check: tidy-check vet lint admin test smoke example-admin-check site-bridge-check

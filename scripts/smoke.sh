@@ -10,6 +10,7 @@ max_binary_mb=${MAX_BINARY_MB:-25}
 max_start_ms=${MAX_START_MS:-200}
 max_rss_mb=${MAX_RSS_MB:-40}
 
+"$root/scripts/admin-built.sh"
 export GOWORK=off
 go build -o "$root/.work/bin/hydrogen" ./cmd/hydrogen
 hydrogen="$root/.work/bin/hydrogen"
