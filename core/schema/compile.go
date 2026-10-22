@@ -17,6 +17,7 @@ type compiler struct {
 	groups map[string]*groupState
 	opts   map[*Field]map[string]any
 	lk     *blockLookup
+	rt     *RichText
 }
 
 type groupState struct {
@@ -42,6 +43,8 @@ func (b *Builder) Compile() (*Schema, error) {
 	c.errs.list = slices.Clone(b.errs.list)
 	c.lk = &blockLookup{byName: map[string]*BlockType{}}
 	s := &Schema{byName: map[string]*Type{}, opts: c.opts, lk: c.lk}
+	c.rt = c.compileRichText()
+	s.rt = c.rt
 	c.compileTokens(s)
 	c.compileBlocks(s)
 	for _, name := range sortedKeys(b.groups) {

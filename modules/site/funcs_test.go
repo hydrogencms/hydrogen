@@ -282,7 +282,7 @@ func TestReadHelpersFields(t *testing.T) {
 	}
 }
 
-func writeFile(t *testing.T, dir, name, data string) {
+func writeFile(t testing.TB, dir, name, data string) {
 	t.Helper()
 	p := filepath.Join(dir, name)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {

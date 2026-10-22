@@ -1,4 +1,4 @@
-// Fails when a package's dist/*.js (all modules, concatenated; the bridge's IIFE copy is not counted) exceeds its gzip budget (5 KB; the Next adapter 7.25 KB (share links: week-long cookie): proxy, cache and preview plus the live-preview wrapper; the bridge 5.5 KB with canvas editing and viewer mode; the SvelteKit, Nuxt and Astro adapters 7 KB each, framework excluded). Separate entry points of a package that browsers don't load together are budgeted on their own: the client's `server` subpath (the adapters' shared server code) 3.5 KB, its `richtext` subpath 1.25 KB, the bridge's `merge` subpath 1 KB.
+// Fails when a package's dist/*.js (all modules, concatenated; the bridge's IIFE copy is not counted) exceeds its gzip budget (5 KB; the Next adapter 7.25 KB (share links: week-long cookie): proxy, cache and preview plus the live-preview wrapper; the bridge 5.5 KB with canvas editing and viewer mode; the SvelteKit, Nuxt and Astro adapters 7 KB each, framework excluded). Separate entry points of a package that browsers don't load together are budgeted on their own: the client's `server` subpath (the adapters' shared server code) 3.5 KB, its `richtext` subpath 2 KB (the one walk behind every renderer: custom nodes and marks, classes, overrides), the bridge's `merge` subpath 1 KB.
 import { readFileSync, readdirSync } from 'node:fs'
 import { gzipSync } from 'node:zlib'
 import { dirname, join } from 'node:path'
@@ -9,7 +9,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const entries = [
   ['client', 'client', 5, ['index.js']],
   ['client/server', 'client', 3.5, ['server.js']],
-  ['client/richtext', 'client', 1.25, ['richtext.js']],
+  ['client/richtext', 'client', 2, ['richtext.js']],
   ['router', 'router', 5],
   ['bridge', 'bridge', 5.5, ['index.js']],
   ['bridge/merge', 'bridge', 1, ['merge.js']],

@@ -13,7 +13,7 @@ export { pathAttrs, blockAttrs } from './blocks.js'
 export { liveDoc, mergeDoc } from '@hydrogencms/bridge/merge'
 export { richTextNodes, safeHref } from '@hydrogencms/client/richtext'
 export type { BlockData, BlockAttrs, BlockProps, Registry } from './blocks.js'
-export type { PMNode, PMMark, RichNode, RichTextOptions } from '@hydrogencms/client/richtext'
+export type { PMNode, PMMark, RichNode, RichTextOptions, RichTextSchema } from '@hydrogencms/client/richtext'
 
 type Comp = Component<BlockProps<any>>
 

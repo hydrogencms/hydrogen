@@ -37,6 +37,7 @@ func OpenAPI(s *schema.Schema, extra ...Route) obj {
 		schemas["Update_"+t.Name] = updateRequest(openapi.SchemaRef("Patch_" + t.Name))
 	}
 	blockSchemas(s, schemas)
+	richTextSchemas(schemas)
 	if len(itemViews) > 0 {
 		schemas["ItemView"] = obj{"oneOf": itemViews}
 	} else {
@@ -337,6 +338,8 @@ func genericPaths(paths obj, collections, singletons []*schema.Type) {
 					"list": obj{"type": "array", "items": openapi.Str("")}}}}}))}, "401", "403"))}
 	paths["/blocks"] = obj{"get": operation("listBlocks", "List block types and design tokens", nil, nil,
 		responses(obj{"200": openapi.OKResp("Compiled block types and token sets.", openapi.SchemaRef("BlockCatalog"))}, "401", "403"))}
+	paths["/richtext"] = obj{"get": operation("listRichText", "List the custom rich text nodes and marks", nil, nil,
+		responses(obj{"200": openapi.OKResp("The schema's richtext: declaration: nodes and marks with tags, content rules and typed attributes; empty lists when none is declared.", openapi.SchemaRef("RichTextCatalog"))}, "401", "403"))}
 	paths["/types/{type}"] = obj{"get": operation("getType", "A compiled type and its JSON Schema",
 		[]any{obj{"name": "type", "in": "path", "required": true, "schema": openapi.Str("")}}, nil,
 		responses(obj{"200": openapi.OKResp("The type.", obj{"type": "object", "required": []any{"type", "jsonSchema"},

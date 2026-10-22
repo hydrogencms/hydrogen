@@ -1,0 +1,25 @@
+richtext:
+  nodes:
+    callout:
+      label: Callout
+      tag: aside
+      content: blocks
+      attrs:
+        variant: { type: enum, values: [info, warning, tip], default: info }
+    details:
+      label: Accordion
+      tag: details
+      content: [detailsSummary, detailsBody]
+    detailsSummary: { tag: summary, content: inline }
+    detailsBody: { content: blocks }
+    embed:
+      label: Embed
+      tag: figure
+      content: none
+      attrs:
+        url: { type: url, required: true }
+        caption: { type: string, max: 300 }
+  marks:
+    highlight:
+      label: Highlight
+      tag: mark

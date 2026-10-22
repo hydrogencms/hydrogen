@@ -180,7 +180,7 @@ func TestBlocksCompileErrors(t *testing.T) {
 		{"token duplicate value", "tokens:\n  t: [a, a]\n", `value "a" is listed twice`},
 		{"token bad value", "tokens:\n  t: [\"a b\"]\n", `value "a b" must match`},
 		{"token not a list", "tokens:\n  t: x\n", "must be a list of names"},
-		{"unknown top key", "bogus: 1\n", "known: blocks, groups, tokens, types"},
+		{"unknown top key", "bogus: 1\n", "known: blocks, groups, richtext, tokens, types"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

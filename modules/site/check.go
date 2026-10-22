@@ -70,6 +70,7 @@ func (m *module) check(ctx context.Context, svc *kernel.Services, out io.Writer,
 	fmt.Fprintf(out, "templates: %d parsed\n", len(c.eng.names))
 	c.required()
 	c.blocks(chans[0])
+	c.richtext(chans[0])
 	for _, ch := range chans {
 		c.channel(ch)
 	}
@@ -121,6 +122,96 @@ func (c *checker) required() {
 			c.fail("missing template %s", n)
 		}
 	}
+}
+
+// richtext renders each richtext/<type>.html override over a sample document that holds that node or mark.
+func (c *checker) richtext(ch *channel.Channel) {
+	rt := c.svc.Schema.RichText()
+	for _, typ := range sortedKeys(c.eng.rich) {
+		var doc map[string]any
+		if builtinType(typ) {
+			doc = richSampleDoc()
+		} else if n, ok := rt.Node(typ); ok {
+			doc = map[string]any{"type": "doc", "content": []any{customSample(n.Name, n.Attrs, n.Content)}}
+		} else if m, ok := rt.Mark(typ); ok {
+			doc = map[string]any{"type": "doc", "content": []any{map[string]any{"type": "paragraph", "content": []any{
+				map[string]any{"type": "text", "text": "Sample", "marks": []any{map[string]any{"type": m.Name, "attrs": sampleAttrs(m.Attrs)}}}}}}}
+		} else {
+			c.fail("richtext/%s.html: %s is neither a built-in nor a declared rich text node or mark", typ, typ)
+			continue
+		}
+		p := c.fakePage(ch, nil, false)
+		if _, err := p.richText(doc, RichTextOptions{}); err != nil {
+			c.fail("richtext/%s.html: %v", typ, err)
+			continue
+		}
+		c.pass()
+	}
+}
+
+// customSample is a node of a declared type with sample attributes and, unless it is a leaf, a paragraph.
+func customSample(name string, attrs []*schema.RichAttr, content string) map[string]any {
+	n := map[string]any{"type": name, "attrs": sampleAttrs(attrs)}
+	if content != "none" {
+		n["content"] = []any{map[string]any{"type": "paragraph", "content": []any{map[string]any{"type": "text", "text": "Sample"}}}}
+	}
+	return n
+}
+
+func sampleAttrs(list []*schema.RichAttr) map[string]any {
+	out := map[string]any{}
+	for _, a := range list {
+		switch {
+		case a.Default != nil:
+			out[a.Name] = a.Default
+		case a.Type == "enum" && len(a.Values) > 0:
+			out[a.Name] = a.Values[0]
+		case a.Type == "int":
+			out[a.Name] = int64(1)
+		case a.Type == "bool":
+			out[a.Name] = true
+		case a.Type == "url":
+			out[a.Name] = "/sample"
+		default:
+			out[a.Name] = "Sample"
+		}
+	}
+	return out
+}
+
+// richSample is a document with one of every built-in node and mark.
+func richSampleDoc() map[string]any {
+	text := func(s string, marks ...string) map[string]any {
+		n := map[string]any{"type": "text", "text": s}
+		var ms []any
+		for _, m := range marks {
+			mk := map[string]any{"type": m}
+			if m == "link" {
+				mk["attrs"] = map[string]any{"href": "/sample"}
+			}
+			ms = append(ms, mk)
+		}
+		if ms != nil {
+			n["marks"] = ms
+		}
+		return n
+	}
+	para := func(kids ...any) map[string]any { return map[string]any{"type": "paragraph", "content": kids} }
+	item := func(kids ...any) map[string]any { return map[string]any{"type": "listItem", "content": kids} }
+	cell := func(typ string) map[string]any { return map[string]any{"type": typ, "content": []any{para(text("c"))}} }
+	return map[string]any{"type": "doc", "content": []any{
+		map[string]any{"type": "heading", "attrs": map[string]any{"level": float64(2)}, "content": []any{text("H")}},
+		para(text("a", "bold"), text("b", "italic"), text("c", "code"), text("d", "underline"), text("e", "strike"), text("f", "superscript"),
+			text("g", "subscript"), text("h", "link"), map[string]any{"type": "hardBreak"}),
+		map[string]any{"type": "bulletList", "content": []any{item(para(text("x")))}},
+		map[string]any{"type": "orderedList", "content": []any{item(para(text("x")))}},
+		map[string]any{"type": "blockquote", "content": []any{para(text("q"))}},
+		map[string]any{"type": "codeBlock", "content": []any{text("code")}},
+		map[string]any{"type": "horizontalRule"},
+		map[string]any{"type": "image", "attrs": map[string]any{"src": "/sample.png", "alt": "s"}},
+		map[string]any{"type": "table", "content": []any{
+			map[string]any{"type": "tableRow", "content": []any{cell("tableHeader"), cell("tableCell")}}}},
+	}}
 }
 
 // blocks renders every block type on its own and requires its root to carry data-h-block.
@@ -311,7 +402,7 @@ func (c *checker) fakePage(ch *channel.Channel, it *Item, preview bool) *page {
 	if it != nil {
 		v.Fields, v.Title = it.Fields, itemTitle(it)
 	}
-	p := &page{eng: c.eng, ch: ch, locale: loc, def: c.svc.Core.Content.DefaultLocale, preview: preview, strict: true, view: v,
+	p := &page{eng: c.eng, ch: ch, locale: loc, def: c.svc.Core.Content.DefaultLocale, preview: preview, strict: true, view: v, rt: c.svc.Schema.RichText(),
 		links: map[string]string{}, canon: "https://example.com/sample", crumbs: []Crumb{{Name: "Home", URL: "/"}, {Name: "Sample", URL: "/sample"}}}
 	for _, t := range c.svc.Schema.Types() {
 		if t.Singleton && ch.AllowsCollection(t.Name) {

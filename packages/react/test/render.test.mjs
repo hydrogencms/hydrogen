@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createElement as h } from 'react'
@@ -14,7 +15,7 @@ test('RichText renders the contract nodes', () => {
     { type: 'heading', attrs: { level: 2 }, content: [t('Hi')] },
     p(t('a'), { type: 'hardBreak' }, t('b')),
     { type: 'bulletList', content: [{ type: 'listItem', content: [p(t('x'))] }] },
-    { type: 'orderedList', attrs: { order: 3 }, content: [{ type: 'listItem', content: [p(t('y'))] }] },
+    { type: 'orderedList', attrs: { start: 3 }, content: [{ type: 'listItem', content: [p(t('y'))] }] },
     { type: 'blockquote', content: [p(t('q'))] },
     { type: 'codeBlock', attrs: { language: 'go' }, content: [t('x := 1')] },
     { type: 'horizontalRule' },
@@ -44,8 +45,9 @@ test('RichText resolves item: links via resolveLink, then links; unresolved drop
   assert.equal(rt(d, { links: { abc: 'javascript:alert(1)' } }), '<p>x</p>')
 })
 
-test('RichText: unknown nodes/marks keep their content, null doc renders nothing, overrides apply', () => {
-  assert.equal(rt(doc({ type: 'weird', content: [p(t('in', 'sparkle'))] })), '<p>in</p>')
+test('RichText: unknown nodes/marks render by the custom convention (invalid names keep their content), null doc renders nothing, overrides apply', () => {
+  assert.equal(rt(doc({ type: 'weird', content: [p(t('in', 'sparkle'))] })), '<div class="rt-weird"><p><span class="rt-sparkle">in</span></p></div>')
+  assert.equal(rt(doc({ type: 'we ird', content: [p(t('in', { type: 'x"y' }))] })), '<p>in</p>')
   assert.equal(rt(null), '')
   assert.equal(rt(doc({ type: 'heading', attrs: { level: 3 }, content: [t('H')] }), { render: { heading: ({ attrs, children }) => h('div', { 'data-l': attrs.level }, children) } }), '<div data-l="3">H</div>')
   assert.equal(rt(doc(p(t('b', 'bold'))), { render: { bold: ({ children }) => h('b', null, children) } }), '<p><b>b</b></p>')
@@ -133,4 +135,11 @@ test('RichText tables, extra marks and images', () => {
   assert.equal(rt(d('/a.png')),
     '<table><tbody><tr><th colSpan="2"><p>h</p></th><td rowSpan="3"><p><u><sub>u</sub></u></p></td></tr></tbody></table><img src="/a.png" alt="A" width="5" loading="lazy"/>')
   assert.ok(!rt(d('javascript:x')).includes('<img'))
+})
+
+const fixture = JSON.parse(readFileSync(new URL('../../client/test/fixtures/richtext-ext.json', import.meta.url), 'utf8'))
+for (const c of fixture) test('RichText fixture: ' + c.name, () => assert.equal(rt(c.doc, c.options).replace(/\/>/g, '>'), c.html))
+
+test('RichText overrides run on the shared walk', () => {
+  assert.equal(rt(doc(p(t('a', 'bold'))), { render: { bold: ({ children }) => h('b', null, children), paragraph: ({ attrs, children }) => h('div', null, children) } }), '<div><b>a</b></div>')
 })

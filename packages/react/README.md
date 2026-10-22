@@ -1,6 +1,6 @@
 # @hydrogencms/react
 
-React blocks renderer, rich text, live preview and images for Hydrogen frontends.
+React blocks renderer, rich text, live preview and images for Hydrogen frontends. `<RichText doc links resolveLink schema classes render />`: `schema` (the generated `richTextSchema`) gives custom nodes and marks their tags and attr defaults (otherwise `div`/`span` with `rt-<name>` and `data-*`), `classes` maps a type to class tokens, `render` maps a type to `({ attrs, children }) => ReactNode`.
 
 ## Image
 

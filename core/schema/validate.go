@@ -295,7 +295,12 @@ func lowerItemLinks(v any) {
 		}
 		attrs, _ := mm["attrs"].(map[string]any)
 		if href, _ := attrs["href"].(string); strings.HasPrefix(href, "item:") {
-			if low := "item:" + strings.ToLower(href[len("item:"):]); low != href {
+			id, frag, hasFrag := strings.Cut(href[len("item:"):], "#")
+			low := "item:" + strings.ToLower(id)
+			if hasFrag {
+				low += "#" + frag
+			}
+			if low != href {
 				attrs["href"] = low
 			}
 		}

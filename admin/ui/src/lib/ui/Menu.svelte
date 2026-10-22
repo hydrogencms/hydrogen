@@ -15,6 +15,8 @@
     /** A divider is drawn above this item. */
     separator?: boolean;
     checked?: boolean;
+    /** With `checked`: an independent on/off item (menuitemcheckbox) instead of one choice of a group. */
+    toggle?: boolean;
     /** Muted text at the right (a shortcut, a count). */
     hint?: string;
     /** A non-interactive group label instead of an item. */
@@ -44,15 +46,24 @@
   let btn = $state<HTMLButtonElement>();
   let list = $state<HTMLElement>();
   let pos = $state({ top: 0, left: 0 });
+  let up = $state(false);
   const uid = $props.id();
 
-  const enabled = () => [...(list?.querySelectorAll<HTMLElement>('[role=menuitem]:not([aria-disabled=true])') ?? [])];
+  const enabled = () => [...(list?.querySelectorAll<HTMLElement>('[role^=menuitem]:not([aria-disabled=true])') ?? [])];
 
   function show(focusLast = false) {
     const r = btn!.getBoundingClientRect();
-    pos = { top: side === 'top' ? r.top - 4 : r.bottom + 4, left: align === 'end' ? r.right : r.left };
+    up = side === 'top';
+    pos = { top: up ? r.top - 4 : r.bottom + 4, left: align === 'end' ? r.right : r.left };
     open = true;
     queueMicrotask(() => {
+      // Open on the other side when the menu does not fit on its own and does there.
+      const h = list?.offsetHeight ?? 0;
+      const below = innerHeight - r.bottom - 4, above = r.top - 4;
+      if (up ? above < h && below >= h : below < h && above >= h) {
+        up = !up;
+        pos = { ...pos, top: up ? r.top - 4 : r.bottom + 4 };
+      }
       const e = enabled();
       (focusLast ? e[e.length - 1] : e[0])?.focus();
     });
@@ -124,7 +135,7 @@
     id="{uid}-m"
     class="h-menu"
     class:h-menu--end={align === 'end'}
-    class:h-menu--top={side === 'top'}
+    class:h-menu--top={up}
     role="menu"
     aria-label={label}
     tabindex="-1"
@@ -139,7 +150,7 @@
       {:else}
       <button
         type="button"
-        role={it.checked !== undefined ? 'menuitemradio' : 'menuitem'}
+        role={it.checked === undefined ? 'menuitem' : it.toggle ? 'menuitemcheckbox' : 'menuitemradio'}
         aria-checked={it.checked}
         aria-disabled={it.disabled || undefined}
         class="h-menu__item"

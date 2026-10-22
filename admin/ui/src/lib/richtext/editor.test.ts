@@ -1,8 +1,10 @@
 import { flushSync, mount } from 'svelte';
 import { TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { mounted } from '../../test-setup';
+import type { RichAttrDef, RichCustom } from './config';
+import { richCatalog } from './custom.svelte';
 import Editor from './Editor.svelte';
 import RichTextEditor from './RichTextEditor.svelte';
 import { reactive } from './testing.svelte';
@@ -119,5 +121,125 @@ describe('RichTextEditor', () => {
     expect(target.querySelector('.h-rte-skel')).not.toBeNull();
     await vi.waitFor(() => expect(target.querySelector('.h-rte__doc')).not.toBeNull());
     expect(target.querySelector('.h-rte-skel')).toBeNull();
+  });
+});
+
+const a = (name: string, type: RichAttrDef['type'], extra: Partial<RichAttrDef> = {}): RichAttrDef => ({ name, type, required: false, ...extra });
+const custom: RichCustom = {
+  nodes: [
+    { name: 'callout', label: 'Callout', tag: 'aside', inline: false, content: 'blocks', parts: [], part: false, attrs: [a('variant', 'enum', { values: ['info', 'warning'], default: 'info' })] },
+    { name: 'embed', label: 'Embed', tag: 'figure', inline: false, content: 'none', parts: [], part: false, attrs: [a('url', 'url', { required: true })] },
+  ],
+  marks: [{ name: 'highlight', label: 'Highlight', tag: 'mark', attrs: [a('tone', 'enum', { values: ['yellow', 'green'] })] }],
+};
+const menuItem = (name: string) => [...document.querySelectorAll<HTMLElement>('[role^=menuitem]')].find((e) => e.textContent?.trim().startsWith(name))!;
+const open = (target: HTMLElement, name: string) => {
+  const b = [...target.querySelectorAll<HTMLButtonElement>('[role=toolbar] button')].find((x) => (x.getAttribute('aria-label') ?? x.textContent?.trim()) === name);
+  b!.click();
+  flushSync();
+};
+
+describe('custom nodes and the core formatting controls', () => {
+  afterEach(() => richCatalog.reset());
+  const withCustom = (props: Partial<RichTextProps> = {}) => {
+    richCatalog.value = custom;
+    richCatalog.loaded = true;
+    return setup({ value: doc, ...props });
+  };
+
+  it('offers no custom controls without a declaration', () => {
+    const { target } = setup({ value: doc });
+    expect(label(target)).not.toContain('Insert');
+    expect(label(target)).not.toContain('More formatting');
+  });
+
+  it('inserts a node with defaults from the Insert menu and edits its attributes', async () => {
+    const { target, onchange, view } = withCustom();
+    expect(label(target)).toContain('Insert');
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 3)));
+    flushSync();
+    open(target, 'Insert');
+    menuItem('Callout').click();
+    flushSync();
+    expect(onchange.mock.lastCall![0].content.map((n: { type: string }) => n.type)).toEqual(['paragraph', 'callout']);
+    expect(target.querySelector('.h-rte__doc aside.rt-callout')?.getAttribute('data-variant')).toBe('info');
+
+    const edit = target.querySelector<HTMLButtonElement>('[aria-label="Edit Callout"]')!;
+    expect(edit).not.toBeNull();
+    edit.click();
+    flushSync();
+    const dialog = document.querySelector<HTMLElement>('[role=dialog]')!;
+    const select = dialog.querySelector<HTMLSelectElement>('select')!;
+    select.value = 'warning';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    dialog.querySelector<HTMLButtonElement>('button[type=submit]')!.click();
+    await vi.waitFor(() => expect(JSON.stringify(onchange.mock.lastCall![0])).toContain('"variant":"warning"'));
+  });
+
+  it('asks for required attributes before inserting', async () => {
+    const { target, onchange } = withCustom();
+    open(target, 'Insert');
+    menuItem('Embed').click();
+    flushSync();
+    const dialog = document.querySelector<HTMLElement>('[role=dialog]')!;
+    expect(dialog.getAttribute('aria-label') ?? dialog.textContent).toContain('Insert Embed');
+    const input = dialog.querySelector<HTMLInputElement>('input')!;
+    dialog.querySelector<HTMLButtonElement>('button[type=submit]')!.click();
+    flushSync();
+    expect(dialog.querySelector('[role=alert]')).not.toBeNull();
+    expect(onchange).not.toHaveBeenCalled();
+    input.value = 'javascript:x';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    dialog.querySelector<HTMLButtonElement>('button[type=submit]')!.click();
+    flushSync();
+    expect(onchange).not.toHaveBeenCalled();
+    input.value = 'https://a.b/v';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    dialog.querySelector<HTMLButtonElement>('button[type=submit]')!.click();
+    await vi.waitFor(() => expect(JSON.stringify(onchange.mock.lastCall![0])).toContain('{"type":"embed","attrs":{"url":"https://a.b/v"}}'));
+  });
+
+  it('lists custom marks and honours the field allowlists', () => {
+    const { target } = withCustom();
+    expect(label(target)).toContain('More formatting');
+    document.body.innerHTML = '';
+    const limited = label(withCustom({ config: { marks: ['bold'], nodes: ['paragraph', 'callout'] } }).target);
+    expect(limited).toContain('Insert');
+    expect(limited).not.toContain('More formatting');
+  });
+
+  it('aligns a paragraph and stores nothing for left', () => {
+    const { target, onchange, view } = withCustom();
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2)));
+    flushSync();
+    open(target, 'Alignment and options');
+    menuItem('Align center').click();
+    flushSync();
+    expect(onchange).toHaveBeenLastCalledWith({ type: 'doc', content: [{ type: 'paragraph', attrs: { align: 'center' }, content: [{ type: 'text', text: 'hello world' }] }] });
+    expect(target.querySelector('.h-rte__doc p')?.getAttribute('data-align')).toBe('center');
+    open(target, 'Alignment and options');
+    menuItem('Align left').click();
+    flushSync();
+    expect(onchange).toHaveBeenLastCalledWith(doc);
+  });
+
+  it('sets an anchor, refusing a bad name', async () => {
+    const { target, onchange, view } = withCustom();
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2)));
+    flushSync();
+    open(target, 'Alignment and options');
+    menuItem('Anchor').click();
+    flushSync();
+    const dialog = document.querySelector<HTMLElement>('[role=dialog]')!;
+    const input = dialog.querySelector<HTMLInputElement>('input')!;
+    input.value = '9lives';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    dialog.querySelector<HTMLButtonElement>('button[type=submit]')!.click();
+    flushSync();
+    expect(dialog.querySelector('[role=alert]')).not.toBeNull();
+    input.value = 'intro';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    dialog.querySelector<HTMLButtonElement>('button[type=submit]')!.click();
+    await vi.waitFor(() => expect(onchange.mock.lastCall![0].content[0].attrs).toEqual({ id: 'intro' }));
   });
 });

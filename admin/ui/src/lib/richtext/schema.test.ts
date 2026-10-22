@@ -1,8 +1,9 @@
-import { DOMParser as PMDOMParser } from 'prosemirror-model';
-import { EditorState, TextSelection } from 'prosemirror-state';
+import { DOMParser as PMDOMParser, DOMSerializer } from 'prosemirror-model';
+import { EditorState, TextSelection, type Transaction } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { afterEach, describe, expect, it } from 'vitest';
-import { insertImage, insertTable, link, plugins } from './commands';
+import { applyMark, customAt, docIds, insertCustom, insertImage, insertTable, link, listAt, plugins, setAlign, setAnchor, setNodeAttrs } from './commands';
+import type { RichAttrDef, RichCustom } from './config';
 import { buildSchema, fromStored, isEmptyDoc, normalizeHref, toStored, validHref, validImageSrc } from './schema';
 
 const UUID = '0b6d1f43-5d7e-4f5a-9d1c-2f4b9c3a7e10';
@@ -282,6 +283,16 @@ describe('input rules', () => {
     expect(stored(w)[0].attrs).toEqual({ level: 4 });
   });
 
+  it('starts a numbered list at the typed number', () => {
+    const v = editor();
+    type(v, '5. five');
+    expect(stored(v)[0]).toMatchObject({ type: 'orderedList', attrs: { start: 5 } });
+    const w = editor();
+    type(w, '1. one');
+    expect(stored(w)[0].attrs).toBeUndefined();
+    expect(listAt(v.state)?.node.attrs.start).toBe(5);
+  });
+
   it('does not turn "# " or "##### " into a heading', () => {
     const v = editor();
     type(v, '# x');
@@ -316,5 +327,224 @@ describe('input rules', () => {
     expect(stored(v)[0].type).toBe('bulletList');
     v.someProp('handleKeyDown', (f) => f(v, new KeyboardEvent('keydown', { key: 'Backspace' })));
     expect(stored(v)).toEqual([para(text('- '))]);
+  });
+});
+
+const attr = (name: string, type: RichAttrDef['type'], extra: Partial<RichAttrDef> = {}): RichAttrDef => ({ name, type, required: false, ...extra });
+const custom: RichCustom = {
+  nodes: [
+    { name: 'callout', label: 'Callout', tag: 'aside', inline: false, content: 'blocks', parts: [], part: false, attrs: [attr('variant', 'enum', { values: ['info', 'warning'], default: 'info' }), attr('open', 'bool')] },
+    { name: 'details', label: 'Accordion', tag: 'details', inline: false, content: 'parts', parts: ['detailsSummary', 'detailsBody'], part: false, attrs: [] },
+    { name: 'detailsSummary', label: '', tag: 'summary', inline: false, content: 'inline', parts: [], part: true, attrs: [] },
+    { name: 'detailsBody', label: '', tag: 'div', inline: false, content: 'blocks', parts: [], part: true, attrs: [] },
+    { name: 'embed', label: 'Embed', tag: 'figure', inline: false, content: 'none', parts: [], part: false, attrs: [attr('url', 'url', { required: true }), attr('caption', 'string', { maxLength: 20 })] },
+    { name: 'footnoteRef', label: 'Footnote', tag: 'span', inline: true, content: 'none', parts: [], part: false, attrs: [attr('n', 'int', { min: 1, max: 999, required: true })] },
+  ],
+  marks: [{ name: 'highlight', label: 'Highlight', tag: 'mark', attrs: [attr('tone', 'enum', { values: ['yellow', 'green'] })] }],
+};
+const stateOf = (schema: ReturnType<typeof buildSchema>, json: unknown) => EditorState.create({ doc: fromStored(schema, json)!, plugins: plugins({ schema }) });
+const parse = (schema: ReturnType<typeof buildSchema>, html: string) => {
+  const host = document.createElement('div');
+  host.innerHTML = html;
+  return toStored(PMDOMParser.fromSchema(schema).parse(host));
+};
+const serialize = (schema: ReturnType<typeof buildSchema>, json: unknown) => {
+  const out = DOMSerializer.fromSchema(schema).serializeNode(schema.nodeFromJSON(json));
+  const host = document.createElement('div');
+  host.append(out);
+  return host.innerHTML;
+};
+
+describe('custom nodes and marks', () => {
+  const schema = buildSchema({}, custom);
+  const doc = {
+    type: 'doc',
+    content: [
+      { type: 'callout', attrs: { variant: 'warning' }, content: [para(text('careful'))] },
+      { type: 'details', content: [{ type: 'detailsSummary', content: [text('more')] }, { type: 'detailsBody', content: [para(text('body'))] }] },
+      { type: 'embed', attrs: { url: 'https://a.b/v', caption: 'A video' } },
+      para(text('see '), { type: 'footnoteRef', attrs: { n: 3 } }, text(' and '), text('this', [{ type: 'highlight', attrs: { tone: 'green' } }])),
+    ],
+  };
+
+  it('keeps them exactly, parts and inline atoms included', () => {
+    expect(toStored(fromStored(schema, doc)!)).toEqual(doc);
+  });
+
+  it('keeps attrs the document left out absent (no defaults written on load)', () => {
+    const bare = { type: 'doc', content: [{ type: 'callout', content: [para(text('x'))] }] };
+    expect(toStored(fromStored(schema, bare)!)).toEqual(bare);
+  });
+
+  it('builds the specs: groups, atoms, parts outside any group', () => {
+    expect(schema.nodes.callout.spec.group).toBe('block');
+    expect(schema.nodes.embed.isAtom).toBe(true);
+    expect(schema.nodes.footnoteRef.isInline && schema.nodes.footnoteRef.isAtom).toBe(true);
+    expect(schema.nodes.detailsSummary.spec.group).toBeUndefined();
+    expect(schema.nodes.details.contentMatch.defaultType).toBe(schema.nodes.detailsSummary);
+    expect(schema.nodes.paragraph.contentMatch.matchType(schema.nodes.footnoteRef)).not.toBeNull();
+    expect(fromStored(schema, { type: 'doc', content: [{ type: 'detailsBody', content: [para()] }] })).toBeNull();
+    expect(fromStored(schema, { type: 'doc', content: [{ type: 'details', content: [{ type: 'detailsBody', content: [para()] }] }] })).toBeNull();
+  });
+
+  it('orders marks by name among the built-in ones', () => {
+    expect(Object.keys(schema.marks)).toEqual(['bold', 'code', 'highlight', 'italic', 'link', 'strike', 'subscript', 'superscript', 'underline']);
+    const doc2 = fromStored(schema, { type: 'doc', content: [para(text('x', [{ type: 'italic' }, { type: 'highlight', attrs: { tone: 'green' } }, { type: 'bold' }]))] });
+    expect(toStored(doc2!).content![0].content![0].marks!.map((m) => m.type)).toEqual(['bold', 'highlight', 'italic']);
+  });
+
+  it('renders the default markup: tag, rt- class, data attributes', () => {
+    expect(serialize(schema, { type: 'callout', attrs: { variant: 'warning', open: true }, content: [para(text('x'))] })).toBe('<aside class="rt-callout" data-variant="warning" data-open=""><p>x</p></aside>');
+    expect(serialize(schema, { type: 'callout', content: [para(text('x'))] })).toContain('data-variant="info"');
+    expect(serialize(schema, para(text('x', [{ type: 'highlight', attrs: { tone: 'green' } }])))).toBe('<p><mark class="rt-highlight" data-tone="green">x</mark></p>');
+    expect(serialize(schema, { type: 'details', content: [{ type: 'detailsSummary', content: [text('s')] }, { type: 'detailsBody', content: [para()] }] })).toContain('<details class="rt-details"><summary class="rt-detailsSummary">s</summary>');
+  });
+
+  it('parses its own markup back (copy and paste)', () => {
+    for (const j of doc.content) {
+      const html = serialize(schema, j);
+      expect(parse(schema, html).content![0]).toEqual(j);
+    }
+  });
+
+  it('drops pasted nodes whose required attributes are missing or invalid', () => {
+    const stored = parse(schema, '<figure class="rt-embed" data-url="javascript:alert(1)"></figure><p>kept</p>');
+    expect(stored.content!.map((n) => n.type)).toEqual(['paragraph']);
+    expect(parse(schema, '<p><span class="rt-footnoteRef" data-n="0"></span>x</p>').content![0].content![0].type).toBe('text');
+    expect(parse(schema, '<aside class="rt-callout" data-variant="bogus"><p>x</p></aside>').content![0]).toEqual({ type: 'callout', content: [para(text('x'))] });
+  });
+
+  it('allowlists: a name allows it, parts follow the parent, a nil list allows all', () => {
+    const only = buildSchema({ nodes: ['paragraph', 'details'], marks: [] }, custom);
+    expect(only.nodes.details).toBeDefined();
+    expect(only.nodes.detailsSummary).toBeDefined();
+    expect(only.nodes.detailsBody).toBeDefined();
+    expect(only.nodes.callout).toBeUndefined();
+    expect(only.nodes.embed).toBeUndefined();
+    expect(only.nodes.footnoteRef).toBeUndefined();
+    expect(only.marks.highlight).toBeUndefined();
+    expect(buildSchema({ marks: ['highlight'] }, custom).marks.highlight).toBeDefined();
+    expect(buildSchema({ nodes: ['paragraph', 'detailsSummary'] }, custom).nodes.detailsSummary).toBeUndefined();
+    expect(buildSchema({}, custom).nodes.callout).toBeDefined();
+  });
+
+  it('a custom leaf counts as content', () => {
+    const v = { type: 'doc', content: [{ type: 'embed', attrs: { url: '/a' } }] };
+    expect(isEmptyDoc(v)).toBe(true);
+    expect(isEmptyDoc(v, schema)).toBe(false);
+    expect(isEmptyDoc({ type: 'doc', content: [{ type: 'details', content: [{ type: 'detailsSummary' }, { type: 'detailsBody', content: [para()] }] }] }, schema)).toBe(true);
+  });
+
+  it('inserts nodes with their parts and defaults, and edits their attributes', () => {
+    let st = stateOf(schema, { type: 'doc', content: [para(text('hi'))] });
+    const run = (c: (s: EditorState, d: (t: Transaction) => void) => boolean) => c(st, (tr) => (st = st.apply(tr)));
+    expect(run(insertCustom(schema, custom.nodes[1], {}))).toBe(true);
+    expect(toStored(st.doc).content!.map((n) => n.type)).toEqual(['paragraph', 'details']);
+    expect(toStored(st.doc).content![1]).toEqual({ type: 'details', content: [{ type: 'detailsSummary' }, { type: 'detailsBody', content: [{ type: 'paragraph' }] }] });
+    expect(run(insertCustom(schema, custom.nodes[0], { variant: 'info' }))).toBe(true);
+    const at = customAt(st, new Map(custom.nodes.map((d) => [d.name, d])));
+    expect(at?.def.name).toBe('callout');
+    expect(run(setNodeAttrs(at!.pos, { variant: 'warning' }))).toBe(true);
+    expect(JSON.stringify(toStored(st.doc))).toContain('"variant":"warning"');
+    expect(run(insertCustom(schema, custom.nodes[4], { url: '/a.png' }))).toBe(true);
+    expect(JSON.stringify(toStored(st.doc))).toContain('{"type":"embed","attrs":{"url":"/a.png"}}');
+  });
+
+  it('inserts an inline atom inside text and refuses it where no text fits', () => {
+    let st = stateOf(schema, { type: 'doc', content: [para(text('hi'))] });
+    st = st.apply(st.tr.setSelection(TextSelection.create(st.doc, 2)));
+    expect(insertCustom(schema, custom.nodes[5], { n: 2 })(st, (tr) => (st = st.apply(tr)))).toBe(true);
+    expect(toStored(st.doc).content![0].content!.map((n) => n.type)).toEqual(['text', 'footnoteRef', 'text']);
+    const code = stateOf(buildSchema({}, custom), { type: 'doc', content: [{ type: 'codeBlock', content: [text('x')] }] });
+    expect(insertCustom(schema, custom.nodes[5], { n: 1 })(code.apply(code.tr.setSelection(TextSelection.create(code.doc, 2))))).toBe(false);
+  });
+
+  it('applies a mark with attributes over a selection', () => {
+    let st = stateOf(schema, { type: 'doc', content: [para(text('hello'))] });
+    st = st.apply(st.tr.setSelection(TextSelection.create(st.doc, 1, 4)));
+    applyMark(schema.marks.highlight, { tone: 'yellow' })(st, (tr) => (st = st.apply(tr)));
+    expect(toStored(st.doc).content![0].content).toEqual([text('hel', [{ type: 'highlight', attrs: { tone: 'yellow' } }]), text('lo')]);
+  });
+});
+
+describe('core formatting', () => {
+  const schema = buildSchema();
+  it('stores alignment, anchors, list start and tight like the server validates them', () => {
+    const v = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', attrs: { align: 'center', id: 'intro' }, content: [text('x')] },
+        { type: 'heading', attrs: { level: 3, align: 'justify', id: 'h-2' }, content: [text('y')] },
+        { type: 'orderedList', attrs: { start: 4, tight: true }, content: [{ type: 'listItem', content: [para(text('a'))] }] },
+        { type: 'bulletList', attrs: { tight: true }, content: [{ type: 'listItem', content: [para(text('a'))] }] },
+        para(text('l', [{ type: 'link', attrs: { href: '#intro', target: '_blank' } }]), text('m', [{ type: 'link', attrs: { href: `item:${UUID}#h-2` } }])),
+      ],
+    };
+    expect(toStored(fromStored(schema, v)!)).toEqual(v);
+  });
+
+  it('never stores values that are the default', () => {
+    const v = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', attrs: { align: 'left' }, content: [text('x')] },
+        { type: 'orderedList', attrs: { start: 1, tight: false }, content: [{ type: 'listItem', content: [para(text('a'))] }] },
+        { type: 'bulletList', attrs: { tight: false }, content: [{ type: 'listItem', content: [para(text('a'))] }] },
+        para(text('l', [{ type: 'link', attrs: { href: 'https://a.b', target: 'self' } }])),
+      ],
+    };
+    const out = toStored(fromStored(schema, v)!);
+    expect(out.content![0]).toEqual(para(text('x')));
+    expect(out.content![1]).toEqual({ type: 'orderedList', content: [{ type: 'listItem', content: [para(text('a'))] }] });
+    expect(out.content![2]).toEqual({ type: 'bulletList', content: [{ type: 'listItem', content: [para(text('a'))] }] });
+    expect(out.content![3].content![0].marks).toEqual([{ type: 'link', attrs: { href: 'https://a.b' } }]);
+  });
+
+  it('validates the new href forms', () => {
+    for (const ok of ['#top', '#a_b-1', `item:${UUID}#sec`, `item:${UUID}`]) expect(validHref(ok)).toBe(true);
+    for (const bad of ['#', '#1a', '#a.b', '#a b', `item:${UUID}#`, `item:${UUID}#1`, `item:${UUID}#a#b`, 'item:#a']) expect(validHref(bad)).toBe(false);
+    expect(normalizeHref('#intro')).toBe('#intro');
+    expect(normalizeHref('#a.b')).toBe('#a.b');
+  });
+
+  it('pastes alignment, ids, list start, link targets and compact lists', () => {
+    const stored = parse(
+      schema,
+      '<p style="text-align: center" id="a1">c</p><h3 style="text-align:left" id="1bad">h</h3><p style="text-align:right">r</p>' +
+        '<ol start="3"><li>x</li><li>y</li></ol><ol start="1"><li><p>z</p></li></ol><ul><li>t</li></ul><ul><li>a<ul><li>n</li></ul></li></ul>' +
+        '<p><a href="https://a.b" target="_blank">out</a><a href="#a1" target="_self">in</a></p>',
+    ).content!;
+    expect(stored[0]).toEqual({ type: 'paragraph', attrs: { align: 'center', id: 'a1' }, content: [text('c')] });
+    expect(stored[1]).toEqual({ type: 'heading', attrs: { level: 3 }, content: [text('h')] });
+    expect(stored[2].attrs).toEqual({ align: 'right' });
+    expect(stored[3].attrs).toEqual({ start: 3, tight: true });
+    expect(stored[4].attrs).toBeUndefined();
+    expect(stored[5].attrs).toEqual({ tight: true });
+    expect(stored[6].attrs).toBeUndefined();
+    expect(stored[7].content![0].marks).toEqual([{ type: 'link', attrs: { href: 'https://a.b', target: '_blank' } }]);
+    expect(stored[7].content![1].marks).toEqual([{ type: 'link', attrs: { href: '#a1' } }]);
+  });
+
+  it('copies its own formatting through the clipboard form', () => {
+    const v = { type: 'orderedList', attrs: { start: 5, tight: true }, content: [{ type: 'listItem', content: [para(text('a'))] }] };
+    expect(parse(schema, serialize(schema, v)).content![0]).toEqual(v);
+    const p = { type: 'paragraph', attrs: { align: 'justify', id: 'x' }, content: [text('a')] };
+    expect(parse(schema, serialize(schema, p)).content![0]).toEqual(p);
+  });
+
+  it('aligns, anchors and keeps ids unique', () => {
+    let st = stateOf(schema, { type: 'doc', content: [para(text('one')), para(text('two'))] });
+    const run = (c: (s: EditorState, d: (t: Transaction) => void) => boolean) => c(st, (tr) => (st = st.apply(tr)));
+    st = st.apply(st.tr.setSelection(TextSelection.create(st.doc, 1, 7)));
+    expect(run(setAlign('center'))).toBe(true);
+    expect(toStored(st.doc).content!.map((n) => n.attrs)).toEqual([{ align: 'center' }, { align: 'center' }]);
+    expect(run(setAlign('left'))).toBe(true);
+    expect(toStored(st.doc).content!.map((n) => n.attrs)).toEqual([undefined, undefined]);
+    st = st.apply(st.tr.setSelection(TextSelection.create(st.doc, 2)));
+    expect(run(setAnchor('top'))).toBe(true);
+    expect(docIds(st.doc)).toEqual(['top']);
+    st = st.apply(st.tr.setSelection(TextSelection.create(st.doc, 7)));
+    run(setAnchor('top'));
+    expect(docIds(st.doc)).toEqual(['top']);
   });
 });

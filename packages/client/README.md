@@ -35,6 +35,6 @@ attributes (`src`, `srcSet`, `width`, `height`, `alt`) of an asset's preset vari
 | --- | --- |
 | `@hydrogencms/client` | `createClient`, types, `HydrogenError`, `imageProps` and the helpers above. |
 | `@hydrogencms/client/server` | Helpers for server-side adapters: webhook signature verification (`verifySignature`), the preview cookie rules (`parsePreviewRequest`, `previewCookieOptions`), public URLs, and `createTagCache`, a response cache purged by webhook tags. Uses WebCrypto only. |
-| `@hydrogencms/client/richtext` | Framework-neutral rich text: `richTextNodes(doc, { links })` walks a ProseMirror document into plain element nodes, `safeHref` and `linkHref` check and resolve links. |
+| `@hydrogencms/client/richtext` | Framework-neutral rich text: `richTextNodes(doc, { links })` walks a ProseMirror document into plain element nodes, `safeHref` and `linkHref` check and resolve links. Options: `schema` (`RichTextSchema`: tags, inline flags, attr types and defaults of custom nodes and marks; without it a custom node renders `<div class="rt-name" data-attr=…>`, `span` inline), `classes` (type → class tokens), `render` (type → `(attrs, kids) => RichNode[]`), `resolveLink(item:<id>)` (the fragment of `item:<id>#frag` is appended after). |
 
 See [docs/adapter-kit.md](../../docs/adapter-kit.md) for how adapters use these.

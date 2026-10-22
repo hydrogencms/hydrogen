@@ -32,6 +32,7 @@ type Schema struct {
 	blocks []*BlockType // sorted by name
 	tokens []*TokenSet  // sorted by name
 	lk     *blockLookup
+	rt     *RichText
 	hash   string
 	opts   map[*Field]map[string]any // type-specific options by field, for the canonical encoding
 }

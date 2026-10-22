@@ -20,10 +20,27 @@ func richNodeNames() []string {
 }
 
 func (richtextType) Compile(o *Options) (Shape, Config, error) {
-	cfg := &richtextConfig{}
-	cfg.marks = allowList(o, "marks", richMarkNames())
-	cfg.nodes = allowList(o, "nodes", richNodeNames())
+	cfg := &richtextConfig{rt: o.c.rt}
+	cfg.marks = allowList(o, "marks", append(richMarkNames(), customNames(o.c.rt.Marks, func(m *RichMark) (string, bool) { return m.Name, true })...))
+	cfg.nodes = allowList(o, "nodes", append(richNodeNames(), customNames(o.c.rt.Nodes, func(n *RichNode) (string, bool) { return n.Name, !n.Part })...))
+	if cfg.nodes != nil {
+		for _, name := range cfg.nodes {
+			if n, ok := o.c.rt.Node(name); ok && n.Part {
+				o.Errorf("nodes", "nodes names %q, a part node: it is allowed where its parent is", name)
+			}
+		}
+	}
 	return Shape{Base: BaseRichText}, cfg, nil
+}
+
+func customNames[T any](list []T, name func(T) (string, bool)) []string {
+	var out []string
+	for _, e := range list {
+		if n, ok := name(e); ok {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 func allowList(o *Options, key string, known []string) []string {
@@ -40,12 +57,16 @@ func allowList(o *Options, key string, known []string) []string {
 }
 
 type richtextConfig struct {
+	rt           *RichText
 	marks, nodes []string // allow-lists; nil allows everything
 }
 
-func (c *richtextConfig) allowsNode(t string) bool {
+func (c *richtextConfig) allowsNode(t string, cn *RichNode) bool {
 	if c.nodes == nil {
 		return true
+	}
+	if cn != nil {
+		return cn.Part || slices.Contains(c.nodes, t)
 	}
 	switch t {
 	case "listItem":
@@ -73,6 +94,7 @@ type rtCheck struct {
 	c    *richtextConfig
 	r    *Report
 	segs []rtSeg
+	ids  map[string]struct{}
 }
 
 func (k *rtCheck) fail(format string, args ...any) {
@@ -113,12 +135,16 @@ func (c *richtextConfig) Validate(v any, _ Mode, r *Report) {
 		k.fail("the document may only have type and content")
 		return
 	}
-	k.children(doc, "doc")
+	k.children(doc, "doc", nil)
 }
 
-func (k *rtCheck) children(n map[string]any, parent string) {
+// children checks n's content. pn is n's declaration when it is a custom node.
+func (k *rtCheck) children(n map[string]any, parent string, pn *RichNode) {
 	raw, present := n["content"]
 	if !present {
+		if pn != nil {
+			k.noChildren(pn, 0)
+		}
 		return
 	}
 	list, ok := raw.([]any)
@@ -126,13 +152,16 @@ func (k *rtCheck) children(n map[string]any, parent string) {
 		k.fail("content must be a list")
 		return
 	}
+	if pn != nil {
+		k.noChildren(pn, len(list))
+	}
 	for i, e := range list {
 		if k.r.full() {
 			return
 		}
 		k.segs = append(k.segs, rtSeg{idx: i})
 		if m, ok := e.(map[string]any); ok {
-			k.node(m, parent)
+			k.node(m, parent, pn, i)
 		} else {
 			k.fail("a node must be an object")
 		}
@@ -140,27 +169,64 @@ func (k *rtCheck) children(n map[string]any, parent string) {
 	}
 }
 
-func (k *rtCheck) node(n map[string]any, parent string) {
+// noChildren checks how many children a custom node has against its content rule.
+func (k *rtCheck) noChildren(pn *RichNode, n int) {
+	switch pn.Content {
+	case "blocks":
+		if n == 0 {
+			k.fail("%s needs at least one block", pn.Name)
+		}
+	case "parts":
+		if n != len(pn.Parts) {
+			k.fail("%s needs %d parts: %s", pn.Name, len(pn.Parts), strings.Join(pn.Parts, ", "))
+		}
+	}
+}
+
+// node checks one node under parent (pn: its declaration when custom); idx is its position among siblings.
+func (k *rtCheck) node(n map[string]any, parent string, pn *RichNode, idx int) {
 	if !k.nodeKeys(n) {
 		return
 	}
 	t, _ := n["type"].(string)
+	var cn *RichNode
+	if t != "" {
+		cn = k.c.rt.nodes[t]
+	}
 	switch {
 	case t == "":
 		k.fail("a node needs a type")
 		return
-	case !validRichNode(t):
+	case cn == nil && !validRichNode(t):
 		k.fail("unknown node type %q", t)
 		return
-	case !childAllowed(parent, t):
+	case pn != nil && pn.Content == "parts":
+		if idx >= len(pn.Parts) || pn.Parts[idx] != t {
+			k.fail("%s needs %s at position %d", parent, partName(pn, idx), idx+1)
+			return
+		}
+	case !childAllowed(parent, pn, t, cn):
 		k.fail("%s cannot contain %s", parent, t)
 		return
-	case !k.c.allowsNode(t):
+	case !k.c.allowsNode(t, cn):
 		k.fail("%s nodes are not allowed here", t)
 		return
 	}
 	if t != "text" && n["marks"] != nil {
 		k.fail("only text can have marks")
+	}
+	if cn != nil {
+		k.customAttrs(n["attrs"], cn.Attrs, cn.Name)
+		if cn.Content == "none" {
+			if raw := n["content"]; raw != nil {
+				if l, ok := raw.([]any); !ok || len(l) > 0 {
+					k.fail("%s cannot have content", t)
+				}
+			}
+			return
+		}
+		k.children(n, t, cn)
+		return
 	}
 	k.attrs(n, t)
 	if t == "text" {
@@ -175,7 +241,45 @@ func (k *rtCheck) node(n map[string]any, parent string) {
 		}
 		return
 	}
-	k.children(n, t)
+	k.children(n, t, nil)
+}
+
+func partName(pn *RichNode, idx int) string {
+	if idx < len(pn.Parts) {
+		return pn.Parts[idx]
+	}
+	return "no more children"
+}
+
+// customAttrs checks the attrs of a custom node or mark against its declaration.
+func (k *rtCheck) customAttrs(raw any, decl []*RichAttr, name string) {
+	attrs, isMap := raw.(map[string]any)
+	if raw != nil && !isMap {
+		k.fail("attrs must be an object")
+		return
+	}
+	for key := range attrs {
+		if !slices.ContainsFunc(decl, func(a *RichAttr) bool { return a.Name == key }) {
+			for _, key := range sortedKeys(attrs) {
+				if !slices.ContainsFunc(decl, func(a *RichAttr) bool { return a.Name == key }) {
+					k.fail("%s does not take attribute %q", name, key)
+				}
+			}
+			break
+		}
+	}
+	for _, a := range decl {
+		v := attrs[a.Name]
+		if v == nil {
+			if a.Required {
+				k.fail("%s needs attrs.%s", name, a.Name)
+			}
+			continue
+		}
+		if p := a.problem(v); p != "" {
+			k.fail("%s attribute %s %s", name, a.Name, p)
+		}
+	}
 }
 
 func (k *rtCheck) nodeKeys(n map[string]any) bool {
@@ -225,6 +329,18 @@ func (k *rtCheck) attrs(n map[string]any, t string) {
 		if lv, ok := intOf(attrs["level"]); !ok || lv < 1 || lv > 6 {
 			k.fail("heading level must be 1 to 6")
 		}
+		k.alignID(attrs)
+	case "paragraph":
+		k.alignID(attrs)
+	case "orderedList":
+		if v := attrs["start"]; v != nil {
+			if n, ok := intOf(v); !ok || n < -1_000_000 || n > 1_000_000 {
+				k.fail("orderedList start must be an integer from -1000000 to 1000000")
+			}
+		}
+		k.tight(attrs)
+	case "bulletList":
+		k.tight(attrs)
 	case "codeBlock":
 		if lang, ok := attrs["language"]; ok {
 			if _, isStr := lang.(string); !isStr {
@@ -235,11 +351,64 @@ func (k *rtCheck) attrs(n map[string]any, t string) {
 }
 
 var nodeAttrNames = map[string][]string{
-	"heading":     {"level"},
+	"paragraph":   {"align", "id"},
+	"bulletList":  {"tight"},
+	"orderedList": {"start", "tight"},
+	"heading":     {"level", "align", "id"},
 	"codeBlock":   {"language"},
 	"tableCell":   {"colspan", "rowspan", "colwidth"},
 	"tableHeader": {"colspan", "rowspan", "colwidth"},
 	"image":       {"src", "alt", "title", "width", "height"},
+}
+
+func (k *rtCheck) alignID(attrs map[string]any) {
+	if v := attrs["align"]; v != nil {
+		switch v {
+		case "left", "center", "right", "justify":
+		default:
+			k.fail("align must be left, center, right or justify")
+		}
+	}
+	if v := attrs["id"]; v != nil {
+		id, _ := v.(string)
+		if !validAnchor(id) {
+			k.fail("id must start with a letter and use letters, digits, - and _ (at most 64 characters)")
+			return
+		}
+		if _, dup := k.ids[id]; dup {
+			k.fail("id %q is used twice in the document", id)
+			return
+		}
+		if k.ids == nil {
+			k.ids = map[string]struct{}{}
+		}
+		k.ids[id] = struct{}{}
+	}
+}
+
+func (k *rtCheck) tight(attrs map[string]any) {
+	if v := attrs["tight"]; v != nil {
+		if _, ok := v.(bool); !ok {
+			k.fail("tight must be true or false")
+		}
+	}
+}
+
+// validAnchor matches ^[A-Za-z][A-Za-z0-9_-]{0,63}$.
+func validAnchor(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for i := range len(s) {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z':
+		case i > 0 && (c >= '0' && c <= '9' || c == '_' || c == '-'):
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (k *rtCheck) cellAttrs(attrs map[string]any) {
@@ -334,11 +503,14 @@ func (k *rtCheck) text(n map[string]any) {
 
 func (k *rtCheck) mark(m map[string]any, before []any) {
 	t, _ := m["type"].(string)
-	switch t {
-	case "bold", "italic", "code", "link", "underline", "strike", "superscript", "subscript":
-	default:
-		k.fail("unknown mark type %q", t)
-		return
+	cm := k.c.rt.marks[t]
+	if cm == nil {
+		switch t {
+		case "bold", "italic", "code", "link", "underline", "strike", "superscript", "subscript":
+		default:
+			k.fail("unknown mark type %q", t)
+			return
+		}
 	}
 	if !k.c.allowsMark(t) {
 		k.fail("%s marks are not allowed here", t)
@@ -349,6 +521,10 @@ func (k *rtCheck) mark(m map[string]any, before []any) {
 			break
 		}
 	}
+	if cm != nil {
+		k.customAttrs(m["attrs"], cm.Attrs, cm.Name)
+		return
+	}
 	if t != "link" {
 		if m["attrs"] != nil {
 			k.fail("%s marks take no attributes", t)
@@ -357,12 +533,21 @@ func (k *rtCheck) mark(m map[string]any, before []any) {
 	}
 	attrs, _ := m["attrs"].(map[string]any)
 	href, _ := attrs["href"].(string)
-	if len(attrs) != 1 || !validHref(href) {
-		k.fail("link needs attrs.href: an http(s) URL, mailto: address or item:<id>")
+	if !validHref(href) {
+		k.fail("link needs attrs.href: an http(s) URL, mailto: address, #anchor or item:<id>")
+	}
+	for key := range attrs {
+		if key != "href" && key != "target" {
+			k.fail("link does not take attribute %q", key)
+			break
+		}
+	}
+	if v := attrs["target"]; v != nil && v != "_blank" {
+		k.fail("link target must be _blank")
 	}
 }
 
-// validHref accepts item: links, mailto: addresses and absolute http(s) URLs. Backslashes and control
+// validHref accepts item: links (with an optional #anchor), #anchors, mailto: addresses and absolute http(s) URLs. Backslashes and control
 // characters are refused anywhere: browsers read a backslash as a slash in http(s) URLs, so values such as
 // "/\evil.com" would redirect to another host.
 func validHref(h string) bool {
@@ -370,7 +555,11 @@ func validHref(h string) bool {
 		return false
 	}
 	if rest, ok := strings.CutPrefix(h, "item:"); ok {
-		return isUUID(rest)
+		id, frag, has := strings.Cut(rest, "#")
+		return isUUID(id) && (!has || validAnchor(frag))
+	}
+	if frag, ok := strings.CutPrefix(h, "#"); ok {
+		return validAnchor(frag)
 	}
 	if rest, ok := strings.CutPrefix(h, "mailto:"); ok {
 		return rest != ""
@@ -407,7 +596,35 @@ func childTypes(parent string) []string {
 	return nil
 }
 
-func childAllowed(parent, child string) bool { return slices.Contains(childTypes(parent), child) }
+// childAllowed says whether child (cn: its declaration when custom) may stand under parent (pn: its declaration
+// when custom). Part nodes never stand anywhere but in their parent's part sequence.
+func childAllowed(parent string, pn *RichNode, child string, cn *RichNode) bool {
+	if pn != nil {
+		switch {
+		case cn != nil:
+			return pn.Content == "blocks" && !cn.Inline && !cn.Part || pn.Content == "inline" && cn.Inline
+		case pn.Content == "inline":
+			return child == "text" || child == "hardBreak"
+		case pn.Content == "blocks":
+			return slices.Contains(childTypes("doc"), child)
+		}
+		return false
+	}
+	if cn != nil {
+		if cn.Part {
+			return false
+		}
+		if cn.Inline {
+			return parent == "paragraph" || parent == "heading"
+		}
+		switch parent {
+		case "doc", "blockquote", "listItem", "tableCell", "tableHeader":
+			return true
+		}
+		return false
+	}
+	return slices.Contains(childTypes(parent), child)
+}
 
 // intOf reads an exact integer from any JSON number representation.
 func intOf(v any) (int, bool) {
@@ -421,23 +638,27 @@ func (c *richtextConfig) IsEmpty(v any) bool {
 		return false
 	}
 	list, _ := doc["content"].([]any)
-	return !slices.ContainsFunc(list, richHasContent)
+	return !slices.ContainsFunc(list, c.hasContent)
 }
 
-func richHasContent(v any) bool {
+func (c *richtextConfig) hasContent(v any) bool {
 	n, ok := v.(map[string]any)
 	if !ok {
 		return false
 	}
-	switch n["type"] {
+	t, _ := n["type"].(string)
+	switch t {
 	case "text":
 		s, _ := n["text"].(string)
 		return s != ""
 	case "horizontalRule", "hardBreak", "image":
 		return true
 	}
+	if cn := c.rt.nodes[t]; cn != nil && cn.Content == "none" {
+		return true
+	}
 	list, _ := n["content"].([]any)
-	return slices.ContainsFunc(list, richHasContent)
+	return slices.ContainsFunc(list, c.hasContent)
 }
 
 func (c *richtextConfig) JSONSchema() map[string]any {

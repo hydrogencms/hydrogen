@@ -60,6 +60,13 @@ func JSONSchemaFile(reg *Registry) map[string]any {
 			},
 		},
 	}
+	richDef := map[string]any{
+		"type": "object", "additionalProperties": false,
+		"properties": map[string]any{
+			"label": str, "tag": str, "inline": boolean, "content": map[string]any{"oneOf": []any{str, strings}},
+			"attrs": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "object"}},
+		},
+	}
 	return map[string]any{
 		"$schema": schemaDialect,
 		"title":   "Hydrogen schema file",
@@ -76,6 +83,13 @@ func JSONSchemaFile(reg *Registry) map[string]any {
 			"blocks": map[string]any{
 				"type": "object", "propertyNames": map[string]any{"pattern": name, "maxLength": maxName},
 				"additionalProperties": map[string]any{"$ref": "#/$defs/block"},
+			},
+			"richtext": map[string]any{
+				"type": "object", "additionalProperties": false,
+				"properties": map[string]any{
+					"nodes": map[string]any{"type": "object", "additionalProperties": richDef},
+					"marks": map[string]any{"type": "object", "additionalProperties": richDef},
+				},
 			},
 			"tokens": map[string]any{
 				"type": "object", "propertyNames": map[string]any{"pattern": name, "maxLength": maxName},

@@ -73,6 +73,12 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   package, `manage` `GET /blocks` (block types + token sets), codegen `Block`/`Blocks<â€¦>`/`DecodeProps`, and
   `examples/starter` (schema, channels and the committed `fixture/` export; `make starter-fixture` rebuilds it
   deterministically). Contract: `planning/design/pagebuilder-h6.md`.
+- Rich text vocabulary: built-ins in `core/schema/richtext.go`; the top-level `richtext:` schema key declares custom
+  nodes and marks (`core/schema/richdecl.go`, `Schema.RichText()`), served by manage `GET /richtext`, written to
+  `gen/richtext.ts` by codegen, built into the admin editor (`admin/ui/src/lib/richtext`) and rendered by the site
+  module (`modules/site/richtext.go`, overrides `richtext/<type>.html`) and the one SDK walk
+  (`@hydrogencms/client/richtext`, used by every adapter). Renderer output must match
+  `packages/client/test/fixtures/richtext-ext.json` (Go and TS tests both read it).
 - Frontend starters (H6b): `packages/starters/next` (Next.js starter on `examples/starter`), `packages/adapter-test`
   (adapter conformance suite), `docs/adapter-kit.md` and `docs/bridge-protocol.md` (adapters; preview bridge).
 - Site module (H6c): `modules/site` renders a website with `html/template` for web channels that set `render: go`

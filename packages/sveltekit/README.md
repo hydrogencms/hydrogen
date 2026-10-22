@@ -47,7 +47,7 @@ export const registry = createRegistry({ hero: Hero, cards: Cards })   // `share
 
 A block component gets `{ block, props, attrs, path, renderSlot }`: spread `attrs` on its root element (`data-h-block`
 always, `data-h-path` in preview) and render a slot with `{@render renderSlot('items')}`. `<RichText doc links />`
-renders rich text (`item:<id>` links come from `item.links`; unsafe URLs are dropped), `<Image asset preset />` an
+renders rich text (`item:<id>` links come from `item.links`; unsafe URLs are dropped; also `resolveLink`, `schema` (the generated `richTextSchema`, for custom nodes and marks), `classes` and `render`: type → `(attrs, kids) => RichNode[]`), `<Image asset preset />` an
 asset with its variant and srcset, `<Field path value {preview} />` marks a text field for the canvas (pass the text as
 `value`: Svelte's own comment nodes would otherwise break inline editing).
 

@@ -1,6 +1,7 @@
 // Binds a Form to the item's Yjs session. Imported lazily by the editor: this is the collab chunk with yjs.
 import { tick } from 'svelte';
 import { blocksCatalog } from '../blocks/catalog.svelte';
+import { richCatalog } from '../richtext/custom.svelte';
 import type { CompiledType } from '../types.svelte';
 import type { Form } from '../form.svelte';
 import { Binder } from './binder';
@@ -65,7 +66,7 @@ export function bindForm(o: {
     snapshot: (v) => $state.snapshot(v),
     env,
     schedule: (f) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => f()) : queueMicrotask(f)),
-    before: blocksCatalog.load(),
+    before: Promise.all([blocksCatalog.load(), richCatalog.load()]),
     onState: bump,
     onFatal: o.onFatal,
     merge: o.merge,

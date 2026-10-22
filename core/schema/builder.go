@@ -43,12 +43,14 @@ type Builder struct {
 	groups map[string]*groupDef
 	blocks map[string]*blockDef
 	tokens map[string]*tokenDef
+	rich   richDefs
 	errs   errList
 }
 
 func NewBuilder(reg *Registry) *Builder {
 	return &Builder{reg: reg, origin: "(code)", types: map[string]*typeDef{}, groups: map[string]*groupDef{},
-		blocks: map[string]*blockDef{}, tokens: map[string]*tokenDef{}}
+		blocks: map[string]*blockDef{}, tokens: map[string]*tokenDef{},
+		rich: richDefs{nodes: map[string]*richNodeDef{}, marks: map[string]*richMarkDef{}}}
 }
 
 // SetOrigin names the source of subsequent programmatic additions, e.g. "module seo"; it is the Pos.File of
@@ -137,8 +139,10 @@ func (b *Builder) addFile(file string, data []byte) error {
 			b.addNamed(s, e.v, "blocks", func(k, v *yaml.Node) { b.registerBlock(s, k, v) })
 		case "tokens":
 			b.addNamed(s, e.v, "tokens", func(k, v *yaml.Node) { b.registerTokens(s, k, v) })
+		case "richtext":
+			b.addRichText(s, e.v)
 		default:
-			s.errorf(e.k, "unknown key %q (known: blocks, groups, tokens, types)", e.key)
+			s.errorf(e.k, "unknown key %q (known: blocks, groups, richtext, tokens, types)", e.key)
 		}
 	}
 	return nil

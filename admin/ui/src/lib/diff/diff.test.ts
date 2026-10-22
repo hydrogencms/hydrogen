@@ -92,6 +92,17 @@ describe('rich text', () => {
   });
 });
 
+describe('rich text custom nodes', () => {
+  it('shows a custom leaf by its type and attributes, and a change inside a custom block', () => {
+    const embed = (url: string) => ({ type: 'embed', attrs: { url } });
+    const r = diffRich(doc(embed('/a')), doc(embed('/b')));
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0]!.node).toBe('embed');
+    const callout = (t: string) => ({ type: 'callout', attrs: { variant: 'info' }, content: [{ type: 'paragraph', content: [{ type: 'text', text: t }] }] });
+    expect(diffRich(doc(callout('a')), doc(callout('b'))).rows[0]!.status).toBe('changed');
+  });
+});
+
 describe('rich text tables and images', () => {
   const table = (cell: string) => ({ type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell', content: [para('a')] }, { type: 'tableCell', content: [para(cell)] }] }] });
   it('shows a changed cell as one table row and an image by its source', () => {

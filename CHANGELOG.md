@@ -30,6 +30,16 @@ All notable changes to Hydrogen are documented here. The format follows
   `Cacheable` GET answers carry an `ETag` and answer 304. Components render templates with `View.Partial`, and
   `cachetag.SetHeaders` sets the same cache headers (`Cache-Control`, `Surrogate-Key`, `Cache-Tag`) on `/api/x`
   endpoints.
+- Rich text extensibility: a top-level `richtext:` schema key declares custom nodes (block, inline atoms, leaves, and
+  fixed sequences of part nodes such as an accordion's summary and body) and marks with typed attributes (`string`,
+  `enum`, `int`, `bool`, `url`), a rendered tag from an allowlist and an admin label. One declaration reaches
+  validation, field allowlists, `GET /api/manage/v1/richtext`, the admin editor (Insert menu, attribute dialog, marks
+  menu, copy/paste) and every renderer, which output `<tag class="rt-name" data-attr="…">`; `hydrogen generate` writes
+  `gen/richtext.ts` (`richTextSchema`) for frontends. Renderers take `classes` per node or mark type and overrides:
+  `richtext/<type>.html` templates and `wrap` in the site module, `render` in every SDK component (now also Svelte and
+  Vue). Built-in additions: `align` and `id` (anchors) on paragraphs and headings, `start` and `tight` on lists, link
+  `target: _blank`, and `#id` / `item:<id>#id` hrefs. The SDK components share one walk in
+  `@hydrogencms/client/richtext`, whose size budget is 2 KB.
 - `DEVELOPMENT.md`: how to run a working copy of Hydrogen with content, the admin and a frontend (fullstack in one
   process, the CMS with a JavaScript starter, the admin with hot reload, a project of your own on the checkout).
 

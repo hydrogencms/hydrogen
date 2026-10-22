@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/hydrogencms/hydrogen/core/config"
@@ -89,6 +90,9 @@ func generate(mods []kernel.Module, o Options, args []string) error {
 			return err
 		}
 		fmt.Fprintf(o.Stdout, "wrote %s\n", *tsFile)
+		if err := codegen.WriteRichText(filepath.Join(filepath.Dir(*tsFile), "richtext.ts"), s.RichText()); err != nil {
+			return err
+		}
 	}
 	return nil
 }

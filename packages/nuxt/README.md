@@ -67,7 +67,7 @@ const registry = createRegistry({ hero: Hero, cards: Cards, card: Card })     //
 A block component takes the block's props as its prop `props` and renders the block's slots as Vue slots of the same
 name (`<slot name="items" />`). `data-h-block` (and `data-h-path` in preview) fall through to its root element, so a
 component needs a single root (otherwise bind `$attrs` itself). `useLinks()` is the item's `links` (item id → URL, for
-`ref` props); `<HydrogenRichText :doc :links>` turns `item:<id>` links into those URLs and drops unsafe ones. Unknown
+`ref` props); `<HydrogenRichText :doc :links>` turns `item:<id>` links into those URLs and drops unsafe ones; it also takes `resolveLink`, `schema` (the generated `richTextSchema`, for custom nodes and marks), `classes` (type → class tokens) and `render` (type → `(attrs, kids) => RichNode[]`). Unknown
 block types render nothing (and warn in development).
 
 ## Caching and revalidation

@@ -72,7 +72,7 @@ Items of a `list`'s `of:` cannot use `required`, `translatable`, `index`, `when`
 | --- | --- | --- |
 | `string` | One line of text. | `min`, `max` (characters), `pattern` (a regular expression). |
 | `text` | Multi-line text. | `min`, `max`. |
-| `richtext` | A ProseMirror document. | `marks` (any of `bold`, `code`, `italic`, `link`, `strike`, `subscript`, `superscript`, `underline`), `nodes` (`blockquote`, `bulletList`, `codeBlock`, `hardBreak`, `heading`, `horizontalRule`, `image`, `orderedList`, `paragraph`, `table`). `table` allows rows and cells (`tableRow`, `tableCell`, `tableHeader` with `colspan`, `rowspan`, `colwidth`); `image` is a block with `src` (an http(s) URL or a root-relative path such as `/assets/…`), `alt`, `title`, `width` and `height`. Without the options everything is allowed. |
+| `richtext` | A ProseMirror document. | `marks` (any of `bold`, `code`, `italic`, `link`, `strike`, `subscript`, `superscript`, `underline`), `nodes` (`blockquote`, `bulletList`, `codeBlock`, `hardBreak`, `heading`, `horizontalRule`, `image`, `orderedList`, `paragraph`, `table`). `table` allows rows and cells (`tableRow`, `tableCell`, `tableHeader` with `colspan`, `rowspan`, `colwidth`); `image` is a block with `src` (an http(s) URL or a root-relative path such as `/assets/…`), `alt`, `title`, `width` and `height`. Without the options everything is allowed. See [rich text](#rich-text) for attributes and custom nodes. |
 | `number` | A JSON number. | `integer`, `min`, `max`. |
 | `boolean` | `true` or `false`. | none |
 | `enum` | One of a fixed set of strings. | `values` (required, unique). |
@@ -191,6 +191,87 @@ types:
 - The built-in **`shared`** block embeds the blocks of another item. Mark a type `blockset: true` (it needs exactly one
   `blocks` field) and add `shared` to a `blocks` field's `allow`. The delivery API inlines the shared item's blocks.
 - `GET /api/manage/v1/blocks` lists block types and token sets for editors and tools.
+
+## Rich text
+
+A `richtext` field stores a ProseMirror document (`{type, attrs, content, text, marks}`). The built-in vocabulary is
+the list under [field types](#field-types); `marks` and `nodes` limit it per field.
+
+Built-in attributes:
+
+| Node or mark | Attribute | Values |
+| --- | --- | --- |
+| `paragraph`, `heading` | `align` | `left`, `center`, `right`, `justify`. |
+| `paragraph`, `heading` | `id` | An anchor id: a letter, then letters, digits, `-` or `_` (64 characters at most), unique in the document. |
+| `orderedList` | `start` | An integer from -1000000 to 1000000. |
+| `bulletList`, `orderedList` | `tight` | `true` renders list items without paragraph wrappers. |
+| `link` | `target` | `_blank` (renderers add `rel="noopener noreferrer"`). |
+| `link` | `href` | Also `#<id>` (an anchor in the same document) and `item:<uuid>#<id>` (an anchor on another item). |
+
+A link to `item:<uuid>#<id>` counts as a reference to the item like `item:<uuid>`; the fragment is not part of the
+reference, and delivery's `links` map is keyed by the bare id.
+
+### Custom nodes and marks
+
+The top-level `richtext:` key declares nodes and marks beyond the built-in ones. One declaration reaches the
+validation of stored documents, the admin editor, the site module and the TypeScript renderers; nothing HTML or CSS
+is stored, only typed attributes.
+
+```yaml
+richtext:
+  nodes:
+    callout:
+      label: Callout          # shown in the admin
+      tag: aside              # rendered element; default div (span for inline nodes)
+      content: blocks         # blocks | inline | none | [part, part, ...]
+      attrs:
+        variant: { type: enum, values: [info, warning, tip], default: info }
+    details:
+      label: Accordion
+      tag: details
+      content: [detailsSummary, detailsBody]   # a fixed sequence of part nodes, each once, in order
+    detailsSummary: { tag: summary, content: inline }
+    detailsBody: { content: blocks }
+    embed:
+      label: Embed
+      tag: figure
+      content: none           # a leaf
+      attrs:
+        url: { type: url, required: true }
+        caption: { type: string, max: 300 }
+    footnoteRef:
+      inline: true            # an inline atom inside paragraph and heading text; needs content: none
+      content: none
+      attrs:
+        n: { type: int, min: 1, max: 999, required: true }
+  marks:
+    highlight:
+      label: Highlight
+      tag: mark               # default span
+      attrs:
+        tone: { type: enum, values: [yellow, green] }
+```
+
+Rules, checked when the schema loads:
+
+- Names match `^[a-z][a-zA-Z0-9]{0,39}$` and may not be a built-in node or mark. At most 50 nodes and 20 marks.
+- Tags: block nodes take `div section aside figure figcaption details summary header footer dl dt dd`; inline nodes
+  and marks take `span mark small abbr cite q kbd dfn ins del var samp time`. Whether a combination is good HTML
+  (a `summary` inside `details`) is the project's call.
+- `content` is required. `blocks` holds one or more block nodes (built-in and custom) the field allows; `inline` holds
+  text, `hardBreak` and inline custom nodes; `none` is a leaf; a list names **part** nodes that must appear exactly
+  once each, in that order. A part is valid only inside its parent, is named by one parent, cannot be inline and
+  cannot contain its own ancestor as a part. An `inline: true` node needs `content: none`.
+- Attributes (20 per node or mark, names as above): `string` (`max` up to 10000, default 500), `enum` (`values`: 1 to
+  100 names matching `^[a-z0-9][a-z0-9-]*$`), `int` (`min`, `max`, within one billion either way), `bool` and `url`
+  (an absolute http(s) URL or a root-relative path). `required: true` makes an attribute mandatory; `default` must
+  itself be valid, is written by the editor when it inserts the node and is used by renderers when the stored
+  attribute is absent.
+- A field's `nodes` and `marks` lists accept custom names (not part nodes: a part is allowed wherever its parent is).
+  Without the lists every built-in and custom node and mark is allowed.
+
+Frontends read the declaration from `GET /api/manage/v1/richtext`, and `hydrogen generate` writes it to
+`gen/richtext.ts` (`richTextSchema`, only when `richtext:` is declared) for the TypeScript renderers.
 
 ## Upload types
 
