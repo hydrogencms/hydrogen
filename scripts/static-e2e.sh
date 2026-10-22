@@ -37,6 +37,7 @@ cms_port=$(port)
 cms=http://127.0.0.1:$cms_port
 
 echo "== scaffold"
+"$root/scripts/admin-built.sh"
 go build -o "$work/hydrogen" "$root/cmd/hydrogen"
 ("$root/scripts/npm-ci.sh" "$root/packages" && cd "$root/packages" && npm run build) >"$work/packages.log" 2>&1 || { tail -n 20 "$work/packages.log"; fail "building packages/"; }
 (cd "$work" && ./hydrogen new -static -core "$root" demo >"$work/new.log" 2>&1) || { cat "$work/new.log"; fail "hydrogen new -static"; }

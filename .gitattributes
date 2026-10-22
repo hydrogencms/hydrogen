@@ -1,6 +1,5 @@
-# Build outputs committed so the Go module works without Node (go:embed): rebuilt by make targets and verified by
-# make check. Collapsed in GitHub diffs and left out of language stats; `git diff` shows them as changed only.
-admin/dist/** linguist-generated=true -diff
+# Build outputs committed so consumers need no Node (go:embed, the bridge copy): rebuilt by make targets and verified by
+# make check. admin/dist is not committed on main: the release workflow records it in release commits. Collapsed in GitHub diffs and left out of language stats; `git diff` shows them as changed only.
 examples/content/admin/dist/** linguist-generated=true -diff
 modules/site/bridge.iife.js linguist-generated=true -diff
 # Generated from the management API's OpenAPI document (make admin-types).

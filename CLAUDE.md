@@ -54,8 +54,9 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   (`Admin.SetupToken`; stable in dev) and `POST /auth/setup` creates the first administrator. `content.Service` checks the principal in the context (HTTP entry points
   always set one; no principal = the system, unchecked); the management API authenticates every request.
   Contract: `planning/design/auth-h5a.md`.
-- Admin (H5b): `admin/` serves the Svelte 5 app (`admin/ui`, built into `admin/dist`, committed and embedded;
-  strict CSP, `admin.prefix` default `/admin`, `admin.enabled`). The app is an API client only (`/api/manage/v1`);
+- Admin (H5b): `admin/` serves the Svelte 5 app (`admin/ui`, built into `admin/dist`, embedded; not committed on
+  `main` (`make admin` builds it, the release workflow records it only in release commits; a binary without it serves a
+  built-in "admin not built" page, `admin.Built()`, and the kernel warns at start); strict CSP, `admin.prefix` default `/admin`, `admin.enabled`). The app is an API client only (`/api/manage/v1`);
   it reads `<prefix>/config.json` at start. Foundation docs: `admin/ui/src/lib/README.md`. Contract:
   `planning/design/admin-h5b.md`.
 - Admin extensions (H5c): custom elements declared in the project's `admin:` manifest (`elements`, `theme`,
@@ -176,10 +177,14 @@ It is its own git repository: commit planning changes there (`git -C planning â€
   `scripts/release.sh <version> --bump` sets every version (go.mod requires, package.json versions and ranges, the
   lockfile, the bridge's SDK constant and its iife copy, `ReleaseVersion`/`npmRange`, a dated CHANGELOG section);
   `scripts/release.sh <version>` (checks every go.mod/package.json version, `ReleaseVersion` in
-  internal/scaffold and the CHANGELOG section, runs the gates, `--tag` creates the module tags locally, prints the
-  push command). Releases are cut on `main`: `--tag` fast-forwards `release` and the release workflow rejects
-  tags not on `release`; a GitHub ruleset keeps `release` fast-forward only and requires CI's `ci-ok` check. Hotfixes:
-  PR into `release`, run the script there, then merge `release` into `main`. npm packages publish through `scripts/npm-publish.sh` (order in `scripts/npm-packages.sh`; skips
+  internal/scaffold and the CHANGELOG section, runs the gates, prints the dispatch command; `--verify` runs only the
+  checks). Releases are cut from `main` by dispatching `release.yml` (`version`, `ref`; environment `release`): it
+  needs a green `ci-ok` on the source, builds the admin and runs `scripts/release-commit.sh`, which records
+  `admin/dist` in a release commit (the source's tree plus the dist; parents source and previous `release`; `Source:`
+  trailer), tags it (`vX`, `modules/<m>/vX`) and pushes `release` (fast-forward only, deploy key as the ruleset's
+  bypass actor) and the tags; then CLI archives, the GitHub release and the npm job at the tag. Hotfixes: branch
+  `hotfix/vX.Y.Z` from `vPREV^1` (the last release's source), PR fixes into it, dispatch with that ref, then PR the
+  branch into `main`. Setup and flow: CONTRIBUTING.md. npm packages publish through `scripts/npm-publish.sh` (order in `scripts/npm-packages.sh`; skips
   published versions); the release workflow runs it with `--provenance` when the repository variable `NPM_PUBLISH`
   is `true` (provenance needs a public repo and `repository.directory` in each package.json). Pushing tags and
   publishing are the user's call. Contract:
@@ -211,10 +216,10 @@ make conformance                # the conformance suite against every frontend (
 make admin                      # admin/ui: npm ci, typecheck, vitest, build into admin/dist, gzip budgets
 make admin-e2e                  # Playwright: admin exit scenarios + axe; page builder live preview on the real
                                 # Next starter and the fullstack site module (ADMIN_E2E_ONLY=starter|next|fullstack
-                                # runs one phase on the admin/dist already built; E2E_GREP=â€¦ filters tests)
+                                # runs one phase on the admin/dist already built, or builds it if missing; E2E_GREP=â€¦ filters tests)
 make admin-types                # regenerate admin/ui/src/lib/api/schema.d.ts from a running build's OpenAPI
 make example-admin              # rebuild examples/content/admin/dist (example-admin-check verifies it in make check)
-make check                      # tidy-check vet lint test smoke admin admin-dist-check (dist must be rebuilt)
+make check                      # tidy-check vet lint admin test smoke example-admin-check site-bridge-check
 ```
 
 In a project: `hydrogen dev` (live reload; regenerates `gen/` on schema changes), `hydrogen generate`,
@@ -249,8 +254,10 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
 - Delivery listings return `{items, hasMore}`; `total` costs a count and is only computed with `?total=true`.
 - macOS scans a newly built binary on first launch (~300 ms); measure start-up from the second run.
 - Scratch projects inside the repo (`.work/`) need `GOWORK=off`, or the repo's `go.work` claims them.
-- After any change under `admin/ui`, run `make admin` and commit `admin/dist` with it (`admin-dist-check` fails
-  otherwise); rebuild the Go binary too, because dist is embedded. `hydrogen dev` with `ADMIN_DEV_URL` proxies the
+- `admin/dist` is never committed on `main` (only `.keep`): run `make admin` once after cloning and after any change
+  under `admin/ui` (scripts that serve the admin run `scripts/admin-built.sh`, which builds only when
+  `index.html` is missing), and rebuild the Go binary, because dist is embedded. Never `git add -f` it outside
+  `scripts/release-commit.sh`. `hydrogen dev` with `ADMIN_DEV_URL` proxies the
   admin to a Vite dev server. The CSP keeps `script-src 'self'`; inline styles are allowed only because Svelte
   custom elements inject their styles as `<style>` elements. Admin code still uses Svelte's `style:` directive.
 - Extension elements run with the signed-in user's rights and get `ctx` as a property (never attributes);
@@ -357,6 +364,6 @@ Postgres tests use `HYDROGEN_TEST_POSTGRES_URL` (default the db-up container) an
   rules here (numbers for budgets and hot paths) and lists every compromise: what principle it bends, why the
   capability is worth it, what bounds the cost ("None" if none). A pull request that breaks a principle without
   listing it, or whose compromises don't fit, is rejected. Process for people: `CONTRIBUTING.md`. Never put
-  `planning/` content in a pull request. `release` holds only released commits and moves only through
-  `scripts/release.sh --tag` (or a hotfix PR into it), never by direct commits; tags and publishing stay the
-  user's call. Commits: no "Generated with Claude Code" footer.
+  `planning/` content in a pull request. `release` holds only release commits and moves only through
+  the release workflow (`scripts/release-commit.sh`), never by direct commits; dispatching a release and publishing
+  stay the user's call. Commits: no "Generated with Claude Code" footer.

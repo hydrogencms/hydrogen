@@ -27,6 +27,7 @@ p=$(port)
 url=http://127.0.0.1:$p
 
 echo "== build"
+"$root/scripts/admin-built.sh"
 (cd "$root/examples/fullstack" && go build -o "$work/fullstack" .)
 "$root/scripts/npm-ci.sh" "$root/packages" >/dev/null
 (cd "$root/packages" && npm run build >/dev/null)

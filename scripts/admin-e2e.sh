@@ -6,7 +6,7 @@
 # in for the frontend (admin/ui/e2e/fixtures/preview-host): the block editor and the live and reload previews.
 # Then the H6 exit scenarios on the real frontends: examples/starter with packages/starters/next (live preview of a page and a
 # post) and examples/fullstack (the site module, reload mode). ADMIN_E2E_ONLY=multisite|content|starter|next|fullstack runs just that one
-# (starter uses the admin/dist already built); E2E_GREP passes --grep to Playwright.
+# (the others use the admin/dist already built, building it if missing); E2E_GREP passes --grep to Playwright.
 # Run from the repo root: make admin-e2e.
 set -euo pipefail
 
@@ -59,6 +59,7 @@ stop_servers() {
 [ -n "$only" ] || rm -rf "$work"
 mkdir -p "$work"
 export MANAGE_TOKEN=e2e-manage-token PREVIEW_SECRET=e2e-preview-secret-0123456789abcdef
+[ -z "$only" ] || [ "$only" = multisite ] || "$root/scripts/admin-built.sh"
 if [ -z "$only" ] || [ "$only" = multisite ]; then
 echo "== build"
 "$root/scripts/npm-ci.sh" "$root/admin/ui" >/dev/null && (cd "$root/admin/ui" && npm run build >/dev/null)

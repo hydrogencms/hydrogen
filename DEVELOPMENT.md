@@ -3,6 +3,9 @@
 How to run your working copy of Hydrogen with content, the admin and a frontend, so you can try a change the way a
 project would see it. For the checks to run before committing, see [Checks](#checks).
 
+Run `make admin` once after cloning (and again after changing `admin/ui`): the built admin is embedded in the
+binary but not committed. Without it the admin URL shows an "admin not built" page and the APIs work as usual.
+
 The projects in `examples/` are listed in `go.work`, so `go run .` in any of them builds against this checkout:
 change `core/`, `api/`, `features/` or `modules/`, restart, and the example runs your code.
 
@@ -68,8 +71,8 @@ cd admin/ui && npm ci && npm run dev                          # Vite on http://l
 ADMIN_DEV_URL=http://localhost:5173 go run . serve            # in the example, instead of plain serve
 ```
 
-The CMS proxies `/admin` to Vite (dev environment only). When you are done, run `make admin` and commit `admin/dist`:
-the binary embeds the built admin and `make check` fails if it is stale.
+The CMS proxies `/admin` to Vite (dev environment only). `admin/dist` is not committed: the binary embeds whatever
+`make admin` last built there, and a binary built without it shows an "admin not built" page.
 
 ## Your own project on this checkout
 
@@ -85,7 +88,9 @@ go mod tidy
 npm install /path/to/hydrogencms/packages/client     # and the other @hydrogencms/* packages the frontend uses
 ```
 
-Drop the `replace` lines before committing the project. A scratch project inside this repository (`.work/`) needs
+The project embeds the admin from the checkout, so run `make admin` there first. Only released versions carry the
+built admin: a project that requires an unreleased commit (`go get github.com/hydrogencms/hydrogen@main`) gets the
+"admin not built" page. Drop the `replace` lines before committing the project. A scratch project inside this repository (`.work/`) needs
 `GOWORK=off`, or `go.work` claims it.
 
 ## Good to know

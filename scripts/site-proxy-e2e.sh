@@ -35,6 +35,7 @@ cms_port=$(port)
 cms=http://127.0.0.1:$cms_port
 
 echo "== build the packages and the Next starter (standalone)"
+"$root/scripts/admin-built.sh"
 "$root/scripts/npm-ci.sh" "$root/packages" >/dev/null
 (cd "$root/packages" && npm run build -w client -w router -w bridge -w react -w next -w adapter-test >/dev/null)
 "$root/scripts/npm-ci.sh" "$root/admin/ui" >/dev/null # Playwright for the browser checks

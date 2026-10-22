@@ -35,6 +35,10 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Changed
 
+- The built admin (`admin/dist`) is no longer committed on `main`. The release workflow builds it and records it in
+  release commits that the Go module tags point at, so released versions embed the admin as before. In a checkout run
+  `make admin` once; a binary built without it serves an "admin not built" page and logs a warning (`admin.Built()`).
+  Releases are dispatched from GitHub (`release.yml`) instead of tagging locally; `scripts/release.sh --tag` is gone.
 - The static scaffold's dev site runs on `127.0.0.1:4321` (`server.host`, channel `frontend`), like `hydrogen dev`, so
   the admin's preview frame is the same site and keeps the preview cookie.
 - A block or token change counts as accounted only when every type whose documents can hold the block (directly or
