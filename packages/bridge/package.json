@@ -1,6 +1,6 @@
 {
   "name": "@hydrogencms/bridge",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Preview bridge between the Hydrogen admin and a frontend in an iframe",
   "type": "module",
   "sideEffects": false,

@@ -3,7 +3,7 @@ module github.com/hydrogencms/hydrogen/modules/sqlite
 go 1.26.0
 
 require (
-	github.com/hydrogencms/hydrogen v0.2.1
+	github.com/hydrogencms/hydrogen v0.3.0
 	modernc.org/sqlite v1.60.1
 )
 

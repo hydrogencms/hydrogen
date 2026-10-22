@@ -1,6 +1,6 @@
 {
   "name": "@hydrogencms/nuxt",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Nuxt module (Nuxt 4, Nitro) adapter for Hydrogen",
   "type": "module",
   "sideEffects": false,
@@ -31,9 +31,9 @@
     "vue": "^3.5.0"
   },
   "dependencies": {
-    "@hydrogencms/bridge": "^0.2.1",
-    "@hydrogencms/client": "^0.2.1",
-    "@hydrogencms/router": "^0.2.1",
+    "@hydrogencms/bridge": "^0.3.0",
+    "@hydrogencms/client": "^0.3.0",
+    "@hydrogencms/router": "^0.3.0",
     "@nuxt/kit": "^4.0.0"
   },
   "devDependencies": {

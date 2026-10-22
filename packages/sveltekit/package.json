@@ -1,6 +1,6 @@
 {
   "name": "@hydrogencms/sveltekit",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "SvelteKit adapter for Hydrogen",
   "type": "module",
   "sideEffects": false,
@@ -32,9 +32,9 @@
     "svelte": "^5.0.0"
   },
   "dependencies": {
-    "@hydrogencms/bridge": "^0.2.1",
-    "@hydrogencms/client": "^0.2.1",
-    "@hydrogencms/router": "^0.2.1"
+    "@hydrogencms/bridge": "^0.3.0",
+    "@hydrogencms/client": "^0.3.0",
+    "@hydrogencms/router": "^0.3.0"
   },
   "devDependencies": {
     "@sveltejs/kit": "^2.70.3",

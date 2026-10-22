@@ -1,6 +1,6 @@
 /** Preview bridge, frontend (child) side of protocol v1: see docs/bridge-protocol.md. */
 
-export const SDK = '@hydrogencms/bridge@0.2.1'
+export const SDK = '@hydrogencms/bridge@0.3.0'
 export const PREVIEW_COOKIE = 'hydrogen-preview'
 
 export type Json = null | boolean | number | string | Json[] | { [k: string]: Json }
