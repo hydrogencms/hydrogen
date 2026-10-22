@@ -229,11 +229,27 @@ func (c *checker) renderCustom(ch *channel.Channel, cr *CustomRoute, resp *Respo
 	case resp == nil:
 		c.fail("custom route %s: Sample returned nil", cr.pattern)
 		return
+	case len(resp.kinds()) != 1:
+		c.fail("custom route %s: the Sample must set exactly one of Template, Partial, Body, JSON, XML, Redirect (has %s)", cr.pattern, strings.Join(resp.kinds(), ", "))
+		return
 	case resp.Redirect != "":
 		c.pass()
 		return
-	case resp.Template == "" || !c.eng.has(resp.Template):
-		c.fail("custom route %s: template %q does not exist (add site/templates/routes/<name>.html)", cr.pattern, resp.Template)
+	}
+	if _, _, ok, err := resp.encode(); ok {
+		if err != nil {
+			c.fail("custom route %s: %v", cr.pattern, err)
+		} else {
+			c.pass()
+		}
+		return
+	}
+	name, render := resp.Template, c.eng.render
+	if resp.Partial != "" {
+		name, render = resp.Partial, c.eng.renderPartial
+	}
+	if !c.eng.has(name) {
+		c.fail("custom route %s: template %q does not exist (add site/templates/routes/<name>.html)", cr.pattern, name)
 		return
 	}
 	for _, preview := range []bool{false, true} {
@@ -245,8 +261,8 @@ func (c *checker) renderCustom(ch *channel.Channel, cr *CustomRoute, resp *Respo
 		for _, n := range cr.names {
 			p.view.Params[n] = "sample"
 		}
-		if _, err := c.eng.render(resp.Template, p, p.view); err != nil {
-			c.fail("custom route %s: %s: %v", cr.pattern, resp.Template, err)
+		if _, err := render(name, p, p.view); err != nil {
+			c.fail("custom route %s: %s: %v", cr.pattern, name, err)
 			return
 		}
 	}

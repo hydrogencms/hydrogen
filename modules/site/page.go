@@ -381,6 +381,11 @@ func (p *page) componentFn(name string) (template.HTML, error) {
 	return template.HTML(out), err //nolint:gosec // component output is HTML by contract
 }
 
+// Partial executes a template of the set by name, like {{partial}}; data defaults to the view.
+func (v *View) Partial(name string, data ...any) (template.HTML, error) {
+	return v.p.partialFn(name, data...)
+}
+
 // The methods below give components (which are not templates) the helpers templates have.
 
 // T translates a key in the page's locale; pairs replace {name} placeholders.

@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/hydrogencms/hydrogen/core/clock"
 	"github.com/hydrogencms/hydrogen/core/config"
@@ -52,7 +54,7 @@ groups:
   web:
     site: main
     render: go
-    reserved: [/search, /account/*, /tags/*, /comp, /contact, /small, /open]
+    reserved: [/raw/*, /search, /account/*, /tags/*, /comp, /contact, /small, /open]
 channels:
   en: { group: web, languages: [en], match: { prefix: /en } }
 `
@@ -80,11 +82,26 @@ func (f fakeComponent) Render(ctx context.Context, w io.Writer) error {
 	return err
 }
 
+// vpComponent renders a template through View.Partial.
+type vpComponent struct{ v *site.View }
+
+func (c vpComponent) Render(_ context.Context, w io.Writer) error {
+	out, err := c.v.Partial("partials/bit.html")
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(w, "<p>vp:"+string(out)+"</p>")
+	return err
+}
+
 // routesTheme adds the template the custom routes render, on top of the starter theme.
 func routesTheme() site.Theme {
 	return site.Theme{Name: "routes", Base: "starter", FS: fstest.MapFS{
-		"templates/routes/info.html": {Data: []byte(`{{define "content"}}<div class="info" data-status="{{.Status}}">{{.Title}}|{{.Data}}|{{.Params.id}}</div>{{end}}`)},
-		"translations/en.yaml":       {Data: []byte("home: Start\n")},
+		"templates/routes/info.html":  {Data: []byte(`{{define "content"}}<div class="info" data-status="{{.Status}}">{{.Title}}|{{.Data}}|{{.Params.id}}</div>{{end}}`)},
+		"templates/routes/frag.html":  {Data: []byte(`<li class="frag">{{t "home"}}|{{.Data}}|{{.Params.id}}|{{partial "partials/bit.html"}}</li>`)},
+		"templates/routes/feed.html":  {Data: []byte(`<rss><title>{{.Data}}</title></rss>`)},
+		"templates/partials/bit.html": {Data: []byte(`<b>bit</b>`)},
+		"translations/en.yaml":        {Data: []byte("home: Start\n")},
 	}}
 }
 
@@ -230,6 +247,46 @@ func siteRoutes(r *siteRegistrar) {
 	site.Handle(r, "GET /comp", func(q *site.Request) (*site.Response, error) {
 		return &site.Response{Template: "routes/comp.html", Data: "payload"}, nil
 	})
+	site.Handle(r, "GET /raw/{kind}", func(q *site.Request) (*site.Response, error) {
+		items, _, err := q.Items("article", url.Values{"limit": {"5"}})
+		if err != nil {
+			return nil, err
+		}
+		cache := q.Query.Get("cache") != ""
+		resp := &site.Response{Cacheable: cache, Tags: []string{"extra"}}
+		if q.Query.Get("age") != "" {
+			resp.MaxAge = 5 * time.Minute
+		}
+		switch q.Params["kind"] {
+		case "json":
+			resp.JSON = map[string]any{"n": len(items), "html": "<b>&</b>"}
+		case "xml":
+			resp.XML = struct {
+				XMLName xml.Name `xml:"urlset"`
+				N       int      `xml:"n"`
+			}{N: len(items)}
+		case "body":
+			resp.Body, resp.ContentType = []byte("User-agent: *\n"), "text/plain; charset=utf-8"
+		case "nobody":
+			resp.Body = []byte("x")
+		case "frag":
+			resp.Partial, resp.Data = "routes/frag.html", "d"
+		case "feed":
+			resp.Partial, resp.Data, resp.ContentType = "routes/feed.html", "T", "application/rss+xml; charset=utf-8"
+		case "plain":
+			resp.Partial = "partials/bit.html"
+		case "vp":
+			resp.Partial = "routes/vp.html"
+		case "both":
+			resp.JSON, resp.Template = 1, "routes/info.html"
+		case "twoempty":
+			resp.Redirect, resp.Body = "/x", []byte("x")
+		case "none":
+			return &site.Response{}, nil
+		}
+		return resp, nil
+	}).Sample(func() *site.Response { return &site.Response{Partial: "routes/frag.html"} })
+	site.Component(r, "routes/vp.html", func(v *site.View) site.Renderer { return vpComponent{v} })
 	site.Component(r, "routes/comp.html", func(v *site.View) site.Renderer { return fakeComponent{v} })
 }
 
@@ -346,6 +403,81 @@ func TestSiteCustomRoutes(t *testing.T) {
 		c := e.get("/en/comp")
 		if c.status != 200 || !strings.Contains(c.body, "<p>Start|/en/comp|payload</p>") {
 			t.Errorf("component: %d %s", c.status, c.body)
+		}
+	})
+}
+
+func TestSiteRawResponses(t *testing.T) {
+	runSite(t, "routes", func(t *testing.T, e *siteEnv) {
+		e.place("home", "Home", nil)
+		e.publishItem("article", "Hello")
+		e.publishItem("article", "World")
+		cached := "public, max-age=0, s-maxage=60, stale-while-revalidate=60"
+		for _, tc := range []struct {
+			name, path string
+			status     int
+			ct, body   string
+			noLayout   bool
+		}{
+			{"json", "/en/raw/json", 200, "application/json", `{"html":"<b>&</b>","n":2}` + "\n", true},
+			{"xml", "/en/raw/xml", 200, "application/xml; charset=utf-8", `<?xml version="1.0" encoding="UTF-8"?>` + "\n" + `<urlset><n>2</n></urlset>`, true},
+			{"body", "/en/raw/body", 200, "text/plain; charset=utf-8", "User-agent: *\n", true},
+			{"body without type", "/en/raw/nobody", 500, "text/html; charset=utf-8", "", false},
+			{"partial", "/en/raw/frag", 200, "text/html; charset=utf-8", `<li class="frag">Start|d||<b>bit</b></li>`, true},
+			{"partial xml", "/en/raw/feed", 200, "application/rss+xml; charset=utf-8", `<rss><title>T</title></rss>`, true},
+			{"plain partial", "/en/raw/plain", 200, "text/html; charset=utf-8", `<b>bit</b>`, true},
+			{"view partial", "/en/raw/vp", 200, "text/html; charset=utf-8", `<p>vp:<b>bit</b></p>`, true},
+			{"two answers", "/en/raw/both", 500, "text/html; charset=utf-8", "", false},
+			{"redirect and body", "/en/raw/twoempty", 500, "text/html; charset=utf-8", "", false},
+			{"nothing", "/en/raw/none", 500, "text/html; charset=utf-8", "", false},
+		} {
+			r := e.get(tc.path)
+			if r.status != tc.status || r.header.Get("Content-Type") != tc.ct || (tc.body != "" && r.body != tc.body) || r.header.Get("X-Content-Type-Options") != "nosniff" {
+				t.Errorf("%s: %d %q %q", tc.name, r.status, r.header.Get("Content-Type"), r.body)
+			}
+			if tc.noLayout && strings.Contains(r.body, "<html") {
+				t.Errorf("%s: layout in the answer: %s", tc.name, r.body)
+			}
+			if tc.status == 200 {
+				if tags := strings.Fields(r.header.Get("Surrogate-Key")); !slices.Contains(tags, "c:article") || !slices.Contains(tags, "extra") {
+					t.Errorf("%s: tags = %v", tc.name, tags)
+				}
+				if r.header.Get("Cache-Control") != "no-store" || r.header.Get("Etag") != "" {
+					t.Errorf("%s: uncached answer has %v", tc.name, r.header)
+				}
+			}
+		}
+		if r := e.get("/en/raw/both"); strings.Contains(r.body, "JSON") {
+			t.Errorf("the 500 leaks the cause: %s", r.body)
+		}
+
+		// cacheable: shared caches, ETag and 304; MaxAge overrides the channel's lifetime
+		r := e.get("/en/raw/json?cache=1")
+		etag := r.header.Get("Etag")
+		if r.header.Get("Cache-Control") != cached || etag == "" || !strings.Contains(r.header.Get("Cache-Tag"), "extra") {
+			t.Errorf("cacheable: %v", r.header)
+		}
+		req := httptest.NewRequest("GET", "http://site.test/en/raw/json?cache=1", nil)
+		req.Header.Set("If-None-Match", etag)
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		if rec.Code != 304 || rec.Body.Len() != 0 {
+			t.Errorf("If-None-Match: %d %q", rec.Code, rec.Body.String())
+		}
+		if r := e.get("/en/raw/json?cache=1&age=1"); r.header.Get("Cache-Control") != "public, max-age=0, s-maxage=300, stale-while-revalidate=300" {
+			t.Errorf("MaxAge: %v", r.header)
+		}
+		if r := e.get("/en/raw/json?age=1"); r.header.Get("Cache-Control") != "no-store" {
+			t.Errorf("MaxAge without Cacheable: %v", r.header)
+		}
+		if r := e.do("HEAD", "/en/raw/json?cache=1", nil); r.status != 200 || r.header.Get("Etag") != etag || r.body != "" {
+			t.Errorf("HEAD: %d %v", r.status, r.header)
+		}
+
+		// export: a non-HTML answer is a file at its path
+		out, err := e.ex.Render(ctx, "en", "/en/raw/xml")
+		if err != nil || !strings.HasPrefix(out.Header.Get("Content-Type"), "application/xml") || !strings.Contains(string(out.Body), "<urlset>") {
+			t.Errorf("export render: %v %+v", err, out)
 		}
 	})
 }

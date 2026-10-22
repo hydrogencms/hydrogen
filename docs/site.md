@@ -174,6 +174,37 @@ site.Handle(h, "GET /search", func(r *site.Request) (*site.Response, error) {
   are `.Params`. `Redirect` (302, or 303 after a non-GET) answers a redirect instead. `Status`, `Headers`, `Tags`
   and `Cacheable` are optional; the default is `Cache-Control: no-store`, and the in-process page cache never
   stores custom routes. Return `site.ErrNotFound` for the 404 page; other errors are a logged 500.
+- A response sets exactly one of `Template`, `Partial`, `Body`, `JSON`, `XML` or `Redirect` (two is a 500 naming
+  the route; `site:check` reports it for a `Sample`). Besides full pages, a route can answer raw bodies:
+  `Partial` renders a template or component of the set without the layout (a "load more" fragment, or an XML
+  template with `ContentType`) and with the same helpers and page context as `Template`; `Body` sends bytes as
+  they are and needs `ContentType`; `JSON` and `XML` encode a value (`application/json`; `application/xml;
+  charset=utf-8` with the XML prolog). `ContentType` overrides the default type. Raw answers keep the tags of
+  everything the route read, `Cacheable`, `Tags` and the static export; a preview answer is never cached and
+  only HTML answers get the preview CSP. `Cacheable` GET answers carry a strong `ETag` and answer
+  `If-None-Match` with 304; `MaxAge` replaces the channel's `delivery.cache_ttl` as the shared-cache lifetime.
+
+```go
+site.Handle(h, "GET /feed.xml", func(r *site.Request) (*site.Response, error) {
+	posts, _, err := r.Items("post", url.Values{"limit": {"20"}, "sort": {"-publishedAt"}})
+	if err != nil {
+		return nil, err
+	}
+	return &site.Response{Partial: "routes/feed.html", Data: posts, ContentType: "application/rss+xml; charset=utf-8",
+		Cacheable: true, MaxAge: 15 * time.Minute}, nil // routes/feed.html is the RSS template, without layout
+}).Export()
+
+// a sitemap or a client-side listing: encode a value
+return &site.Response{XML: sitemap, Cacheable: true}, nil // a struct with encoding/xml tags
+return &site.Response{JSON: map[string]any{"items": posts}}, nil
+// a "load more" fragment: the same template the page uses for one card list
+return &site.Response{Partial: "partials/cards.html", Data: posts}, nil
+return &site.Response{Body: []byte("User-agent: *\n"), ContentType: "text/plain; charset=utf-8"}, nil
+```
+
+  Templates are `html/template`: escaping is HTML's, which suits fragments; for an XML feed write the elements
+  and let the template escape the values, or build the document with `XML`. `/feed.xml`-style routes (a path
+  with a file extension) are exported as that file; add `.Export()` or `.Static(fn)`.
 - **Safety.** A non-GET/HEAD request is refused with 403 when the browser marks it cross-site
   (`Sec-Fetch-Site` other than `same-origin`/`none`, or an `Origin` that is neither the request host nor the
   channel's `frontend`); there are no CSRF tokens, so a route that must accept cross-origin calls opts out with
@@ -185,6 +216,11 @@ site.Handle(h, "GET /search", func(r *site.Request) (*site.Response, error) {
 - `.Sample(fn)` gives `site:check` data to render the route with (the function itself is not called).
 - `.Static(fn)` (or `.Export()` for a route without wildcards) lists the parameter sets that become files in a
   static export; `site.ClientFrom(ctx)` reads content inside it. `.Channels(names...)` restricts the route.
+
+Endpoints under `/api/x` (see [hooks](hooks.md#endpoints)) that want CDN caching can set the same headers with
+`cachetag.SetHeaders(w.Header(), ttl, tags)` (`core/cachetag`): `Cache-Control` with `s-maxage`, plus `Surrogate-Key`
+and `Cache-Tag` from tags such as `cachetag.Item(id)` or `cachetag.Collection("post")`, so purges reach them
+(`cachetag.NoStore` as the ttl sends `no-store`).
 
 ## Components and templ
 
@@ -198,7 +234,8 @@ site.Component(h, "routes/colophon.html", func(v *site.View) site.Renderer { ret
 A component registered under a page-like name (`pages/…`, `collections/…`, `routes/…`, `404.html`) renders the
 whole document and wins over a file of that name; under `blocks/<type>.html` it renders that block (`v.Block`).
 Templates can render any component with `{{component "name"}}`. `View` has the helpers templates have as methods:
-`T`, `Meta`, `Nav`, `Breadcrumbs`, `Asset`, `Link`, `Setting`, `Edit`, `Blocks`, `RichText`.
+`T`, `Meta`, `Nav`, `Breadcrumbs`, `Asset`, `Link`, `Setting`, `Edit`, `Blocks`, `RichText`, and
+`Partial(name, data...)`, which executes a template of the set like `{{partial}}`.
 
 `examples/fullstack` has a theme package (`theme/`), a template-based route (`/search`) and a templ page
 (`/colophon`; run `go run github.com/a-h/templ/cmd/templ@v0.3.1070 generate` after editing the `.templ` file and

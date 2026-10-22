@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hydrogencms/hydrogen/core/cachetag"
 	"github.com/hydrogencms/hydrogen/core/channel"
 	"github.com/hydrogencms/hydrogen/core/ids"
 )
@@ -42,9 +43,11 @@ type result struct {
 	tags     []string
 	store    bool
 	// custom routes: the route's headers, and whether shared caches may keep the answer
-	header    http.Header
-	custom    bool
-	cacheable bool
+	header      http.Header
+	custom      bool
+	cacheable   bool
+	contentType string
+	maxAge      time.Duration
 }
 
 func (s *server) serveSite(w http.ResponseWriter, r *http.Request) {
@@ -263,7 +266,8 @@ func cookieMaxAge(exp time.Time) int {
 	return max(1, int(time.Until(exp).Seconds()))
 }
 
-func (s *server) cacheControl(ch *channel.Channel) string {
+// cacheTTL is the channel's shared-cache lifetime (delivery.cache_ttl, default 60 seconds).
+func (s *server) cacheTTL(ch *channel.Channel) time.Duration {
 	ttl := defaultTTL
 	if v, ok := ch.Setting("delivery.cache_ttl"); ok {
 		switch x := v.(type) {
@@ -277,9 +281,7 @@ func (s *server) cacheControl(ch *channel.Channel) string {
 			ttl = int(x)
 		}
 	}
-	ttl = max(ttl, 0)
-	n := strconv.Itoa(ttl)
-	return "public, max-age=0, s-maxage=" + n + ", stale-while-revalidate=" + n
+	return time.Duration(max(ttl, 0)) * time.Second
 }
 
 func etagOf(b []byte) string {
@@ -302,26 +304,33 @@ func matchesETag(r *http.Request, etag string) bool {
 func (s *server) respond(w http.ResponseWriter, r *http.Request, ch *channel.Channel, res *result, preview bool, key string, gen uint64) {
 	h := w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
-	cc := "no-store"
-	if preview {
-		h.Set("Referrer-Policy", "no-referrer")
-		if s.cfg.PreviewCSP {
-			h.Set("Content-Security-Policy", "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors "+s.adminOrigin(r))
+	ttl := cachetag.NoStore
+	if !preview && res.status < 500 {
+		ttl = s.cacheTTL(ch)
+		if res.maxAge > 0 {
+			ttl = res.maxAge
 		}
 	}
-	if !preview && res.status < 500 {
-		cc = s.cacheControl(ch)
+	get := r.Method == http.MethodGet || r.Method == http.MethodHead
+	if res.custom && (!res.cacheable || preview || res.status != http.StatusOK || !get) {
+		ttl = cachetag.NoStore
 	}
-	if res.custom && (!res.cacheable || preview || res.status != http.StatusOK || (r.Method != http.MethodGet && r.Method != http.MethodHead)) {
-		cc = "no-store"
+	var tags []string
+	if !preview {
+		tags = res.tags
 	}
-	h.Set("Cache-Control", cc)
-	if !preview && len(res.tags) > 0 {
-		h.Set("Surrogate-Key", strings.Join(res.tags, " "))
-		h.Set("Cache-Tag", strings.Join(res.tags, ","))
-	}
+	cachetag.SetHeaders(h, ttl, tags)
 	for k, v := range res.header {
 		h[http.CanonicalHeaderKey(k)] = slices.Clone(v)
+	}
+	if res.contentType != "" {
+		h.Set("Content-Type", res.contentType)
+	}
+	if preview {
+		h.Set("Referrer-Policy", "no-referrer")
+		if ct := h.Get("Content-Type"); s.cfg.PreviewCSP && (ct == "" || strings.HasPrefix(ct, "text/html")) {
+			h.Set("Content-Security-Policy", "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors "+s.adminOrigin(r))
+		}
 	}
 	if res.location != "" {
 		h.Set("Location", res.location)
@@ -331,12 +340,12 @@ func (s *server) respond(w http.ResponseWriter, r *http.Request, ch *channel.Cha
 	if h.Get("Content-Type") == "" {
 		h.Set("Content-Type", "text/html; charset=utf-8")
 	}
-	if res.status == http.StatusOK && !preview && !res.custom {
+	if res.status == http.StatusOK && !preview && (!res.custom || (res.cacheable && get)) {
 		etag := etagOf(res.body)
 		h.Set("ETag", etag)
-		if s.cache != nil && res.store {
+		if s.cache != nil && res.store && !res.custom {
 			h.Set("X-Hydrogen-Cache", "miss")
-			s.cache.put(&cached{key: key, body: res.body, etag: etag, cc: cc, tags: res.tags}, gen)
+			s.cache.put(&cached{key: key, body: res.body, etag: etag, ttl: ttl, tags: res.tags}, gen)
 		}
 		if matchesETag(r, etag) {
 			w.WriteHeader(http.StatusNotModified)
@@ -354,13 +363,9 @@ func (s *server) writeCached(w http.ResponseWriter, r *http.Request, e *cached) 
 	h := w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Type", "text/html; charset=utf-8")
-	h.Set("Cache-Control", e.cc)
+	cachetag.SetHeaders(h, e.ttl, e.tags)
 	h.Set("X-Hydrogen-Cache", "hit")
 	h.Set("ETag", e.etag)
-	if len(e.tags) > 0 {
-		h.Set("Surrogate-Key", strings.Join(e.tags, " "))
-		h.Set("Cache-Tag", strings.Join(e.tags, ","))
-	}
 	if matchesETag(r, e.etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return

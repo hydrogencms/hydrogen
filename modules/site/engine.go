@@ -188,6 +188,49 @@ func (e *engine) render(name string, p *page, v *View) ([]byte, error) {
 	if f := e.comps[name]; f != nil {
 		return e.renderComponent(name, f, p, v)
 	}
+	t, err := e.pageSet(name, p)
+	if err != nil {
+		return nil, err
+	}
+	if t.Lookup("layout.html") == nil {
+		return nil, fmt.Errorf("missing template layout.html")
+	}
+	var buf bytes.Buffer
+	if err := t.ExecuteTemplate(&buf, "layout.html", v); err != nil {
+		return nil, fmt.Errorf("template %s: %w", name, err)
+	}
+	return buf.Bytes(), nil
+}
+
+// renderPartial executes a template or component of the set on its own, without the layout, with the page's
+// context and helpers.
+func (e *engine) renderPartial(name string, p *page, v *View) ([]byte, error) {
+	v.p = p
+	if f := e.comps[name]; f != nil {
+		return e.renderComponent(name, f, p, v)
+	}
+	var t *template.Template
+	var err error
+	if isPageTemplate(name) {
+		t, err = e.pageSet(name, p)
+	} else if t, err = e.blockSet(p); err == nil {
+		p.t = t
+	}
+	if err != nil {
+		return nil, err
+	}
+	if t.Lookup(name) == nil {
+		return nil, fmt.Errorf("missing template %s", name)
+	}
+	var buf bytes.Buffer
+	if err := t.ExecuteTemplate(&buf, name, v); err != nil {
+		return nil, fmt.Errorf("template %s: %w", name, err)
+	}
+	return buf.Bytes(), nil
+}
+
+// pageSet is a clone of a page-like template's set with the page's helpers, set as the page's templates.
+func (e *engine) pageSet(name string, p *page) (*template.Template, error) {
 	set := e.pages[name]
 	if set == nil && e.errs[name] != nil {
 		return nil, e.errs[name]
@@ -201,14 +244,7 @@ func (e *engine) render(name string, p *page, v *View) ([]byte, error) {
 	}
 	p.t = t
 	t.Funcs(p.funcs())
-	if t.Lookup("layout.html") == nil {
-		return nil, fmt.Errorf("missing template layout.html")
-	}
-	var buf bytes.Buffer
-	if err := t.ExecuteTemplate(&buf, "layout.html", v); err != nil {
-		return nil, fmt.Errorf("template %s: %w", name, err)
-	}
-	return buf.Bytes(), nil
+	return t, nil
 }
 
 // renderBlock executes one block template on its own.

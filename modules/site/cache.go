@@ -3,6 +3,7 @@ package site
 import (
 	"container/list"
 	"sync"
+	"time"
 
 	"github.com/hydrogencms/hydrogen/core/cachetag"
 )
@@ -23,7 +24,7 @@ type cached struct {
 	key  string
 	body []byte
 	etag string
-	cc   string
+	ttl  time.Duration
 	tags []string
 	size int64
 	elem *list.Element

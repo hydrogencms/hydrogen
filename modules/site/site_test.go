@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hydrogencms/hydrogen/core/cachetag"
+	"github.com/hydrogencms/hydrogen/core/channel"
 )
 
 func TestRichText(t *testing.T) {
@@ -247,5 +248,43 @@ func TestCookieMaxAge(t *testing.T) {
 	}
 	if got := cookieMaxAge(time.Now().Add(-time.Minute)); got != 1 {
 		t.Errorf("expired: %d", got)
+	}
+}
+
+func TestRespondRawAnswers(t *testing.T) {
+	s := &server{cfg: &Config{PreviewCSP: true}}
+	ch := &channel.Channel{Name: "web"}
+	for _, tc := range []struct {
+		name    string
+		res     *result
+		preview bool
+		method  string
+		cc      string
+		csp     bool
+		etag    bool
+	}{
+		{"cacheable json", &result{status: 200, body: []byte("{}"), custom: true, cacheable: true, contentType: "application/json", tags: []string{"b", "a"}}, false, "GET", "public, max-age=0, s-maxage=60, stale-while-revalidate=60", false, true},
+		{"max age", &result{status: 200, body: []byte("x"), custom: true, cacheable: true, maxAge: 2 * time.Minute, contentType: "text/plain"}, false, "GET", "public, max-age=0, s-maxage=120, stale-while-revalidate=120", false, true},
+		{"preview json", &result{status: 200, body: []byte("{}"), custom: true, cacheable: true, contentType: "application/json"}, true, "GET", "no-store", false, false},
+		{"preview html", &result{status: 200, body: []byte("<p>"), custom: true, cacheable: true}, true, "GET", "no-store", true, false},
+		{"post", &result{status: 200, body: []byte("{}"), custom: true, cacheable: true, contentType: "application/json"}, false, "POST", "no-store", false, false},
+		{"not cacheable", &result{status: 200, body: []byte("{}"), custom: true, contentType: "application/json"}, false, "GET", "no-store", false, false},
+		{"error status", &result{status: 404, body: []byte("{}"), custom: true, cacheable: true, contentType: "application/json"}, false, "GET", "no-store", false, false},
+	} {
+		w := httptest.NewRecorder()
+		s.respond(w, httptest.NewRequest(tc.method, "http://site.test/x", nil), ch, tc.res, tc.preview, "", 0)
+		h := w.Header()
+		if h.Get("Cache-Control") != tc.cc || (h.Get("Content-Security-Policy") != "") != tc.csp || (h.Get("Etag") != "") != tc.etag ||
+			(tc.preview && h.Get("Referrer-Policy") != "no-referrer") || h.Get("X-Content-Type-Options") != "nosniff" {
+			t.Errorf("%s: %v", tc.name, h)
+		}
+		if tc.res.contentType != "" && h.Get("Content-Type") != tc.res.contentType {
+			t.Errorf("%s: content type %q", tc.name, h.Get("Content-Type"))
+		}
+	}
+	w := httptest.NewRecorder()
+	s.respond(w, httptest.NewRequest("GET", "http://site.test/x", nil), ch, &result{status: 200, body: []byte("a"), custom: true, tags: []string{"b", "a"}}, false, "", 0)
+	if w.Header().Get("Surrogate-Key") != "a b" || w.Header().Get("Cache-Tag") != "a,b" {
+		t.Errorf("tags: %v", w.Header())
 	}
 }
