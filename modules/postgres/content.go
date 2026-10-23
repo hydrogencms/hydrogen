@@ -615,12 +615,19 @@ func (s contentStore) ReplaceSearch(ctx context.Context, item ids.UUID, proj sto
 	b := &pgx.Batch{}
 	b.Queue(`DELETE FROM content_search WHERE item_id = $1 AND scope = $2`, uid(item), scope)
 	if len(docs) > 0 {
-		// left(…, 100000) = storeutil.MaxSearchChars: the statement bounds its input even if a caller skips the Go cap.
-		locales, plain := storeutil.SearchTexts(docs)
+		// left(…) bounds are storeutil.MaxSearchChars (and a quarter of it for the high and low tiers): the
+		// statement bounds its input even if a caller skips the Go cap.
+		rows := storeutil.SearchRows(docs)
+		locales, highs, texts, lows := make([]string, len(rows)), make([]string, len(rows)), make([]string, len(rows)), make([]string, len(rows))
+		for i, r := range rows {
+			locales[i], highs[i], texts[i], lows[i] = r.Locale, r.High, r.Text, r.Low
+		}
 		b.Queue(`INSERT INTO content_search (item_id, scope, locale, tsv, plain)
-		SELECT $1, $4, l, to_tsvector('simple', left(t, 100000)), left(t, 100000)
-		FROM unnest($2::text[], $3::text[]) AS u(l, t)`,
-			uid(item), locales, plain, scope)
+		SELECT $1, $6, l, setweight(to_tsvector('simple', left(h, 25000)), 'A') || setweight(to_tsvector('simple', left(t, 100000)), 'B')
+			|| setweight(to_tsvector('simple', left(w, 25000)), 'C'),
+			concat_ws(' ', nullif(left(h, 25000), ''), nullif(left(t, 100000), ''), nullif(left(w, 25000), ''))
+		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS u(l, h, t, w)`,
+			uid(item), locales, highs, texts, lows, scope)
 	}
 	if err := s.sendBatch(ctx, b); err != nil {
 		return fmt.Errorf("postgres: replace search %s: %w", item, err)

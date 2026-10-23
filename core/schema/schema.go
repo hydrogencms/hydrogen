@@ -65,6 +65,8 @@ type Type struct {
 	Fields      []*Field       // file order
 	Options     map[string]any // module options by key (Registry.TypeOption); nil when none
 	Pos         Pos
+
+	search SearchConfig
 }
 
 func (t *Type) Field(name string) (*Field, bool) {

@@ -144,26 +144,40 @@ func anySlice[T any](l []T) []any {
 	return out
 }
 
-// SearchTexts merges docs of the same locale (joined by a newline), caps each text at MaxSearchChars and
-// returns the locales in sorted order with their texts alongside.
-func SearchTexts(docs []store.SearchDoc) (locales, texts []string) {
-	by := make(map[string]string, len(docs))
+// SearchRow is the merged search text of one locale, as an adapter stores it.
+type SearchRow struct{ Locale, High, Text, Low string }
+
+// SearchRows merges docs of the same locale (joined by a newline), caps the normal tier at MaxSearchChars and
+// the high and low tiers at a quarter of it, and returns the rows in locale order.
+func SearchRows(docs []store.SearchDoc) []SearchRow {
+	by := make(map[string]SearchRow, len(docs))
 	for _, d := range docs {
-		if prev, ok := by[d.Locale]; ok {
-			d.Text = prev + "\n" + d.Text
-		}
-		by[d.Locale] = capChars(StripControls(d.Text), MaxSearchChars)
+		r := by[d.Locale]
+		r.Locale = d.Locale
+		r.High = joinLines(r.High, d.High)
+		r.Text = joinLines(r.Text, d.Text)
+		r.Low = joinLines(r.Low, d.Low)
+		by[d.Locale] = r
 	}
-	locales = make([]string, 0, len(by))
-	for l := range by {
-		locales = append(locales, l)
+	out := make([]SearchRow, 0, len(by))
+	for _, r := range by {
+		r.High = capChars(StripControls(r.High), MaxSearchChars/4)
+		r.Text = capChars(StripControls(r.Text), MaxSearchChars)
+		r.Low = capChars(StripControls(r.Low), MaxSearchChars/4)
+		out = append(out, r)
 	}
-	slices.Sort(locales)
-	texts = make([]string, len(locales))
-	for i, l := range locales {
-		texts[i] = by[l]
+	slices.SortFunc(out, func(a, b SearchRow) int { return strings.Compare(a.Locale, b.Locale) })
+	return out
+}
+
+func joinLines(a, b string) string {
+	if a == "" {
+		return b
 	}
-	return locales, texts
+	if b == "" {
+		return a
+	}
+	return a + "\n" + b
 }
 
 // StripControls removes C0 control characters other than tab, newline and carriage return, so indexed text can

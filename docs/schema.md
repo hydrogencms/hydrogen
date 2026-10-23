@@ -41,7 +41,7 @@ characters. These top-level field names are reserved because every item has them
 | `upload` | Makes the type a collection of uploaded files. See [Upload types](#upload-types). |
 | `blockset` | `true`: the type's single `blocks` field can be reused with the built-in `shared` block. |
 | `review` | `true`: publishing needs an approved review. See [reviews](reviews.md). |
-| `search` | `true` or `false`: whether the type is searchable. Default: collections yes, singletons and upload types no. See [search](search.md). |
+| `search` | `true` or `false`: whether the type is searchable. Default: collections yes, singletons and upload types no. An object (`enabled`, `weights`, `exclude`) sets relevance weights and an exclusion field. See [search](search.md). |
 | `admin` | `list`: field names shown as columns (`field:cell` picks a cell renderer from an [admin extension](admin-extensions.md)); `group`: the sidebar group; `icon`. |
 | `ai` | `instructions`: guidance for generated text; `generate`: fields a model may draft. |
 

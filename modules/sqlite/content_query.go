@@ -375,7 +375,7 @@ func (c *compiler) searchLocale() string {
 }
 
 // searchJoin is the subquery of (item_id, rank) for the items matching the search terms.
-// The rank column is bm25 with default weights (lower is better). The bm25() function itself cannot be used
+// The rank column is bm25 with the per-tier column weights set by migration 0013 (lower is better). The bm25() function itself cannot be used
 // through this join, and the inner select keeps the aggregate away from the FTS cursor.
 func (c *compiler) searchJoin(terms []string) string {
 	return `(
@@ -490,7 +490,7 @@ func fillSnippets(ctx context.Context, db queryer, q store.Query, items []store.
 	for i, it := range items {
 		marks[i] = c.bind(uid(it.ID))
 	}
-	text := `SELECT sd.item_id, snippet(content_search, 0, char(2), char(3), '…', 20)
+	text := `SELECT sd.item_id, snippet(content_search, -1, char(2), char(3), '…', 20)
 		FROM content_search JOIN content_search_doc sd ON sd.id = content_search.rowid JOIN item it ON it.id = sd.item_id
 		WHERE content_search MATCH ` + c.bind(match(terms)) + ` AND sd.scope = ` + c.projection() +
 		` AND ` + c.searchLocale() + ` AND sd.item_id IN (` + strings.Join(marks, ",") + `)

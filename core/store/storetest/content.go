@@ -33,6 +33,7 @@ var contentTests = []struct {
 	{"ContentSearchHuge", testSearchHuge},
 	{"ContentQueryTypes", testQueryTypes},
 	{"ContentHighlight", testHighlight},
+	{"ContentSearchTiers", testSearchTiers},
 	{"ContentSearchFallback", testSearchFallback},
 	{"ContentFacetSearch", testFacetSearch},
 	{"ContentPublishedAtSort", testPublishedAtSort},

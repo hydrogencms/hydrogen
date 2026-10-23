@@ -41,6 +41,23 @@ types:
 
 Only searchable types are indexed by external engines and accepted by the search endpoints.
 
+`search` also takes an object, which makes the type searchable (unless it says `enabled: false`) and sets
+[relevance weights](#relevance-weights) and an [exclusion field](#excluding-items):
+
+```yaml
+types:
+  article:
+    search:
+      weights: { name: high, summary: high, comments: low }
+      exclude: hideFromSearch
+    fields:
+      title: { type: string }
+      summary: { type: text }
+      body: { type: richtext }
+      comments: { type: list, of: { type: string } }
+      hideFromSearch: { type: boolean }
+```
+
 ## What is searched
 
 For every published locale of an item, the engine searches the item's **name** and its **search text**: string, text
@@ -61,6 +78,32 @@ in the locale is available in its main locale; the hit then reports the main loc
 Every engine applies this to text searches too. A delivery search asks for one locale: the request's `locale`, else the
 channel's first. With overlays, a derived locale (such as `de-CH` inheriting from `de`) has its own documents, so
 searching it finds text inherited from the parent.
+
+## Relevance weights
+
+By default every field counts the same. `search.weights` puts top-level fields (and `name`, the item's name) in one
+of three tiers: `high`, `normal` (the default) or `low`. A match in a `high` field ranks above a match in a `normal`
+one, and a `low` field only breaks ties. Only fields that feed the search text can be weighted (string, text and slug
+fields, rich text, blocks, and lists and groups of those); `config:check` reports anything else.
+
+Three tiers are a deliberate bound: SQLite keeps one FTS5 column per tier (ranked with `bm25(2.5, 1.0, 0.5)`) and
+Postgres one `setweight` class (`A`, `B`, `C`, ranked with `ts_rank`'s default weights). A `name: high` weight is the
+usual first step: a title match then ranks above the same word in a body.
+
+Changing weights changes the schema hash, so the next start rebuilds every item's projections (the same work as
+`hydrogen content:reindex`) before the server starts answering. The Meilisearch
+engine ignores weights: it always ranks the item name above the text, and its own ranking rules decide the rest.
+
+## Excluding items
+
+`search.exclude` names a top-level boolean field. A published document where it is true is not indexed: it is not a
+hit of the delivery `/search`, with any engine, and it does not match the `q` of delivery collection lists. Publishing
+a change of the flag updates the index (the database at once, an external engine when the outbox delivers the event).
+The flag is per locale when the field is `translatable`.
+
+Editors still find excluded items: the management search and the admin's palette search drafts and the working
+copy, which the flag does not touch. The item is not hidden from lists, links or direct reads either; the flag is
+only about search.
 
 ## Filters, facets, sorting
 
@@ -100,7 +143,7 @@ Channel selection, tokens and preview behave as for collection lists.
 | `where[field][op]` | filters on indexed fields |
 | `facets` | comma list, at most five |
 | `sort` | an indexed scalar field or `publishedAt`; `-` prefix for descending |
-| `limit`, `offset` | 1 to 50 (default 10), offset at most 1000 |
+| `limit`, `offset` | `limit` 1 to 100 (default 10), `offset` at most 1000 |
 | `include` | expand references, as for lists |
 | `highlight` | default true |
 
@@ -155,7 +198,9 @@ hydrogen search:reindex
 ```
 
 `search:reindex` rebuilds the whole index from the published content now, whether or not the settings changed.
-With the database engine it does nothing: there is no separate index.
+With the database engine it does nothing: its rows are the content projections, rebuilt at start whenever the
+schema changed (weights and exclusion included) or by `hydrogen content:reindex`. Run `content:reindex` when you
+need the rows rebuilt without a schema change.
 
 Purges and edits made while a rebuild runs are not lost (engines also remove purged items from the index being
 built): when the rebuild finishes, the kernel re-indexes every item of a
@@ -170,6 +215,16 @@ If items are published but the database's published search rows are missing alto
 that dropped them), the server notices at start and runs the same rebuild as `content:reindex` in the background,
 logging a warning and then an info line when it is done. It also rebuilds the working projection, so searches (and
 the admin's palette) find nothing until healing finishes. One node does it; the others log that it is under way.
+
+## Choosing an engine
+
+The database engine matches word prefixes, ranks with the three tiers above and needs nothing but the database. For
+a site where relevance is the product (typo tolerance, synonyms, stemming, per-language ranking, thousands of
+documents per query) switch to [Meilisearch](meilisearch.md): add the module, point it at a server and start; the
+kernel builds the index in the background and the endpoints, filters, facets and highlights stay the same.
+
+The page size of delivery `/search` is at most 100, the engines' limit (the management search keeps 50, which suits
+the palette).
 
 ## Writing an engine
 

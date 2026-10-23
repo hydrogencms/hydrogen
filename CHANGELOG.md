@@ -6,6 +6,15 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Search relevance in the database engine: the type option `search` takes an object with `weights` (fields and `name` in
+  the `high`, `normal` or `low` tier; SQLite FTS5 gets a column per tier ranked by bm25, Postgres `setweight` classes)
+  and `exclude` (a boolean field; documents where it is true are not indexed, by any engine, while the management
+  search still finds them). Changing either rebuilds the projections at the next start. Delivery `/search` accepts
+  `limit` up to 100. `docs/search.md` says when to switch to Meilisearch. SQLite migration 0013 and Postgres migration
+  0012 keep existing rows as the normal tier.
+
 ## [0.3.0] - 2026-10-22
 
 ### Added
