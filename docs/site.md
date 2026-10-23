@@ -99,6 +99,9 @@ Identical calls within one render ask the delivery API once.
   fields of its item as `fields`. A dot path keeps one member of a group, and an unknown field is an error. Links
   keep working: `items` and `item` also fetch the field a collection's detail route puts in its URL (`slug` for
   `/blog/{slug}`), and an item with a page keeps its page URL.
+- `link "item:<id>"` (and `item:` links in rich text) works for references in any item the render read, not only
+  the page's own: the links those items carry are merged in. An id nobody carries is read once (at most 64 per
+  render, in the page's locale) and linked to its page or collection route; an unavailable item gives no URL.
 - `partial "blocks/hero/wide.html" data` executes a template by a computed name (Go's `{{template}}` needs a
   constant) and returns its HTML; `data` defaults to the page's view. A missing template is an error in
   `site:check` and a logged, empty result when serving. Partials may nest up to 32 levels. `hasTemplate "name"`

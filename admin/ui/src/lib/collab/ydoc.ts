@@ -1,7 +1,8 @@
 // Pure mapping between a draft part document (the values of a type's fields) and Yjs structures.
 //
 //   text/string/slug fields        Y.Text (edits are minimal splices)
-//   richtext                       Y.XmlFragment (driven by y-prosemirror; JSON via its conversion helpers)
+//   richtext                       Y.XmlFragment (driven by y-prosemirror; JSON via its conversion helpers); a value
+//                                  the editor cannot load stays plain
 //   blocks                         Y.Array of Y.Map {id, type, props: Y.Map, slots: Y.Map of Y.Array}; a move is
 //                                  delete + insert, the block list is reconciled by id
 //   group                          Y.Map
@@ -17,7 +18,7 @@ import * as Y from 'yjs';
 import type { CompiledField } from '../types.svelte';
 import { configOf } from '../richtext/config';
 import { richCatalog } from '../richtext/custom.svelte';
-import { buildSchema, isEmptyDoc, toStored } from '../richtext/schema';
+import { buildSchema, fromStored, isEmptyDoc, toStored } from '../richtext/schema';
 
 type Schema = ReturnType<typeof buildSchema>;
 export type Doc = Record<string, unknown>;
@@ -114,6 +115,10 @@ export function richOf(frag: Y.XmlFragment, schema: Schema): unknown {
   return canonRich(schema, yXmlFragmentToProsemirrorJSON(frag));
 }
 
+// A value the editor cannot load (a node or mark its schema lacks) stays a plain value: as a fragment it would read
+// back empty and the next save would remove it. The editor shows it as invalid, with its JSON to fix.
+const richFits = (schema: Schema, v: unknown) => fromStored(schema, v) !== null;
+
 function fillRich(frag: Y.XmlFragment, schema: Schema, v: unknown) {
   const json = v === undefined || v === null || isEmptyDoc(v, schema) ? schema.topNodeType.createAndFill()!.toJSON() : v;
   try {
@@ -165,8 +170,9 @@ function validBlocks(v: unknown): v is Doc[] {
 export function build(def: CompiledField | undefined, v: unknown, env: Env, post: Post): unknown {
   const kind = kindOf(def, v);
   if (kind === 'rich') {
-    const frag = new Y.XmlFragment();
     const schema = richSchema(def);
+    if (!richFits(schema, v)) return clone(v);
+    const frag = new Y.XmlFragment();
     post.push(() => fillRich(frag, schema, v));
     return frag;
   }
@@ -365,6 +371,7 @@ function lis(seq: number[]): Set<number> {
 /** `live` is the form's own object for `v` (`v` may be a snapshot): list items are matched by its identity. */
 export function sync(existing: unknown, def: CompiledField | undefined, v: unknown, env: Env, post: Post, live?: unknown): unknown {
   const kind = kindOf(def, v);
+  if (kind === 'rich' && !richFits(richSchema(def), v)) return jsonEq(existing, v) ? existing : clone(v);
   if (existing instanceof Y.XmlFragment) {
     if (kind !== 'rich' && v !== undefined) return build(def, v, env, post);
     const schema = richSchema(def);

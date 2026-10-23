@@ -154,11 +154,7 @@ func (s *server) newPage(rc *reqCtx, locale string, it *Item) (*page, *View) {
 	}
 	p := &page{ctx: rc.ctx, eng: rc.eng, ch: rc.ch, locale: locale, def: s.svc.Core.Content.DefaultLocale, preview: rc.preview(), log: s.log,
 		view: v, links: map[string]string{}, rt: s.svc.Schema.RichText(), f: rc.f, itemPath: func(it *Item) string { return s.linkPath(rc.ch, it) }, linkFields: func(typ string) []string { return s.linkFields(rc.ch, typ) }}
-	if it != nil {
-		for k, u := range it.Links {
-			p.links[k] = u
-		}
-	}
+	p.adoptLinks(it)
 	for _, typ := range s.singletons {
 		if !rc.ch.AllowsCollection(typ) {
 			continue
@@ -169,6 +165,7 @@ func (s *server) newPage(rc *reqCtx, locale string, it *Item) (*page, *View) {
 			continue
 		}
 		if si != nil {
+			p.adoptLinks(si)
 			v.Settings[typ] = si.Fields
 		}
 	}
@@ -214,7 +211,6 @@ func (s *server) navItems(ch *channel.Channel, nodes []treeNode, current string)
 func (s *server) page(rc *reqCtx, tpl string, it *Item, loc *pages.Located, rt *route) *result {
 	p, v := s.newPage(rc, it.Locale, it)
 	p.loadNav = s.navLoader(rc, p)
-	s.extraLinks(rc, p, it)
 	switch {
 	case loc != nil:
 		v.Path, _ = s.pages.SiteURL(rc.ch, loc.Resolution.Path)
@@ -248,36 +244,6 @@ func (s *server) page(rc *reqCtx, tpl string, it *Item, loc *pages.Located, rt *
 		return s.internal(rc, err)
 	}
 	return &result{status: http.StatusOK, body: s.finish(rc, body), tags: rc.f.tagList(), store: !rc.preview()}
-}
-
-// extraLinks resolves references to items that have no page but a collection route, which delivery's links
-// leave out.
-func (s *server) extraLinks(rc *reqCtx, p *page, it *Item) {
-	if len(s.routes) == 0 {
-		return
-	}
-	var want []string
-	collectIDs(it.Fields, &want)
-	n := 0
-	for _, id := range want {
-		if _, ok := p.links[id]; ok || id == it.ID {
-			continue
-		}
-		if n++; n > 64 {
-			break
-		}
-		ref, err := rc.f.item(rc.ctx, id, false, "")
-		if err != nil || ref == nil {
-			continue
-		}
-		rt := s.detail(ref.Type)
-		if rt == nil || !rc.ch.AllowsCollection(ref.Type) {
-			continue
-		}
-		if path, ok := rt.build(ref.ID, ref.Fields); ok {
-			p.links[id], _ = s.pages.SiteURL(rc.ch, path)
-		}
-	}
 }
 
 // collectIDs gathers item ids a document refers to: item: link targets and bare ids in values.
