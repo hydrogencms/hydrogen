@@ -171,7 +171,7 @@ func opTree() obj {
 }
 
 func opCreate() obj {
-	after := uuidS("Sibling to follow; absent = first.")
+	after := nullableUUID("Sibling to follow; absent = last among the siblings; null = first.")
 	page := obj{"type": "object", "title": "page", "required": []any{"kind", "item"}, "additionalProperties": false, "properties": obj{
 		"kind": obj{"const": KindPage}, "item": uuidS("Page item to place."),
 		"parent": uuidS("Parent page node; absent only for the site's root page."), "after": after}}

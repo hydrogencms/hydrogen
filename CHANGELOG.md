@@ -21,6 +21,12 @@ All notable changes to Hydrogen are documented here. The format follows
 - `site.NotFound(h, fn)`: a hook that answers misses before `404.html` with a redirect, a custom status or its own
   template.
 
+### Changed
+
+- Pages: placing a page, mount or link without `after` now puts it last among its siblings (it went first, so nodes
+  created in order came out reversed). `"after": null` (Go: `First: true`) still puts it first. Moving a node is
+  unchanged: without `after` it goes first.
+
 ## [0.3.0] - 2026-10-22
 
 ### Added

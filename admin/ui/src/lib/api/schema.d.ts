@@ -5287,11 +5287,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /**
-                     * Format: uuid
-                     * @description Sibling to follow; absent = first.
-                     */
-                    after?: string;
+                    /** @description Sibling to follow; absent = last among the siblings; null = first. */
+                    after?: string | null;
                     /**
                      * Format: uuid
                      * @description Page item to place.
@@ -5305,11 +5302,8 @@ export interface operations {
                      */
                     parent?: string;
                 } | {
-                    /**
-                     * Format: uuid
-                     * @description Sibling to follow; absent = first.
-                     */
-                    after?: string;
+                    /** @description Sibling to follow; absent = last among the siblings; null = first. */
+                    after?: string | null;
                     canonical?: boolean;
                     collection: string;
                     filter?: {
@@ -5332,11 +5326,8 @@ export interface operations {
                     route: string;
                     segment: string;
                 } | {
-                    /**
-                     * Format: uuid
-                     * @description Sibling to follow; absent = first.
-                     */
-                    after?: string;
+                    /** @description Sibling to follow; absent = last among the siblings; null = first. */
+                    after?: string | null;
                     /** Format: uuid */
                     item?: string;
                     /** @constant */
