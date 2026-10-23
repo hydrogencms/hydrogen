@@ -87,6 +87,11 @@ type ContentStore interface {
 
 	Query(ctx context.Context, q Query) (QueryResult, error)
 
+	// LockName serializes the transactions that take the same name until they commit (Postgres: a
+	// transaction-scoped advisory lock; SQLite has a single writer, so it does nothing). A check that reads
+	// other items before a write, such as a unique field, takes it first so that two writers cannot both pass.
+	LockName(ctx context.Context, name string) error
+
 	// Content migrations.
 	AppliedContentMigrations(ctx context.Context) ([]string, error)
 	RecordContentMigration(ctx context.Context, name string, at time.Time) error

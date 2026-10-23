@@ -686,3 +686,8 @@ func (s contentStore) SearchIndexEmpty(ctx context.Context) (bool, error) {
 	}
 	return empty, nil
 }
+
+func (s contentStore) LockName(ctx context.Context, name string) error {
+	_, err := s.tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('name:' || $1, 0))`, name)
+	return wrapAuth("lock name", err)
+}

@@ -60,7 +60,7 @@ func TestRelPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := ids.UUID{1}
-	rel, ok := relPath(pat, id, map[string]any{"publishDate": "2026-10-14T09:00:00Z", "category": "Big Data"})
+	rel, ok := relPath(pat, id, map[string]any{"publishDate": "2026-10-14T09:00:00Z", "category": "Big Data"}, nil)
 	if !ok || rel != "2026/big-data/"+id.String() {
 		t.Errorf("rel = %q, %v", rel, ok)
 	}
@@ -71,7 +71,7 @@ func TestRelPath(t *testing.T) {
 		{"publishDate": "yesterday", "category": "x"},
 		{"publishDate": "2026-10-14", "category": []any{"x"}},
 	} {
-		if rel, ok := relPath(pat, id, doc); ok {
+		if rel, ok := relPath(pat, id, doc, nil); ok {
 			t.Errorf("%v: rel %q, want none", doc, rel)
 		}
 	}

@@ -58,6 +58,11 @@ All notable changes to Hydrogen are documented here. The format follows
   search still finds them). Changing either rebuilds the projections at the next start. Delivery `/search` accepts
   `limit` up to 100. `docs/search.md` says when to switch to Meilisearch. SQLite migration 0013 and Postgres migration
   0012 keep existing rows as the normal tier.
+- Slug fields take `allow: ".,"`, so slugs and the paths built from them can keep dots and commas (`benelux-b.v`,
+  `acme,-inc`); the pages module accepts the same characters in site paths and vanity paths. Fields take
+  `unique: true` (top-level string, slug and email fields): no other item of the type, in the same locale for a
+  translatable field, may hold the value. It is checked on draft writes, publish and restore under a lock
+  (`store.ContentStore.LockName`, implemented by both adapters) and fails as a validation error with code `not_unique`.
 
 ### Changed
 

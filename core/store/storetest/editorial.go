@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ var editorialTests = []struct {
 	name string
 	fn   func(*testing.T, store.DB)
 }{
+	{"LockName", testLockName},
 	{"TrashItem", testTrashItem},
 	{"TrashKeys", testTrashKeys},
 	{"TrashQueries", testTrashQueries},
@@ -26,6 +28,48 @@ var editorialTests = []struct {
 func setDeleted(t *testing.T, db store.DB, id ids.UUID, at *time.Time, by string) {
 	t.Helper()
 	withContent(t, db, func(c store.ContentStore) error { return c.SetDeleted(context.Background(), id, at, by) })
+}
+
+// LockName serializes check-then-insert: every transaction sees either no item or the one the winner made.
+func testLockName(t *testing.T, db store.DB) {
+	ctx := context.Background()
+	id := newIDs().New()
+	const n = 6
+	errs := make([]error, n)
+	inserted := make([]bool, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = db.Tx(ctx, func(tx store.Tx) error {
+				c := tx.Content()
+				if err := c.LockName(ctx, "storetest:lock"); err != nil {
+					return err
+				}
+				if _, err := c.GetItem(ctx, id, false); err == nil {
+					return nil
+				} else if !errors.Is(err, store.ErrNotFound) {
+					return err
+				}
+				inserted[i] = true
+				return c.InsertItem(ctx, newItem(id, "article", ""))
+			})
+		}()
+	}
+	wg.Wait()
+	wins := 0
+	for i := range n {
+		if errs[i] != nil {
+			t.Fatalf("transaction %d: %v", i, errs[i])
+		}
+		if inserted[i] {
+			wins++
+		}
+	}
+	if wins != 1 {
+		t.Fatalf("%d transactions inserted, want 1", wins)
+	}
 }
 
 func testTrashItem(t *testing.T, db store.DB) {

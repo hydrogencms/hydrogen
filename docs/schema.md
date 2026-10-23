@@ -59,12 +59,13 @@ Every field is `name: { type: <type>, … }`. These keys work on every field typ
 | `required` | Needed to publish. Drafts may leave it out. |
 | `translatable` | The value is per locale. Top-level fields only; others are shared by all locales. |
 | `index` | Makes the field filterable and sortable in the APIs. Top-level scalar, `ref`, `file` and list-of-scalar fields only. |
+| `unique` | No other item of the type (not in the trash) may have the same value, per locale for a `translatable` field. Checked on every draft write that changes the value, on publish and on restoring from the trash; a clash is a validation error with code `not_unique`. Implies `index`. Top-level `string`, `slug` and `email` fields only. |
 | `default` | The value a new item starts with. It must be valid for the field. |
 | `when` | Shows the field only when a sibling declared before it matches: `{ field: kind, eq: video }`. One of `eq`, `ne`, `in` (a list) or `empty` (`true` or `false`). |
 | `admin` | `widget` (a name declared in the admin manifest), `placeholder`, `hidden`, `readonly`. |
 | `ai` | `false` keeps the field away from models and retrieval; `{ describe: "…" }` explains it to them. |
 
-Items of a `list`'s `of:` cannot use `required`, `translatable`, `index`, `when` or `default`.
+Items of a `list`'s `of:` cannot use `required`, `translatable`, `index`, `unique`, `when` or `default`.
 
 ### Field types
 
@@ -78,7 +79,7 @@ Items of a `list`'s `of:` cannot use `required`, `translatable`, `index`, `when`
 | `enum` | One of a fixed set of strings. | `values` (required, unique). |
 | `date` | `"2026-10-14"`. | `min`, `max` (dates). |
 | `datetime` | RFC 3339, `"2026-10-14T09:30:00Z"`. | `min`, `max`. |
-| `slug` | Lower-case letters, digits and single dashes (non-ASCII letters allowed). | `max` (default 120), `from` (a sibling string or text field to derive it from). |
+| `slug` | Lower-case letters, digits and single dashes (non-ASCII letters allowed). | `max` (default 120), `from` (a sibling string or text field to derive it from), `allow` (`"."`, `","` or `".,"`: those characters may join the parts of a slug, alone or followed by a dash, as in `benelux-b.v` or `acme,-inc`; never first, last or doubled). |
 | `email` | An email address. | none |
 | `url` | An absolute `http(s)` URL, or `item:<id>` to link another item. | `relative: true` also accepts a root-relative path (`/docs/start?a=1#top`: one leading slash, no spaces or backslashes), for a site's own links. |
 | `ref` | The id of another item. | `to` (required: the types allowed), `on_delete`: `block` (default), `nullify` or `warn`. |
@@ -114,9 +115,30 @@ minimums, when it is published. A failing write answers `422` with one entry per
 ```
 
 Paths address the value (`tags[2]`, `address.city`). Codes include `required`, `type`, `format`, `pattern`, `enum`,
-`min`, `max`, `min_length`, `max_length`, `min_items`, `max_items`, `unknown_field` and, for blocks, `block_type`.
+`min`, `max`, `min_length`, `max_length`, `min_items`, `max_items`, `not_unique`, `unknown_field` and, for blocks, `block_type`.
 At most 100 problems are reported. Hooks can add their own;
 see [hooks](hooks.md).
+
+### Slugs and unique values
+
+A `slug` holds lower-case letters, digits and single dashes. Migrated URLs sometimes carry dots and commas; set
+`allow: ".,"` on the field to keep them (`benelux-b.v`, `acme,-inc`). They join parts like a dash does, so a slug
+cannot start or end with one or double it (`a..b` is refused), and `..` never becomes a path segment. A page or mounted
+item whose slug allows them is served at the same path (`/acme,-inc`); the pages module accepts the same characters
+in vanity paths. A route pattern fills `{slug}` with the value as it is when the field allows them, and slugifies
+other fields as before.
+
+`unique: true` keeps two items from claiming one slug:
+
+```yaml
+slug: { type: slug, from: title, allow: ".,", unique: true, translatable: true }
+```
+
+The check looks at the other items of the same type that are not in the trash, in the same locale when the field is
+`translatable`, and takes a lock per field until the transaction ends, so concurrent writers cannot both pass (a
+database lock on Postgres; SQLite has one writer). A write that does not change the value skips it, so duplicates that
+already exist do not block other edits; they are reported again when the item is published. Trashing an item frees its
+values.
 
 ### Indexed fields
 

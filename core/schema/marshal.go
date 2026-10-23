@@ -111,6 +111,7 @@ func (s *Schema) fieldJSON(f *Field) map[string]any {
 	put(m, "required", f.Required)
 	put(m, "translatable", f.Translatable)
 	put(m, "index", f.Index)
+	put(m, "unique", f.Unique)
 	if f.Default != nil {
 		m["default"] = f.Default
 	}

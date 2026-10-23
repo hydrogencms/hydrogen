@@ -196,8 +196,8 @@ func valueIs(have, want any) bool {
 }
 
 // relPath fills the mount's route pattern from an item's document.
-func relPath(pat *route.Pattern, item ids.UUID, doc map[string]any) (string, bool) {
-	rel, err := pat.Fill(func(field string) (string, bool) {
+func relPath(pat *route.Pattern, item ids.UUID, doc map[string]any, allow func(field string) string) (string, bool) {
+	rel, err := pat.FillAllow(func(field string) (string, bool) {
 		if field == "id" {
 			return item.String(), true
 		}
@@ -208,7 +208,7 @@ func relPath(pat *route.Pattern, item ids.UUID, doc map[string]any) (string, boo
 			return v.String(), true
 		}
 		return "", false
-	})
+	}, allow)
 	return rel, err == nil
 }
 
@@ -219,6 +219,8 @@ type mountSet struct {
 	rows []nodeRow
 	spec map[ids.UUID]*MountSpec
 	pat  map[ids.UUID]*route.Pattern
+	// allow gives the extra joining characters of a slug field of the collection.
+	allow func(field string) string
 }
 
 func newMountSet(rows []nodeRow) (*mountSet, error) {
@@ -254,7 +256,7 @@ func (m *mountSet) memberships(item ids.UUID, locale string, doc map[string]any)
 		if !matches(m.spec[r.ID].Filter, doc) {
 			continue
 		}
-		if rel, ok := relPath(m.pat[r.ID], item, doc); ok {
+		if rel, ok := relPath(m.pat[r.ID], item, doc, m.allow); ok {
 			out = append(out, membership{r.ID, item, locale, rel, redirectOfDoc(m.spec[r.ID], doc)})
 		}
 	}
@@ -381,6 +383,7 @@ func (s *service) membershipRows(ctx context.Context, tx store.Tx, node ids.UUID
 	}
 	c := tx.Content()
 	var rows [][]any
+	allow := s.slugAllowOf(spec.Collection)
 	after := ids.Nil
 	for {
 		batch, err := c.ItemIDsOfType(ctx, spec.Collection, after, 500)
@@ -405,7 +408,7 @@ func (s *service) membershipRows(ctx context.Context, tx store.Tx, node ids.UUID
 				if !matches(spec.Filter, d.Doc) {
 					continue
 				}
-				if rel, ok := relPath(pat, it.ID, d.Doc); ok {
+				if rel, ok := relPath(pat, it.ID, d.Doc, allow); ok {
 					rows = append(rows, []any{node, it.ID, d.Locale, rel, redirectOfDoc(spec, d.Doc)})
 				}
 			}
@@ -441,6 +444,7 @@ func (s *service) mountsOf(ctx context.Context, q store.SQL, collection string) 
 	if err != nil {
 		return nil, err
 	}
+	set.allow = s.slugAllowOf(collection)
 	s.mounts.put(collection, set, gen, s.clock.Now().Add(mountCacheTTL))
 	return set, nil
 }
@@ -583,4 +587,18 @@ func (s *service) reindexMount(ctx context.Context, tx store.Tx, node ids.UUID, 
 		return err
 	}
 	return s.reindexItems(ctx, tx, append(now, earlier...))
+}
+
+// slugAllowOf gives the extra joining characters of the slug fields of a type, "" for other fields.
+func (s *service) slugAllowOf(typ string) func(field string) string {
+	t, ok := s.schema.Type(typ)
+	if !ok {
+		return nil
+	}
+	return func(field string) string {
+		if f, ok := t.Field(field); ok && f.Shape.Format == "slug" {
+			return strings.Join(f.Shape.Allow, "")
+		}
+		return ""
+	}
 }
