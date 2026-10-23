@@ -11,7 +11,7 @@ import (
 
 // helpers are the template functions that need the page being rendered; parsing needs their names, rendering
 // a clone of the set with the real ones.
-var helpers = []string{"blocks", "partial", "hasTemplate", "items", "item", "query", "richtext", "link", "t", "meta", "nav", "breadcrumbs", "asset", "edit", "setting", "component", "formGuard"}
+var helpers = []string{"blocks", "partial", "hasTemplate", "items", "itemsPage", "item", "itemBlock", "query", "richtext", "link", "t", "meta", "nav", "breadcrumbs", "asset", "edit", "setting", "component", "formGuard"}
 
 // engine is the parsed template set: the shared files (layout, partials, blocks) in one set and a clone of
 // it with each page-like template parsed on top.

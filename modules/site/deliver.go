@@ -213,6 +213,7 @@ func (f *fetcher) tree(ctx context.Context, depth int) ([]treeNode, error) {
 type listing struct {
 	Items   []*Item `json:"items"`
 	HasMore bool    `json:"hasMore"`
+	Total   *int    `json:"total"`
 }
 
 func (f *fetcher) list(ctx context.Context, typ string, q url.Values, withPreview bool) (*listing, error) {

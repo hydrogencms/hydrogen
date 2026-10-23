@@ -70,6 +70,8 @@ All notable changes to Hydrogen are documented here. The format follows
 - Site templates: `get` (a nil-safe dot path through maps, lists, structs and pointers), `append`, `ternary` and
   `isLast`; a symbolic link to a directory under `site/` is followed (links back to a directory being walked are
   skipped), also by the dev reload; a section on scripts and styles in `docs/site.md`.
+- Site templates: `itemsPage` (the items of a listing with `.HasMore` and, on request, `.Total`) and `itemBlock`
+  (one block of an item by id, rendered with `blocks`), with `View.ItemsPage` and `View.FindBlock` for Go components.
 
 ### Changed
 

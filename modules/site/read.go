@@ -98,11 +98,28 @@ func (p *page) adoptLinks(it *Item) {
 	}
 }
 
+// ItemsPage is one page of a listing: Items, whether more follow, and Total, the number of matches in all.
+// Total is -1 unless the listing was asked for it with "total" true, because counting costs a query.
+type ItemsPage struct {
+	Items   []*Item
+	HasMore bool
+	Total   int
+}
+
 // itemsFn lists a collection: items "post" (dict "limit" 4 "sort" "-publishedAt"). The page is tagged with what
 // it reads, and the items carry their page's URL for link.
 func (p *page) itemsFn(typ string, args ...any) ([]*Item, error) {
+	pg, err := p.itemsPageFn(typ, args...)
+	if err != nil {
+		return nil, err
+	}
+	return pg.Items, nil
+}
+
+// itemsPageFn is itemsFn with hasMore and, with "total" true in the dict, the total number of matches.
+func (p *page) itemsPageFn(typ string, args ...any) (*ItemsPage, error) {
 	if p.f == nil {
-		return nil, nil
+		return &ItemsPage{Total: -1}, nil
 	}
 	q, err := params(args)
 	if err != nil {
@@ -115,18 +132,22 @@ func (p *page) itemsFn(typ string, args ...any) ([]*Item, error) {
 	v, err := p.remember("items:"+typ+"?"+q.Encode(), func() (any, error) {
 		l, err := p.f.list(p.context(), typ, q, p.f.preview != "")
 		if err != nil || l == nil {
-			return []*Item(nil), err
+			return &ItemsPage{Total: -1}, err
 		}
 		for _, it := range l.Items {
 			p.withPath(it)
 			p.adoptLinks(it)
 		}
-		return l.Items, nil
+		pg := &ItemsPage{Items: l.Items, HasMore: l.HasMore, Total: -1}
+		if l.Total != nil {
+			pg.Total = *l.Total
+		}
+		return pg, nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("items %s: %w", typ, err)
 	}
-	return v.([]*Item), nil
+	return v.(*ItemsPage), nil
 }
 
 // withLinkFields adds the fields an item's detail route puts in its URL to a projection, so listed items keep
@@ -177,6 +198,50 @@ func (p *page) itemFn(id string, args ...any) (*Item, error) {
 		return nil, fmt.Errorf("item %s: %w", id, err)
 	}
 	return v.(*Item), nil
+}
+
+// itemBlockFn reads one block of an item by its id, from any blocks field and any nesting of slots; nil when the
+// item or the block is not there. The block renders with blocks, read only.
+func (p *page) itemBlockFn(itemID, blockID string) (*BlockView, error) {
+	if blockID == "" {
+		return nil, nil
+	}
+	it, err := p.itemFn(itemID)
+	if err != nil || it == nil {
+		return nil, err
+	}
+	for _, k := range sortedKeys(it.Fields) {
+		if m := findBlock(it.Fields[k], blockID); m != nil {
+			return p.parseBlocks([]any{m}, "", true)[0], nil
+		}
+	}
+	return nil, nil
+}
+
+// findBlock searches a JSON value for a block (an object with a type, props and the id).
+func findBlock(v any, id string) map[string]any {
+	switch x := v.(type) {
+	case map[string]any:
+		if x["id"] == id {
+			if _, ok := x["type"].(string); ok {
+				if _, ok := x["props"].(map[string]any); ok {
+					return x
+				}
+			}
+		}
+		for _, k := range sortedKeys(x) {
+			if m := findBlock(x[k], id); m != nil {
+				return m
+			}
+		}
+	case []any:
+		for _, e := range x {
+			if m := findBlock(e, id); m != nil {
+				return m
+			}
+		}
+	}
+	return nil
 }
 
 // queryFn requests a delivery path ("/tree", "/search") and returns the decoded JSON of a 200 answer, else nil.
@@ -242,3 +307,13 @@ func (p *page) partialFn(name string, data ...any) (template.HTML, error) {
 
 // Client is the content client bound to this render: it reads in process like Request's and tags the page.
 func (v *View) Client() *Client { return &Client{ctx: v.p.context(), f: v.p.f} }
+
+// ItemsPage reads a listing like the items helper, with hasMore and, when args ask for "total", the total.
+func (v *View) ItemsPage(typ string, args ...any) (*ItemsPage, error) {
+	return v.p.itemsPageFn(typ, args...)
+}
+
+// FindBlock reads one block of an item by id, like the itemBlock helper; nil when it is not there.
+func (v *View) FindBlock(itemID, blockID string) (*BlockView, error) {
+	return v.p.itemBlockFn(itemID, blockID)
+}

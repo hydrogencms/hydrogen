@@ -127,7 +127,7 @@ site.Funcs(h, template.FuncMap{"initials": func(name string) string { return …
 ```
 
 A function returns one value, or a value and an error. A name that collides with a built-in, a page helper (`blocks`,
-`partial`, `items`, `item`, `query`, `richtext`, `link`, `t`, `meta`, `nav`, `breadcrumbs`, `asset`, `edit`, `setting`,
+`partial`, `items`, `itemsPage`, `item`, `itemBlock`, `query`, `richtext`, `link`, `t`, `meta`, `nav`, `breadcrumbs`, `asset`, `edit`, `setting`,
 `component`), a Go template function or another registration fails start-up and `config:check`. A module that
 `Require`s `site` calls `kernel.Lookup[*site.Extensions](r).AddFuncs(m)`.
 
@@ -188,6 +188,14 @@ Identical calls within one render ask the delivery API once.
   Keys are the delivery query parameters verbatim, so boolean groups work as keys too:
   `(dict "where[or][0][featured]" true "where[or][1][category]" "blog" "where[not][kind]" "press")`. Facet counts
   (`facets`) are not available through `items`; read them with `query "/collections/post/items" (dict "facets" "category" "limit" 1)`.
+- `itemsPage "post" (dict "limit" 10 "offset" 20 "total" true)` takes the same dict and returns a page: `.Items`,
+  `.HasMore` and `.Total`. `.Total` is the number of matches in all, only with `"total" true` (it costs a count);
+  otherwise it is -1, so test `{{if ge .Total 0}}`. It shares `items`' memo, tags and links, so a paged listing no
+  longer needs a raw `query`. Go components call `v.ItemsPage(typ, dict)`.
+- `itemBlock "itemId" "blockId"` returns one block of an item (a `*BlockView`: `.Type`, `.Props`, `.Slots` with
+  nested blocks) found by its id in any blocks field of the item, nested slots included, or nil. Render it with
+  `{{blocks $b}}` (read only, no editing markers) or read its props. The page is tagged with the item. It is not
+  called `block` because that is a Go template keyword. Go components call `v.FindBlock(itemID, blockID)`.
 - `item "id"` returns one item or nil. It takes the same kind of dict for `fields` and `locale`.
 - `query "/tree" (dict "depth" 3)` returns the decoded JSON (`map[string]any`) of a delivery path (`/tree`,
   `/search`, …) when it answers 200, else nil; a 5xx answer is an error.
