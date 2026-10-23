@@ -1,20 +1,15 @@
 package site
 
 import (
-	"bytes"
-	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"hash/fnv"
 	"io/fs"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -118,64 +113,6 @@ func walkDir(root, rel string, ancestors []string, visit func(string, fs.FileInf
 		}
 	}
 	return nil
-}
-
-// assetSet serves the files of site/assets under fingerprinted names.
-type assetSet struct {
-	byURL  map[string]layered // fingerprinted name → file
-	byName map[string]string  // name → fingerprinted name
-}
-
-func loadAssets(chain []Theme, dir string) (*assetSet, error) {
-	list, err := files(layers(chain, dir, "assets"))
-	if err != nil {
-		return nil, err
-	}
-	a := &assetSet{byURL: map[string]layered{}, byName: map[string]string{}}
-	for _, f := range list {
-		b, err := fs.ReadFile(f.fsys, f.name)
-		if err != nil {
-			return nil, fmt.Errorf("read asset %s: %w", f.where, err)
-		}
-		sum := sha256.Sum256(b)
-		ext := path.Ext(f.name)
-		fp := strings.TrimSuffix(f.name, ext) + "." + hex.EncodeToString(sum[:5]) + ext
-		a.byURL[fp] = f
-		a.byName[f.name] = fp
-	}
-	return a, nil
-}
-
-// url is the fingerprinted URL of an asset; false when there is no such file.
-func (a *assetSet) url(name string) (string, bool) {
-	fp, ok := a.byName[strings.TrimPrefix(name, "/")]
-	return assetsURL + fp, ok
-}
-
-func (a *assetSet) serve(w http.ResponseWriter, r *http.Request, name string) {
-	f, immutable := a.byURL[name]
-	if !immutable {
-		fp, ok := a.byName[name]
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-		f = a.byURL[fp]
-	}
-	b, err := fs.ReadFile(f.fsys, f.name)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	h := w.Header()
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Access-Control-Allow-Origin", "*")
-	if immutable {
-		h.Set("Cache-Control", "public, max-age=31536000, immutable")
-	} else {
-		h.Set("Cache-Control", "no-cache")
-	}
-	http.ServeContent(w, r, path.Base(f.name), time.Time{}, bytes.NewReader(b))
 }
 
 // translations are the flat key → text maps of site/translations/<locale>.yaml over the themes', per key.

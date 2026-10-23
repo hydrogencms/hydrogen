@@ -43,6 +43,8 @@ types:
     fields:
       title:   { type: string, translatable: true, required: true }
       rank:    { type: number, integer: true, index: true }
+      category: { type: string, index: true }
+      featured: { type: boolean, index: true }
       author:  { type: ref, to: [person], on_delete: nullify }
       related: { type: list, of: { type: ref, to: [article, person], on_delete: nullify } }
   settings:

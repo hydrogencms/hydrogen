@@ -409,9 +409,8 @@ func isLastFn(i int, v any) bool {
 	return false
 }
 
-// AddFuncs registers project template functions. A name must be an identifier, must not be a page helper, a
-// built-in or one of Go's predeclared functions, and registers once.
-func (x *Extensions) AddFuncs(m template.FuncMap) error {
+// checkFuncs validates the names and shapes of project template functions.
+func checkFuncs(m template.FuncMap, taken func(string) bool) error {
 	builtins := builtinFuncs()
 	for _, name := range sortedKeys(m) {
 		fn := m[name]
@@ -421,16 +420,41 @@ func (x *Extensions) AddFuncs(m template.FuncMap) error {
 			return fmt.Errorf("site: template function %q is not a valid name", name)
 		case slices.Contains(helpers, name) || slices.Contains(predeclared, name) || builtins[name] != nil:
 			return fmt.Errorf("site: template function %s collides with a built-in function or page helper", name)
-		case x.funcs[name] != nil:
+		case taken(name):
 			return fmt.Errorf("site: template function %s is registered twice", name)
 		case t == nil || t.Kind() != reflect.Func || t.NumOut() < 1 || t.NumOut() > 2 ||
 			(t.NumOut() == 2 && t.Out(1) != reflect.TypeFor[error]()):
 			return fmt.Errorf("site: template function %s must be a function returning one value, or a value and an error", name)
 		}
 	}
+	return nil
+}
+
+// AddFuncs registers project template functions. A name must be an identifier, must not be a page helper, a
+// built-in or one of Go's predeclared functions, and registers once.
+func (x *Extensions) AddFuncs(m template.FuncMap) error {
+	if err := checkFuncs(m, func(n string) bool { return x.funcs[n] != nil || slices.Contains(x.viewNames, n) }); err != nil {
+		return err
+	}
 	for k, v := range m {
 		x.funcs[k] = v
 	}
+	return nil
+}
+
+// AddViewFuncs registers page-aware template functions: fn runs once per render with the page's view and returns
+// the functions (the same names every time). It also runs once with an empty view to learn the names, so it must
+// only capture the view, not read from it.
+func (x *Extensions) AddViewFuncs(fn func(*View) template.FuncMap) error {
+	if fn == nil {
+		return errors.New("site: ViewFuncs has no function")
+	}
+	m := fn(&View{})
+	if err := checkFuncs(m, func(n string) bool { return x.funcs[n] != nil || slices.Contains(x.viewNames, n) }); err != nil {
+		return err
+	}
+	x.viewNames = append(x.viewNames, sortedKeys(m)...)
+	x.view = append(x.view, fn)
 	return nil
 }
 
@@ -439,4 +463,17 @@ func (x *Extensions) AddFuncs(m template.FuncMap) error {
 // and config:check.
 func Funcs(h Registrar, m template.FuncMap) {
 	h.Use(&extModule{name: "site-funcs-" + suffix(strings.Join(sortedKeys(m), ",")), apply: func(x *Extensions) error { return x.AddFuncs(m) }})
+}
+
+// ViewFuncs registers template functions that know the page being rendered: fn gets the page's View on every
+// render and returns the functions, which can read the request's query (v.Query), the content (v.List, v.Get,
+// v.Client, v.Nav, v.Breadcrumbs; the page is tagged with what they read) and the rest of the view. Names follow
+// the rules of Funcs. fn is also called once at registration with an empty View to learn the names, so build the
+// closures without calling the view's methods.
+func ViewFuncs(h Registrar, fn func(*View) template.FuncMap) {
+	var names string
+	if fn != nil {
+		names = strings.Join(sortedKeys(fn(&View{})), ",")
+	}
+	h.Use(&extModule{name: "site-viewfuncs-" + suffix(names), apply: func(x *Extensions) error { return x.AddViewFuncs(fn) }})
 }

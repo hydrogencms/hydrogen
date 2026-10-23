@@ -51,7 +51,7 @@ func openAPI(s *schema.Schema, extra []Route, withSearch bool) obj {
 		paths["/collections/"+t.Name+"/items"] = obj{"get": obj{"operationId": "list" + n, "summary": "List " + t.Label + " items",
 			"description": filterNote(t) + " A preview token for one item also lists that item when it was never published and its draft matches " +
 				"the filters (not with q): it comes first on the first page, regardless of sort.",
-			"parameters": openapi.Params("Channel", "Locale", "Include", "Fields", "Preview", "Q", "Sort", "Limit", "Offset", "Total", "Where"),
+			"parameters": openapi.Params("Channel", "Locale", "Include", "Fields", "Preview", "Q", "Sort", "Limit", "Offset", "Total", "Where", "Facets"),
 			"responses":  responses(openapi.OKResp("A page of items.", openapi.SchemaRef("ListResponse_"+t.Name)), "400", "401", "404")}}
 	}
 	if len(itemRefs) > 0 {
@@ -147,7 +147,11 @@ func listResponse(item obj) obj {
 	return obj{"type": "object", "required": []any{"items", "hasMore"}, "properties": obj{
 		"items": obj{"type": "array", "items": item}, "hasMore": obj{"type": "boolean",
 			"description": "Whether another page follows."},
-		"total":    obj{"type": "integer", "description": "Matches in all; only with total=true, which costs a count."},
+		"total": obj{"type": "integer", "description": "Matches in all; only with total=true, which costs a count."},
+		"facets": obj{"type": "object", "description": "Only with facets=: for each requested field its values with the number of matching items, most first. " +
+			"Counted over all matches of the filters, not just the page.",
+			"additionalProperties": obj{"type": "array", "items": obj{"type": "object", "required": []any{"value", "count"},
+				"properties": obj{"value": openapi.Str(""), "count": obj{"type": "integer"}}}}},
 		"included": obj{"type": "object", "additionalProperties": openapi.SchemaRef("Item")}}}
 }
 
@@ -191,8 +195,14 @@ func parameterDocs(s *schema.Schema) obj {
 		"Total":  obj{"name": "total", "in": "query", "schema": obj{"type": "boolean", "default": false}, "description": "Include total, the number of matches."},
 		"Offset": obj{"name": "offset", "in": "query", "schema": obj{"type": "integer", "minimum": 0, "default": 0}},
 		"Where": obj{"name": "where", "in": "query", "style": "deepObject", "explode": true,
-			"schema":      obj{"type": "object", "additionalProperties": obj{"type": "object", "additionalProperties": openapi.Str("")}},
-			"description": "Filters as where[field][op]=value on indexed fields; ops eq ne lt lte gt gte in contains exists prefix."},
+			"schema": obj{"type": "object", "additionalProperties": obj{"type": "object", "additionalProperties": openapi.Str("")}},
+			"description": "Filters as where[field][op]=value on indexed fields; ops eq ne lt lte gt gte in contains exists prefix; repeated filters are ANDed. " +
+				"Groups: where[or][0][f][op]=v&where[or][1][g][op]=w matches items satisfying every filter of at least one numbered group; " +
+				"where[not][f][op]=v matches items that do not satisfy all of its filters (numbered groups, where[not][0]… and where[not][1]…, exclude items " +
+				"satisfying any of them). Items without a value for f satisfy a negation of a test on f. Groups do not apply to /search."},
+		"Facets": obj{"name": "facets", "in": "query", "schema": openapi.Str(""),
+			"description": "Comma-separated indexed text fields (at most 5) to count over the listing's matches (published, shown by the channel, " +
+				"filtered by where; not the page); a list field counts an item once per value. Answered as facets."},
 	}
 }
 

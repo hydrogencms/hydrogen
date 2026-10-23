@@ -172,6 +172,14 @@ func TestRoutes(t *testing.T) {
 					t.Errorf("number not kept exact: %#v", in.Fields["rating"])
 				}
 			}},
+		{"create with id", "POST", "/collections/article/items", `{"id":"0190b2c4-7a3e-7d11-8f00-1234567890ab","fields":{}}`, 201, "Create",
+			func(t *testing.T, _ *httptest.ResponseRecorder, c call) {
+				if c.arg.(content.CreateInput).ID.String() != "0190b2c4-7a3e-7d11-8f00-1234567890ab" {
+					t.Errorf("input %+v", c.arg)
+				}
+			}},
+		{"create with bad id", "POST", "/collections/article/items", `{"id":"nope","fields":{}}`, 400, "", nil},
+		{"create with nil id", "POST", "/collections/article/items", `{"id":"00000000-0000-0000-0000-000000000000","fields":{}}`, 400, "", nil},
 		{"create no fields", "POST", "/collections/article/items", `{"locale":"en"}`, 201, "Create",
 			func(t *testing.T, _ *httptest.ResponseRecorder, c call) {
 				if c.arg.(content.CreateInput).Fields == nil {
@@ -481,6 +489,28 @@ func TestListQuery(t *testing.T) {
 		{name: "repeated where", query: "where[tags][contains]=a&where[tags][contains]=b",
 			want: content.ListOptions{Type: "article", Limit: 50, Where: []content.Filter{
 				{Field: "tags", Op: store.OpContains, Value: "a"}, {Field: "tags", Op: store.OpContains, Value: "b"}}}},
+		{name: "or and not groups", query: "where[rating][gte]=3&where[or][1][tags][contains]=b&where[or][0][author]=abc&where[or][0][rating][lt]=9&where[not][type][in]=a,b",
+			want: content.ListOptions{Type: "article", Limit: 50, Where: []content.Filter{
+				{Field: "rating", Op: store.OpGte, Value: "3"},
+				{Op: store.OpOr, Groups: [][]content.Filter{
+					{{Field: "author", Op: store.OpEq, Value: "abc"}, {Field: "rating", Op: store.OpLt, Value: "9"}},
+					{{Field: "tags", Op: store.OpContains, Value: "b"}}}},
+				{Op: store.OpNot, Groups: [][]content.Filter{{{Field: "type", Op: store.OpIn, Value: "a,b"}}}},
+			}}},
+		{name: "not groups by index", query: "where[not][0][title]=x&where[not][1][rating][gt]=2&where[not][1][author][exists]=true",
+			want: content.ListOptions{Type: "article", Limit: 50, Where: []content.Filter{
+				{Op: store.OpNot, Groups: [][]content.Filter{
+					{{Field: "title", Op: store.OpEq, Value: "x"}},
+					{{Field: "author", Op: store.OpExists, Value: true}, {Field: "rating", Op: store.OpGt, Value: "2"}}}},
+			}}},
+		{name: "or needs an index", query: "where[or][title]=x", bad: true},
+		{name: "or without a condition", query: "where[or][0]=x", bad: true},
+		{name: "bare or", query: "where[or]=x", bad: true},
+		{name: "group index too high", query: "where[or][32][title]=x", bad: true},
+		{name: "negative group index", query: "where[or][-1][title]=x", bad: true},
+		{name: "bad op in a group", query: "where[or][0][title][like]=x", bad: true},
+		{name: "bad exists in a group", query: "where[not][title][exists]=maybe", bad: true},
+		{name: "group conditions count", query: strings.Repeat("where[rating][gte]=1&", 16) + strings.Repeat("where[or][0][rating][lt]=1&", 17), bad: true},
 		{name: "limit max", query: "limit=500", want: content.ListOptions{Type: "article", Limit: 500}},
 		{name: "bad status", query: "status=gone", bad: true},
 		{name: "limit zero", query: "limit=0", bad: true},
@@ -545,6 +575,7 @@ func TestErrorMapping(t *testing.T) {
 		{"conflict", &content.ConflictError{Parts: []string{"shared", "de"}}, 409, "conflict", `"parts":["shared","de"]`},
 		{"referenced", &content.ReferencedError{Referrers: refs}, 409, "referenced", `"referrers":[{"id":"` + testID.String()},
 		{"duplicate", content.ErrDuplicateKey, 409, "duplicate_key", ""},
+		{"duplicate id", fmt.Errorf("wrap: %w", content.ErrDuplicateID), 409, "duplicate_id", ""},
 		{"store duplicate", fmt.Errorf("x: %w", store.ErrDuplicateKey), 409, "duplicate_key", ""},
 		{"plain invalid", content.ErrInvalid, 422, "invalid", ""},
 		{"plain conflict", content.ErrConflict, 409, "conflict", ""},

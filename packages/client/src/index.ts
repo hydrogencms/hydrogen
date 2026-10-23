@@ -43,6 +43,12 @@ export type Where<F> = { [K in keyof F & string]?: Condition } & Record<string, 
 
 export interface ListOptions<F = Record<string, unknown>> extends GetOptions {
   where?: Where<F>
+  /** any of these groups: an item matches when it satisfies every condition of at least one (`where[or][i]…`) */
+  or?: Where<F>[]
+  /** none of these groups: an item is left out when it satisfies every condition of any of them (`where[not][i]…`); items without a value for a field pass a test on it */
+  not?: Where<F>[]
+  /** indexed text fields (at most 5) to count over all matches of the filters, answered as `facets` */
+  facets?: string | string[]
   /** "-publishedAt,title", or fields in order; a leading "-" sorts descending */
   sort?: string | string[]
   limit?: number
@@ -70,6 +76,8 @@ export interface List<F> {
   items: Item<F>[]
   hasMore: boolean
   total?: number
+  /** value counts per requested facet field, most items first */
+  facets?: Record<string, { value: string; count: number }[]>
   included?: Record<string, Item<unknown>>
 }
 
@@ -167,23 +175,33 @@ const enc = encodeURIComponent
 const fieldList = (f?: string | string[]) => (Array.isArray(f) ? f.join(',') : f)
 
 /** Public so adapters and tests can build delivery URLs the same way; applications use the client. Builds a query string: parameters ordered by encoded name (where[...] included), values percent-encoded, empty values dropped. */
-export function buildQuery(p: Record<string, string | number | undefined>, where?: Record<string, Condition | undefined>): string {
+export function buildQuery(
+  p: Record<string, string | number | undefined>,
+  where?: Record<string, Condition | undefined>,
+  or?: Record<string, Condition | undefined>[],
+  not?: Record<string, Condition | undefined>[],
+): string {
   const out: [string, string][] = []
   const add = (k: string, v: string) => out.push([k.replace(/[^\w[\]-]+/g, enc), enc(v)])
   for (const k in p) {
     const v = p[k]
     if (v !== undefined && v !== '') add(k, String(v))
   }
-  for (const f in where) {
-    const c = where[f]
-    if (c === undefined) continue
-    if (typeof c === 'object') {
-      for (const op in c) {
-        const v = (c as Record<string, Scalar | Scalar[] | undefined>)[op]
-        if (v !== undefined) add(`where[${f}][${op}]`, Array.isArray(v) ? v.join(',') : String(v))
-      }
-    } else add(`where[${f}][eq]`, String(c))
+  const conds = (pre: string, w?: Record<string, Condition | undefined>) => {
+    for (const f in w) {
+      const c = w[f]
+      if (c === undefined) continue
+      if (typeof c === 'object') {
+        for (const op in c) {
+          const v = (c as Record<string, Scalar | Scalar[] | undefined>)[op]
+          if (v !== undefined) add(`${pre}[${f}][${op}]`, Array.isArray(v) ? v.join(',') : String(v))
+        }
+      } else add(`${pre}[${f}][eq]`, String(c))
+    }
   }
+  conds('where', where)
+  or?.forEach((g, i) => conds(`where[or][${i}]`, g))
+  not?.forEach((g, i) => conds(`where[not][${i}]`, g))
   out.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
   return out.map(([k, v]) => `${k}=${v}`).join('&')
 }
@@ -276,7 +294,8 @@ export function createClient<T extends object = Record<string, unknown>>(o: Clie
         offset: l?.offset,
         total: l?.total ? 'true' : undefined,
         sort: Array.isArray(l?.sort) ? l.sort.join(',') : l?.sort,
-      }, l?.where as Record<string, Condition | undefined>), l),
+        facets: fieldList(l?.facets),
+      }, l?.where as Record<string, Condition | undefined>, l?.or, l?.not), l),
     route: (url, g) => get('/route', buildQuery({ channel: o.channel, locale: g?.locale, url }), g),
     tree: (t) => get('/tree', buildQuery({ channel: o.channel, locale: t?.locale, site: t?.site, depth: t?.depth, fields: fieldList(t?.fields) }), t, (b) => b.nodes ?? []),
     channel: (name, g) => {

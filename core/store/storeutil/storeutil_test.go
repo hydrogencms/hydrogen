@@ -57,14 +57,17 @@ func TestScalarAndList(t *testing.T) {
 	}
 }
 
-func TestSearchTexts(t *testing.T) {
-	loc, txt := SearchTexts([]store.SearchDoc{{Locale: "fr", Text: "a"}, {Locale: "en", Text: "b"}, {Locale: "en", Text: "c"}})
-	if strings.Join(loc, ",") != "en,fr" || txt[0] != "b\nc" || txt[1] != "a" {
-		t.Errorf("%v %q", loc, txt)
+func TestSearchRows(t *testing.T) {
+	rows := SearchRows([]store.SearchDoc{{Locale: "fr", Text: "a"}, {Locale: "en", High: "h", Text: "b"}, {Locale: "en", Text: "c", Low: "l"}})
+	if len(rows) != 2 || rows[0] != (SearchRow{Locale: "en", High: "h", Text: "b\nc", Low: "l"}) || rows[1] != (SearchRow{Locale: "fr", Text: "a"}) {
+		t.Errorf("%+v", rows)
 	}
-	_, txt = SearchTexts([]store.SearchDoc{{Locale: "en", Text: strings.Repeat("é", MaxSearchChars+10)}})
-	if n := len([]rune(txt[0])); n != MaxSearchChars {
+	rows = SearchRows([]store.SearchDoc{{Locale: "en", High: strings.Repeat("é", MaxSearchChars), Text: strings.Repeat("é", MaxSearchChars+10)}})
+	if n := len([]rune(rows[0].Text)); n != MaxSearchChars {
 		t.Errorf("capped to %d", n)
+	}
+	if n := len([]rune(rows[0].High)); n != MaxSearchChars/4 {
+		t.Errorf("high capped to %d", n)
 	}
 }
 

@@ -46,6 +46,10 @@ func (r reader) Query(ctx context.Context, q store.Query) (store.QueryResult, er
 	return runQuery(ctx, r.db.reader, q)
 }
 
+func (r reader) Facet(ctx context.Context, q store.Query, field string, limit int) ([]store.FacetCount, error) {
+	return runFacet(ctx, r.db.reader, q, field, limit)
+}
+
 func (r reader) Snapshots(ctx context.Context, items []ids.UUID, locales []string) ([]store.Snapshot, error) {
 	if len(items) == 0 {
 		return nil, nil

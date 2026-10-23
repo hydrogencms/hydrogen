@@ -94,7 +94,8 @@ func (s *server) resolve(rc *reqCtx) *result {
 	return s.notFound(rc)
 }
 
-func (s *server) notFound(rc *reqCtx) *result {
+// plainNotFound is the channel's 404 page.
+func (s *server) plainNotFound(rc *reqCtx) *result {
 	if !rc.eng.has("404.html") {
 		return &result{status: http.StatusNotFound, body: []byte("404 page not found\n"), tags: rc.f.tagList()}
 	}
@@ -152,13 +153,9 @@ func (s *server) newPage(rc *reqCtx, locale string, it *Item) (*page, *View) {
 		v.Fields = it.Fields
 		v.Title = itemTitle(it)
 	}
-	p := &page{ctx: rc.ctx, eng: rc.eng, ch: rc.ch, locale: locale, def: s.svc.Core.Content.DefaultLocale, preview: rc.preview(), log: s.log,
-		view: v, links: map[string]string{}, rt: s.svc.Schema.RichText(), f: rc.f, itemPath: func(it *Item) string { return s.linkPath(rc.ch, it) }, linkFields: func(typ string) []string { return s.linkFields(rc.ch, typ) }}
-	if it != nil {
-		for k, u := range it.Links {
-			p.links[k] = u
-		}
-	}
+	p := &page{ctx: rc.ctx, eng: rc.eng, ch: rc.ch, guard: s.guard, locale: locale, def: s.svc.Core.Content.DefaultLocale, preview: rc.preview(), log: s.log,
+		view: v, rawQuery: rc.r.URL.RawQuery, links: map[string]string{}, rt: s.svc.Schema.RichText(), f: rc.f, itemPath: func(it *Item) string { return s.linkPath(rc.ch, it) }, linkFields: func(typ string) []string { return s.linkFields(rc.ch, typ) }}
+	p.adoptLinks(it)
 	for _, typ := range s.singletons {
 		if !rc.ch.AllowsCollection(typ) {
 			continue
@@ -169,10 +166,12 @@ func (s *server) newPage(rc *reqCtx, locale string, it *Item) (*page, *View) {
 			continue
 		}
 		if si != nil {
+			p.adoptLinks(si)
 			v.Settings[typ] = si.Fields
 		}
 	}
 	p.siteName, _ = p.settingFn("siteName").(string)
+	rc.pg = p
 	return p, v
 }
 
@@ -214,7 +213,6 @@ func (s *server) navItems(ch *channel.Channel, nodes []treeNode, current string)
 func (s *server) page(rc *reqCtx, tpl string, it *Item, loc *pages.Located, rt *route) *result {
 	p, v := s.newPage(rc, it.Locale, it)
 	p.loadNav = s.navLoader(rc, p)
-	s.extraLinks(rc, p, it)
 	switch {
 	case loc != nil:
 		v.Path, _ = s.pages.SiteURL(rc.ch, loc.Resolution.Path)
@@ -248,36 +246,6 @@ func (s *server) page(rc *reqCtx, tpl string, it *Item, loc *pages.Located, rt *
 		return s.internal(rc, err)
 	}
 	return &result{status: http.StatusOK, body: s.finish(rc, body), tags: rc.f.tagList(), store: !rc.preview()}
-}
-
-// extraLinks resolves references to items that have no page but a collection route, which delivery's links
-// leave out.
-func (s *server) extraLinks(rc *reqCtx, p *page, it *Item) {
-	if len(s.routes) == 0 {
-		return
-	}
-	var want []string
-	collectIDs(it.Fields, &want)
-	n := 0
-	for _, id := range want {
-		if _, ok := p.links[id]; ok || id == it.ID {
-			continue
-		}
-		if n++; n > 64 {
-			break
-		}
-		ref, err := rc.f.item(rc.ctx, id, false, "")
-		if err != nil || ref == nil {
-			continue
-		}
-		rt := s.detail(ref.Type)
-		if rt == nil || !rc.ch.AllowsCollection(ref.Type) {
-			continue
-		}
-		if path, ok := rt.build(ref.ID, ref.Fields); ok {
-			p.links[id], _ = s.pages.SiteURL(rc.ch, path)
-		}
-	}
 }
 
 // collectIDs gathers item ids a document refers to: item: link targets and bare ids in values.
@@ -496,7 +464,7 @@ func (s *server) servePreviewItem(w http.ResponseWriter, r *http.Request, eng *e
 	case err != nil:
 		res = s.internal(rc, err)
 	case it == nil || it.Type != collection:
-		res = s.notFound(rc)
+		res = s.plainNotFound(rc)
 	default:
 		res = s.previewPage(rc, it)
 	}

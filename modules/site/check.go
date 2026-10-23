@@ -56,7 +56,7 @@ func (m *module) check(ctx context.Context, svc *kernel.Services, out io.Writer,
 	if err != nil {
 		return err
 	}
-	c.src = &sources{chain: chain, dir: m.cfg.Dir, comps: m.ext.comps, funcs: m.ext.funcs}
+	c.src = &sources{chain: chain, dir: m.cfg.Dir, comps: m.ext.comps, funcs: m.ext.funcs, view: m.ext.view, viewNames: m.ext.viewNames}
 	if c.eng, err = loadEngine(c.src, true, nil); c.eng == nil {
 		c.fail("%v", err)
 		return c.result()
@@ -495,7 +495,7 @@ func (c *checker) requestItem(srv *server, ch *channel.Channel, rt *route, it *I
 	label := fmt.Sprintf("%s %s (%s)", it.Type, it.ID, it.Name)
 	path := ""
 	if it.URL != "" {
-		if u, err := url.Parse(it.URL); err == nil {
+		if u, err := url.Parse(it.URL); err == nil && !srv.foreign(u) {
 			path = u.Path
 		}
 	} else if rt != nil {

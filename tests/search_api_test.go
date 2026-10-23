@@ -27,9 +27,13 @@ types:
       fullName: { type: string, required: true }
   article:
     name: "{title}"
+    search:
+      weights: { name: high, body: low }
+      exclude: hidden
     fields:
       title:  { type: string, translatable: true, required: true }
       body:   { type: text, translatable: true }
+      hidden: { type: boolean }
       topic:  { type: string, index: true }
       tags:   { type: list, of: { type: string }, index: true }
       rank:   { type: number, integer: true, index: true }
@@ -322,11 +326,42 @@ func TestDeliverySearchInclude(t *testing.T) {
 	})
 }
 
+func TestDeliverySearchWeightsAndExclusion(t *testing.T) {
+	runSearchAPI(t, func(t *testing.T, n *dnode) {
+		body := n.create("article", "", "en", `{"title":"Energy notes","body":"solar solar solar solar"}`, true)
+		title := n.create("article", "", "en", `{"title":"Solar","body":"energy"}`, true)
+		hidden := n.create("article", "", "en", `{"title":"Solar secrets","hidden":true}`, true)
+		n.drain()
+
+		hits := func() []string {
+			return hitIDs(t, n.wantStatus("/search?channel=web&q=solar&type=article", 200).json())
+		}
+		if got := hits(); !sameStrings(got, idStrings(title, body)) {
+			t.Errorf("a title match ranks above body matches, and the excluded item is absent: %v", got)
+		}
+		if got := n.manage("GET", "/search?q=secrets", nil); got.Code != 200 || !strings.Contains(got.Body.String(), hidden.String()) {
+			t.Errorf("editors still find an excluded item: %d %s", got.Code, got.Body)
+		}
+		if got := hitIDs(t, n.wantStatus("/search?channel=web&q=secrets&type=article", 200).json()); len(got) != 0 {
+			t.Errorf("excluded item found: %v", got)
+		}
+
+		n.update(hidden, "en", `{"hidden":false}`)
+		n.publish(hidden)
+		n.drain()
+		eventually(t, "the item to appear once the flag is cleared", func() bool { return len(hits()) == 3 })
+		n.update(hidden, "en", `{"hidden":true}`)
+		n.publish(hidden)
+		n.drain()
+		eventually(t, "the excluded item to leave the results", func() bool { return len(hits()) == 2 })
+	})
+}
+
 func TestDeliverySearchErrors(t *testing.T) {
 	runSearchAPI(t, func(t *testing.T, n *dnode) {
 		n.create("article", "", "en", `{"title":"Solar"}`, true)
 		bad := []string{
-			"", "&q=", "&q=%20", "&q=" + strings.Repeat("a", 201), "&q=a&limit=0", "&q=a&limit=51", "&q=a&limit=x", "&q=a&offset=1001",
+			"", "&q=", "&q=%20", "&q=" + strings.Repeat("a", 201), "&q=a&limit=0", "&q=a&limit=101", "&q=a&limit=x", "&q=a&offset=1001",
 			"&q=a&offset=-1", "&q=a&facets=title", "&q=a&facets=rank", "&q=a&facets=nope", "&q=a&facets=topic,tags,topic,topic,topic,topic",
 			"&q=a&sort=title", "&q=a&sort=tags", "&q=a&sort=-", "&q=a&where[nope]=1", "&q=a&where[topic][zz]=1", "&q=a&where[rank]=x",
 			"&q=a&highlight=maybe", "&q=a&total=true", "&q=a&bogus=1", "&q=a&q=b", "&q=a&type=article&type=person", "&q=a&locale=fr",

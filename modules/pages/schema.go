@@ -37,7 +37,7 @@ func checkChildren(t *schema.TypeBuilder, v any) error {
 	return nil
 }
 
-// Schema adds the slug and vanityPath fields to page types and the redirect collection type.
+// Schema adds the slug, canonicalPath and vanityPath fields to page types and the redirect collection type.
 func (m *module) Schema(b *schema.Builder) error {
 	for _, t := range b.Types() {
 		if !t.Page() {
@@ -49,6 +49,13 @@ func (m *module) Schema(b *schema.Builder) error {
 				spec["from"] = "title"
 			}
 			if err := t.AddField("slug", spec); err != nil {
+				return err
+			}
+		}
+		if !t.HasField("canonicalPath") {
+			err := t.AddField("canonicalPath", schema.Spec{"type": "string", "translatable": true,
+				"description": "URL path instead of the tree position, e.g. /services/seo; subpages build on it"})
+			if err != nil {
 				return err
 			}
 		}
@@ -79,6 +86,8 @@ func (m *module) Schema(b *schema.Builder) error {
 		{"statusCode", schema.Spec{"type": "enum", "values": []any{"301", "302", "307", "308"}, "default": "301"}},
 		{"site", schema.Spec{"type": "string", "default": m.cfg.Sites[0]}},
 		{"forLocale", schema.Spec{"type": "string", "description": "Locale code; empty: every locale"}},
+		{"force", schema.Spec{"type": "boolean", "default": false,
+			"description": "Wins over a page or mounted item at this path, which is then unreachable there. The only way to redirect the site root (/)."}},
 	} {
 		if err := t.AddField(f.name, f.spec); err != nil {
 			return err

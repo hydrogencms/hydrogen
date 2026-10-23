@@ -222,6 +222,29 @@ func TestAPICreateValidation(t *testing.T) {
 	}
 }
 
+func TestAPICreatePosition(t *testing.T) {
+	f := &fakeAPI{node: &Node{ID: idC, Site: "main", Kind: KindPage}}
+	h := newHandler(f)
+	body := func(after string) string {
+		return fmt.Sprintf(`{"kind":"page","item":%q,"parent":%q%s}`, idA, idB, after)
+	}
+	send(h, "POST", "/pages/sites/main/nodes", body(""))
+	if f.place.After != nil || f.place.First {
+		t.Errorf("absent after = last: %+v", f.place)
+	}
+	send(h, "POST", "/pages/sites/main/nodes", body(`,"after":null`))
+	if f.place.After != nil || !f.place.First {
+		t.Errorf("null after = first: %+v", f.place)
+	}
+	send(h, "POST", "/pages/sites/main/nodes", body(fmt.Sprintf(`,"after":%q`, idC)))
+	if f.place.After == nil || *f.place.After != idC || f.place.First {
+		t.Errorf("after id: %+v", f.place)
+	}
+	if w := send(h, "POST", "/pages/sites/main/nodes", body(`,"after":"nope"`)); w.Code != 400 {
+		t.Errorf("bad after: %d %s", w.Code, w.Body)
+	}
+}
+
 func TestAPIPatch(t *testing.T) {
 	parent := idB
 	f := &fakeAPI{node: &Node{ID: idA, Parent: &parent}}

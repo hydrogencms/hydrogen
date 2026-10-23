@@ -20,7 +20,7 @@ func JSONSchemaFile(reg *Registry) map[string]any {
 		"required": []string{"type"},
 		"properties": map[string]any{
 			"type":  map[string]any{"type": "string", "enum": reg.names()},
-			"label": str, "description": str, "required": boolean, "translatable": boolean, "index": boolean,
+			"label": str, "description": str, "required": boolean, "translatable": boolean, "index": boolean, "unique": boolean,
 			"default": map[string]any{},
 			"when": map[string]any{
 				"type": "object", "required": []string{"field"}, "additionalProperties": false,

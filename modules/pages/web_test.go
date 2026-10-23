@@ -229,6 +229,8 @@ func TestReserved(t *testing.T) {
 		{"/account/*", "/account", true},
 		{"/account/*", "/account/orders/1", true},
 		{"/account/*", "/accounts", false},
+		{"/", "/", true},
+		{"/", "/x", false},
 	} {
 		if got := parseReserved(c.pattern).matches(c.path); got != c.want {
 			t.Errorf("%s vs %s: %v", c.pattern, c.path, got)

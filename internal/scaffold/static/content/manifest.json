@@ -2,7 +2,7 @@
   "format": 2,
   "hydrogen": "static",
   "dialect": "sqlite",
-  "schemaHash": "0286002b84aaaab7bdd9de6c2f8ef55cfca85b022ccdf4afc3915dba1dcdcb06",
+  "schemaHash": "dab4af64c484b88c742f2cc0d47e6170984e51edf70fa60496547e6a6a0519f3",
   "createdAt": "2026-10-01T09:10:00Z",
   "counts": {
     "items": 3,
@@ -15,7 +15,7 @@
     }
   },
   "itemStream": {
-    "sha256": "b2cf15592768ed45579866556a6062fa55889a4dd03ec1d1e7cad74b27b71b0b",
+    "sha256": "2c684d80ab2dcf2f2c2ac38c780963511c66cef275c38e0805b4565624eea3d6",
     "bytes": 4024
   },
   "files": [
@@ -26,17 +26,17 @@
     },
     {
       "name": "items/page/01a0f6b1-2680-76f4-a787-babb602ad25a.json",
-      "sha256": "5e375090c4dcc2222b529fd64e84b23937a6481b805657fb6308afe209aae191",
+      "sha256": "6f88db66bb856289647e8454fefdceb91fff90f0137030d5688b7756424e71f7",
       "bytes": 2827
     },
     {
       "name": "items/page/01a0f6b2-10e0-70bc-a345-31ed6dd63b65.json",
-      "sha256": "29ed57bc95de0d5a8a0477b396fe16cfe300ad5ad977d0cc99a660ca754ec634",
+      "sha256": "32fba0e684c3fe483b9b2be91db8cfcff518de677a7c42fb2f463bd74b032c1a",
       "bytes": 4339
     },
     {
       "name": "items/siteSettings/01a0f6b8-7980-7608-91dd-64095f51ee14.json",
-      "sha256": "4005bc176060df29d21c4bc34cd9eb94daee67340a483e23f0de00fc7ae37cc1",
+      "sha256": "e7b83148e3b36904320560a3953fcca1e7744619a7db98555d60137c40a1dff4",
       "bytes": 751
     },
     {
@@ -47,13 +47,13 @@
     },
     {
       "name": "schema/compiled.json",
-      "sha256": "0286002b84aaaab7bdd9de6c2f8ef55cfca85b022ccdf4afc3915dba1dcdcb06",
-      "bytes": 4304
+      "sha256": "dab4af64c484b88c742f2cc0d47e6170984e51edf70fa60496547e6a6a0519f3",
+      "bytes": 4745
     },
     {
-      "name": "schema/revisions/0286002b84aaaab7bdd9de6c2f8ef55cfca85b022ccdf4afc3915dba1dcdcb06.json",
-      "sha256": "87af4a23b2781b67aa15aed73c11536b69b970c4960e5c5fede4185256610984",
-      "bytes": 4435,
+      "name": "schema/revisions/dab4af64c484b88c742f2cc0d47e6170984e51edf70fa60496547e6a6a0519f3.json",
+      "sha256": "f2ed2dd67a6e9c5b7d5148cf5537d97a45725b53e0bd7ce12c6ca0af5b29baa2",
+      "bytes": 4876,
       "records": 1
     }
   ]

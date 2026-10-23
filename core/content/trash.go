@@ -123,6 +123,9 @@ func (s *Service) Restore(ctx context.Context, id ids.UUID) (*View, error) {
 		if err := c.SetDeleted(ctx, id, nil, ""); err != nil {
 			return itemErr("key "+it.Key, err)
 		}
+		if err := s.checkRestoreUnique(ctx, tx, it); err != nil {
+			return err
+		}
 		actor := audit.ActorFrom(ctx)
 		it.DeletedAt, it.DeletedBy = nil, ""
 		it.UpdatedAt, it.UpdatedBy = s.now(), actor.String()

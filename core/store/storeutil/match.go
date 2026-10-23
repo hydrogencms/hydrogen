@@ -18,6 +18,12 @@ import (
 // and its value is normalised like Scalar does.
 func MatchWhere(conds []store.Cond, vals []schema.IndexValue) bool {
 	for _, c := range conds {
+		if IsGroup(c.Op) {
+			if matchGroup(c, vals) {
+				continue
+			}
+			return false
+		}
 		var of []schema.IndexValue
 		for _, v := range vals {
 			if v.Field == c.Field {
@@ -29,6 +35,17 @@ func MatchWhere(conds []store.Cond, vals []schema.IndexValue) bool {
 		}
 	}
 	return true
+}
+
+func matchGroup(c store.Cond, vals []schema.IndexValue) bool {
+	any := false
+	for _, g := range c.Groups {
+		if MatchWhere(g, vals) {
+			any = true
+			break
+		}
+	}
+	return any == (c.Op == store.OpOr)
 }
 
 func matchCond(c store.Cond, vals []schema.IndexValue) bool {

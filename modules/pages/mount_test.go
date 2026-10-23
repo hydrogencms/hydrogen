@@ -60,7 +60,7 @@ func TestRelPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := ids.UUID{1}
-	rel, ok := relPath(pat, id, map[string]any{"publishDate": "2026-10-14T09:00:00Z", "category": "Big Data"})
+	rel, ok := relPath(pat, id, map[string]any{"publishDate": "2026-10-14T09:00:00Z", "category": "Big Data"}, nil)
 	if !ok || rel != "2026/big-data/"+id.String() {
 		t.Errorf("rel = %q, %v", rel, ok)
 	}
@@ -71,7 +71,7 @@ func TestRelPath(t *testing.T) {
 		{"publishDate": "yesterday", "category": "x"},
 		{"publishDate": "2026-10-14", "category": []any{"x"}},
 	} {
-		if rel, ok := relPath(pat, id, doc); ok {
+		if rel, ok := relPath(pat, id, doc, nil); ok {
 			t.Errorf("%v: rel %q, want none", doc, rel)
 		}
 	}
@@ -107,5 +107,38 @@ func TestSameMemberships(t *testing.T) {
 	}
 	if sameMemberships(x, []membership{{Node: a, Rel: "x"}, {Node: b, Rel: "z"}}) || sameMemberships(x, x[:1]) {
 		t.Error("differences must show")
+	}
+}
+
+func TestRedirectOfDoc(t *testing.T) {
+	spec := &MountSpec{RedirectField: "url"}
+	for _, c := range []struct {
+		name string
+		spec *MountSpec
+		doc  map[string]any
+		want string
+	}{
+		{"absolute", spec, map[string]any{"url": "https://example.com/x"}, "https://example.com/x"},
+		{"site path", spec, map[string]any{"url": "/about"}, "/about"},
+		{"empty", spec, map[string]any{"url": ""}, ""},
+		{"missing", spec, map[string]any{}, ""},
+		{"item target", spec, map[string]any{"url": "item:" + ids.UUID{1}.String()}, ""},
+		{"scheme", spec, map[string]any{"url": "javascript:alert(1)"}, ""},
+		{"protocol relative", spec, map[string]any{"url": "//evil.test"}, ""},
+		{"backslash", spec, map[string]any{"url": "/\\evil.test"}, ""},
+		{"no field", &MountSpec{}, map[string]any{"url": "/about"}, ""},
+	} {
+		if got := redirectOfDoc(c.spec, c.doc); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestForcedRanksFirst(t *testing.T) {
+	order := []string{stateForced, StateCurrent, StateManual, StateRedirect}
+	for i := 1; i < len(order); i++ {
+		if rank(order[i-1]) <= rank(order[i]) {
+			t.Errorf("%s must outrank %s", order[i-1], order[i])
+		}
 	}
 }

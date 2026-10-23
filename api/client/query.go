@@ -52,6 +52,13 @@ type ListOptions struct {
 	Offset int
 	// Total (delivery only) asks for the exact number of matches; counting costs more than the page itself.
 	Total bool
+	// Or (any group matches: every filter of at least one) and Not (an item is left out when it satisfies every
+	// filter of any group) add the APIs' boolean groups to Where; items without a value for a field pass a
+	// negated test on it. Where, Or and Not share the limit of 32 conditions.
+	Or, Not [][]Filter
+	// Facets (delivery only) are indexed text fields (at most 5) whose value counts over all matches
+	// ListResult.Facets returns.
+	Facets []string
 	// Include (delivery only) adds the items the results reference to the answer, 1 to 3 levels deep.
 	Include int
 	// Fields: delivery, only these fields in each item (dot paths walk into groups); management API, their values per summary.
@@ -93,19 +100,26 @@ func (o *ListOptions) encode(q *query) error {
 	if err := addFields(q, o.Fields); err != nil {
 		return err
 	}
-	for _, f := range o.Where {
-		if f.Field == "" || strings.ContainsAny(f.Field, "[]&=#") {
-			return fmt.Errorf("hydrogen: invalid filter field %q", f.Field)
+	if err := addFilters(q, "where", o.Where); err != nil {
+		return err
+	}
+	for i, g := range o.Or {
+		if err := addFilters(q, "where[or]["+strconv.Itoa(i)+"]", g); err != nil {
+			return err
 		}
-		v, err := filterValue(f.Value)
-		if err != nil {
-			return fmt.Errorf("hydrogen: filter %q: %w", f.Field, err)
+	}
+	for i, g := range o.Not {
+		if err := addFilters(q, "where[not]["+strconv.Itoa(i)+"]", g); err != nil {
+			return err
 		}
-		key := "where[" + f.Field + "]"
-		if f.Op != "" {
-			key += "[" + string(f.Op) + "]"
+	}
+	if len(o.Facets) > 0 {
+		for _, f := range o.Facets {
+			if f == "" || strings.ContainsAny(f, ",&=#") {
+				return fmt.Errorf("hydrogen: invalid facet field %q", f)
+			}
 		}
-		q.add(key, v)
+		q.add("facets", strings.Join(o.Facets, ","))
 	}
 	if o.Search != "" {
 		q.add("q", o.Search)
@@ -131,6 +145,24 @@ func (o *ListOptions) encode(q *query) error {
 	}
 	if o.Total {
 		q.add("total", "true")
+	}
+	return nil
+}
+
+func addFilters(q *query, prefix string, fs []Filter) error {
+	for _, f := range fs {
+		if f.Field == "" || strings.ContainsAny(f.Field, "[]&=#") {
+			return fmt.Errorf("hydrogen: invalid filter field %q", f.Field)
+		}
+		v, err := filterValue(f.Value)
+		if err != nil {
+			return fmt.Errorf("hydrogen: filter %q: %w", f.Field, err)
+		}
+		key := prefix + "[" + f.Field + "]"
+		if f.Op != "" {
+			key += "[" + string(f.Op) + "]"
+		}
+		q.add(key, v)
 	}
 	return nil
 }

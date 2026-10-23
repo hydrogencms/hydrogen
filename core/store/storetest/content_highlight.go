@@ -107,6 +107,63 @@ func testHighlight(t *testing.T, db store.DB) {
 	}
 }
 
+func testSearchTiers(t *testing.T, db store.DB) {
+	cat := seedCatalog(t, db)
+	pub := store.ProjectionPublished
+	rank := func(text string) string {
+		res := cat.run(t, db, store.Query{Type: "article", Locale: "en", Search: text, Highlight: true})
+		for i := 1; i < len(res.Items); i++ {
+			if res.Items[i-1].Searched < res.Items[i].Searched {
+				t.Errorf("%q: not ordered by Searched: %+v", text, res.Items)
+			}
+		}
+		return cat.letters(res)
+	}
+
+	replaceSearch(t, db, cat.ids['A'], pub, store.SearchDoc{Locale: "en", Low: "zebra", Text: "filler"})
+	replaceSearch(t, db, cat.ids['B'], pub, store.SearchDoc{Locale: "en", Text: "zebra"})
+	replaceSearch(t, db, cat.ids['E'], pub, store.SearchDoc{Locale: "en", High: "zebra", Text: "filler"})
+	if got := rank("zebra"); got != "EBA" {
+		t.Errorf("high, normal, low: %q", got)
+	}
+
+	replaceSearch(t, db, cat.ids['A'], pub, store.SearchDoc{Locale: "en", High: "solar panels", Text: "an article about energy"})
+	replaceSearch(t, db, cat.ids['B'], pub, store.SearchDoc{Locale: "en", Text: "energy from solar panels and solar heat, solar roofs and solar farms"})
+	if got := rank("solar"); got != "AB" {
+		t.Errorf("a title match outranks repeated body matches: %q", got)
+	}
+	if got := rank("sol pan"); got != "AB" {
+		t.Errorf("prefixes: %q", got)
+	}
+	if got := sortString(rank("energy")); got != "AB" {
+		t.Errorf("every tier is searched: %q", got)
+	}
+
+	replaceSearch(t, db, cat.ids['A'], pub, store.SearchDoc{Locale: "en", Text: "solar panels"})
+	replaceSearch(t, db, cat.ids['B'], pub, store.SearchDoc{Locale: "en", High: "solar panels"})
+	if got := rank("solar"); got != "BA" {
+		t.Errorf("a changed weight changes the order: %q", got)
+	}
+
+	replaceSearch(t, db, cat.ids['A'], pub, store.SearchDoc{Locale: "en", High: "zebra title", Text: "a grazing zebra"}, store.SearchDoc{Locale: "en", Low: "zebra note"})
+	res := cat.run(t, db, store.Query{Type: "article", Locale: "en", Search: "zebra", Highlight: true})
+	var snippet string
+	for _, it := range res.Items {
+		if cat.label[it.ID] == 'A' {
+			snippet = it.Snippet
+		}
+	}
+	if !strings.Contains(snippet, "\x02zebra\x03") {
+		t.Errorf("snippet over tiers: %q", snippet)
+	}
+
+	replaceSearch(t, db, cat.ids['A'], pub)
+	replaceSearch(t, db, cat.ids['B'], pub)
+	if got := rank("solar"); got != "" {
+		t.Errorf("rows removed: %q", got)
+	}
+}
+
 func testSearchFallback(t *testing.T, db store.DB) {
 	cat := seedCatalog(t, db)
 	ctx := context.Background()
