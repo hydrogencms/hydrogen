@@ -6,6 +6,11 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Site templates: `itemsPage` (the items of a listing with `.HasMore` and, on request, `.Total`) and `itemBlock`
+  (one block of an item by id, rendered with `blocks`), with `View.ItemsPage` and `View.FindBlock` for Go components.
+
 ## [0.3.0] - 2026-10-22
 
 ### Added
