@@ -145,8 +145,8 @@ func lookupLocate(ctx context.Context, q store.SQL, site, p string, langs []stri
 CASE WHEN n.kind = 'mount' THEN (SELECT l.name FROM item_version_locale l
     WHERE l.item_id = r.item_id AND l.version = i.published_version AND (l.locale = r.locale OR l.locale = i.main_locale)
     ORDER BY CASE WHEN l.locale = r.locale THEN 0 ELSE 1 END LIMIT 1) END,
-c.site, c.locale, c.path
-FROM route r
+c.site, c.locale, COALESCE(c.target, c.path)
+FROM `+routeSource+` r
 LEFT JOIN page_node n ON n.id = r.node_id
 LEFT JOIN item i ON i.id = r.item_id
 LEFT JOIN route c ON c.item_id = r.item_id AND c.state = 'current'
@@ -161,6 +161,12 @@ WHERE r.site = ? AND r.path = ? AND r.locale IN (`+placeholders(len(locales))+")
 				return err
 			}
 			hit := hits[loc]
+			if hit != nil && (state == stateForced) != (hit.State == stateForced) {
+				if state != stateForced {
+					return nil
+				}
+				hit = nil
+			}
 			if hit == nil {
 				h.Site, h.Locale, h.Path, h.State = site, loc, p, state
 				if target != nil {
@@ -201,6 +207,9 @@ func (s *service) hitResolution(ctx context.Context, q store.SQL, w *webChannel,
 	case StateCurrent, StateAlias:
 		if h.Node == nil || h.Item == nil || !h.hasNode || !allowed {
 			return notFoundResolution(), nil
+		}
+		if h.nodeKind == KindMount && h.Target != "" {
+			return mountRedirect(h.routeRow), nil
 		}
 		res := &Resolution{Kind: ResolvedPage, Item: h.Item, Node: h.Node, Path: h.Path, Status: 200}
 		if cur, ok := h.cur[w.site][l]; ok && h.State == StateAlias {
@@ -255,7 +264,7 @@ type itemRoutes map[string]map[string]string
 func (s *service) currentRoutes(ctx context.Context, q store.SQL, item ids.UUID) (itemRoutes, string, error) {
 	out := itemRoutes{}
 	var typ string
-	err := each(ctx, q, `SELECT r.site, r.locale, r.path, i.type FROM route r JOIN item i ON i.id = r.item_id
+	err := each(ctx, q, `SELECT r.site, r.locale, COALESCE(r.target, r.path), i.type FROM route r JOIN item i ON i.id = r.item_id
 WHERE r.item_id = ? AND r.state = 'current'`, []any{item},
 		func(r store.Rows) error {
 			var site, locale, path string
@@ -296,7 +305,7 @@ func alternates(cur *webChannel, peers []*webChannel, r itemRoutes, typ, shown, 
 			continue
 		}
 		l := p.ch.Languages[0]
-		if path, ok := r[p.site][l]; ok && !taken[l] {
+		if path, ok := r[p.site][l]; ok && !taken[l] && strings.HasPrefix(path, "/") {
 			taken[l] = true
 			out = append(out, Alternate{Channel: p.ch.Name, Locale: l, URL: p.abs(path)})
 		}
@@ -309,7 +318,7 @@ func alternates(cur *webChannel, peers []*webChannel, r itemRoutes, typ, shown, 
 func canonicalURL(cur *webChannel, peers []*webChannel, r itemRoutes, typ, locale, curPath string) string {
 	own := func(p *webChannel) (string, bool) {
 		path, ok := r[p.site][locale]
-		return path, ok && p.ch.AllowsCollection(typ) && len(p.ch.Languages) > 0 && p.ch.Languages[0] == locale
+		return path, ok && strings.HasPrefix(path, "/") && p.ch.AllowsCollection(typ) && len(p.ch.Languages) > 0 && p.ch.Languages[0] == locale
 	}
 	if path, ok := own(cur); ok {
 		return cur.abs(path)
@@ -328,7 +337,7 @@ func (s *service) itemURL(ctx context.Context, ch *channel.Channel, item ids.UUI
 	}
 	w := s.web.of(ch)
 	var path, typ string
-	err := s.db.Read().QueryRow(ctx, `SELECT r.path, i.type FROM route r JOIN item i ON i.id = r.item_id
+	err := s.db.Read().QueryRow(ctx, `SELECT COALESCE(r.target, r.path), i.type FROM route r JOIN item i ON i.id = r.item_id
 WHERE r.site = ? AND r.locale = ? AND r.item_id = ? AND r.state = 'current'`, w.site, locale, item).Scan(&path, &typ)
 	if isNoRows(err) || (err == nil && !ch.AllowsCollection(typ)) {
 		return "", false, nil

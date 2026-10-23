@@ -300,6 +300,18 @@ func TestPagesDeliveryRedirects(t *testing.T) {
 			return field(j, "located", "kind") == "redirect"
 		})
 		deq(t, "manual location", field(j, "located", "resolution", "location"), "/en/media")
+
+		// A forced redirect wins over the root page.
+		_, j = e.getJSON(routePath("https://a.test/en", "web_en"), 200)
+		deq(t, "root before", field(j, "located", "kind"), "page")
+		e.create("redirect", "", "en", `{"from":"/","to":"/media","force":true,"statusCode":"302"}`, true)
+		e.drain()
+		eventually(t, "the forced root redirect", func() bool {
+			_, j = e.getJSON(routePath("https://a.test/en", "web_en"), 200)
+			return field(j, "located", "kind") == "redirect"
+		})
+		deq(t, "forced status", field(j, "located", "resolution", "status"), float64(302))
+		deq(t, "forced location", field(j, "located", "resolution", "location"), "/en/media")
 	})
 }
 

@@ -1,8 +1,10 @@
 package pages
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -70,7 +72,7 @@ CASE WHEN n.kind = 'mount' THEN (SELECT l.name FROM item i JOIN item_version_loc
     ON l.item_id = i.id AND l.version = i.published_version
     WHERE i.id = r.item_id AND (l.locale = ? OR l.locale = i.main_locale)
     ORDER BY CASE WHEN l.locale = ? THEN 0 ELSE 1 END LIMIT 1) END
-FROM route r LEFT JOIN page_node n ON n.id = r.node_id
+FROM `+routeSource+` r LEFT JOIN page_node n ON n.id = r.node_id
 WHERE r.site = ? AND r.path = ? AND (r.locale = ? OR r.locale = '')`,
 		[]any{locale, locale, site, p, locale}, func(r store.Rows) error {
 			var h routeHit
@@ -111,6 +113,9 @@ func currentPathOf(ctx context.Context, q store.SQL, site, locale string, item i
 func (s *service) resolveServed(ctx context.Context, q store.SQL, site, locale string, h *routeHit) (*Resolution, error) {
 	if h.Node == nil || h.Item == nil || !h.hasNode {
 		return notFoundResolution(), nil
+	}
+	if h.nodeKind == KindMount && h.Target != "" {
+		return mountRedirect(h.routeRow), nil
 	}
 	res := &Resolution{Kind: ResolvedPage, Item: h.Item, Node: h.Node, Path: h.Path, Status: 200}
 	if h.State == StateAlias {
@@ -235,6 +240,11 @@ func (s *service) resolveManual(ctx context.Context, q store.SQL, site, locale s
 	return res, nil
 }
 
+// mountRedirect is the answer for a mounted item that redirects (its route row carries the target).
+func mountRedirect(r routeRow) *Resolution {
+	return &Resolution{Kind: ResolvedRedirect, Item: r.Item, Node: r.Node, Status: statusOr(r.Status), Location: r.Target}
+}
+
 func statusOr(s int) int {
 	if s == 0 {
 		return 301
@@ -244,25 +254,50 @@ func statusOr(s int) int {
 
 func (s *service) paths(ctx context.Context, item ids.UUID) ([]Route, error) {
 	out := []Route{}
-	err := each(ctx, s.db.Read(), "SELECT "+routeCols+" FROM route WHERE item_id = ? ORDER BY site, locale, path", []any{item},
+	err := each(ctx, s.db.Read(), "SELECT "+routeCols+" FROM route WHERE item_id = ?", []any{item},
 		func(r store.Rows) error {
 			x, err := scanRoute(r)
 			out = append(out, Route{Site: x.Site, Locale: x.Locale, Path: x.Path, State: x.State, Item: x.Item, Node: x.Node,
 				Target: x.Target, Status: x.Status})
 			return err
 		})
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	if out, err = s.withForced(ctx, out, "WHERE item_id = ?", item); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
-// redirectRoutes lists the routes that only redirect: former paths of moved items and manual redirects.
+// redirectRoutes lists the routes that only redirect: former paths of moved items, manual redirects and
+// forced redirects (manual, with Force).
 func (s *service) redirectRoutes(ctx context.Context) ([]Route, error) {
 	out := []Route{}
-	err := each(ctx, s.db.Read(), "SELECT "+routeCols+" FROM route WHERE state IN ('redirect', 'manual') ORDER BY site, locale, path", nil,
+	err := each(ctx, s.db.Read(), "SELECT "+routeCols+" FROM route WHERE state IN ('redirect', 'manual')", nil,
 		func(r store.Rows) error {
 			x, err := scanRoute(r)
 			out = append(out, Route{Site: x.Site, Locale: x.Locale, Path: x.Path, State: x.State, Item: x.Item, Node: x.Node,
 				Target: x.Target, Status: x.Status})
 			return err
 		})
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	return s.withForced(ctx, out, "")
+}
+
+// withForced adds the forced redirects matching the clause to routes and orders the result by site, locale, path.
+func (s *service) withForced(ctx context.Context, routes []Route, where string, args ...any) ([]Route, error) {
+	err := each(ctx, s.db.Read(), "SELECT site, locale, path, item_id, target, status FROM route_force "+where, args,
+		func(r store.Rows) error {
+			x := Route{State: StateManual, Force: true}
+			err := r.Scan(&x.Site, &x.Locale, &x.Path, &x.Item, &x.Target, &x.Status)
+			routes = append(routes, x)
+			return err
+		})
+	slices.SortFunc(routes, func(a, b Route) int {
+		return cmp.Or(strings.Compare(a.Site, b.Site), strings.Compare(a.Locale, b.Locale), strings.Compare(a.Path, b.Path))
+	})
+	return routes, err
 }

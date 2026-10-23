@@ -262,6 +262,8 @@ type membership struct {
 	Item   ids.UUID
 	Locale string
 	Rel    string
+	// Redirect is the target the item answers instead of itself ("" for none).
+	Redirect string
 }
 
 // mountWants lists the routes of mounted items. An item matching several mounts of a site gets one current
@@ -273,9 +275,10 @@ func (g *graph) mountWants(ms []membership, locales []string) []want {
 		locale string
 	}
 	type cand struct {
-		node  *gnode
-		path  string
-		order string
+		node     *gnode
+		path     string
+		order    string
+		redirect string
 	}
 	groups := map[group][]cand{}
 	for _, m := range ms {
@@ -292,7 +295,7 @@ func (g *graph) mountWants(ms []membership, locales []string) []want {
 			continue
 		}
 		k := group{n.Site, m.Item, m.Locale}
-		groups[k] = append(groups[k], cand{n, p, g.treeKey(m.Node) + "|" + m.Node.String()})
+		groups[k] = append(groups[k], cand{n, p, g.treeKey(m.Node) + "|" + m.Node.String(), m.Redirect})
 	}
 	keys := make([]group, 0, len(groups))
 	for k := range groups {
@@ -318,8 +321,12 @@ func (g *graph) mountWants(ms []membership, locales []string) []want {
 				state = StateCurrent
 			}
 			item, node := k.item, c.node.ID
-			out = append(out, want{routeRow: routeRow{routeKey: routeKey{k.site, k.locale, c.path},
-				State: state, Item: &item, Node: &node}})
+			w := want{routeRow: routeRow{routeKey: routeKey{k.site, k.locale, c.path},
+				State: state, Item: &item, Node: &node}}
+			if c.redirect != "" {
+				w.Target, w.Status = c.redirect, mountRedirectStatus(c.node.mount)
+			}
+			out = append(out, w)
 		}
 	}
 	return out

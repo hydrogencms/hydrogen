@@ -495,7 +495,7 @@ func (c *checker) requestItem(srv *server, ch *channel.Channel, rt *route, it *I
 	label := fmt.Sprintf("%s %s (%s)", it.Type, it.ID, it.Name)
 	path := ""
 	if it.URL != "" {
-		if u, err := url.Parse(it.URL); err == nil {
+		if u, err := url.Parse(it.URL); err == nil && !srv.foreign(u) {
 			path = u.Path
 		}
 	} else if rt != nil {

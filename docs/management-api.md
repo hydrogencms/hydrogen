@@ -119,13 +119,24 @@ of a collection, or a `link`). Reads need `pages.read`, writes `pages.edit`; a m
 | --- | --- | --- | --- |
 | `GET /pages/sites` | `pages.read` | | The sites the caller can see: `{items: [name]}`. |
 | `GET /pages/sites/{site}/tree` | `pages.read` | `locale`, `parent` (node id), `depth` (1 to 10, default 1) | The children of `parent`, or of the root with `root` in the answer. |
-| `POST /pages/sites/{site}/nodes` | `pages.edit` | `kind` `page`: `item`, `parent`, `after`. `mount`: `parent`, `segment`, `collection`, `route`, `filter`, `canonical`, `label`, `after`. `link`: `parent`, `label`, one of `item`, `node` or `url`, `after` | Add a node; `201` with the node. |
+| `POST /pages/sites/{site}/nodes` | `pages.edit` | `kind` `page`: `item`, `parent`, `after`. `mount`: `parent`, `segment`, `collection`, `route`, `filter`, `canonical`, `label`, `redirectField`, `redirectStatus`, `after`. `link`: `parent`, `label`, one of `item`, `node` or `url`, `after` | Add a node; `201` with the node. |
 | `GET /pages/nodes/{id}` | `pages.read` | | One node. |
 | `PATCH /pages/nodes/{id}` | `pages.edit` | `parent`, `after` (a sibling id, or `null` for first), `hidden`, `mount` or `link` (a new spec) | Move, reorder or update a node. |
 | `DELETE /pages/nodes/{id}` | `pages.edit` | | Delete a mount or link node (`204`). |
 | `GET /pages/sites/{site}/resolve` | `pages.read` | `path` (required), `locale` | What a path resolves to: a page, a redirect or nothing. |
 | `GET /pages/items/{id}/paths` | `pages.read` | | Every route of an item, with its state. |
 | `GET /pages/locate` | `pages.read` | `url` (required), `header.<Name>` to simulate request headers | Find the site, locale and page a URL belongs to through the web channels. |
+
+A mount's `redirectField` names a top-level `string` or `url` field of its collection. An item whose value there is an
+absolute http(s) URL or a site path starting with `/` answers a redirect to it (`redirectStatus` 301, 302, 307 or 308;
+default 302) instead of showing itself, and `url` and `links` in delivery point at the target. Items with an empty or
+invalid value show themselves; the option applies when the item is published and when the mount changes.
+
+Manual redirects are `redirect` items (`from`, `to`, `statusCode`, `site`, `forLocale`, `force`). A redirect is refused
+when a page or mounted item holds `from`, unless `force` is set: a forced redirect is answered before any page, mount or
+ordinary redirect at that path (the page keeps its own route, so links to it still point there; anyone requesting the
+path is redirected). One forced redirect per site, locale and path. `from` may be `/`, the only way to redirect a
+site's root while the tree has a root page. Routes of forced redirects show as `manual` with `force: true`.
 
 The routes are in the OpenAPI document with their schemas.
 

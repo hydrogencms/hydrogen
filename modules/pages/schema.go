@@ -79,6 +79,8 @@ func (m *module) Schema(b *schema.Builder) error {
 		{"statusCode", schema.Spec{"type": "enum", "values": []any{"301", "302", "307", "308"}, "default": "301"}},
 		{"site", schema.Spec{"type": "string", "default": m.cfg.Sites[0]}},
 		{"forLocale", schema.Spec{"type": "string", "description": "Locale code; empty: every locale"}},
+		{"force", schema.Spec{"type": "boolean", "default": false,
+			"description": "Wins over a page or mounted item at this path, which is then unreachable there. The only way to redirect the site root (/)."}},
 	} {
 		if err := t.AddField(f.name, f.spec); err != nil {
 			return err

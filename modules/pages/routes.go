@@ -44,9 +44,16 @@ func sameOwner(a, b *ids.UUID) bool {
 	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
 }
 
-// rank orders what may claim a path: current and alias routes beat manual redirects, which beat history.
+// routeSource is what a lookup reads: the route table plus the forced redirects (state forced).
+const routeSource = `(SELECT site, locale, path, state, item_id, node_id, target, status FROM route
+UNION ALL SELECT site, locale, path, 'forced', item_id, NULL, target, status FROM route_force)`
+
+// rank orders what may claim a path: forced redirects beat current and alias routes, which beat manual
+// redirects, which beat history.
 func rank(state string) int {
 	switch state {
+	case stateForced:
+		return 4
 	case StateCurrent, StateAlias:
 		return 3
 	case StateManual:
@@ -181,7 +188,8 @@ func diffRoutes(ctx context.Context, q store.SQL, existing map[routeKey]routeRow
 	wanted := make(map[routeKey]bool, len(deduped))
 	for _, w := range deduped {
 		wanted[w.routeKey] = true
-		if e, ok := existing[w.routeKey]; ok && e.State == w.State && sameOwner(e.Item, w.Item) && sameOwner(e.Node, w.Node) {
+		if e, ok := existing[w.routeKey]; ok && e.State == w.State && sameOwner(e.Item, w.Item) && sameOwner(e.Node, w.Node) &&
+			e.Target == w.Target && e.Status == w.Status {
 			continue
 		}
 		changed = append(changed, w)
@@ -271,7 +279,11 @@ func (s *service) apply(ctx context.Context, q store.SQL, plan *routePlan, stric
 	}
 	rows := make([][]any, len(plan.upsert))
 	for i, w := range plan.upsert {
-		rows[i] = []any{w.Site, w.Locale, w.Path, w.State, w.Item, w.Node, nil, 0, now}
+		var target any
+		if w.Target != "" {
+			target = w.Target
+		}
+		rows[i] = []any{w.Site, w.Locale, w.Path, w.State, w.Item, w.Node, target, w.Status, now}
 	}
 	return s.upsertRoutes(ctx, q, rows)
 }

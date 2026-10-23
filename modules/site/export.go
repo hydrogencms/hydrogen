@@ -335,7 +335,9 @@ func (e *Exporter) Targets(ctx context.Context, channelName string) ([]Target, e
 // itemPath is the URL path of a listed item: the pages module's, else its collection route's.
 func (s *server) itemPath(ch *channel.Channel, rt *route, it *Item) string {
 	if it.URL != "" {
-		if u, err := url.Parse(it.URL); err == nil && u.EscapedPath() != "" {
+		if u, err := url.Parse(it.URL); err == nil && s.foreign(u) {
+			return ""
+		} else if err == nil && u.EscapedPath() != "" {
 			return u.EscapedPath()
 		}
 	}

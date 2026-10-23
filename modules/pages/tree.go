@@ -432,7 +432,7 @@ func (s *service) linkTargets(ctx context.Context, q store.SQL, g *graph, locale
 	itemPath := map[ids.UUID]string{}
 	err := chunks(itemIDs, func(part []ids.UUID) error {
 		ph, args := inArgs(part, locale)
-		return each(ctx, q, "SELECT item_id, path FROM route WHERE state = 'current' AND locale = ? AND item_id IN "+ph+
+		return each(ctx, q, "SELECT item_id, COALESCE(target, path) FROM route WHERE state = 'current' AND locale = ? AND item_id IN "+ph+
 			" ORDER BY site, path", args, func(r store.Rows) error {
 			var id ids.UUID
 			var p string

@@ -55,6 +55,7 @@ types:
       author:      { type: ref, to: [person], on_delete: nullify, index: true }
       related:     { type: list, of: { type: ref, to: [article], on_delete: nullify } }
       tags:        { type: list, of: { type: string }, index: true }
+      externalUrl: { type: url }
 `
 
 // exportSite is what a scenario knows about the site it built.
@@ -95,7 +96,7 @@ func buildExportSite(t *testing.T, e *pagesEnv) exportSite {
 	add(bio, true)
 	careers, careersN := e.placed("section", "Careers", &root, &pressN)
 	add(careers, true)
-	e.mount(pressN, pages.MountSpec{Segment: "news", Collection: "article", Route: "{slug}"})
+	e.mount(pressN, pages.MountSpec{Segment: "news", Collection: "article", Route: "{slug}", RedirectField: "externalUrl", RedirectStatus: 307})
 	e.mount(careersN, pages.MountSpec{Segment: "tech", Collection: "article", Route: "{publishDate:yyyy}/{slug}", Filter: map[string]any{"category": "tech"}})
 
 	// Slug change and a move leave history redirects behind.
@@ -105,6 +106,14 @@ func buildExportSite(t *testing.T, e *pagesEnv) exportSite {
 	if id, err := e.redirect(`{"from":"/old-press","to":"/newsroom"}`); err != nil {
 		t.Fatal(err)
 	} else {
+		add(id, true)
+	}
+
+	// Forced redirects: over the root page for one locale, over a page for all; both are rows of route_force.
+	for _, js := range []string{`{"from":"/","to":"/newsroom","force":true,"statusCode":"302","forLocale":"de"}`,
+		`{"from":"/careers","to":"/newsroom","force":true}`} {
+		id := e.create("redirect", "en", js)
+		e.mustPublish(id)
 		add(id, true)
 	}
 
@@ -120,6 +129,9 @@ func buildExportSite(t *testing.T, e *pagesEnv) exportSite {
 		js := fmt.Sprintf(`{"title":"Article %d about %s","summary":"Summary number %d with ünïcode & <markup>","category":%q,"rating":%d,
 			"featured":%t,"author":%q,"tags":["t%d","common"],"publishDate":"2026-0%d-1%dT10:00:00Z"}`,
 			i, cat, i, cat, i%6, i%2 == 0, people[i%2], i%4, 1+i%9, i%10)
+		if i == 4 {
+			js = strings.Replace(js, `"tags"`, `"externalUrl":"https://example.com/four","tags"`, 1)
+		}
 		if i >= 2 {
 			js = strings.Replace(js, `"tags"`, fmt.Sprintf(`"related":[%q],"tags"`, arts[i-2]), 1)
 		}

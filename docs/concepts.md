@@ -89,6 +89,11 @@ which site and which host and path prefix it serves (`match`), and the delivery 
 this URL?" with a page, a redirect or a 404. Without the module you route in the frontend; collections and `links`
 patterns still give items URLs.
 
+Redirects are items of the built-in `redirect` type. An ordinary redirect never takes a path a page or mounted item
+holds; tick **force** and it wins instead (the page stays in the tree but is unreachable at that path), which is also how
+the site root `/` is redirected. A mount can name a field (`redirectField`) whose value, an absolute URL or a site path,
+makes that item answer a redirect, and links to it then point there.
+
 ## Blocks
 
 A **block** is a typed piece of a page: a hero, a card grid, a quote. Its props are fields, and its **slots** hold child
