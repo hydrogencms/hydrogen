@@ -6,6 +6,11 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Choose item ids on create: `content.CreateInput.ID`, `id` in the body of `POST /collections/{type}/items` and
+  `client.CreateInput.ID`. Any non-nil UUID is accepted; an id already in use, trashed items included, answers 409
+  `duplicate_id` (`content.ErrDuplicateID`).
 ### Fixed
 
 - Admin: with collaboration on, a rich text value the editor cannot load (a node or mark its schema lacks) was seeded

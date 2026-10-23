@@ -48,7 +48,7 @@ Every error is `{"error": {"code", "message", …}}`:
 | 401 | `unauthorized` | Missing or invalid credentials. |
 | 403 | `forbidden`, `csrf` | No grant allows it (the message names the policy), or the CSRF header is missing or wrong. |
 | 404 | `not_found` | No such item, type, locale or route. |
-| 409 | `conflict`, `referenced`, `duplicate_key` | A publish conflict, an item still referenced (the body lists `referrers`), or a key in use. |
+| 409 | `conflict`, `referenced`, `duplicate_key`, `duplicate_id` | A publish conflict, an item still referenced (the body lists `referrers`), a key in use, or an id in use (trashed items keep theirs). |
 | 412 | `precondition_failed` | The `If-Match` check failed. |
 | 422 | `invalid` | Schema validation failed. `fields` lists `{path, code, message}`, and `locale` the locale part. |
 | 429 | `throttled` | Too many attempts; see `Retry-After`. |
@@ -63,7 +63,7 @@ Content of a type is reached through the collection, and then by id.
 | `GET /types`, `GET /types/{type}` | any | Compiled types, and one type with its JSON Schema. |
 | `GET /blocks` | any | Block types and token sets. |
 | `GET /collections/{type}/items` | `content.read` | List. Params: `locale`, `status` (`any`, `published`, `draft`), `q`, `sort`, `where[field][op]`, `fields`, `limit`, `offset`. |
-| `POST /collections/{type}/items` | `content.create` | Create a draft: `{"key"?, "locale"?, "alwaysAvailable"?, "fields"}`. |
+| `POST /collections/{type}/items` | `content.create` | Create a draft: `{"id"?, "key"?, "locale"?, "alwaysAvailable"?, "fields"}`. `id` (any non-nil UUID) chooses the new item's id, e.g. to keep ids stable across re-imports; without it one is generated. |
 | `GET /collections/{type}/facets` | `content.read` | Counts per value of up to five indexed text fields. |
 | `GET /items/{id}` | `content.read` | Read the working view. `locale`, `draft`, `trashed`. |
 | `PATCH /items/{id}` | `content.edit` | Merge-patch the draft: `{"fields", "locale"?, "key"?}`. |
