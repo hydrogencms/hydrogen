@@ -67,6 +67,9 @@ All notable changes to Hydrogen are documented here. The format follows
 - Channel option `root_reserved` (pages module): root-level paths (`/legacy`, `/ajax/*`) that a channel matched by a
   prefix also serves, so its custom routes and `GET /route` answer for them. `config:check` rejects a root path that
   another channel claims or that falls under another channel's prefix.
+- Site templates: `get` (a nil-safe dot path through maps, lists, structs and pointers), `append`, `ternary` and
+  `isLast`; a symbolic link to a directory under `site/` is followed (links back to a directory being walked are
+  skipped), also by the dev reload; a section on scripts and styles in `docs/site.md`.
 
 ### Changed
 
@@ -77,6 +80,8 @@ All notable changes to Hydrogen are documented here. The format follows
 - Pages: placing a page, mount or link without `after` now puts it last among its siblings (it went first, so nodes
   created in order came out reversed). `"after": null` (Go: `First: true`) still puts it first. Moving a node is
   unchanged: without `after` it goes first.
+- Site templates: a template file loses one trailing newline when parsed, so value partials no longer end in a line
+  break.
 
 ### Fixed
 

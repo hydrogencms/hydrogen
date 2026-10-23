@@ -84,12 +84,13 @@ func loadEngine(src *sources, strict bool, prev *engine) (*engine, error) {
 		}
 		e.names = append(e.names, f.name)
 		e.sources[f.name] = f.where
+		text := trimNewline(string(b))
 		if isPageTemplate(f.name) {
-			pageFiles = append(pageFiles, pageFile{f.name, string(b)})
+			pageFiles = append(pageFiles, pageFile{f.name, text})
 			continue
 		}
 		// A failed Parse adds nothing to the set but an empty entry for the name, which the next Parse replaces.
-		if e.parse(e.base, f.name, string(b), prev) {
+		if e.parse(e.base, f.name, text, prev) {
 			continue
 		}
 		if _, err := e.base.New(f.name).Parse("{{" + parseErrorFunc + " " + strconv.Quote(f.name) + "}}"); err != nil {
@@ -123,6 +124,13 @@ func loadEngine(src *sources, strict bool, prev *engine) (*engine, error) {
 	}
 	e.sig = dirSignature(src.dir)
 	return e, e.parseErr()
+}
+
+// trimNewline drops the one newline an editor puts at the end of a file, so a partial that yields a value
+// (an URL inside href="…") does not carry it.
+func trimNewline(s string) string {
+	s = strings.TrimSuffix(s, "\n")
+	return strings.TrimSuffix(s, "\r")
 }
 
 // parse adds a file to a set; when it does not parse, it records the error and falls back on prev's text.

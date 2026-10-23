@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -38,6 +39,7 @@ func builtinFuncs() template.FuncMap {
 		"join":      joinFn,
 		"replace":   func(old, repl string, s any) string { return strings.ReplaceAll(str(s), old, repl) },
 		"truncate":  truncateFn, "date": dateFn, "json": jsonFn, "first": firstFn, "last": lastFn,
+		"get": getFn, "append": appendFn, "ternary": ternaryFn, "isLast": isLastFn,
 	}
 }
 
@@ -306,6 +308,105 @@ func lastFn(v any) any {
 		return l[len(l)-1]
 	}
 	return nil
+}
+
+// getFn reads a dot path from maps, slices (numeric steps), structs (exported field or json name) and pointers:
+// get "seo.image.alt" .Fields. Every step is nil-safe: a missing key, a bad index or a nil value gives nil. The
+// subject is the last argument; the path may also come last when the subject is not a string.
+func getFn(a, b any) any {
+	path, v := "", b
+	if p, ok := a.(string); ok {
+		path = p
+	} else if p, ok := b.(string); ok {
+		path, v = p, a
+	}
+	if path == "" {
+		return v
+	}
+	for _, step := range strings.Split(path, ".") {
+		if v = getStep(v, step); v == nil {
+			return nil
+		}
+	}
+	return v
+}
+
+func getStep(v any, step string) any {
+	rv := reflect.ValueOf(v)
+	for rv.IsValid() && (rv.Kind() == reflect.Pointer || rv.Kind() == reflect.Interface) {
+		if rv.IsNil() {
+			return nil
+		}
+		rv = rv.Elem()
+	}
+	switch rv.Kind() {
+	case reflect.Map:
+		if rv.Type().Key().Kind() != reflect.String {
+			return nil
+		}
+		e := rv.MapIndex(reflect.ValueOf(step).Convert(rv.Type().Key()))
+		if !e.IsValid() {
+			return nil
+		}
+		return nilable(e)
+	case reflect.Slice, reflect.Array:
+		i, err := strconv.Atoi(step)
+		if err != nil || i < 0 || i >= rv.Len() {
+			return nil
+		}
+		return nilable(rv.Index(i))
+	case reflect.Struct:
+		t := rv.Type()
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if f.IsExported() && (f.Name == step || name == step) {
+				return nilable(rv.Field(i))
+			}
+		}
+	}
+	return nil
+}
+
+// nilable returns the value as an any, or nil for a nil pointer, map, slice or interface.
+func nilable(v reflect.Value) any {
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice:
+		if v.IsNil() {
+			return nil
+		}
+	}
+	return v.Interface()
+}
+
+// appendFn returns a new list: append x list, or append x y list for several elements.
+func appendFn(args ...any) ([]any, error) {
+	if len(args) < 2 {
+		return nil, errors.New("append: expects elements and the list")
+	}
+	l, ok := listOf(args[len(args)-1])
+	if !ok && args[len(args)-1] != nil {
+		return nil, fmt.Errorf("append: %T is not a list", args[len(args)-1])
+	}
+	return append(l, args[:len(args)-1]...), nil
+}
+
+// ternaryFn is ternary a b cond: a when cond is not empty, else b.
+func ternaryFn(a, b, cond any) any {
+	if isEmpty(cond) {
+		return b
+	}
+	return a
+}
+
+// isLastFn tells whether index i is the end of the list, for range: isLast $i $list.
+func isLastFn(i int, v any) bool {
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Slice, reflect.Array:
+		return i == rv.Len()-1
+	}
+	return false
 }
 
 // checkFuncs validates the names and shapes of project template functions.
