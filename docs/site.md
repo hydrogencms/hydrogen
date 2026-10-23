@@ -67,8 +67,35 @@ Every template has these generic functions. They are pure and never mark a strin
 | `date layout v` | formats a `time.Time` or a string (RFC 3339 or `2006-01-02`) with a Go layout; "" when `v` is not a date |
 | `json v` | the JSON text, for `data-*` attributes (inside `<script>` pass the value itself: `html/template` already encodes it as JSON) |
 | `first list`, `last list` | the element, or nil |
+| `get "seo.image.alt" v` | a dot path through maps, lists (`items.0.name`), structs (`Fields.title`; the Go name or the JSON name) and pointers, nil at the first step that is missing: no error for an absent key, an index out of range or a nil value. `get .Fields "a.b"` works too (the path is the string, the subject the other argument) |
+| `append x list`, `append x y list` | a new list with the elements added at the end (the list is not changed; nil is an empty list) |
+| `ternary a b cond` | `a` when `cond` is not empty (same test as `default`), else `b`: `{{.Active \| ternary "on" "off"}}` |
+| `isLast $i $list` | true for the last index of a range: `{{range $i, $e := .List}}{{$e}}{{if not (isLast $i $.List)}}, {{end}}{{end}}` |
 
-`len`, `index`, `slice`, `eq`, `printf` and the other functions of Go templates are available as usual.
+`len`, `index`, `slice`, `eq`, `printf` and the other functions of Go templates are available as usual. `index` fails
+on an absent nested value (`index of untyped nil`); `get` does not.
+
+An absent key of a map (`.Fields.subtitle`, a block's `.Props.cta`) prints nothing and is false in `{{if}}` when
+serving, but `site:check` reports it: it renders against data generated from the schema, where an absent key is a
+misspelled field. For data the schema does not describe (a `dict` you build, a custom route's `.Data`, anything
+optional or nested) read with `get`, which gives nil in both modes. Template files
+lose one trailing newline when they are parsed, so a partial that yields a value (`href="{{partial "x.html" .}}"`)
+does not end in a line break.
+
+### Scripts and styles in templates
+
+`html/template` escapes by context, so a few things need a recipe:
+
+- Data for scripts: put it in a data block and parse it in the script, or in a `data-*` attribute.
+  `<script type="application/json" id="page-data">{{.Fields.map}}</script>` writes the value as JSON (pass the value
+  itself; `json` there would encode it twice), and `<div data-config="{{json .Fields.map}}">` suits attributes.
+  `JSON.parse(document.getElementById("page-data").textContent)` reads it.
+- Do not put actions inside a JavaScript template literal (backticks): `html/template` does not treat them as code
+  (Go versions refuse them, or insert the value without JavaScript escaping). Build the string in the script from the data above, or concatenate quoted
+  values: `var url = "{{.Fields.url}}"` is escaped as a JavaScript string.
+- Styles: prefer classes, and custom properties for values: `<div class="hero" style="--accent: {{.Props.color}}">`
+  and `.hero { color: var(--accent) }`. A value that is not a plain CSS token (a colour, number, length or
+  identifier) is replaced by `ZgotmplZ`, as are values with characters that could start a script or load a URL. Content is data, not CSS: choose among classes or design tokens in the template instead of printing styles.
 
 Projects add their own with `site.Funcs`, available when templates are parsed and rendered, including in themes:
 

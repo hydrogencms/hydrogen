@@ -6,6 +6,17 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Site templates: `get` (a nil-safe dot path through maps, lists, structs and pointers), `append`, `ternary` and
+  `isLast`; a symbolic link to a directory under `site/` is followed (links back to a directory being walked are
+  skipped), also by the dev reload; a section on scripts and styles in `docs/site.md`.
+
+### Changed
+
+- Site templates: a template file loses one trailing newline when parsed, so value partials no longer end in a line
+  break.
+
 ## [0.3.0] - 2026-10-22
 
 ### Added
