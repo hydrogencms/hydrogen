@@ -135,18 +135,21 @@ type Route struct {
 type Place struct {
 	Item   ids.UUID
 	Parent *ids.UUID
-	After  *ids.UUID // sibling to follow; nil = first
+	After  *ids.UUID // sibling to follow; nil = last, or first with First
+	First  bool      // put the node first among its siblings (After must be nil)
 }
 
 type Mount struct {
 	Parent ids.UUID
-	After  *ids.UUID
+	After  *ids.UUID // as Place.After
+	First  bool
 	Spec   MountSpec
 }
 
 type Link struct {
 	Parent ids.UUID
-	After  *ids.UUID
+	After  *ids.UUID // as Place.After
+	First  bool
 	Spec   LinkSpec
 }
 

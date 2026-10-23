@@ -1650,36 +1650,66 @@ export interface components {
             fields?: {
                 [key: string]: unknown;
             };
+            /**
+             * Format: uuid
+             * @description The new item's id (any non-nil UUID); generated when absent. 409 duplicate_id when taken, trashed items included.
+             */
+            id?: string;
             key?: string;
             locale?: string;
         };
         Create_article: {
             alwaysAvailable?: boolean;
             fields?: components["schemas"]["Fields_article"];
+            /**
+             * Format: uuid
+             * @description The new item's id (any non-nil UUID); generated when absent. 409 duplicate_id when taken, trashed items included.
+             */
+            id?: string;
             key?: string;
             locale?: string;
         };
         Create_landing: {
             alwaysAvailable?: boolean;
             fields?: components["schemas"]["Fields_landing"];
+            /**
+             * Format: uuid
+             * @description The new item's id (any non-nil UUID); generated when absent. 409 duplicate_id when taken, trashed items included.
+             */
+            id?: string;
             key?: string;
             locale?: string;
         };
         Create_page: {
             alwaysAvailable?: boolean;
             fields?: components["schemas"]["Fields_page"];
+            /**
+             * Format: uuid
+             * @description The new item's id (any non-nil UUID); generated when absent. 409 duplicate_id when taken, trashed items included.
+             */
+            id?: string;
             key?: string;
             locale?: string;
         };
         Create_product: {
             alwaysAvailable?: boolean;
             fields?: components["schemas"]["Fields_product"];
+            /**
+             * Format: uuid
+             * @description The new item's id (any non-nil UUID); generated when absent. 409 duplicate_id when taken, trashed items included.
+             */
+            id?: string;
             key?: string;
             locale?: string;
         };
         Create_redirect: {
             alwaysAvailable?: boolean;
             fields?: components["schemas"]["Fields_redirect"];
+            /**
+             * Format: uuid
+             * @description The new item's id (any non-nil UUID); generated when absent. 409 duplicate_id when taken, trashed items included.
+             */
+            id?: string;
             key?: string;
             locale?: string;
         };
@@ -5299,11 +5329,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /**
-                     * Format: uuid
-                     * @description Sibling to follow; absent = first.
-                     */
-                    after?: string;
+                    /** @description Sibling to follow; absent = last among the siblings; null = first. */
+                    after?: string | null;
                     /**
                      * Format: uuid
                      * @description Page item to place.
@@ -5317,11 +5344,8 @@ export interface operations {
                      */
                     parent?: string;
                 } | {
-                    /**
-                     * Format: uuid
-                     * @description Sibling to follow; absent = first.
-                     */
-                    after?: string;
+                    /** @description Sibling to follow; absent = last among the siblings; null = first. */
+                    after?: string | null;
                     canonical?: boolean;
                     collection: string;
                     filter?: {
@@ -5344,11 +5368,8 @@ export interface operations {
                     route: string;
                     segment: string;
                 } | {
-                    /**
-                     * Format: uuid
-                     * @description Sibling to follow; absent = first.
-                     */
-                    after?: string;
+                    /** @description Sibling to follow; absent = last among the siblings; null = first. */
+                    after?: string | null;
                     /** Format: uuid */
                     item?: string;
                     /** @constant */
