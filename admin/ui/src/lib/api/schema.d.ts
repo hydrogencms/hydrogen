@@ -1732,6 +1732,11 @@ export interface components {
         };
         /** Landing */
         Fields_landing: {
+            /**
+             * Canonical path
+             * @description URL path instead of the tree position, e.g. /services/seo; subpages build on it
+             */
+            canonicalPath?: string;
             /** Slug */
             slug?: string;
             /** Title */
@@ -1744,6 +1749,11 @@ export interface components {
         };
         /** Page */
         Fields_page: {
+            /**
+             * Canonical path
+             * @description URL path instead of the tree position, e.g. /services/seo; subpages build on it
+             */
+            canonicalPath?: string;
             /** Intro */
             intro?: string;
             /** Slug */
@@ -2081,12 +2091,14 @@ export interface components {
         };
         /** @description JSON merge patch: null removes a field. */
         Patch_landing: {
+            canonicalPath?: string | null;
             slug?: string | null;
             title?: string | null;
             vanityPath?: string | null;
         };
         /** @description JSON merge patch: null removes a field. */
         Patch_page: {
+            canonicalPath?: string | null;
             intro?: string | null;
             slug?: string | null;
             title?: string | null;

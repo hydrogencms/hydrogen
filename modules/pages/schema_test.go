@@ -56,7 +56,7 @@ types:
 		t.Errorf("landing.vanityPath = %+v", v)
 	}
 	custom, _ := s.Type("custom")
-	if len(custom.Fields) != 3 { // its own slug is kept; vanityPath is added
+	if len(custom.Fields) != 4 { // its own slug is kept; canonicalPath and vanityPath are added
 		t.Errorf("custom fields = %d", len(custom.Fields))
 	}
 	article, _ := s.Type("article")
