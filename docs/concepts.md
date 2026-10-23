@@ -94,6 +94,12 @@ holds; tick **force** and it wins instead (the page stays in the tree but is unr
 the site root `/` is redirected. A mount can name a field (`redirectField`) whose value, an absolute URL or a site path,
 makes that item answer a redirect, and links to it then point there.
 
+A page's URL follows the tree, unless its **canonical path** field is set (per locale, like the slug): a site path such as
+`/services/seo` that replaces the tree position. The page's subpages build on it, the tree path answers a 301 to it,
+and `/route`, `links`, `/tree`, breadcrumbs and canonical/hreflang URLs all use it. The path must be free (another
+page holding it refuses the publish like a slug clash), absolute, without a trailing slash and not the root. The older
+`vanityPath` stays what it was: an extra address that serves the page, with the tree path as canonical.
+
 ## Blocks
 
 A **block** is a typed piece of a page: a hero, a card grid, a quote. Its props are fields, and its **slots** hold child

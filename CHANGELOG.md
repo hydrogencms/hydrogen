@@ -8,6 +8,10 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Added
 
+- Pages: a page type field `canonicalPath` (translatable) makes a page's URL differ from its tree position, for sites whose
+  navigation and URL structure disagree. The page's subpages build on it, its tree path answers a 301, and routes, `/tree`,
+  `links`, breadcrumbs, canonical and hreflang follow. A taken, malformed or root path refuses the publish. Stored in
+  `page_slug.canonical` (migration 0003 of the pages module; exported and imported with the pages records).
 - Forced redirects: a `redirect` item with `force: true` is answered before the page, mounted item or ordinary redirect
   at its path, and is accepted where a page holds the path, so a moved or retired page can redirect and the site root
   `/` can be redirected while the tree has a root page. Stored in a new `route_force` table (migration 0002 of the pages
