@@ -66,8 +66,10 @@ type Registrar interface {
 // The site module provides it with kernel.Provide, so a module that Requires "site" can reach it from Register
 // with kernel.Lookup[*site.Extensions]; projects use UseTheme, Handle and Component instead.
 type Extensions struct {
-	themes    map[string]Theme
-	routes    []*CustomRoute
+	themes map[string]Theme
+	routes []*CustomRoute
+	// miss answers a page-tree miss (see NotFound).
+	miss      func(*Request) (*Response, error)
 	comps     map[string]ComponentFunc
 	funcs     template.FuncMap
 	view      []func(*View) template.FuncMap
@@ -131,6 +133,18 @@ func (x *Extensions) AddRoute(r *CustomRoute) error {
 		}
 	}
 	x.routes = append(x.routes, r)
+	return nil
+}
+
+// AddNotFound registers the function that answers requests no page, mounted item or route serves; one per project.
+func (x *Extensions) AddNotFound(fn func(*Request) (*Response, error)) error {
+	switch {
+	case fn == nil:
+		return errors.New("site: the not-found hook has no function")
+	case x.miss != nil:
+		return errors.New("site: the not-found hook is registered twice")
+	}
+	x.miss = fn
 	return nil
 }
 
@@ -229,6 +243,16 @@ func Component(h Registrar, name string, fn func(*View) Renderer) {
 	h.Use(&extModule{name: "site-component-" + suffix(name), apply: func(x *Extensions) error {
 		return x.AddComponent(name, fn)
 	}})
+}
+
+// NotFound answers the requests that no page, mounted item, collection route or custom route serves, before the
+// channel's 404 page: redirect retired URLs (Response.Redirect, 302 unless Status says otherwise), or render a
+// template with a status of its own. Response.Status defaults to 404 here, and an answer with no Redirect keeps
+// the 404 page's role: search engines see the status you set. Return ErrNotFound (or a nil response) for the
+// ordinary 404 page. Req.Path is the channel-relative path; reserved paths and the static export's 404 file
+// never reach the hook. Its answers are never stored by the site's page cache or shared caches.
+func NotFound(h Registrar, fn func(*Request) (*Response, error)) {
+	h.Use(&extModule{name: "site-not-found", apply: func(x *Extensions) error { return x.AddNotFound(fn) }})
 }
 
 // Handle adds a route for non-CMS pages (search results, forms, accounts). The pattern uses http.ServeMux

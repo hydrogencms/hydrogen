@@ -58,7 +58,9 @@ func (s *server) linkPath(ch *channel.Channel, it *Item) string {
 		return ""
 	}
 	if it.URL != "" {
-		if u, err := url.Parse(it.URL); err == nil && u.EscapedPath() != "" {
+		if u, err := url.Parse(it.URL); err == nil && s.foreign(u) {
+			return it.URL
+		} else if err == nil && u.EscapedPath() != "" {
 			return u.EscapedPath()
 		}
 	}
@@ -69,6 +71,12 @@ func (s *server) linkPath(ch *channel.Channel, it *Item) string {
 		}
 	}
 	return ""
+}
+
+// foreign reports an absolute URL on a host none of the web channels serves: the link of a mounted item that
+// redirects off the site, which must not be cut down to its path.
+func (s *server) foreign(u *url.URL) bool {
+	return u.Host != "" && !s.hosts[strings.ToLower(u.Host)]
 }
 
 // Response is what a custom route answers: exactly one of Template, Partial, Body, JSON, XML or Redirect.
@@ -300,6 +308,9 @@ func (r *CustomRoute) fill(params map[string]string) (string, error) {
 // must start with a reserved path's segments, and a pattern longer than the reserved path needs the /* form.
 // A wildcard segment never counts as part of the reserved prefix.
 func reservedBy(reserved []string, pattern string) bool {
+	if pattern == "/" {
+		return false // a bare "/" matches every path; the root alone is "/{$}"
+	}
 	pattern = strings.TrimSuffix(pattern, "{$}")
 	segs := strings.Split(strings.Trim(pattern, "/"), "/")
 	for _, pat := range reserved {
@@ -344,6 +355,9 @@ func checkCustomRoutes(routes []*CustomRoute, chans []*channel.Channel, known fu
 }
 
 func reserveHint(r *CustomRoute) string {
+	if r.path == "/{$}" {
+		return "/"
+	}
 	p := r.path
 	if i := strings.Index(p, "{"); i >= 0 {
 		p = strings.TrimRight(p[:i], "/") + "/*"
@@ -488,19 +502,44 @@ func (c *Client) Item(id string) (*Item, error) { return c.f.item(c.ctx, id, c.f
 
 // runCustom calls a custom route and turns its answer into a result.
 func (s *server) runCustom(rc *reqCtx, hit *customHit) *result {
-	req := &Request{Client: &Client{ctx: rc.ctx, f: rc.f}, R: rc.r, Channel: rc.ch.Name, Locale: rc.ch.Languages[0],
-		Path: rc.rest, Params: hit.params, Query: rc.r.URL.Query(), Preview: rc.preview(), srv: s, ch: rc.ch}
-	resp, err := hit.route.fn(req)
+	resp, err := hit.route.fn(s.request(rc, hit.params))
 	var tooBig *http.MaxBytesError
 	switch {
 	case errors.As(err, &tooBig):
 		return &result{status: http.StatusRequestEntityTooLarge, body: []byte("request body too large"), custom: true}
 	case errors.Is(err, ErrNotFound), err == nil && resp == nil:
-		return s.notFound(rc)
+		return s.plainNotFound(rc)
 	case err != nil:
 		return s.internal(rc, fmt.Errorf("custom route %s: %w", hit.route.pattern, err))
 	}
 	return s.customResult(rc, hit, resp)
+}
+
+func (s *server) request(rc *reqCtx, params map[string]string) *Request {
+	return &Request{Client: &Client{ctx: rc.ctx, f: rc.f}, R: rc.r, Channel: rc.ch.Name, Locale: rc.ch.Languages[0],
+		Path: rc.rest, Params: params, Query: rc.r.URL.Query(), Preview: rc.preview(), srv: s, ch: rc.ch}
+}
+
+var missRoute = &CustomRoute{pattern: "NotFound"}
+
+// notFound answers a miss: the project's NotFound hook when there is one, else the channel's 404 page.
+func (s *server) notFound(rc *reqCtx) *result {
+	if s.ext == nil || s.ext.miss == nil || rc.rest == notFoundPath {
+		return s.plainNotFound(rc)
+	}
+	resp, err := s.ext.miss(s.request(rc, map[string]string{}))
+	switch {
+	case errors.Is(err, ErrNotFound), err == nil && resp == nil:
+		return s.plainNotFound(rc)
+	case err != nil:
+		return s.internal(rc, fmt.Errorf("not-found hook: %w", err))
+	}
+	if resp.Status == 0 && resp.Redirect == "" {
+		cp := *resp
+		cp.Status = http.StatusNotFound
+		resp = &cp
+	}
+	return s.customResult(rc, &customHit{route: missRoute, params: map[string]string{}}, resp)
 }
 
 func (s *server) customResult(rc *reqCtx, hit *customHit, resp *Response) *result {

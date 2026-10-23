@@ -94,7 +94,8 @@ func (s *server) resolve(rc *reqCtx) *result {
 	return s.notFound(rc)
 }
 
-func (s *server) notFound(rc *reqCtx) *result {
+// plainNotFound is the channel's 404 page.
+func (s *server) plainNotFound(rc *reqCtx) *result {
 	if !rc.eng.has("404.html") {
 		return &result{status: http.StatusNotFound, body: []byte("404 page not found\n"), tags: rc.f.tagList()}
 	}
@@ -463,7 +464,7 @@ func (s *server) servePreviewItem(w http.ResponseWriter, r *http.Request, eng *e
 	case err != nil:
 		res = s.internal(rc, err)
 	case it == nil || it.Type != collection:
-		res = s.notFound(rc)
+		res = s.plainNotFound(rc)
 	default:
 		res = s.previewPage(rc, it)
 	}

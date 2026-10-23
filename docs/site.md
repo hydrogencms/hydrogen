@@ -277,6 +277,9 @@ site.Handle(h, "GET /search", func(r *site.Request) (*site.Response, error) {
   each channel it applies to. `/account/{id}/edit` needs `/account/*`; `/{a}/edit` is refused because no
   reserved entry covers it. The path must be one the channel **reserves** (`reserved: [/search]` in `channels.yaml`; `/account/*` for a
   subtree), so the page tree never routes it. `config:check` fails otherwise.
+- A route can own the channel's root even when the tree has a root page: reserve it with `reserved: [/]` (exactly `/`;
+  `/*` is refused) and register `site.Handle(h, "GET /{$}", fn)`. A bare `"/"` pattern matches every path and is refused.
+  The root page stays in the tree but the root URL is the route's.
 - `Request` carries the HTTP request (`R`), the wildcards (`Params`), the query, and a content client: `Get`,
   `Items`, `Item` read the published content (drafts when previewing) in process and tag the page with what they
   read. `URL(path)` and `LinkTo(item)` build site URLs.
@@ -327,6 +330,31 @@ return &site.Response{Body: []byte("User-agent: *\n"), ContentType: "text/plain;
 - `.Sample(fn)` gives `site:check` data to render the route with (the function itself is not called).
 - `.Static(fn)` (or `.Export()` for a route without wildcards) lists the parameter sets that become files in a
   static export; `site.ClientFrom(ctx)` reads content inside it. `.Channels(names...)` restricts the route.
+
+### Not found
+
+A request no page, mounted item, collection route or custom route serves is answered by `404.html` (status 404). To
+answer it yourself, register one hook per project:
+
+```go
+site.NotFound(h, func(r *site.Request) (*site.Response, error) {
+	if to, ok := legacy[r.Path]; ok { // r.Path is channel-relative
+		return &site.Response{Redirect: r.URL(to), Status: http.StatusMovedPermanently}, nil
+	}
+	if strings.HasPrefix(r.Path, "/discontinued/") {
+		return &site.Response{Template: "routes/gone.html", Status: http.StatusGone}, nil
+	}
+	return nil, site.ErrNotFound // the ordinary 404 page
+})
+```
+
+It returns the same `Response` as a custom route, with two differences: `Status` defaults to 404 (302 with `Redirect`),
+and `ErrNotFound` or a nil response falls back to `404.html`. The hook also sees listing pages past the end and collection
+items that do not exist; it never sees reserved paths, the answers of custom routes, previews of a missing item or the
+static export's 404 file. Its answers are never stored by the page cache and are `no-store` for shared caches; reads
+through `r` still tag the answer. Other errors are a logged 500. Redirects that are plain data (a moved page, a retired
+URL) are better kept as `redirect` items, which delivery, exports and SDK frontends all see; use the hook for
+rules (patterns, lookups, a status of your own).
 
 Endpoints under `/api/x` (see [hooks](hooks.md#endpoints)) that want CDN caching can set the same headers with
 `cachetag.SetHeaders(w.Header(), ttl, tags)` (`core/cachetag`): `Cache-Control` with `s-maxage`, plus `Surrogate-Key`

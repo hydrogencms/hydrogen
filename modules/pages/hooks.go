@@ -267,6 +267,9 @@ func (s *service) checkRedirect(hc *hooks.Context) error {
 	if err := s.lockSite(hc, hc.Tx, r.Site); err != nil {
 		return err
 	}
+	if r.Force {
+		return s.checkForced(hc, q, r, hc.Item.ID)
+	}
 	held, err := loadRoutesAt(hc, q, []routeKey{r.key()})
 	if err != nil {
 		return err
@@ -301,6 +304,29 @@ func (s *service) checkRedirect(hc *hooks.Context) error {
 	return nil
 }
 
+// checkForced validates a forced redirect: it may sit on a page or mounted item's path, but not on another forced
+// redirect's.
+func (s *service) checkForced(hc *hooks.Context, q store.SQL, r redirectDef, self ids.UUID) error {
+	var other ids.UUID
+	err := q.QueryRow(hc, "SELECT item_id FROM route_force WHERE site = ? AND locale = ? AND path = ? AND item_id <> ?",
+		r.Site, r.Locale, r.From, self).Scan(&other)
+	switch {
+	case err == nil:
+		hc.Errors.Add("from", codeSlugTaken, "the path %s is already used by another forced redirect", r.From)
+		return nil
+	case !isNoRows(err):
+		return err
+	}
+	loop, err := s.redirectLoops(hc, q, r, self)
+	if err != nil {
+		return err
+	}
+	if loop != "" {
+		hc.Errors.Add("to", codeRedirectLoop, "%s", loop)
+	}
+	return nil
+}
+
 type problem struct {
 	field schema.Path
 	code  string
@@ -314,6 +340,7 @@ type redirectDef struct {
 	From   string
 	To     string
 	Status int
+	Force  bool
 }
 
 func (r redirectDef) key() routeKey { return routeKey{r.Site, r.Locale, r.From} }
@@ -340,6 +367,7 @@ func (s *service) redirectOf(doc map[string]any) (redirectDef, []problem) {
 	if err := checkTarget(r.To); err != nil {
 		ps = append(ps, problem{"to", "invalid_target", err.Error()})
 	}
+	r.Force, _ = doc["force"].(bool)
 	r.Status = 301
 	if v, ok := doc["statusCode"]; ok {
 		n, err := strconv.Atoi(fmt.Sprint(v))
@@ -415,12 +443,14 @@ func (s *service) redirectLoops(ctx context.Context, q store.SQL, r redirectDef,
 		}
 		var next []string
 		for _, p := range frontier {
-			query := "SELECT target FROM route WHERE site = ? AND path = ? AND state = 'manual' AND item_id <> ?"
+			where := " WHERE site = ? AND path = ? AND item_id <> ?"
 			args := []any{r.Site, p, self}
 			if r.Locale != "" {
-				query += " AND (locale = ? OR locale = '')"
+				where += " AND (locale = ? OR locale = '')"
 				args = append(args, r.Locale)
 			}
+			query := "SELECT target FROM route" + where + " AND state = 'manual' UNION ALL SELECT target FROM route_force" + where
+			args = append(args, args...)
 			err := each(ctx, q, query, args, func(rows store.Rows) error {
 				var target *string
 				if err := rows.Scan(&target); err != nil {

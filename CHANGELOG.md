@@ -8,6 +8,18 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Added
 
+- Forced redirects: a `redirect` item with `force: true` is answered before the page, mounted item or ordinary redirect
+  at its path, and is accepted where a page holds the path, so a moved or retired page can redirect and the site root
+  `/` can be redirected while the tree has a root page. Stored in a new `route_force` table (migration 0002 of the pages
+  module; exported and imported with the pages records); `Route.Force` marks them in `Paths` and `Redirects`, and the
+  `/route` answer keeps its shape. One extra union branch on the lookup, still one query per request.
+- Mounted items that redirect: a mount's `redirectField` (a string or url field) and `redirectStatus` (default 302) make
+  items with a URL or site path in that field answer a redirect instead of themselves; delivery `url` and `links` for
+  them point at the target, and the site module links out directly.
+- `reserved: [/]` reserves a channel's root, so a site module route `GET /{$}` (or a frontend page) can replace the
+  root page.
+- `site.NotFound(h, fn)`: a hook that answers misses before `404.html` with a redirect, a custom status or its own
+  template.
 - Site module templates: the request's query string (`.Query "name"`, `.QueryValues "name"`, cached per variant of
   the parameters a page reads, bounded per path; pages that ignore the query keep one cache entry), the page for
   block templates (`.Page` on a block), and `site.ViewFuncs` for project template functions that read the page's

@@ -109,7 +109,7 @@ func (s *server) serveSite(w http.ResponseWriter, r *http.Request) {
 	}
 	if rest == notFoundPath {
 		rc := &reqCtx{ctx: r.Context(), r: r, ch: ch, rest: rest, raw: raw, f: s.fetcher(r, ch.Name, token), token: token, eng: eng}
-		s.respond(w, r, ch, s.notFound(rc), token != "", "", 0)
+		s.respond(w, r, ch, s.plainNotFound(rc), token != "", "", 0)
 		return
 	}
 	if s.serveCustom(w, r, eng, ch, rest, raw, token) {
@@ -482,5 +482,5 @@ func (s *server) unmatched(w http.ResponseWriter, r *http.Request, eng *engine) 
 		return
 	}
 	rc := &reqCtx{ctx: r.Context(), r: r, ch: ch, f: s.fetcher(r, ch.Name, ""), eng: eng}
-	s.respond(w, r, ch, s.notFound(rc), false, "", 0)
+	s.respond(w, r, ch, s.plainNotFound(rc), false, "", 0)
 }

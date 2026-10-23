@@ -118,6 +118,11 @@ func routesTheme() site.Theme {
 
 func newSiteEnv(t testing.TB, db store.DB, clk *clock.Manual, themeName string, setup func(r *siteRegistrar)) (*siteEnv, error) {
 	t.Helper()
+	return newSiteEnvWith(t, db, clk, themeName, siteSchema, siteChannels, setup)
+}
+
+func newSiteEnvWith(t testing.TB, db store.DB, clk *clock.Manual, themeName, schemaYAML, channelsYAML string, setup func(r *siteRegistrar)) (*siteEnv, error) {
+	t.Helper()
 	dir := t.TempDir()
 	write := func(name, data string) {
 		p := filepath.Join(dir, name)
@@ -128,8 +133,8 @@ func newSiteEnv(t testing.TB, db store.DB, clk *clock.Manual, themeName string, 
 			t.Fatal(err)
 		}
 	}
-	write("schema/s.yaml", siteSchema)
-	write("config/channels.yaml", siteChannels)
+	write("schema/s.yaml", schemaYAML)
+	write("config/channels.yaml", channelsYAML)
 	write("config/app.yaml", "content: { schema_dir: "+filepath.Join(dir, "schema")+" }\nmodules:\n  pages: { sites: [main] }\n  site: { theme: "+themeName+", dir: "+filepath.Join(dir, "nosite")+", routes: [{ path: /posts, type: article, template: posts, limit: 2 }, { path: \"/posts/{slug}\", type: article, template: post }] }\n")
 	cfg, err := config.Load(config.Options{Dir: filepath.Join(dir, "config"), Env: "dev", LookupEnv: func(string) (string, bool) { return "", false }})
 	if err != nil {

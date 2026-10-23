@@ -172,6 +172,9 @@ func (s *service) removeItem(ctx context.Context, tx store.Tx, item ids.UUID) ([
 	if err != nil {
 		return nil, err
 	}
+	if _, err := q.Exec(ctx, "DELETE FROM route_force WHERE item_id = ?", item); err != nil {
+		return nil, err
+	}
 	if _, err := q.Exec(ctx, "DELETE FROM page_mount_item WHERE item_id = ?", item); err != nil {
 		return nil, err
 	}
@@ -222,6 +225,9 @@ func (s *service) dropRoutes(ctx context.Context, tx store.Tx, item ids.UUID) ([
 	}
 	freed, err := q.Exec(ctx, "DELETE FROM route WHERE item_id = ? AND state <> 'redirect'", item)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := q.Exec(ctx, "DELETE FROM route_force WHERE item_id = ?", item); err != nil {
 		return nil, err
 	}
 	if _, err := q.Exec(ctx, "DELETE FROM page_mount_item WHERE item_id = ?", item); err != nil {

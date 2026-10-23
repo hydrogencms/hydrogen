@@ -239,6 +239,11 @@ export interface Redirect {
   site?: string;
   /** Locale code; empty: every locale */
   forLocale?: string;
+  /**
+   * Wins over a page or mounted item at this path, which is then unreachable there. The only way
+   * to redirect the site root (/).
+   */
+  force?: boolean;
 }
 
 /** The "settings" content type. */

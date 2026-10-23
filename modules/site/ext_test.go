@@ -392,3 +392,14 @@ func TestCustomMatch(t *testing.T) {
 		t.Error("conflicting patterns accepted")
 	}
 }
+
+func TestReservedRoot(t *testing.T) {
+	for pat, want := range map[string]bool{"/{$}": true, "/": false, "/x": false, "/{a}": false} {
+		if got := reservedBy([]string{"/"}, pat); got != want {
+			t.Errorf("reservedBy([/], %s) = %v, want %v", pat, got, want)
+		}
+	}
+	if reservedBy([]string{"/search"}, "/{$}") {
+		t.Error("the root is not reserved by /search")
+	}
+}

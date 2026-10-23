@@ -49,6 +49,9 @@ func (s *service) checkMountSpec(spec *MountSpec) (*route.Pattern, error) {
 	if err := checkLabels(spec.Label); err != nil {
 		return nil, err
 	}
+	if err := checkRedirectField(typ, spec); err != nil {
+		return nil, err
+	}
 	for _, field := range slices.Sorted(maps.Keys(spec.Filter)) {
 		if _, ok := typ.Field(field); !ok {
 			return nil, badRequest("mount filter: %q has no top-level field %q", spec.Collection, field)
@@ -58,6 +61,50 @@ func (s *service) checkMountSpec(spec *MountSpec) (*route.Pattern, error) {
 		}
 	}
 	return pat, nil
+}
+
+// checkRedirectField validates redirectField (a top-level string or url field of the collection) and
+// redirectStatus.
+func checkRedirectField(typ *schema.Type, spec *MountSpec) error {
+	if spec.RedirectField == "" {
+		if spec.RedirectStatus != 0 {
+			return badRequest("redirectStatus needs a redirectField")
+		}
+		return nil
+	}
+	f, ok := typ.Field(spec.RedirectField)
+	switch {
+	case !ok:
+		return badRequest("mount redirectField: %q has no top-level field %q", spec.Collection, spec.RedirectField)
+	case f.Type != "string" && f.Type != "url":
+		return badRequest("mount redirectField: %q is a %s field; it must be a string or url field", spec.RedirectField, f.Type)
+	case spec.RedirectStatus != 0 && !redirectStatuses[spec.RedirectStatus]:
+		return badRequest("mount redirectStatus must be 301, 302, 307 or 308")
+	}
+	return nil
+}
+
+// defaultMountRedirect is the status of a mounted item's redirect unless the mount sets one.
+const defaultMountRedirect = 302
+
+func mountRedirectStatus(spec *MountSpec) int {
+	if spec.RedirectStatus != 0 {
+		return spec.RedirectStatus
+	}
+	return defaultMountRedirect
+}
+
+// redirectOfDoc is where a mounted item sends visitors: its redirect field when it holds an absolute http(s) URL
+// or a site path, else "" (the item shows itself).
+func redirectOfDoc(spec *MountSpec, doc map[string]any) string {
+	if spec.RedirectField == "" {
+		return ""
+	}
+	v, _ := doc[spec.RedirectField].(string)
+	if v == "" || strings.HasPrefix(v, "item:") || checkTarget(v) != nil {
+		return ""
+	}
+	return v
 }
 
 // Bounds on what one node may carry.
@@ -165,6 +212,8 @@ func relPath(pat *route.Pattern, item ids.UUID, doc map[string]any) (string, boo
 	return rel, err == nil
 }
 
+const mountItemCols = "node_id, item_id, locale, rel, redirect"
+
 // mountSet is a collection's mounts with their parsed specs.
 type mountSet struct {
 	rows []nodeRow
@@ -206,7 +255,7 @@ func (m *mountSet) memberships(item ids.UUID, locale string, doc map[string]any)
 			continue
 		}
 		if rel, ok := relPath(m.pat[r.ID], item, doc); ok {
-			out = append(out, membership{r.ID, item, locale, rel})
+			out = append(out, membership{r.ID, item, locale, rel, redirectOfDoc(m.spec[r.ID], doc)})
 		}
 	}
 	return out
@@ -259,7 +308,7 @@ func loadMemberships(ctx context.Context, q store.SQL, mounts []ids.UUID, item *
 	var out []membership
 	err := chunks(mounts, func(part []ids.UUID) error {
 		ph, args := inArgs(part)
-		query := "SELECT node_id, item_id, locale, rel FROM page_mount_item WHERE node_id IN " + ph
+		query := "SELECT node_id, item_id, locale, rel, redirect FROM page_mount_item WHERE node_id IN " + ph
 		if item != nil {
 			query += " AND item_id = ?"
 			args = append(args, *item)
@@ -271,7 +320,7 @@ func loadMemberships(ctx context.Context, q store.SQL, mounts []ids.UUID, item *
 		}
 		return each(ctx, q, query, args, func(r store.Rows) error {
 			var m membership
-			err := r.Scan(&m.Node, &m.Item, &m.Locale, &m.Rel)
+			err := r.Scan(&m.Node, &m.Item, &m.Locale, &m.Rel, &m.Redirect)
 			out = append(out, m)
 			return err
 		})
@@ -320,7 +369,7 @@ func (s *service) rebuildMembership(ctx context.Context, tx store.Tx, node nodeR
 	if err != nil {
 		return err
 	}
-	_, err = insertRows(ctx, q, "page_mount_item", "node_id, item_id, locale, rel", "", rows)
+	_, err = insertRows(ctx, q, "page_mount_item", mountItemCols, "", rows)
 	return err
 }
 
@@ -357,7 +406,7 @@ func (s *service) membershipRows(ctx context.Context, tx store.Tx, node ids.UUID
 					continue
 				}
 				if rel, ok := relPath(pat, it.ID, d.Doc); ok {
-					rows = append(rows, []any{node, it.ID, d.Locale, rel})
+					rows = append(rows, []any{node, it.ID, d.Locale, rel, redirectOfDoc(spec, d.Doc)})
 				}
 			}
 		}
@@ -439,9 +488,9 @@ func (s *service) syncMountedItem(ctx context.Context, tx store.Tx, item ids.UUI
 	}
 	insert := make([][]any, len(mc.desired))
 	for i, m := range mc.desired {
-		insert[i] = []any{m.Node, m.Item, m.Locale, m.Rel}
+		insert[i] = []any{m.Node, m.Item, m.Locale, m.Rel, m.Redirect}
 	}
-	if _, err := insertRows(ctx, q, "page_mount_item", "node_id, item_id, locale, rel", "", insert); err != nil {
+	if _, err := insertRows(ctx, q, "page_mount_item", mountItemCols, "", insert); err != nil {
 		return nil, err
 	}
 	if err := s.reindexItems(ctx, tx, []ids.UUID{item}); err != nil {
@@ -471,7 +520,7 @@ func sameMemberships(a, b []membership) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	key := func(m membership) string { return m.Node.String() + "|" + m.Rel }
+	key := func(m membership) string { return m.Node.String() + "|" + m.Rel + "|" + m.Redirect }
 	ka := make([]string, len(a))
 	kb := make([]string, len(b))
 	for i := range a {
