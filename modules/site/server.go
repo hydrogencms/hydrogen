@@ -75,7 +75,7 @@ func newServer(cfg *Config, ext *Extensions, s *kernel.Services, ps *pages.Servi
 		return nil, err
 	}
 	srv := &server{proxies: proxies, cfg: cfg, svc: s, pages: ps, routes: routes, log: s.Log, dev: s.Env == config.DevEnv, clock: s.Clock,
-		ext: ext, custom: custom, src: &sources{chain: chain, dir: cfg.Dir, comps: ext.comps, funcs: ext.funcs}}
+		ext: ext, custom: custom, src: &sources{chain: chain, dir: cfg.Dir, comps: ext.comps, funcs: ext.funcs, view: ext.view, viewNames: ext.viewNames}}
 	if cfg.CacheBytes > 0 {
 		srv.cache = newPageCache(cfg.CacheBytes)
 	}

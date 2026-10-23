@@ -12,11 +12,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/hydrogencms/hydrogen/core/content"
+	"github.com/hydrogencms/hydrogen/core/ids"
 	"github.com/hydrogencms/hydrogen/core/schema"
 	"github.com/hydrogencms/hydrogen/core/store/storeutil"
 )
 
 type createBody struct {
+	ID              string         `json:"id"`
 	Locale          string         `json:"locale"`
 	Key             string         `json:"key"`
 	AlwaysAvailable bool           `json:"alwaysAvailable"`
@@ -204,7 +206,13 @@ func (a *api) createItem(w http.ResponseWriter, r *http.Request) error {
 	if b.Fields == nil {
 		b.Fields = map[string]any{}
 	}
-	v, err := a.c.Create(r.Context(), content.CreateInput{Type: t.Name, Locale: b.Locale, Key: b.Key,
+	var id ids.UUID
+	if b.ID != "" {
+		if id, err = ids.Parse(b.ID); err != nil || id.IsZero() {
+			return BadRequest("id must be a non-nil UUID")
+		}
+	}
+	v, err := a.c.Create(r.Context(), content.CreateInput{Type: t.Name, ID: id, Locale: b.Locale, Key: b.Key,
 		AlwaysAvailable: b.AlwaysAvailable, Fields: b.Fields})
 	if err != nil {
 		return err
