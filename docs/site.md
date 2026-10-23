@@ -43,6 +43,29 @@ Each layer may hold `templates/`, `assets/` and `translations/`. Templates are `
 `richtext/<type>.html` (rich text overrides), `routes/<name>.html` (custom routes) and any partials. Translation files (`translations/en.yaml`) merge key by key
 across layers. Assets are served under fingerprinted URLs (`{{asset "site.css"}}`).
 
+### Assets
+
+`{{asset "name"}}` returns `/__hydrogen/assets/<name>.<hash>.<ext>`, served with `Cache-Control: public,
+max-age=31536000, immutable`. Files are listed at start but not read: a file is hashed (SHA-256, streamed) the first
+time a template or a request needs its fingerprint, remembered until the next reload, and served from the file
+system (or the theme's embedded files) on each request, so start-up and memory do not grow with the size of the
+assets. A fingerprint that no longer matches the file answers 404.
+
+A request for the plain name (`/__hydrogen/assets/sprite.svg`, as a script-loaded chunk or an SVG sprite is
+fetched) works too. It is answered with a strong `ETag` (the content hash), `Last-Modified` (the file's modification
+time, when the file system has one) and `Cache-Control: no-cache`, so a browser revalidates and gets `304 Not
+Modified` while the file is unchanged.
+
+In style sheets (`.css`) the `url(...)` and `@import` references to other assets are rewritten to their fingerprinted
+URLs, whether quoted or not and for both plain and fingerprinted requests. A reference is relative to the sheet
+(`../fonts/a.woff2`) or root-relative into the assets directory (`/fonts/a.woff2`, or the full
+`/__hydrogen/assets/fonts/a.woff2`). `data:` and other schemes, `http(s):`, `//host/…`, `#id` alone, references to
+files that do not exist and paths that leave the assets directory stay as written; a `?query` or `#fragment`
+(`a.woff2?#iefix`, `sprite.svg#icon`) is kept. The sheet's own fingerprint is the hash of the rewritten text, so
+changing a font changes the sheet's URL too. Sheets that reference each other in a cycle keep those references as
+written. Sheets over 4 MiB are served as they are; rewritten sheets are kept in memory up to 8 MiB in total and
+recomputed beyond that.
+
 Collection listing routes are paged: `/blog` is page 1 and `/blog/page/2` the next, `limit` items each. A listing
 template gets `.Pager` (`.Page`, `.Prev`, `.Next`; nil on a single page); the starter theme shows it with
 `partials/pager.html`.
@@ -81,6 +104,51 @@ A function returns one value, or a value and an error. A name that collides with
 `component`), a Go template function or another registration fails start-up and `config:check`. A module that
 `Require`s `site` calls `kernel.Lookup[*site.Extensions](r).AddFuncs(m)`.
 
+### Page-aware functions
+
+`site.ViewFuncs` registers functions that know the page being rendered. The function runs on every render with the
+page's `*site.View` and returns the template functions, which close over the view:
+
+```go
+site.ViewFuncs(h, func(v *site.View) template.FuncMap {
+	return template.FuncMap{
+		"related": func(n int) ([]*site.Item, error) {
+			return v.List("post", map[string]any{"limit": n, "where[category][eq]": v.Query("category")})
+		},
+		"isHere": func(path string) bool { return v.Path == path },
+	}
+})
+```
+
+Inside, a view offers what templates have: `List` and `Get` (`items` and `item`), `Query`, `QueryValues`, `Nav`,
+`Breadcrumbs`, `Link`, `Setting`, `T`, `Client()` and the fields (`Path`, `Locale`, `Item`…). Reads tag the page like
+the template helpers do. Names follow the rules of `site.Funcs` and share their namespace. The function is also
+called once at registration with an empty view to learn the names, so build closures there and do not call the
+view's methods. Rendering cost is unchanged when none is registered; with one, the function runs each time a
+template set is prepared for a render.
+
+## The request in templates
+
+The view has the page's channel-relative URL as `.Path` (`/en/blog/page/2`; no query), and the request's query:
+
+- `.Query "category"` is the first value of a query parameter, or "" (`.QueryValues "tag"` all of them, in order).
+  Values are plain strings that `html/template` escapes like any other. The `preview` parameter is never readable.
+- Block templates get the block as their data; `.Page` is the page's view, so a block reads `.Page.Path`,
+  `.Page.Query "page"` or `.Page.Locale`. Partials default to the view; pass `.` when giving them a dict.
+
+```html
+{{range items "post" (dict "where[category][eq]" (.Query "category") "limit" 10)}}…{{end}}
+<a {{if eq .Path "/en/blog"}}aria-current="page"{{end}} href="?category=news">News</a>
+```
+
+Rendered pages are cached by path. A page that never reads the query keeps one cache entry whatever the URL carries,
+so `?utm_source=…` does not split it. A page that reads parameters is stored per variant: the path plus the values
+of the parameters its renders read (the names are learned from renders; a template that later reads another
+parameter re-keys the path). Bounds keep it from being flooded: at most 32 variants per path (the oldest makes
+room), at most 8 values per parameter and 128 bytes per value; a request beyond them is rendered and not stored.
+Publishing purges every variant by the page's tags. Previews are never cached. `site:check` and static exports
+have no query (reads are empty) unless an export target brings one in its URL.
+
 ## Reading content in templates
 
 These helpers read in process, as a public client of the channel (drafts when previewing), in the page's locale.
@@ -99,6 +167,9 @@ Identical calls within one render ask the delivery API once.
   fields of its item as `fields`. A dot path keeps one member of a group, and an unknown field is an error. Links
   keep working: `items` and `item` also fetch the field a collection's detail route puts in its URL (`slug` for
   `/blog/{slug}`), and an item with a page keeps its page URL.
+- `link "item:<id>"` (and `item:` links in rich text) works for references in any item the render read, not only
+  the page's own: the links those items carry are merged in. An id nobody carries is read once (at most 64 per
+  render, in the page's locale) and linked to its page or collection route; an unavailable item gives no URL.
 - `partial "blocks/hero/wide.html" data` executes a template by a computed name (Go's `{{template}}` needs a
   constant) and returns its HTML; `data` defaults to the page's view. A missing template is an error in
   `site:check` and a logged, empty result when serving. Partials may nest up to 32 levels. `hasTemplate "name"`

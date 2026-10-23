@@ -69,9 +69,11 @@ type Extensions struct {
 	themes map[string]Theme
 	routes []*CustomRoute
 	// miss answers a page-tree miss (see NotFound).
-	miss  func(*Request) (*Response, error)
-	comps map[string]ComponentFunc
-	funcs template.FuncMap
+	miss      func(*Request) (*Response, error)
+	comps     map[string]ComponentFunc
+	funcs     template.FuncMap
+	view      []func(*View) template.FuncMap
+	viewNames []string
 }
 
 func newExtensions() *Extensions {

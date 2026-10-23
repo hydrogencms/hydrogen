@@ -40,6 +40,16 @@ types:
     children: [section]
     fields:
       title: { type: string, translatable: true, required: true }
+  linkpage:
+    page: true
+    fields:
+      title: { type: string, translatable: true, required: true }
+  card:
+    name: "{title}"
+    fields:
+      title: { type: string, required: true }
+      target: { type: ref, to: [section, article], on_delete: nullify }
+      body: { type: richtext }
   article:
     name: "{title}"
     fields:
@@ -97,11 +107,12 @@ func (c vpComponent) Render(_ context.Context, w io.Writer) error {
 // routesTheme adds the template the custom routes render, on top of the starter theme.
 func routesTheme() site.Theme {
 	return site.Theme{Name: "routes", Base: "starter", FS: fstest.MapFS{
-		"templates/routes/info.html":  {Data: []byte(`{{define "content"}}<div class="info" data-status="{{.Status}}">{{.Title}}|{{.Data}}|{{.Params.id}}</div>{{end}}`)},
-		"templates/routes/frag.html":  {Data: []byte(`<li class="frag">{{t "home"}}|{{.Data}}|{{.Params.id}}|{{partial "partials/bit.html"}}</li>`)},
-		"templates/routes/feed.html":  {Data: []byte(`<rss><title>{{.Data}}</title></rss>`)},
-		"templates/partials/bit.html": {Data: []byte(`<b>bit</b>`)},
-		"translations/en.yaml":        {Data: []byte("home: Start\n")},
+		"templates/routes/info.html":    {Data: []byte(`{{define "content"}}<div class="info" data-status="{{.Status}}">{{.Title}}|{{.Data}}|{{.Params.id}}</div>{{end}}`)},
+		"templates/routes/frag.html":    {Data: []byte(`<li class="frag">{{t "home"}}|{{.Data}}|{{.Params.id}}|{{partial "partials/bit.html"}}</li>`)},
+		"templates/routes/feed.html":    {Data: []byte(`<rss><title>{{.Data}}</title></rss>`)},
+		"templates/pages/linkpage.html": {Data: []byte(`{{define "content"}}{{range items "card"}}<div class="card" data-name="{{.Fields.title}}">[{{link .Fields.target}}]{{richtext .Fields.body}}</div>{{end}}{{end}}`)},
+		"templates/partials/bit.html":   {Data: []byte(`<b>bit</b>`)},
+		"translations/en.yaml":          {Data: []byte("home: Start\n")},
 	}}
 }
 
@@ -124,7 +135,7 @@ func newSiteEnvWith(t testing.TB, db store.DB, clk *clock.Manual, themeName, sch
 	}
 	write("schema/s.yaml", schemaYAML)
 	write("config/channels.yaml", channelsYAML)
-	write("config/app.yaml", "content: { schema_dir: "+filepath.Join(dir, "schema")+" }\nmodules:\n  pages: { sites: [main] }\n  site: { theme: "+themeName+", dir: "+filepath.Join(dir, "nosite")+", routes: [{ path: /posts, type: article, template: posts, limit: 2 }] }\n")
+	write("config/app.yaml", "content: { schema_dir: "+filepath.Join(dir, "schema")+" }\nmodules:\n  pages: { sites: [main] }\n  site: { theme: "+themeName+", dir: "+filepath.Join(dir, "nosite")+", routes: [{ path: /posts, type: article, template: posts, limit: 2 }, { path: \"/posts/{slug}\", type: article, template: post }] }\n")
 	cfg, err := config.Load(config.Options{Dir: filepath.Join(dir, "config"), Env: "dev", LookupEnv: func(string) (string, bool) { return "", false }})
 	if err != nil {
 		t.Fatal(err)
@@ -526,6 +537,44 @@ func TestSiteListingPages(t *testing.T) {
 		out, err := e.ex.Render(ctx, "en", "/en/posts/page/2")
 		if err != nil || out.Status != 200 || !slices.Contains(out.Tags, "c:article") {
 			t.Errorf("render page 2: %v %+v", err, out)
+		}
+	})
+}
+
+func TestSiteLinksOfReadItems(t *testing.T) {
+	runSite(t, "routes", func(t *testing.T, e *siteEnv) {
+		_, rootNode := e.place("home", "Home", nil)
+		about, _ := e.place("section", "About", &rootNode)
+		_, _ = e.place("linkpage", "Links", &rootNode)
+		art := e.publishItem("article", "Hello World")
+		e.clk.Advance(1e9)
+		draft, err := e.c.Create(ctx, content.CreateInput{Type: "article", Locale: "en", Fields: doc(t, `{"title":"Draft"}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rich := func(id ids.UUID) string {
+			return fmt.Sprintf(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"read","marks":[{"type":"link","attrs":{"href":"item:%s"}}]}]}]}`, id)
+		}
+		card := func(title string, target ids.UUID, body string) {
+			e.clk.Advance(1e9)
+			v, err := e.c.Create(ctx, content.CreateInput{Type: "card", Fields: doc(t, fmt.Sprintf(`{"title":%q,"target":%q,"body":%s}`, title, target, body))})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := e.c.Publish(ctx, v.ID, content.PublishOptions{}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		card("a", about, rich(art))
+		card("b", art, rich(draft.ID))
+		body := e.get("/en/links").body
+		for _, want := range []string{
+			`data-name="a">[/en/about]<p><a href="/en/posts/hello-world">read</a></p>`,
+			`data-name="b">[/en/posts/hello-world]<p>read</p>`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("missing %s in\n%s", want, body)
+			}
 		}
 	})
 }

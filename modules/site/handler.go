@@ -31,6 +31,7 @@ type reqCtx struct {
 	f     *fetcher
 	token string // a verified preview token, else ""
 	eng   *engine
+	pg    *page // the render, set by newPage
 }
 
 func (rc *reqCtx) preview() bool { return rc.token != "" }
@@ -42,6 +43,7 @@ type result struct {
 	location string
 	tags     []string
 	store    bool
+	read     []string // the query parameters the templates read
 	// custom routes: the route's headers, and whether shared caches may keep the answer
 	header      http.Header
 	custom      bool
@@ -115,13 +117,16 @@ func (s *server) serveSite(w http.ResponseWriter, r *http.Request) {
 	}
 	key := ch.Name + "\x00" + r.URL.EscapedPath()
 	if token == "" && s.cache != nil && !noCache(r) {
-		if e := s.cache.get(key); e != nil {
+		if e := s.cache.lookup(key, r.URL.RawQuery); e != nil {
 			s.writeCached(w, r, e)
 			return
 		}
 	}
 	rc := &reqCtx{ctx: r.Context(), r: r, ch: ch, rest: rest, raw: raw, f: s.fetcher(r, ch.Name, token), token: token, eng: eng}
 	res := s.resolve(rc)
+	if rc.pg != nil {
+		res.read = rc.pg.queryNames()
+	}
 	s.respond(w, r, ch, res, token != "", key, gen)
 }
 
@@ -348,7 +353,7 @@ func (s *server) respond(w http.ResponseWriter, r *http.Request, ch *channel.Cha
 		h.Set("ETag", etag)
 		if s.cache != nil && res.store && !res.custom {
 			h.Set("X-Hydrogen-Cache", "miss")
-			s.cache.put(&cached{key: key, body: res.body, etag: etag, ttl: ttl, tags: res.tags}, gen)
+			s.cache.store(&cached{body: res.body, etag: etag, ttl: ttl, tags: res.tags}, key, res.read, r.URL.RawQuery, gen)
 		}
 		if matchesETag(r, etag) {
 			w.WriteHeader(http.StatusNotModified)

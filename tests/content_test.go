@@ -1145,3 +1145,57 @@ func TestExpectedState(t *testing.T) {
 		}
 	})
 }
+
+func TestCreateWithID(t *testing.T) {
+	run(t, func(t *testing.T, e *env) {
+		id, err := ids.Parse("11111111-2222-4333-8444-555555555555")
+		if err != nil {
+			t.Fatal(err)
+		}
+		v, err := e.svc.Create(ctx, content.CreateInput{Type: "article", ID: id, Fields: doc(t, `{"title":"Fixed"}`)})
+		if err != nil || v.ID != id {
+			t.Fatalf("create = %+v %v", v, err)
+		}
+		if got, err := e.svc.Get(ctx, id, content.GetOptions{Draft: true}); err != nil || got.ID != id {
+			t.Fatalf("get = %+v %v", got, err)
+		}
+		again := content.CreateInput{Type: "article", ID: id, Key: "other", Fields: doc(t, `{"title":"Twice"}`)}
+		if _, err := e.svc.Create(ctx, again); !errors.Is(err, content.ErrDuplicateID) {
+			t.Errorf("duplicate id: %v", err)
+		}
+		// The failed create left nothing behind, and a trashed item still owns its id.
+		if err := e.svc.Trash(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.svc.Create(ctx, again); !errors.Is(err, content.ErrDuplicateID) {
+			t.Errorf("duplicate of a trashed id: %v", err)
+		}
+		if v := e.person("Gen"); v.ID == id {
+			t.Error("generated id reused")
+		}
+	})
+}
+
+func TestCreateWithIDAPI(t *testing.T) {
+	runDelivery(t, func(t *testing.T, n *dnode) {
+		id := "0190b2c4-7a3e-7d11-8f00-1234567890ab"
+		body := map[string]any{"id": id, "key": "fixed", "fields": map[string]any{"title": "Fixed"}}
+		if r := n.manage("POST", "/collections/article/items", body); r.Code != 201 || field(r.json(), "id") != id {
+			t.Fatalf("create = %d %s", r.Code, r.Body)
+		}
+		body["key"] = "other"
+		if r := n.manage("POST", "/collections/article/items", body); r.Code != 409 || field(r.json(), "error", "code") != "duplicate_id" {
+			t.Errorf("duplicate = %d %s", r.Code, r.Body)
+		}
+		if r := n.manage("DELETE", "/items/"+id, nil); r.Code != 204 {
+			t.Fatalf("trash = %d %s", r.Code, r.Body)
+		}
+		if r := n.manage("POST", "/collections/article/items", body); r.Code != 409 || field(r.json(), "error", "code") != "duplicate_id" {
+			t.Errorf("trashed duplicate = %d %s", r.Code, r.Body)
+		}
+		body["id"] = "00000000-0000-0000-0000-000000000000"
+		if r := n.manage("POST", "/collections/article/items", body); r.Code != 400 {
+			t.Errorf("nil id = %d %s", r.Code, r.Body)
+		}
+	})
+}
