@@ -19,7 +19,7 @@ import (
 const (
 	maxSearchText     = 200
 	defaultSearchPage = 10
-	maxSearchPage     = 50
+	maxSearchPage     = search.MaxLimit
 	maxSearchOffset   = 1000
 )
 

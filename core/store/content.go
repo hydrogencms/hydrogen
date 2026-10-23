@@ -176,10 +176,13 @@ type IndexRow struct {
 	Ref    *ids.UUID
 }
 
-// SearchDoc is the searchable text of an item in one locale.
+// SearchDoc is the searchable text of an item in one locale, split by relevance tier: matches in High count
+// most and matches in Low least. Text is the normal tier.
 type SearchDoc struct {
 	Locale string
+	High   string
 	Text   string
+	Low    string
 }
 
 type Status int

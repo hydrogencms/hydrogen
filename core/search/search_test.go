@@ -215,6 +215,35 @@ types:
 	}
 }
 
+func TestBuildDocsExclude(t *testing.T) {
+	const src = `
+types:
+  a:
+    search: { exclude: noindex }
+    fields: { t: { type: string, translatable: true }, noindex: { type: boolean, translatable: true } }
+`
+	sc := compile(t, src)
+	item := ids.UUID{1}
+	docs, err := BuildDocs(sc, []store.Snapshot{
+		snap(t, item, "a", "en", "en", false, "One", map[string]any{"t": "one"}),
+		snap(t, item, "a", "de", "en", false, "Eins", map[string]any{"t": "eins", "noindex": true}),
+		snap(t, ids.UUID{2}, "a", "en", "en", false, "Two", map[string]any{"t": "two", "noindex": false}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docs) != 2 || docs[0].Locale != "en" || docs[0].Item != item || docs[1].Item != (ids.UUID{2}) {
+		t.Errorf("docs = %+v", docs)
+	}
+	plain := NewSettings(compile(t, `
+types:
+  a: { fields: { t: { type: string, translatable: true }, noindex: { type: boolean, translatable: true } } }
+`)).Fingerprint
+	if NewSettings(sc).Fingerprint == plain {
+		t.Error("an exclusion field left the fingerprint alone")
+	}
+}
+
 func TestMarksStripRawMarkers(t *testing.T) {
 	if got := MarkTerms("a\x02b\x03 solar", []string{"solar"}); got != "ab \x02solar\x03" {
 		t.Errorf("MarkTerms = %q", got)
