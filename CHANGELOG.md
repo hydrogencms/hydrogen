@@ -12,6 +12,31 @@ All notable changes to Hydrogen are documented here. The format follows
   the parameters a page reads, bounded per path; pages that ignore the query keep one cache entry), the page for
   block templates (`.Page` on a block), and `site.ViewFuncs` for project template functions that read the page's
   view and content (`View.List`, `View.Get`).
+- Site module assets: `url(...)` and `@import` references in style sheets are rewritten to the fingerprinted URLs of
+  the assets they name (quoted or not, relative or root-relative, `?#iefix` and `#icon` suffixes kept; `data:`,
+  external, fragment-only and unknown references untouched), and the sheet's fingerprint covers the rewritten text.
+  Projects no longer need to repeat Hydrogen's hashing rule in their CSS.
+- Site module assets requested without a fingerprint carry a strong `ETag`, `Last-Modified` and `Cache-Control:
+  no-cache` and answer `304` to conditional requests.
+- Choose item ids on create: `content.CreateInput.ID`, `id` in the body of `POST /collections/{type}/items` and
+  `client.CreateInput.ID`. Any non-nil UUID is accepted; an id already in use, trashed items included, answers 409
+  `duplicate_id` (`content.ErrDuplicateID`).
+
+### Changed
+
+- Site module assets are listed at start and hashed on first use instead of being read and hashed in full when the
+  site loads, and are served from the file system instead of memory. With 1,700 files (39 MB) loading takes about
+  1.5 ms instead of 44 ms and allocates 0.9 MB instead of 43 MB. Fingerprints of files other than style sheets that
+  contain references are unchanged.
+
+### Fixed
+
+- Admin: with collaboration on, a rich text value the editor cannot load (a node or mark its schema lacks) was seeded
+  as an empty document, so opening the item showed "Unsaved changes" and the next save removed the field. The value
+  now stays as stored and the field shows as invalid, with its JSON to fix.
+- Site module: `link "item:<id>"` and `item:` links in rich text resolve references held by any item the render
+  read (`item`, `items`, settings), not only the page's own; an id no read item carries is looked up once (at most 64
+  per render, in the page's locale and preview).
 
 ## [0.3.0] - 2026-10-22
 

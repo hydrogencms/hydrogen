@@ -3,6 +3,7 @@ package content
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -47,9 +48,17 @@ func (s *Service) create(ctx context.Context, tx store.Tx, in CreateInput) (*Vie
 			return nil, err
 		}
 	}
+	id := in.ID
+	if id.IsZero() {
+		id = s.o.IDs.New()
+	} else if _, err := getItemAny(ctx, tx, id, false); err == nil {
+		return nil, fmt.Errorf("%w: %s", ErrDuplicateID, id)
+	} else if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
 	now, actor := s.now(), audit.ActorFrom(ctx)
 	st := &itemState{svc: s, typ: t, drafts: map[string]*draft{}, item: store.Item{
-		ID: s.o.IDs.New(), Key: key, Type: t.Name, MainLocale: locale, AlwaysAvailable: in.AlwaysAvailable,
+		ID: id, Key: key, Type: t.Name, MainLocale: locale, AlwaysAvailable: in.AlwaysAvailable,
 		CreatedAt: now, UpdatedAt: now, CreatedBy: actor.String(), UpdatedBy: actor.String(),
 	}}
 	v, err := s.writeDraft(ctx, tx, st, writeReq{locale: locale, patch: in.Fields, create: true})
