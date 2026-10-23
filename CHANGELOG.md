@@ -46,6 +46,12 @@ All notable changes to Hydrogen are documented here. The format follows
 - Choose item ids on create: `content.CreateInput.ID`, `id` in the body of `POST /collections/{type}/items` and
   `client.CreateInput.ID`. Any non-nil UUID is accepted; an id already in use, trashed items included, answers 409
   `duplicate_id` (`content.ErrDuplicateID`).
+- Site module forms: `Request.Submit` stores a form as a draft item of a type listed in `modules.site.submissions`
+  (never published; actor `system:site:<route>` with the client address in the audit entry; required fields enforced,
+  `site.FieldErrors` for re-rendering), `Request.CheckForm` and the `{{formGuard}}` template function add a signed
+  fill-time token and a honeypot (`modules.site.forms`), and `CustomRoute.Limit` rate-limits a route per client
+  address and in total, counted in the database (`site_limit`, migration `site` 0001; job `site.limits`) so several
+  servers share it. Run `hydrogen migrate` after updating.
 
 ### Changed
 
@@ -53,6 +59,9 @@ All notable changes to Hydrogen are documented here. The format follows
   site loads, and are served from the file system instead of memory. With 1,700 files (39 MB) loading takes about
   1.5 ms instead of 44 ms and allocates 0.9 MB instead of 43 MB. Fingerprints of files other than style sheets that
   contain references are unchanged.
+- Pages: placing a page, mount or link without `after` now puts it last among its siblings (it went first, so nodes
+  created in order came out reversed). `"after": null` (Go: `First: true`) still puts it first. Moving a node is
+  unchanged: without `after` it goes first.
 
 ### Fixed
 
@@ -62,12 +71,6 @@ All notable changes to Hydrogen are documented here. The format follows
 - Site module: `link "item:<id>"` and `item:` links in rich text resolve references held by any item the render
   read (`item`, `items`, settings), not only the page's own; an id no read item carries is looked up once (at most 64
   per render, in the page's locale and preview).
-
-### Changed
-
-- Pages: placing a page, mount or link without `after` now puts it last among its siblings (it went first, so nodes
-  created in order came out reversed). `"after": null` (Go: `First: true`) still puts it first. Moving a node is
-  unchanged: without `after` it goes first.
 
 ## [0.3.0] - 2026-10-22
 

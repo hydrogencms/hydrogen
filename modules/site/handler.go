@@ -156,6 +156,18 @@ func (s *server) serveCustom(w http.ResponseWriter, r *http.Request, eng *engine
 			s.respond(w, r, ch, &result{status: http.StatusForbidden, body: []byte("cross-site request refused"), custom: true}, false, "", 0)
 			return true
 		}
+		if hit.route.limit != nil {
+			wait, err := s.limited(r.Context(), r, hit.route, ch.Name)
+			switch {
+			case err != nil:
+				s.respond(w, r, ch, s.internal(rc, err), false, "", 0)
+				return true
+			case wait > 0:
+				h := http.Header{"Retry-After": {strconv.Itoa(int(wait / time.Second))}}
+				s.respond(w, r, ch, &result{status: http.StatusTooManyRequests, body: []byte("too many requests"), header: h, custom: true}, false, "", 0)
+				return true
+			}
+		}
 		limit := hit.route.maxBody
 		if limit <= 0 {
 			limit = defaultMaxBody

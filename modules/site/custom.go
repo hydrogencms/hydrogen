@@ -38,8 +38,9 @@ type Request struct {
 	Query   url.Values
 	Preview bool
 
-	srv *server
-	ch  *channel.Channel
+	srv   *server
+	ch    *channel.Channel
+	route *CustomRoute
 }
 
 // URL is the URL path of a site path on this channel: the channel's prefix plus the path ("/search" →
@@ -160,6 +161,7 @@ type CustomRoute struct {
 	channels []string
 	maxBody  int64
 	crossOK  bool
+	limit    *Limit
 	err      error
 }
 
@@ -502,7 +504,7 @@ func (c *Client) Item(id string) (*Item, error) { return c.f.item(c.ctx, id, c.f
 
 // runCustom calls a custom route and turns its answer into a result.
 func (s *server) runCustom(rc *reqCtx, hit *customHit) *result {
-	resp, err := hit.route.fn(s.request(rc, hit.params))
+	resp, err := hit.route.fn(s.request(rc, hit.route, hit.params))
 	var tooBig *http.MaxBytesError
 	switch {
 	case errors.As(err, &tooBig):
@@ -515,9 +517,9 @@ func (s *server) runCustom(rc *reqCtx, hit *customHit) *result {
 	return s.customResult(rc, hit, resp)
 }
 
-func (s *server) request(rc *reqCtx, params map[string]string) *Request {
+func (s *server) request(rc *reqCtx, rt *CustomRoute, params map[string]string) *Request {
 	return &Request{Client: &Client{ctx: rc.ctx, f: rc.f}, R: rc.r, Channel: rc.ch.Name, Locale: rc.ch.Languages[0],
-		Path: rc.rest, Params: params, Query: rc.r.URL.Query(), Preview: rc.preview(), srv: s, ch: rc.ch}
+		Path: rc.rest, Params: params, Query: rc.r.URL.Query(), Preview: rc.preview(), srv: s, ch: rc.ch, route: rt}
 }
 
 var missRoute = &CustomRoute{pattern: "NotFound"}
@@ -527,7 +529,7 @@ func (s *server) notFound(rc *reqCtx) *result {
 	if s.ext == nil || s.ext.miss == nil || rc.rest == notFoundPath {
 		return s.plainNotFound(rc)
 	}
-	resp, err := s.ext.miss(s.request(rc, map[string]string{}))
+	resp, err := s.ext.miss(s.request(rc, missRoute, map[string]string{}))
 	switch {
 	case errors.Is(err, ErrNotFound), err == nil && resp == nil:
 		return s.plainNotFound(rc)

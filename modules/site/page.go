@@ -114,6 +114,7 @@ type page struct {
 	rawQuery   string
 	query      url.Values
 	qread      map[string]bool
+	guard      *formGuard // nil in site:check
 }
 
 func (p *page) context() context.Context {
@@ -141,6 +142,7 @@ func (p *page) funcs() template.FuncMap {
 		"edit":        p.editFn,
 		"setting":     p.settingFn,
 		"component":   p.componentFn,
+		"formGuard":   p.formGuardFn,
 	}
 	if p.eng != nil {
 		for _, f := range p.eng.viewFuncs {

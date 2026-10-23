@@ -364,6 +364,92 @@ Endpoints under `/api/x` (see [hooks](hooks.md#endpoints)) that want CDN caching
 and `Cache-Tag` from tags such as `cachetag.Item(id)` or `cachetag.Collection("post")`, so purges reach them
 (`cachetag.NoStore` as the ttl sends `no-store`).
 
+## Forms
+
+A custom route can store a form submission as content (access control, audit, export and review come with it)
+and protect itself from abuse, without a module that captures the content service.
+
+```yaml
+# config/app.yaml
+modules:
+  site:
+    submissions: [contactMessage]   # the types Request.Submit may create
+    forms:                          # the spam checks (these are the defaults)
+      honeypot: website_url
+      min_fill: 3s                  # a form submitted sooner after it was rendered is refused; 0 turns it off
+      max_age: 4h                   # a rendered form stays valid this long
+```
+
+```yaml
+# schema: submissions are ordinary items; required fields are enforced
+types:
+  contactMessage:
+    name: "{sender}"
+    fields:
+      sender:  { type: string, required: true }
+      email:   { type: string, required: true }
+      message: { type: text, required: true }
+```
+
+```go
+site.Handle(h, "GET /contact", func(q *site.Request) (*site.Response, error) {
+	return &site.Response{Template: "routes/contact.html", Title: "Contact"}, nil
+})
+site.Handle(h, "POST /contact", func(q *site.Request) (*site.Response, error) {
+	_, err := q.Submit("contactMessage", map[string]any{
+		"sender": q.R.PostFormValue("sender"), "email": q.R.PostFormValue("email"), "message": q.R.PostFormValue("message"),
+	})
+	switch {
+	case err == nil: // also when the honeypot was filled: the bot is told it worked
+		return &site.Response{Redirect: q.URL("/contact/thanks")}, nil // post/redirect/get: a reload does not resubmit
+	case site.FieldErrors(err) != nil:
+		return &site.Response{Template: "routes/contact.html", Status: 422, Data: site.FieldErrors(err)}, nil
+	case errors.Is(err, site.ErrTooFast), errors.Is(err, site.ErrFormInvalid):
+		return &site.Response{Template: "routes/contact.html", Status: 400, Data: map[string]string{"form": "Please try again."}}, nil
+	}
+	return nil, err
+}).Limit(site.Limit{PerClient: 5, Total: 200, Window: time.Hour})
+```
+
+```html
+<!-- site/templates/routes/contact.html -->
+{{define "content"}}
+<form method="post" action="{{.Path}}">
+  {{formGuard}}
+  <label>Name <input name="sender" required></label>
+  <label>Email <input name="email" type="email" required></label>
+  <label>Message <textarea name="message" required></textarea></label>
+  {{with .Data}}<p class="error">{{index . "sender"}} {{index . "email"}} {{index . "message"}} {{index . "form"}}</p>{{end}}
+  <button>Send</button>
+</form>
+{{end}}
+```
+
+- **Submit.** `q.Submit(type, fields)` creates a draft of a type listed in `modules.site.submissions` and returns its
+  id; it never publishes. The route chooses `fields` (never pass the raw form). Required fields are enforced, and a
+  problem is a `*content.ValidationError`; `site.FieldErrors(err)` turns it into a path to message map for
+  re-rendering the form. A type that is not listed fails with `site.ErrNotAllowed`. Only routes that handle POST,
+  PUT, PATCH or DELETE may submit. The item is created with the actor `system:site:<route path>` (`created_by`),
+  and its audit entry records the channel and the client address (`http.trusted_proxies` decides which address that
+  is), so editors can tell submissions from edits. Give editors a role with `content.read` on the type.
+- **Cross-site posts** are refused by the custom-route rules above (`Origin` and `Sec-Fetch-Site`); do not use
+  `.AllowCrossSite()` on a form route.
+- **Spam.** `{{formGuard}}` renders a hidden input with a signed timestamp (an HMAC under a key derived from
+  `delivery.preview_secret`, or `manage.token` in dev, so every node agrees) and a honeypot field hidden with the
+  `hidden` attribute. `Submit` (or `q.CheckForm()` for routes that do something else with the form, such as sending
+  mail) answers `ErrFormInvalid` for a missing, forged or expired token, `ErrTooFast` below `min_fill`, and drops a
+  submission that filled the honeypot: `Submit` returns an empty id and no error, so answer as for a success. A
+  token proves only that a form was rendered a while ago, not who got it; a bot that loads the form first passes
+  it. Put the rate limit below, and a CAPTCHA at your edge if you need more. Render forms in custom routes, or
+  keep their pages out of shared caches: a cached token goes stale after `max_age` and is shared by every visitor.
+- **Rate limit.** `.Limit(site.Limit{PerClient, Total, Window})` counts the route's non-GET requests per client
+  address (IPv6 by /64) and for all clients, in one fixed window kept in the `site_limit` table, so servers that
+  share the database share the count. A request over a limit is answered 429 with `Retry-After`. Run
+  `hydrogen migrate` after updating (the module has its own migration); the `site.limits` job removes ended
+  windows every 10 minutes. Windows are fixed: up to twice the limit can pass around a boundary. Every counted
+  request is one small write, so a limit costs a transaction per request on that route; routes without a limit
+  cost nothing.
+
 ## Components and templ
 
 A template name can be backed by a Go component instead of a file. `site.Renderer` has exactly the method set of

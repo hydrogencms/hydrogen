@@ -153,7 +153,7 @@ func (s *server) newPage(rc *reqCtx, locale string, it *Item) (*page, *View) {
 		v.Fields = it.Fields
 		v.Title = itemTitle(it)
 	}
-	p := &page{ctx: rc.ctx, eng: rc.eng, ch: rc.ch, locale: locale, def: s.svc.Core.Content.DefaultLocale, preview: rc.preview(), log: s.log,
+	p := &page{ctx: rc.ctx, eng: rc.eng, ch: rc.ch, guard: s.guard, locale: locale, def: s.svc.Core.Content.DefaultLocale, preview: rc.preview(), log: s.log,
 		view: v, rawQuery: rc.r.URL.RawQuery, links: map[string]string{}, rt: s.svc.Schema.RichText(), f: rc.f, itemPath: func(it *Item) string { return s.linkPath(rc.ch, it) }, linkFields: func(typ string) []string { return s.linkFields(rc.ch, typ) }}
 	p.adoptLinks(it)
 	for _, typ := range s.singletons {

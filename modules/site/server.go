@@ -41,6 +41,7 @@ type server struct {
 	ext        *Extensions
 	src        *sources
 	custom     *customSet
+	guard      *formGuard
 	hosts      map[string]bool // hosts of the web channels' absolute URLs, lower case
 }
 
@@ -51,6 +52,11 @@ func newServer(cfg *Config, ext *Extensions, s *kernel.Services, ps *pages.Servi
 	}
 	if err := checkRoutes(routes, s.Schema); err != nil {
 		return nil, err
+	}
+	for _, name := range cfg.Submissions {
+		if t, ok := s.Schema.Type(name); !ok || t.Singleton {
+			return nil, fmt.Errorf("site: modules.site.submissions: %q is not a collection type", name)
+		}
 	}
 	var proxies []netip.Prefix
 	for _, p := range s.Core.HTTP.TrustedProxies {
@@ -76,6 +82,11 @@ func newServer(cfg *Config, ext *Extensions, s *kernel.Services, ps *pages.Servi
 	}
 	srv := &server{proxies: proxies, cfg: cfg, svc: s, pages: ps, routes: routes, log: s.Log, dev: s.Env == config.DevEnv, clock: s.Clock,
 		ext: ext, custom: custom, src: &sources{chain: chain, dir: cfg.Dir, comps: ext.comps, funcs: ext.funcs, view: ext.view, viewNames: ext.viewNames}}
+	secret := s.Core.Delivery.PreviewSecret
+	if secret == "" {
+		secret = s.Core.Manage.Token
+	}
+	srv.guard = newFormGuard(secret, cfg.Forms, s.Clock)
 	if cfg.CacheBytes > 0 {
 		srv.cache = newPageCache(cfg.CacheBytes)
 	}

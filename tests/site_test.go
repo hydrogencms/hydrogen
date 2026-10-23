@@ -50,6 +50,12 @@ types:
       title: { type: string, required: true }
       target: { type: ref, to: [section, article], on_delete: nullify }
       body: { type: richtext }
+  submission:
+    name: "{sender}"
+    fields:
+      sender:  { type: string, required: true }
+      email:   { type: string }
+      message: { type: text }
   article:
     name: "{title}"
     fields:
@@ -64,7 +70,7 @@ groups:
   web:
     site: main
     render: go
-    reserved: [/raw/*, /search, /account/*, /tags/*, /comp, /contact, /small, /open]
+    reserved: [/raw/*, /search, /account/*, /tags/*, /comp, /contact, /small, /open, /forms/*]
 channels:
   en: { group: web, languages: [en], match: { prefix: /en } }
 `
@@ -135,7 +141,7 @@ func newSiteEnvWith(t testing.TB, db store.DB, clk *clock.Manual, themeName, sch
 	}
 	write("schema/s.yaml", schemaYAML)
 	write("config/channels.yaml", channelsYAML)
-	write("config/app.yaml", "content: { schema_dir: "+filepath.Join(dir, "schema")+" }\nmodules:\n  pages: { sites: [main] }\n  site: { theme: "+themeName+", dir: "+filepath.Join(dir, "nosite")+", routes: [{ path: /posts, type: article, template: posts, limit: 2 }, { path: \"/posts/{slug}\", type: article, template: post }] }\n")
+	write("config/app.yaml", "content: { schema_dir: "+filepath.Join(dir, "schema")+" }\nmodules:\n  pages: { sites: [main] }\n  site: { theme: "+themeName+", dir: "+filepath.Join(dir, "nosite")+", routes: [{ path: /posts, type: article, template: posts, limit: 2 }, { path: \"/posts/{slug}\", type: article, template: post }], submissions: [submission] }\n")
 	cfg, err := config.Load(config.Options{Dir: filepath.Join(dir, "config"), Env: "dev", LookupEnv: func(string) (string, bool) { return "", false }})
 	if err != nil {
 		t.Fatal(err)
