@@ -8,9 +8,11 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/hydrogencms/hydrogen/core/channel"
 	"github.com/hydrogencms/hydrogen/core/config"
@@ -27,6 +29,9 @@ const (
 
 //go:embed all:themes
 var themeFS embed.FS
+
+//go:embed migrations
+var migrationFS embed.FS
 
 // bridgeJS is packages/bridge/dist/bridge.iife.js; `make site-bridge` refreshes it.
 //
@@ -51,6 +56,10 @@ type Config struct {
 	Root string `yaml:"root"`
 	// Routes render collection items that are not placed in the page tree.
 	Routes []Route `yaml:"routes"`
+	// Submissions lists the types custom routes may store form submissions in (Request.Submit).
+	Submissions []string `yaml:"submissions"`
+	// Forms configures the spam checks of form submissions.
+	Forms FormsConfig `yaml:"forms"`
 }
 
 // Route maps a path inside a channel to a collection type. A path with one {param} (a field of the type, or
@@ -66,7 +75,8 @@ type Route struct {
 
 // Module returns the site module.
 func Module() kernel.Module {
-	return &module{cfg: Config{Theme: starterName, Dir: "site", CacheBytes: 16 << 20, PreviewCSP: true}}
+	return &module{cfg: Config{Theme: starterName, Dir: "site", CacheBytes: 16 << 20, PreviewCSP: true,
+		Forms: FormsConfig{Honeypot: "website_url", MinFill: 3 * time.Second, MaxAge: 4 * time.Hour}}}
 }
 
 type module struct {
@@ -95,6 +105,15 @@ func (m *module) Register(r *kernel.Registry) error {
 	m.ext = newExtensions() // Register may run more than once (config:check): start clean each time
 	kernel.Provide(r, m.ext)
 	kernel.Provide(r, &Exporter{m: m})
+	r.Migrations(kernel.MigrationSource{Source: "site", FS: func(dialect string) (fs.FS, error) {
+		if dialect != "sqlite" && dialect != "postgres" {
+			return nil, fmt.Errorf("site: no migrations for dialect %q", dialect)
+		}
+		return fs.Sub(migrationFS, "migrations/"+dialect)
+	}})
+	if err := r.Job(limitJob, "@every 10m", pruneLimits); err != nil {
+		return err
+	}
 	r.ChannelOption(channel.Option{Name: optRender, Decode: decodeRender})
 	r.ChannelCheck(m.checkChannels)
 	r.Handle("GET "+bridgeURL, http.HandlerFunc(serveBridge))
@@ -153,6 +172,9 @@ func (c *Config) validate() error {
 	}
 	if c.CacheBytes < 0 {
 		return errors.New("site: modules.site.cache_bytes must not be negative")
+	}
+	if err := c.Forms.validate(); err != nil {
+		return err
 	}
 	var errs []error
 	seen := map[string]bool{}

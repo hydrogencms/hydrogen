@@ -65,6 +65,8 @@ type Type struct {
 	Fields      []*Field       // file order
 	Options     map[string]any // module options by key (Registry.TypeOption); nil when none
 	Pos         Pos
+
+	search SearchConfig
 }
 
 func (t *Type) Field(name string) (*Field, bool) {
@@ -102,7 +104,8 @@ type Field struct {
 	Required     bool
 	Translatable bool // top-level fields only
 	Index        bool
-	Default      any // JSON-compatible; numbers are json.Number
+	Unique       bool // no other live item of the type has this value (per locale if translatable); implies Index
+	Default      any  // JSON-compatible; numbers are json.Number
 	When         *Condition
 	AI           FieldAI
 	Admin        FieldAdmin

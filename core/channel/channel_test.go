@@ -228,6 +228,10 @@ func TestCompileErrors(t *testing.T) {
 	cases := []struct{ name, yaml, want string }{
 		{"channel name", "channels: { Bad-Name: { languages: [en] } }", `channels.yaml:1: channel "Bad-Name": name:`},
 		{"group name", "groups: { Bad: {} }\n", `group name "Bad"`},
+		{"doubled dash", "channels: { global--en: { languages: [en] } }", `channel "global--en": name:`},
+		{"trailing dash", "channels: { global-: { languages: [en] } }", `channel "global-": name:`},
+		{"leading dash group", "groups: { -web: {} }\n", `group name "-web"`},
+		{"dash token", "channels:\n  a: { languages: [en], access: token, tokens: { v-1: \"${env:IOS}\" } }\n", `token name "v-1"`},
 		{"missing languages", "channels:\n  a: {}\n", `channels.yaml:2: channel "a": languages are required`},
 		{"bad language", "channels:\n  a: { languages: [EN_us] }\n", `language "EN_us" is not a locale code`},
 		{"language not in registry", "languages: { en: {} }\nchannels:\n  a: { languages: [en, fr] }\n", `channels.yaml:3: language "fr" is not in the languages registry (have: en)`},
@@ -272,6 +276,28 @@ func TestCompileErrors(t *testing.T) {
 				t.Fatalf("want %q, got %v", tc.want, err)
 			}
 		})
+	}
+}
+
+func TestHyphenatedNames(t *testing.T) {
+	s, err := compile(t, `
+groups:
+  web-main: { languages: [en] }
+channels:
+  global-en: { group: web-main }
+  eu-west_2-de: { languages: [de] }
+templates:
+  - for: { market: [sg] }
+    name: "shop-{market}"
+    languages: [en]
+`, channel.CompileOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"global-en", "eu-west_2-de", "shop-sg"} {
+		if _, ok := s.Get(name); !ok {
+			t.Errorf("channel %q missing", name)
+		}
 	}
 }
 

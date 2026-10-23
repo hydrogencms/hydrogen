@@ -137,13 +137,13 @@ func TestThemeLayering(t *testing.T) {
 		}
 	}
 	// assets: the nearest layer wins; the starter's are not part of this chain
-	if _, ok := e.assets.url("x.css"); !ok {
+	if _, ok, _ := e.assets.url("x.css"); !ok {
 		t.Error("base asset missing")
 	}
-	if _, ok := e.assets.url("site.css"); ok {
+	if _, ok, _ := e.assets.url("site.css"); ok {
 		t.Error("the starter's asset leaked into another chain")
 	}
-	f := e.assets.byURL[strings.TrimPrefix(mustURL(t, e, "y.css"), assetsURL)]
+	f := e.assets.files["y.css"]
 	if f.where == "" || !strings.Contains(f.where, "theme child/assets") {
 		t.Errorf("y.css from %q", f.where)
 	}
@@ -156,15 +156,6 @@ func TestThemeLayering(t *testing.T) {
 	if !se.has("blocks/hero.html") || !strings.Contains(se.sources["pages/default.html"], dir) {
 		t.Errorf("starter chain: %v", se.sources["pages/default.html"])
 	}
-}
-
-func mustURL(t *testing.T, e *engine, name string) string {
-	t.Helper()
-	u, ok := e.assets.url(name)
-	if !ok {
-		t.Fatalf("no asset %s", name)
-	}
-	return u
 }
 
 type fakeRenderer struct{ out string }
@@ -399,5 +390,16 @@ func TestCustomMatch(t *testing.T) {
 	}
 	if _, err := buildCustom([]*CustomRoute{newCustomRoute("/a/{x}", ok), newCustomRoute("/a/{y}", ok)}, []*channel.Channel{ch}); err == nil {
 		t.Error("conflicting patterns accepted")
+	}
+}
+
+func TestReservedRoot(t *testing.T) {
+	for pat, want := range map[string]bool{"/{$}": true, "/": false, "/x": false, "/{a}": false} {
+		if got := reservedBy([]string{"/"}, pat); got != want {
+			t.Errorf("reservedBy([/], %s) = %v, want %v", pat, got, want)
+		}
+	}
+	if reservedBy([]string{"/search"}, "/{$}") {
+		t.Error("the root is not reserved by /search")
 	}
 }

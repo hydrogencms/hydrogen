@@ -86,6 +86,18 @@ func (p *page) withPath(it *Item) *Item {
 	return it
 }
 
+// adoptLinks makes the links an item carries available to link and rich text; the page's own win.
+func (p *page) adoptLinks(it *Item) {
+	if it == nil {
+		return
+	}
+	for k, u := range it.Links {
+		if _, ok := p.links[k]; !ok {
+			p.links[k] = u
+		}
+	}
+}
+
 // ItemsPage is one page of a listing: Items, whether more follow, and Total, the number of matches in all.
 // Total is -1 unless the listing was asked for it with "total" true, because counting costs a query.
 type ItemsPage struct {
@@ -124,6 +136,7 @@ func (p *page) itemsPageFn(typ string, args ...any) (*ItemsPage, error) {
 		}
 		for _, it := range l.Items {
 			p.withPath(it)
+			p.adoptLinks(it)
 		}
 		pg := &ItemsPage{Items: l.Items, HasMore: l.HasMore, Total: -1}
 		if l.Total != nil {
@@ -178,6 +191,7 @@ func (p *page) itemFn(id string, args ...any) (*Item, error) {
 	p.withLinkFields(q, "")
 	v, err := p.remember("item:"+id+"?"+q.Encode(), func() (any, error) {
 		it, err := p.f.itemQuery(p.context(), id, p.f.preview != "", q)
+		p.adoptLinks(it)
 		return p.withPath(it), err
 	})
 	if err != nil {

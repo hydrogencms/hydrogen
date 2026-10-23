@@ -33,6 +33,7 @@ var contentTests = []struct {
 	{"ContentSearchHuge", testSearchHuge},
 	{"ContentQueryTypes", testQueryTypes},
 	{"ContentHighlight", testHighlight},
+	{"ContentSearchTiers", testSearchTiers},
 	{"ContentSearchFallback", testSearchFallback},
 	{"ContentFacetSearch", testFacetSearch},
 	{"ContentPublishedAtSort", testPublishedAtSort},
@@ -57,6 +58,7 @@ var contentTests = []struct {
 	{"ContentWorkingNames", testWorkingNames},
 	{"ContentModuleIndex", testModuleIndex},
 	{"ContentQueryScope", testQueryScope},
+	{"ContentQueryGroups", testQueryGroups},
 }
 
 func withContent(t *testing.T, db store.DB, fn func(store.ContentStore) error) {

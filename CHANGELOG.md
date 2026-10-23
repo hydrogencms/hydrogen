@@ -8,8 +8,91 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Added
 
+- Delivery and management queries: boolean filter groups. `where[or][0][f][op]=v&where[or][1][g][op]=w` matches items
+  satisfying every filter of at least one group and `where[not][f][op]=v` matches items that do not satisfy all of
+  its filters (numbered `not` groups exclude items satisfying any), next to the plain ANDed `where[field][op]`
+  filters, at most 32 conditions in all. An item without a value for a field satisfies the negation of a test on
+  it. Both adapters compile groups to the index tables (`store.OpOr`, `store.OpNot` with `store.Cond.Groups`,
+  checked by `storetest`); the GraphQL module accepts `or` and `not` in `where`.
+- `facets=a,b` on delivery collection listings: value counts of up to five indexed text fields over the whole
+  filtered set the channel can show (published, available in the channel's languages), answered as `facets`.
+  `store.Reader` gains `Facet`, and `content.Service.CheckFacetFields` validates the fields.
+- Pages: a page type field `canonicalPath` (translatable) makes a page's URL differ from its tree position, for sites whose
+  navigation and URL structure disagree. The page's subpages build on it, its tree path answers a 301, and routes, `/tree`,
+  `links`, breadcrumbs, canonical and hreflang follow. A taken, malformed or root path refuses the publish. Stored in
+  `page_slug.canonical` (migration 0003 of the pages module; exported and imported with the pages records).
+- Forced redirects: a `redirect` item with `force: true` is answered before the page, mounted item or ordinary redirect
+  at its path, and is accepted where a page holds the path, so a moved or retired page can redirect and the site root
+  `/` can be redirected while the tree has a root page. Stored in a new `route_force` table (migration 0002 of the pages
+  module; exported and imported with the pages records); `Route.Force` marks them in `Paths` and `Redirects`, and the
+  `/route` answer keeps its shape. One extra union branch on the lookup, still one query per request.
+- Mounted items that redirect: a mount's `redirectField` (a string or url field) and `redirectStatus` (default 302) make
+  items with a URL or site path in that field answer a redirect instead of themselves; delivery `url` and `links` for
+  them point at the target, and the site module links out directly.
+- `reserved: [/]` reserves a channel's root, so a site module route `GET /{$}` (or a frontend page) can replace the
+  root page.
+- `site.NotFound(h, fn)`: a hook that answers misses before `404.html` with a redirect, a custom status or its own
+  template.
+- Site module templates: the request's query string (`.Query "name"`, `.QueryValues "name"`, cached per variant of
+  the parameters a page reads, bounded per path; pages that ignore the query keep one cache entry), the page for
+  block templates (`.Page` on a block), and `site.ViewFuncs` for project template functions that read the page's
+  view and content (`View.List`, `View.Get`).
+- Site module assets: `url(...)` and `@import` references in style sheets are rewritten to the fingerprinted URLs of
+  the assets they name (quoted or not, relative or root-relative, `?#iefix` and `#icon` suffixes kept; `data:`,
+  external, fragment-only and unknown references untouched), and the sheet's fingerprint covers the rewritten text.
+  Projects no longer need to repeat Hydrogen's hashing rule in their CSS.
+- Site module assets requested without a fingerprint carry a strong `ETag`, `Last-Modified` and `Cache-Control:
+  no-cache` and answer `304` to conditional requests.
+- Choose item ids on create: `content.CreateInput.ID`, `id` in the body of `POST /collections/{type}/items` and
+  `client.CreateInput.ID`. Any non-nil UUID is accepted; an id already in use, trashed items included, answers 409
+  `duplicate_id` (`content.ErrDuplicateID`).
+- Site module forms: `Request.Submit` stores a form as a draft item of a type listed in `modules.site.submissions`
+  (never published; actor `system:site:<route>` with the client address in the audit entry; required fields enforced,
+  `site.FieldErrors` for re-rendering), `Request.CheckForm` and the `{{formGuard}}` template function add a signed
+  fill-time token and a honeypot (`modules.site.forms`), and `CustomRoute.Limit` rate-limits a route per client
+  address and in total, counted in the database (`site_limit`, migration `site` 0001; job `site.limits`) so several
+  servers share it. Run `hydrogen migrate` after updating.
+- Search relevance in the database engine: the type option `search` takes an object with `weights` (fields and `name` in
+  the `high`, `normal` or `low` tier; SQLite FTS5 gets a column per tier ranked by bm25, Postgres `setweight` classes)
+  and `exclude` (a boolean field; documents where it is true are not indexed, by any engine, while the management
+  search still finds them). Changing either rebuilds the projections at the next start. Delivery `/search` accepts
+  `limit` up to 100. `docs/search.md` says when to switch to Meilisearch. SQLite migration 0013 and Postgres migration
+  0012 keep existing rows as the normal tier.
+- Slug fields take `allow: ".,"`, so slugs and the paths built from them can keep dots and commas (`benelux-b.v`,
+  `acme,-inc`); the pages module accepts the same characters in site paths and vanity paths. Fields take
+  `unique: true` (top-level string, slug and email fields): no other item of the type, in the same locale for a
+  translatable field, may hold the value. It is checked on draft writes, publish and restore under a lock
+  (`store.ContentStore.LockName`, implemented by both adapters) and fails as a validation error with code `not_unique`.
+- Channel and group names may contain single hyphens (`global-en`).
+- Channel option `root_reserved` (pages module): root-level paths (`/legacy`, `/ajax/*`) that a channel matched by a
+  prefix also serves, so its custom routes and `GET /route` answer for them. `config:check` rejects a root path that
+  another channel claims or that falls under another channel's prefix.
+- Site templates: `get` (a nil-safe dot path through maps, lists, structs and pointers), `append`, `ternary` and
+  `isLast`; a symbolic link to a directory under `site/` is followed (links back to a directory being walked are
+  skipped), also by the dev reload; a section on scripts and styles in `docs/site.md`.
 - Site templates: `itemsPage` (the items of a listing with `.HasMore` and, on request, `.Total`) and `itemBlock`
   (one block of an item by id, rendered with `blocks`), with `View.ItemsPage` and `View.FindBlock` for Go components.
+
+### Changed
+
+- Site module assets are listed at start and hashed on first use instead of being read and hashed in full when the
+  site loads, and are served from the file system instead of memory. With 1,700 files (39 MB) loading takes about
+  1.5 ms instead of 44 ms and allocates 0.9 MB instead of 43 MB. Fingerprints of files other than style sheets that
+  contain references are unchanged.
+- Pages: placing a page, mount or link without `after` now puts it last among its siblings (it went first, so nodes
+  created in order came out reversed). `"after": null` (Go: `First: true`) still puts it first. Moving a node is
+  unchanged: without `after` it goes first.
+- Site templates: a template file loses one trailing newline when parsed, so value partials no longer end in a line
+  break.
+
+### Fixed
+
+- Admin: with collaboration on, a rich text value the editor cannot load (a node or mark its schema lacks) was seeded
+  as an empty document, so opening the item showed "Unsaved changes" and the next save removed the field. The value
+  now stays as stored and the field shows as invalid, with its JSON to fix.
+- Site module: `link "item:<id>"` and `item:` links in rich text resolve references held by any item the render
+  read (`item`, `items`, settings), not only the page's own; an id no read item carries is looked up once (at most 64
+  per render, in the page's locale and preview).
 
 ## [0.3.0] - 2026-10-22
 

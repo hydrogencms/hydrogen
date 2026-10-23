@@ -20,3 +20,27 @@ func BenchmarkContentQuery(b *testing.B) {
 	}
 	storetest.BenchmarkQuery(b, db)
 }
+
+func BenchmarkSearch(b *testing.B) {
+	db, err := Open(context.Background(), pgtest.Scratch(b), store.OpenOptions{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := db.Migrate(context.Background(), nil); err != nil {
+		b.Fatal(err)
+	}
+	storetest.BenchmarkSearch(b, db, false)
+}
+
+func BenchmarkSearchTiered(b *testing.B) {
+	db, err := Open(context.Background(), pgtest.Scratch(b), store.OpenOptions{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := db.Migrate(context.Background(), nil); err != nil {
+		b.Fatal(err)
+	}
+	storetest.BenchmarkSearch(b, db, true)
+}

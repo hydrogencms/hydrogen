@@ -1,20 +1,15 @@
 package site
 
 import (
-	"bytes"
-	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"hash/fnv"
 	"io/fs"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -24,6 +19,7 @@ import (
 type layer struct {
 	fsys fs.FS
 	root string // the file system's directory for messages
+	os   bool   // root is a directory on disk, whose symbolic links to directories are followed
 }
 
 // layers returns the themes' and the project's file systems for a sub directory ("templates", "assets",
@@ -35,12 +31,12 @@ func layers(chain []Theme, dir, sub string) []layer {
 			continue
 		}
 		if sf, err := fs.Sub(t.FS, sub); err == nil {
-			out = append(out, layer{sf, "theme " + t.Name + "/" + sub})
+			out = append(out, layer{sf, "theme " + t.Name + "/" + sub, false})
 		}
 	}
 	p := filepath.Join(dir, sub)
 	if st, err := os.Stat(p); err == nil && st.IsDir() {
-		out = append(out, layer{os.DirFS(p), p})
+		out = append(out, layer{os.DirFS(p), p, true})
 	}
 	return out
 }
@@ -55,16 +51,22 @@ type layered struct {
 func files(ls []layer, ext ...string) ([]layered, error) {
 	byName := map[string]layered{}
 	for _, l := range ls {
-		err := fs.WalkDir(l.fsys, ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
+		add := func(p string) {
+			if len(ext) == 0 || slices.Contains(ext, path.Ext(p)) {
+				byName[p] = layered{p, l.fsys, l.root + "/" + p}
+			}
+		}
+		var err error
+		if l.os {
+			err = walkFollow(l.root, func(p string, _ fs.FileInfo) { add(filepath.ToSlash(p)) })
+		} else {
+			err = fs.WalkDir(l.fsys, ".", func(p string, d fs.DirEntry, err error) error {
+				if err == nil && !d.IsDir() {
+					add(p)
+				}
 				return err
-			}
-			if len(ext) > 0 && !slices.Contains(ext, path.Ext(p)) {
-				return nil
-			}
-			byName[p] = layered{p, l.fsys, l.root + "/" + p}
-			return nil
-		})
+			})
+		}
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", l.root, err)
 		}
@@ -77,62 +79,40 @@ func files(ls []layer, ext ...string) ([]layered, error) {
 	return out, nil
 }
 
-// assetSet serves the files of site/assets under fingerprinted names.
-type assetSet struct {
-	byURL  map[string]layered // fingerprinted name → file
-	byName map[string]string  // name → fingerprinted name
+// walkFollow visits the files under root (paths relative to it, in lexical order), following symbolic links to
+// directories; a link back to a directory being walked is skipped. A broken link is skipped.
+func walkFollow(root string, visit func(rel string, info fs.FileInfo)) error {
+	real, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	return walkDir(root, "", []string{real}, visit)
 }
 
-func loadAssets(chain []Theme, dir string) (*assetSet, error) {
-	list, err := files(layers(chain, dir, "assets"))
+func walkDir(root, rel string, ancestors []string, visit func(string, fs.FileInfo)) error {
+	entries, err := os.ReadDir(filepath.Join(root, rel))
 	if err != nil {
-		return nil, err
+		return err
 	}
-	a := &assetSet{byURL: map[string]layered{}, byName: map[string]string{}}
-	for _, f := range list {
-		b, err := fs.ReadFile(f.fsys, f.name)
+	for _, e := range entries {
+		p := filepath.Join(rel, e.Name())
+		info, err := os.Stat(filepath.Join(root, p))
 		if err != nil {
-			return nil, fmt.Errorf("read asset %s: %w", f.where, err)
+			continue
 		}
-		sum := sha256.Sum256(b)
-		ext := path.Ext(f.name)
-		fp := strings.TrimSuffix(f.name, ext) + "." + hex.EncodeToString(sum[:5]) + ext
-		a.byURL[fp] = f
-		a.byName[f.name] = fp
-	}
-	return a, nil
-}
-
-// url is the fingerprinted URL of an asset; false when there is no such file.
-func (a *assetSet) url(name string) (string, bool) {
-	fp, ok := a.byName[strings.TrimPrefix(name, "/")]
-	return assetsURL + fp, ok
-}
-
-func (a *assetSet) serve(w http.ResponseWriter, r *http.Request, name string) {
-	f, immutable := a.byURL[name]
-	if !immutable {
-		fp, ok := a.byName[name]
-		if !ok {
-			http.NotFound(w, r)
-			return
+		if !info.IsDir() {
+			visit(p, info)
+			continue
 		}
-		f = a.byURL[fp]
+		real, err := filepath.EvalSymlinks(filepath.Join(root, p))
+		if err != nil || slices.Contains(ancestors, real) {
+			continue
+		}
+		if err := walkDir(root, p, append(ancestors, real), visit); err != nil {
+			return err
+		}
 	}
-	b, err := fs.ReadFile(f.fsys, f.name)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	h := w.Header()
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Access-Control-Allow-Origin", "*")
-	if immutable {
-		h.Set("Cache-Control", "public, max-age=31536000, immutable")
-	} else {
-		h.Set("Cache-Control", "no-cache")
-	}
-	http.ServeContent(w, r, path.Base(f.name), time.Time{}, bytes.NewReader(b))
+	return nil
 }
 
 // translations are the flat key → text maps of site/translations/<locale>.yaml over the themes', per key.
@@ -190,17 +170,11 @@ func (t translations) text(locale, def, key string, pairs ...any) string {
 func dirSignature(dir string) uint64 {
 	h := fnv.New64a()
 	var buf [16]byte
-	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		if info, err := d.Info(); err == nil {
-			_, _ = h.Write([]byte(p))
-			binary.LittleEndian.PutUint64(buf[:8], uint64(info.Size()))
-			binary.LittleEndian.PutUint64(buf[8:], uint64(info.ModTime().UnixNano()))
-			_, _ = h.Write(buf[:])
-		}
-		return nil
+	_ = walkFollow(dir, func(p string, info fs.FileInfo) {
+		_, _ = h.Write([]byte(p))
+		binary.LittleEndian.PutUint64(buf[:8], uint64(info.Size()))
+		binary.LittleEndian.PutUint64(buf[8:], uint64(info.ModTime().UnixNano()))
+		_, _ = h.Write(buf[:])
 	})
 	return h.Sum64()
 }

@@ -107,8 +107,8 @@ func (cx *compiler) parseGroups(gn *config.Node) map[string]*spec {
 	}
 	for _, name := range gn.Keys() {
 		v := gn.Get(name)
-		if !nameRE.MatchString(name) {
-			cx.fail(v, "group name %q: use lowercase letters, digits and underscores, starting with a letter", name)
+		if !idRE.MatchString(name) {
+			cx.fail(v, "group name %q: use lowercase letters, digits, underscores and single dashes, starting with a letter", name)
 		}
 		if sp := cx.parseSpec(v, kindGroup); sp != nil {
 			out[name] = sp
@@ -241,8 +241,8 @@ func (cx *compiler) resolve(ns namedSpec, defaults *spec, groups map[string]*spe
 			cx.add(fmt.Errorf("channel %q: %s", ns.name, msg))
 		}
 	}
-	if !nameRE.MatchString(ns.name) {
-		pos("name: use lowercase letters, digits and underscores, starting with a letter")
+	if !idRE.MatchString(ns.name) {
+		pos("name: use lowercase letters, digits, underscores and single dashes, starting with a letter")
 		return nil, nil
 	}
 	chain := cx.chain(ns, defaults, groups)

@@ -56,7 +56,7 @@ types:
 		t.Errorf("landing.vanityPath = %+v", v)
 	}
 	custom, _ := s.Type("custom")
-	if len(custom.Fields) != 3 { // its own slug is kept; vanityPath is added
+	if len(custom.Fields) != 4 { // its own slug is kept; canonicalPath and vanityPath are added
 		t.Errorf("custom fields = %d", len(custom.Fields))
 	}
 	article, _ := s.Type("article")
@@ -71,7 +71,7 @@ types:
 	for _, f := range red.Fields {
 		names = append(names, f.Name)
 	}
-	if got := strings.Join(names, ","); got != "from,to,statusCode,site,forLocale" {
+	if got := strings.Join(names, ","); got != "from,to,statusCode,site,forLocale,force" {
 		t.Errorf("redirect fields = %s", got)
 	}
 }

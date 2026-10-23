@@ -216,7 +216,7 @@ templates:                    # one channel per combination of the `for` values
 
 A channel takes each key from its own entry, then its group, then `defaults`; the first that sets it wins, except
 `settings`, which are merged key by key (the channel's value wins). `group` and `tokens` belong to the channel itself.
-Channel names are lower-case letters, digits and `_`. Once `channels.yaml` defines channels, each needs `languages`
+Channel and group names are lower-case letters, digits, `_` and single `-` between parts (`global-en`, `web_eu-west`), starting with a letter; nothing derives identifiers from them, so a hyphen needs no mapping. Token names and template placeholders stay letters, digits and `_`. Once `channels.yaml` defines channels, each needs `languages`
 (on itself, its group or `defaults`).
 
 | Key | Meaning |
@@ -234,8 +234,25 @@ Channel names are lower-case letters, digits and `_`. Once `channels.yaml` defin
 Modules add keys. The pages module adds `site` (one of `modules.pages.sites`), `match` (`host`, `prefix` and/or a
 `header: {name, value}`; two channels cannot match the same way; `prefix: /` serves every path, so a site with one web
 channel needs only `match: { prefix: / }`, and a more specific channel still wins where it fits) and `reserved` (paths the frontend owns, such as
-`/cart` or `/account/*`). The site module adds `render: go`; the images module adds `image_presets`. A key no module
+`/cart` or `/account/*`; `/` alone reserves the channel's root, for a custom route or frontend page that replaces the root page, which is then unreachable there) and `root_reserved` (see below). The site module adds `render: go`; the images module adds `image_presets`. A key no module
 registered fails with the list of known ones.
+
+A channel matched by a prefix serves only that prefix, but a site often needs a few root-level URLs, such as an endpoint
+its scripts call without the prefix. `root_reserved` lists them on the prefixed channel:
+
+```yaml
+channels:
+  global-en: { group: web, languages: [en], match: { host: www.acme.com, prefix: /en }, root_reserved: [/legacy, /ajax/*] }
+```
+
+A request for `/legacy` or `/ajax/...` on that host belongs to `global-en`, whatever other channel would match it, and
+reaches its custom routes ([site](site.md#custom-routes)) or, for a frontend, `GET /route` answers `reserved`. Entries
+are written like `reserved` (an exact path, or `/*` for the path and everything below it) and are reserved inside the
+prefix too (`/en/legacy`), so the page tree never routes them either. Only the host and header conditions of the
+channel's `match` apply. `config:check` fails when the channel has no prefix (it already serves every path), when a
+root path lies under its own prefix (use `reserved`), when it falls under another channel's prefix that can see the same
+requests, when two channels claim the same root path, or for `/api`, `/healthz` and `/readyz`, which the binary serves
+itself.
 
 With no `channels.yaml` there is one channel, `default`, serving every collection in the default locale to the public.
 Languages, fallbacks and overlays are in [locales](locales.md); how a frontend picks a channel is in

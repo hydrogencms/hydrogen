@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -38,6 +39,7 @@ func builtinFuncs() template.FuncMap {
 		"join":      joinFn,
 		"replace":   func(old, repl string, s any) string { return strings.ReplaceAll(str(s), old, repl) },
 		"truncate":  truncateFn, "date": dateFn, "json": jsonFn, "first": firstFn, "last": lastFn,
+		"get": getFn, "append": appendFn, "ternary": ternaryFn, "isLast": isLastFn,
 	}
 }
 
@@ -308,9 +310,107 @@ func lastFn(v any) any {
 	return nil
 }
 
-// AddFuncs registers project template functions. A name must be an identifier, must not be a page helper, a
-// built-in or one of Go's predeclared functions, and registers once.
-func (x *Extensions) AddFuncs(m template.FuncMap) error {
+// getFn reads a dot path from maps, slices (numeric steps), structs (exported field or json name) and pointers:
+// get "seo.image.alt" .Fields. Every step is nil-safe: a missing key, a bad index or a nil value gives nil. The
+// subject is the last argument; the path may also come last when the subject is not a string.
+func getFn(a, b any) any {
+	path, v := "", b
+	if p, ok := a.(string); ok {
+		path = p
+	} else if p, ok := b.(string); ok {
+		path, v = p, a
+	}
+	if path == "" {
+		return v
+	}
+	for _, step := range strings.Split(path, ".") {
+		if v = getStep(v, step); v == nil {
+			return nil
+		}
+	}
+	return v
+}
+
+func getStep(v any, step string) any {
+	rv := reflect.ValueOf(v)
+	for rv.IsValid() && (rv.Kind() == reflect.Pointer || rv.Kind() == reflect.Interface) {
+		if rv.IsNil() {
+			return nil
+		}
+		rv = rv.Elem()
+	}
+	switch rv.Kind() {
+	case reflect.Map:
+		if rv.Type().Key().Kind() != reflect.String {
+			return nil
+		}
+		e := rv.MapIndex(reflect.ValueOf(step).Convert(rv.Type().Key()))
+		if !e.IsValid() {
+			return nil
+		}
+		return nilable(e)
+	case reflect.Slice, reflect.Array:
+		i, err := strconv.Atoi(step)
+		if err != nil || i < 0 || i >= rv.Len() {
+			return nil
+		}
+		return nilable(rv.Index(i))
+	case reflect.Struct:
+		t := rv.Type()
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if f.IsExported() && (f.Name == step || name == step) {
+				return nilable(rv.Field(i))
+			}
+		}
+	}
+	return nil
+}
+
+// nilable returns the value as an any, or nil for a nil pointer, map, slice or interface.
+func nilable(v reflect.Value) any {
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice:
+		if v.IsNil() {
+			return nil
+		}
+	}
+	return v.Interface()
+}
+
+// appendFn returns a new list: append x list, or append x y list for several elements.
+func appendFn(args ...any) ([]any, error) {
+	if len(args) < 2 {
+		return nil, errors.New("append: expects elements and the list")
+	}
+	l, ok := listOf(args[len(args)-1])
+	if !ok && args[len(args)-1] != nil {
+		return nil, fmt.Errorf("append: %T is not a list", args[len(args)-1])
+	}
+	return append(l, args[:len(args)-1]...), nil
+}
+
+// ternaryFn is ternary a b cond: a when cond is not empty, else b.
+func ternaryFn(a, b, cond any) any {
+	if isEmpty(cond) {
+		return b
+	}
+	return a
+}
+
+// isLastFn tells whether index i is the end of the list, for range: isLast $i $list.
+func isLastFn(i int, v any) bool {
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Slice, reflect.Array:
+		return i == rv.Len()-1
+	}
+	return false
+}
+
+// checkFuncs validates the names and shapes of project template functions.
+func checkFuncs(m template.FuncMap, taken func(string) bool) error {
 	builtins := builtinFuncs()
 	for _, name := range sortedKeys(m) {
 		fn := m[name]
@@ -320,16 +420,41 @@ func (x *Extensions) AddFuncs(m template.FuncMap) error {
 			return fmt.Errorf("site: template function %q is not a valid name", name)
 		case slices.Contains(helpers, name) || slices.Contains(predeclared, name) || builtins[name] != nil:
 			return fmt.Errorf("site: template function %s collides with a built-in function or page helper", name)
-		case x.funcs[name] != nil:
+		case taken(name):
 			return fmt.Errorf("site: template function %s is registered twice", name)
 		case t == nil || t.Kind() != reflect.Func || t.NumOut() < 1 || t.NumOut() > 2 ||
 			(t.NumOut() == 2 && t.Out(1) != reflect.TypeFor[error]()):
 			return fmt.Errorf("site: template function %s must be a function returning one value, or a value and an error", name)
 		}
 	}
+	return nil
+}
+
+// AddFuncs registers project template functions. A name must be an identifier, must not be a page helper, a
+// built-in or one of Go's predeclared functions, and registers once.
+func (x *Extensions) AddFuncs(m template.FuncMap) error {
+	if err := checkFuncs(m, func(n string) bool { return x.funcs[n] != nil || slices.Contains(x.viewNames, n) }); err != nil {
+		return err
+	}
 	for k, v := range m {
 		x.funcs[k] = v
 	}
+	return nil
+}
+
+// AddViewFuncs registers page-aware template functions: fn runs once per render with the page's view and returns
+// the functions (the same names every time). It also runs once with an empty view to learn the names, so it must
+// only capture the view, not read from it.
+func (x *Extensions) AddViewFuncs(fn func(*View) template.FuncMap) error {
+	if fn == nil {
+		return errors.New("site: ViewFuncs has no function")
+	}
+	m := fn(&View{})
+	if err := checkFuncs(m, func(n string) bool { return x.funcs[n] != nil || slices.Contains(x.viewNames, n) }); err != nil {
+		return err
+	}
+	x.viewNames = append(x.viewNames, sortedKeys(m)...)
+	x.view = append(x.view, fn)
 	return nil
 }
 
@@ -338,4 +463,17 @@ func (x *Extensions) AddFuncs(m template.FuncMap) error {
 // and config:check.
 func Funcs(h Registrar, m template.FuncMap) {
 	h.Use(&extModule{name: "site-funcs-" + suffix(strings.Join(sortedKeys(m), ",")), apply: func(x *Extensions) error { return x.AddFuncs(m) }})
+}
+
+// ViewFuncs registers template functions that know the page being rendered: fn gets the page's View on every
+// render and returns the functions, which can read the request's query (v.Query), the content (v.List, v.Get,
+// v.Client, v.Nav, v.Breadcrumbs; the page is tagged with what they read) and the rest of the view. Names follow
+// the rules of Funcs. fn is also called once at registration with an empty View to learn the names, so build the
+// closures without calling the view's methods.
+func ViewFuncs(h Registrar, fn func(*View) template.FuncMap) {
+	var names string
+	if fn != nil {
+		names = strings.Join(sortedKeys(fn(&View{})), ",")
+	}
+	h.Use(&extModule{name: "site-viewfuncs-" + suffix(names), apply: func(x *Extensions) error { return x.AddViewFuncs(fn) }})
 }

@@ -14,7 +14,7 @@ import (
 
 // BuildDocs builds the documents of one item from its published snapshots (every locale), ordered by
 // locale. Snapshots of several items give the documents of each in turn. Items of unknown or not-searchable
-// types give none.
+// types give none, and so do documents the type excludes from search (`search.exclude`).
 func BuildDocs(sc *schema.Schema, snaps []store.Snapshot) ([]Doc, error) {
 	var order []ids.UUID
 	byItem := map[ids.UUID][]store.Snapshot{}
@@ -37,31 +37,36 @@ func BuildDocs(sc *schema.Schema, snaps []store.Snapshot) ([]Doc, error) {
 			locales[i] = sn.Locale
 		}
 		for _, sn := range group {
-			d, err := buildDoc(sc, t, sn, locales)
+			d, skip, err := buildDoc(sc, t, sn, locales)
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, d)
+			if !skip {
+				out = append(out, d)
+			}
 		}
 	}
 	return out, nil
 }
 
-func buildDoc(sc *schema.Schema, t *schema.Type, sn store.Snapshot, locales []string) (Doc, error) {
+func buildDoc(sc *schema.Schema, t *schema.Type, sn store.Snapshot, locales []string) (doc Doc, excluded bool, err error) {
 	payload, err := schema.DecodeDoc(sn.Payload)
 	if err != nil {
-		return Doc{}, fmt.Errorf("search: snapshot of %s/%s: %w", sn.ItemID, sn.Locale, err)
+		return Doc{}, false, fmt.Errorf("search: snapshot of %s/%s: %w", sn.ItemID, sn.Locale, err)
 	}
 	name, _ := payload["name"].(string)
 	fields, _ := payload["fields"].(map[string]any)
 	if fields == nil {
 		fields = map[string]any{}
 	}
+	if t.SearchExcluded(fields) {
+		return Doc{}, true, nil
+	}
 	return Doc{
 		Item: sn.ItemID, Type: t.Name, Locale: sn.Locale, MainLocale: sn.MainLocale, AlwaysAvailable: sn.AlwaysAvailable,
 		Locales: slices.Clone(locales), Name: name, Text: storeutil.CapSearchText(sc.SearchText(t, fields)),
 		Fields: indexFields(sc, t, fields), PublishedAt: sn.PublishedAt.UTC(),
-	}, nil
+	}, false, nil
 }
 
 // indexFields converts the document's indexed fields to the Go types Doc.Fields documents.

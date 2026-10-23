@@ -11,7 +11,7 @@ import (
 
 // helpers are the template functions that need the page being rendered; parsing needs their names, rendering
 // a clone of the set with the real ones.
-var helpers = []string{"blocks", "partial", "hasTemplate", "items", "itemsPage", "item", "itemBlock", "query", "richtext", "link", "t", "meta", "nav", "breadcrumbs", "asset", "edit", "setting", "component"}
+var helpers = []string{"blocks", "partial", "hasTemplate", "items", "itemsPage", "item", "itemBlock", "query", "richtext", "link", "t", "meta", "nav", "breadcrumbs", "asset", "edit", "setting", "component", "formGuard"}
 
 // engine is the parsed template set: the shared files (layout, partials, blocks) in one set and a clone of
 // it with each page-like template parsed on top.
@@ -26,6 +26,8 @@ type engine struct {
 	strict  bool
 	sources map[string]string
 	comps   map[string]ComponentFunc
+	// viewFuncs build the page-aware template functions of each render.
+	viewFuncs []func(*View) template.FuncMap
 	// errs are the files that do not parse. A shared one is replaced by its last good text (prev's, on a dev
 	// reload) or by a template that fails with the error, so only the pages that use it fail.
 	errs map[string]error
@@ -39,6 +41,9 @@ type sources struct {
 	dir   string
 	comps map[string]ComponentFunc
 	funcs template.FuncMap
+	// view are the page-aware functions (site.ViewFuncs) and viewNames their names, which parsing needs.
+	view      []func(*View) template.FuncMap
+	viewNames []string
 }
 
 func isPageTemplate(name string) bool {
@@ -57,10 +62,13 @@ func loadEngine(src *sources, strict bool, prev *engine) (*engine, error) {
 		return nil, err
 	}
 	e := &engine{pages: map[string]*template.Template{}, strict: strict, sources: map[string]string{}, comps: src.comps,
-		errs: map[string]error{}, good: map[string]string{}}
+		errs: map[string]error{}, good: map[string]string{}, viewFuncs: src.view}
 	stubs := template.FuncMap{}
 	for _, h := range helpers {
 		stubs[h] = func(...any) string { return "" }
+	}
+	for _, n := range src.viewNames {
+		stubs[n] = func(...any) string { return "" }
 	}
 	broken := template.FuncMap{parseErrorFunc: func(name string) (string, error) { return "", e.errs[name] }}
 	e.base = template.New("").Funcs(builtinFuncs()).Funcs(src.funcs).Funcs(stubs).Funcs(broken)
@@ -76,12 +84,13 @@ func loadEngine(src *sources, strict bool, prev *engine) (*engine, error) {
 		}
 		e.names = append(e.names, f.name)
 		e.sources[f.name] = f.where
+		text := trimNewline(string(b))
 		if isPageTemplate(f.name) {
-			pageFiles = append(pageFiles, pageFile{f.name, string(b)})
+			pageFiles = append(pageFiles, pageFile{f.name, text})
 			continue
 		}
 		// A failed Parse adds nothing to the set but an empty entry for the name, which the next Parse replaces.
-		if e.parse(e.base, f.name, string(b), prev) {
+		if e.parse(e.base, f.name, text, prev) {
 			continue
 		}
 		if _, err := e.base.New(f.name).Parse("{{" + parseErrorFunc + " " + strconv.Quote(f.name) + "}}"); err != nil {
@@ -115,6 +124,13 @@ func loadEngine(src *sources, strict bool, prev *engine) (*engine, error) {
 	}
 	e.sig = dirSignature(src.dir)
 	return e, e.parseErr()
+}
+
+// trimNewline drops the one newline an editor puts at the end of a file, so a partial that yields a value
+// (an URL inside href="…") does not carry it.
+func trimNewline(s string) string {
+	s = strings.TrimSuffix(s, "\n")
+	return strings.TrimSuffix(s, "\r")
 }
 
 // parse adds a file to a set; when it does not parse, it records the error and falls back on prev's text.

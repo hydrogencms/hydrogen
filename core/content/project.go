@@ -20,8 +20,8 @@ type rowset struct {
 	search []store.SearchDoc
 }
 
-func (s *Service) rowsOf(st *itemState, outs []*localeOut) *rowset {
-	return &rowset{index: s.projectIndex(st, outs), search: s.searchDocs(st, outs)}
+func (s *Service) rowsOf(st *itemState, outs []*localeOut, published bool) *rowset {
+	return &rowset{index: s.projectIndex(st, outs), search: s.searchDocs(st, outs, published)}
 }
 
 // rememberRows records the rows the item's projections hold now, from the state loaded before an operation
@@ -34,13 +34,13 @@ func (s *Service) rememberRows(st *itemState) {
 	if err != nil {
 		return
 	}
-	prev := &prevRows{working: s.rowsOf(st, w)}
+	prev := &prevRows{working: s.rowsOf(st, w, false)}
 	if st.pub != nil {
 		p, err := s.publishedOuts(st)
 		if err != nil {
 			return
 		}
-		prev.published = s.rowsOf(st, p)
+		prev.published = s.rowsOf(st, p, true)
 	}
 	st.prev = prev
 }
@@ -82,7 +82,7 @@ func (s *Service) project(ctx context.Context, c store.ContentStore, st *itemSta
 	if st.prev != nil {
 		prev = st.prev.published
 	}
-	if err := s.writeRows(ctx, c, id, store.ProjectionPublished, s.rowsOf(st, outs), prev); err != nil {
+	if err := s.writeRows(ctx, c, id, store.ProjectionPublished, s.rowsOf(st, outs, true), prev); err != nil {
 		return fmt.Errorf("content: project %s: %w", id, err)
 	}
 	return nil
@@ -103,11 +103,17 @@ func (s *Service) writeRows(ctx context.Context, c store.ContentStore, id ids.UU
 	return nil
 }
 
-func (s *Service) searchDocs(st *itemState, outs []*localeOut) []store.SearchDoc {
-	docs := make([]store.SearchDoc, len(outs))
-	for i, o := range outs {
-		text := capSearchText(strings.TrimSpace(o.name + " " + s.o.Schema.SearchText(st.typ, o.doc)))
-		docs[i] = store.SearchDoc{Locale: o.code, Text: text}
+// searchDocs builds the search rows of one projection. The published projection leaves out documents the type
+// excludes from search (its `search.exclude` field is true); the working one keeps them, so editors still find
+// them.
+func (s *Service) searchDocs(st *itemState, outs []*localeOut, published bool) []store.SearchDoc {
+	docs := make([]store.SearchDoc, 0, len(outs))
+	for _, o := range outs {
+		if published && st.typ.SearchExcluded(o.doc) {
+			continue
+		}
+		t := s.o.Schema.SearchTiers(st.typ, strings.TrimSpace(o.name), o.doc)
+		docs = append(docs, store.SearchDoc{Locale: o.code, High: capSearchText(t.High), Text: capSearchText(t.Normal), Low: capSearchText(t.Low)})
 	}
 	return docs
 }
@@ -141,7 +147,7 @@ func (s *Service) projectWorking(ctx context.Context, c store.ContentStore, st *
 	if st.prev != nil {
 		prev = st.prev.working
 	}
-	if err := s.writeRows(ctx, c, st.item.ID, store.ProjectionWorking, s.rowsOf(st, outs), prev); err != nil {
+	if err := s.writeRows(ctx, c, st.item.ID, store.ProjectionWorking, s.rowsOf(st, outs, false), prev); err != nil {
 		return fmt.Errorf("content: project working %s: %w", st.item.ID, err)
 	}
 	return nil

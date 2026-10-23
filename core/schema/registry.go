@@ -79,7 +79,7 @@ func (r *Registry) names() []string { return sortedKeys(r.types) }
 // receive the rest.
 func isCommon(key string) bool {
 	switch key {
-	case "type", "label", "description", "required", "translatable", "default", "index", "when", "ai", "admin":
+	case "type", "label", "description", "required", "translatable", "default", "index", "unique", "when", "ai", "admin":
 		return true
 	}
 	return false

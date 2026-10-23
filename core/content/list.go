@@ -87,16 +87,8 @@ func (s *Service) Facets(ctx context.Context, o FacetOptions) (map[string][]Face
 	if err != nil {
 		return nil, err
 	}
-	t, err := s.typeOf(o.Type)
-	if err != nil {
+	if err := s.CheckFacetFields(o.Type, o.Fields); err != nil {
 		return nil, err
-	}
-	for _, name := range o.Fields {
-		if _, col, err := indexedField(t, name); err != nil {
-			return nil, err
-		} else if col != store.ColText {
-			return nil, badRequest("field %q is not a text field", name)
-		}
 	}
 	q.Working = o.Status != store.StatusPublished
 	if s.guarded(ctx) {
@@ -128,6 +120,25 @@ func (s *Service) Facets(ctx context.Context, o FacetOptions) (map[string][]Face
 		return nil, fmt.Errorf("content: facets: %w", err)
 	}
 	return out, nil
+}
+
+// CheckFacetFields checks that fields are 1 to MaxFacetFields indexed text fields of the type.
+func (s *Service) CheckFacetFields(typ string, fields []string) error {
+	if len(fields) == 0 || len(fields) > MaxFacetFields {
+		return badRequest("fields needs 1 to %d field names", MaxFacetFields)
+	}
+	t, err := s.typeOf(typ)
+	if err != nil {
+		return err
+	}
+	for _, name := range fields {
+		if _, col, err := indexedField(t, name); err != nil {
+			return err
+		} else if col != store.ColText {
+			return badRequest("field %q is not a text field", name)
+		}
+	}
+	return nil
 }
 
 // MaxListFields is the most fields one list asks for.
@@ -220,7 +231,7 @@ const (
 
 // Query limits; List rejects anything beyond them with ErrBadRequest.
 const (
-	MaxConditions  = 32   // Where entries
+	MaxConditions  = 32   // Where entries, counting those inside or/not groups
 	MaxInValues    = 1000 // values in one "in" list
 	MaxSearchTerms = 16   // words in Search
 	MaxSortKeys    = 4
@@ -267,8 +278,8 @@ func (s *Service) query(o ListOptions) (store.Query, error) {
 }
 
 func checkLimits(o ListOptions) error {
-	if len(o.Where) > MaxConditions {
-		return badRequest("too many filters: %d (at most %d)", len(o.Where), MaxConditions)
+	if n := countFilters(o.Where); n > MaxConditions {
+		return badRequest("too many filters: %d (at most %d)", n, MaxConditions)
 	}
 	if len(o.Sort) > MaxSortKeys {
 		return badRequest("too many sort keys: %d (at most %d)", len(o.Sort), MaxSortKeys)
@@ -279,6 +290,19 @@ func checkLimits(o ListOptions) error {
 		}
 	}
 	return nil
+}
+
+func countFilters(fs []Filter) int {
+	n := 0
+	for _, f := range fs {
+		if f.Op != store.OpOr && f.Op != store.OpNot {
+			n++
+		}
+		for _, g := range f.Groups {
+			n += countFilters(g)
+		}
+	}
+	return n
 }
 
 // indexedField finds the indexed top-level field a filter or sort names.
@@ -336,6 +360,9 @@ func sortOf(t *schema.Type, sp SortSpec) (store.Sort, error) {
 }
 
 func condOf(t *schema.Type, f Filter) (store.Cond, error) {
+	if f.Op == store.OpOr || f.Op == store.OpNot {
+		return groupOf(t, f)
+	}
 	field, col, err := indexedField(t, f.Field)
 	if err != nil {
 		return store.Cond{}, err
@@ -363,6 +390,29 @@ func condOf(t *schema.Type, f Filter) (store.Cond, error) {
 		return store.Cond{}, err
 	}
 	return store.Cond{Field: f.Field, Column: col, Op: f.Op, Value: v}, nil
+}
+
+func groupOf(t *schema.Type, f Filter) (store.Cond, error) {
+	if len(f.Groups) == 0 {
+		return store.Cond{}, badRequest("%s needs at least one condition", f.Op)
+	}
+	c := store.Cond{Op: f.Op, Groups: make([][]store.Cond, len(f.Groups))}
+	for i, g := range f.Groups {
+		if len(g) == 0 {
+			return store.Cond{}, badRequest("%s group %d is empty", f.Op, i)
+		}
+		c.Groups[i] = make([]store.Cond, len(g))
+		for j, sub := range g {
+			if sub.Op == store.OpOr || sub.Op == store.OpNot {
+				return store.Cond{}, badRequest("%s groups cannot nest inside %s", sub.Op, f.Op)
+			}
+			var err error
+			if c.Groups[i][j], err = condOf(t, sub); err != nil {
+				return store.Cond{}, err
+			}
+		}
+	}
+	return c, nil
 }
 
 func condValue(field *schema.Field, col store.Column, f Filter) (any, error) {
