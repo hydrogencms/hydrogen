@@ -20,7 +20,6 @@
     node,
     locale,
     childTypes = [],
-    lastChild,
     ondone,
   }: {
     open?: boolean;
@@ -30,8 +29,6 @@
     node?: PNode;
     locale: string;
     childTypes?: string[];
-    /** Resolves the id of the parent's last child (new nodes go last). */
-    lastChild: (parent: string) => Promise<string | undefined>;
     /** `select` is the id of the node to show next. */
     ondone: (r: { parent: string; select?: string }) => void;
   } = $props();
@@ -87,7 +84,6 @@
   };
 
   async function submit(v: typeof form.values): Promise<string | undefined> {
-    const after = parent.id ? ((await lastChild(parent.id)) ?? undefined) : undefined;
     if (mode === 'child') {
       let id = createdId;
       if (!id) {
@@ -102,7 +98,7 @@
       try {
         const placed = await api.post('/pages/sites/{site}/nodes', {
           params: { site: parent.site },
-          body: { kind: 'page', item: id, parent: parent.id || undefined, after } as never,
+          body: { kind: 'page', item: id, parent: parent.id || undefined } as never,
         });
         createdId = '';
         placeError = '';
@@ -127,14 +123,14 @@
       }
       const made = await api.post('/pages/sites/{site}/nodes', {
         params: { site: parent.site },
-        body: { kind: 'mount', parent: parent.id, after, ...spec } as never,
+        body: { kind: 'mount', parent: parent.id, ...spec } as never,
       });
       return (made as { id: string }).id;
     }
     const target = v.target === 'url' ? { url: v.url.trim() } : { item: picked?.value };
     const made = await api.post('/pages/sites/{site}/nodes', {
       params: { site: parent.site },
-      body: { kind: 'link', parent: parent.id, after, label: labelMap({}, v.label.trim()), ...target } as never,
+      body: { kind: 'link', parent: parent.id, label: labelMap({}, v.label.trim()), ...target } as never,
     });
     return (made as { id: string }).id;
   }

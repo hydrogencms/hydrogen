@@ -146,6 +146,7 @@ func (c *compiler) compileType(def *typeDef) *Type {
 	if def.namePattern.s != "" {
 		c.checkNamePattern(def, t)
 	}
+	c.compileSearch(def, t)
 	return t
 }
 

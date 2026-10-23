@@ -37,6 +37,7 @@ var (
 	ErrConflict     = errors.New("content: conflict")
 	ErrReferenced   = errors.New("content: referenced by other items")
 	ErrDuplicateKey = errors.New("content: key already in use")
+	ErrDuplicateID  = errors.New("content: id already in use")
 	ErrBadRequest   = errors.New("content: bad request") // malformed input outside field validation
 )
 
@@ -223,7 +224,10 @@ type Referrer struct {
 }
 
 type CreateInput struct {
-	Type            string
+	Type string
+	// ID is the new item's id; the zero value generates a UUIDv7. Any other UUID is accepted (listings tiebreak
+	// on the id but never rely on its time order); an id that exists, trashed items included, is ErrDuplicateID.
+	ID              ids.UUID
 	Locale          string // default: the service's default locale
 	Key             string
 	AlwaysAvailable bool
@@ -252,10 +256,14 @@ type PublishOptions struct {
 
 // Filter is one list condition; Value comes from a typed caller or from a query string (string values are
 // parsed by the field's type).
+//
+// Op store.OpOr holds when all filters of at least one of Groups do, store.OpNot when no group is fully
+// satisfied; groups take no Field and their members are plain filters (no nesting).
 type Filter struct {
-	Field string
-	Op    store.Op
-	Value any
+	Field  string
+	Op     store.Op
+	Value  any
+	Groups [][]Filter
 }
 
 type SortSpec struct {

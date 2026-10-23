@@ -109,3 +109,36 @@ func TestSameMemberships(t *testing.T) {
 		t.Error("differences must show")
 	}
 }
+
+func TestRedirectOfDoc(t *testing.T) {
+	spec := &MountSpec{RedirectField: "url"}
+	for _, c := range []struct {
+		name string
+		spec *MountSpec
+		doc  map[string]any
+		want string
+	}{
+		{"absolute", spec, map[string]any{"url": "https://example.com/x"}, "https://example.com/x"},
+		{"site path", spec, map[string]any{"url": "/about"}, "/about"},
+		{"empty", spec, map[string]any{"url": ""}, ""},
+		{"missing", spec, map[string]any{}, ""},
+		{"item target", spec, map[string]any{"url": "item:" + ids.UUID{1}.String()}, ""},
+		{"scheme", spec, map[string]any{"url": "javascript:alert(1)"}, ""},
+		{"protocol relative", spec, map[string]any{"url": "//evil.test"}, ""},
+		{"backslash", spec, map[string]any{"url": "/\\evil.test"}, ""},
+		{"no field", &MountSpec{}, map[string]any{"url": "/about"}, ""},
+	} {
+		if got := redirectOfDoc(c.spec, c.doc); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestForcedRanksFirst(t *testing.T) {
+	order := []string{stateForced, StateCurrent, StateManual, StateRedirect}
+	for i := 1; i < len(order); i++ {
+		if rank(order[i-1]) <= rank(order[i]) {
+			t.Errorf("%s must outrank %s", order[i-1], order[i])
+		}
+	}
+}

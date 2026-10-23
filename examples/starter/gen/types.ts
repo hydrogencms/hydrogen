@@ -251,6 +251,8 @@ export interface Landing {
   title: string;
   slug?: string;
   body?: Blocks<"hero" | "richText" | "cards" | "callout" | "image" | "shared">;
+  /** URL path instead of the tree position, e.g. /services/seo; subpages build on it */
+  canonicalPath?: string;
   /** Extra URL serving this page, e.g. /promo */
   vanityPath?: string;
 }
@@ -260,6 +262,8 @@ export interface Page {
   title: string;
   slug?: string;
   body?: Blocks<"richText" | "cards" | "callout" | "image" | "shared">;
+  /** URL path instead of the tree position, e.g. /services/seo; subpages build on it */
+  canonicalPath?: string;
   /** Extra URL serving this page, e.g. /promo */
   vanityPath?: string;
 }
@@ -286,6 +290,11 @@ export interface Redirect {
   site?: string;
   /** Locale code; empty: every locale */
   forLocale?: string;
+  /**
+   * Wins over a page or mounted item at this path, which is then unreachable there. The only way
+   * to redirect the site root (/).
+   */
+  force?: boolean;
 }
 
 /** The "sharedBlock" content type. */

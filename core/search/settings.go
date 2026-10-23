@@ -115,7 +115,7 @@ func fingerprint(s Settings, sc *schema.Schema) string {
 	fmt.Fprintf(&sb, "revision %d\ntypes %s\n", DocRevision, strings.Join(s.Types, ","))
 	for _, name := range s.Types {
 		t, _ := sc.Type(name)
-		fmt.Fprintf(&sb, "type %s name=%q text=%s\n", name, t.NamePattern, strings.Join(textFields(t), ","))
+		fmt.Fprintf(&sb, "type %s name=%q text=%s exclude=%q\n", name, t.NamePattern, strings.Join(textFields(t), ","), t.Search().Exclude)
 	}
 	for _, f := range s.Fields {
 		fmt.Fprintf(&sb, "field %s %s list=%t sortable=%t\n", f.Name, f.Kind, f.List, f.Sortable)
@@ -135,19 +135,4 @@ func textFields(t *schema.Type) []string {
 	return out
 }
 
-func feedsText(f *schema.Field) bool {
-	if f.AI.Exclude {
-		return false
-	}
-	switch f.Shape.Base {
-	case schema.BaseString:
-		return f.Shape.Format == "" || f.Shape.Format == "text" || f.Shape.Format == "slug"
-	case schema.BaseRichText, schema.BaseBlocks:
-		return true
-	case schema.BaseList:
-		return f.Of != nil && feedsText(f.Of)
-	case schema.BaseGroup:
-		return slices.ContainsFunc(f.Fields, feedsText)
-	}
-	return false
-}
+func feedsText(f *schema.Field) bool { return f.FeedsSearchText() }

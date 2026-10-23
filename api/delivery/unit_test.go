@@ -335,6 +335,10 @@ func (f *fakeReader) Query(context.Context, store.Query) (store.QueryResult, err
 	return store.QueryResult{}, nil
 }
 
+func (f *fakeReader) Facet(context.Context, store.Query, string, int) ([]store.FacetCount, error) {
+	return nil, nil
+}
+
 func uid(n byte) ids.UUID { return ids.UUID{15: n} }
 
 func snap(n byte, locale, typ string, refs ...byte) store.Snapshot {

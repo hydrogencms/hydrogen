@@ -160,7 +160,11 @@ func (w *webChannel) isReserved(path string) bool {
 }
 
 // rel is the channel-relative URL of a site path: the prefix plus the path (the prefix alone for the root).
+// An absolute URL (the link of a mounted item that redirects) stays as it is.
 func (w *webChannel) rel(path string) string {
+	if !strings.HasPrefix(path, "/") {
+		return path
+	}
 	if path == "/" && w.m.Prefix != "" {
 		return w.m.Prefix
 	}
@@ -179,7 +183,12 @@ func (w *webChannel) origin() string {
 	return ""
 }
 
-func (w *webChannel) abs(path string) string { return w.origin() + w.rel(path) }
+func (w *webChannel) abs(path string) string {
+	if !strings.HasPrefix(path, "/") {
+		return path
+	}
+	return w.origin() + w.rel(path)
+}
 
 // siteLink makes a redirect target safe to hand out: a site path becomes relative to the channel, an absolute
 // http(s) URL stays as it is, and everything else (protocol-relative, other schemes, backslashes, control
