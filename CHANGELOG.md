@@ -11,6 +11,9 @@ All notable changes to Hydrogen are documented here. The format follows
 - Admin: with collaboration on, a rich text value the editor cannot load (a node or mark its schema lacks) was seeded
   as an empty document, so opening the item showed "Unsaved changes" and the next save removed the field. The value
   now stays as stored and the field shows as invalid, with its JSON to fix.
+- Site module: `link "item:<id>"` and `item:` links in rich text resolve references held by any item the render
+  read (`item`, `items`, settings), not only the page's own; an id no read item carries is looked up once (at most 64
+  per render, in the page's locale and preview).
 
 ## [0.3.0] - 2026-10-22
 
