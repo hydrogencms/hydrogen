@@ -178,6 +178,7 @@ func itemView(fields obj, typeName string) obj {
 
 func createRequest(fields obj) obj {
 	return obj{"type": "object", "additionalProperties": false, "properties": obj{
+		"id":     obj{"type": "string", "format": "uuid", "description": "The new item's id (any non-nil UUID); generated when absent. 409 duplicate_id when taken, trashed items included."},
 		"locale": openapi.Str(""), "key": openapi.Str(""), "alwaysAvailable": obj{"type": "boolean"}, "fields": fields}}
 }
 

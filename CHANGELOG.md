@@ -21,6 +21,17 @@ All notable changes to Hydrogen are documented here. The format follows
   site loads, and are served from the file system instead of memory. With 1,700 files (39 MB) loading takes about
   1.5 ms instead of 44 ms and allocates 0.9 MB instead of 43 MB. Fingerprints of files other than style sheets that
   contain references are unchanged.
+- Choose item ids on create: `content.CreateInput.ID`, `id` in the body of `POST /collections/{type}/items` and
+  `client.CreateInput.ID`. Any non-nil UUID is accepted; an id already in use, trashed items included, answers 409
+  `duplicate_id` (`content.ErrDuplicateID`).
+### Fixed
+
+- Admin: with collaboration on, a rich text value the editor cannot load (a node or mark its schema lacks) was seeded
+  as an empty document, so opening the item showed "Unsaved changes" and the next save removed the field. The value
+  now stays as stored and the field shows as invalid, with its JSON to fix.
+- Site module: `link "item:<id>"` and `item:` links in rich text resolve references held by any item the render
+  read (`item`, `items`, settings), not only the page's own; an id no read item carries is looked up once (at most 64
+  per render, in the page's locale and preview).
 
 ## [0.3.0] - 2026-10-22
 

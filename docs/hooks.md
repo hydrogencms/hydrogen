@@ -108,6 +108,10 @@ A context without a principal is the system and is not restricted. To act as som
 context with `access.WithPrincipal(ctx, p)`; the checks then apply. `Handle` offers `Get`, `Create`, `Update`,
 `Publish` and `List`; `s.Content` has the rest (unpublish, trash, versions, references, search).
 
+`s.Content.Create` takes an optional `CreateInput.ID`: an importer that derives ids from the source system (a UUIDv5 of
+the external id, say) gets the same items on every run. An id already in use, trashed items included, fails with
+`content.ErrDuplicateID`; check with `Get` first to update instead.
+
 ## Endpoints
 
 ```go
