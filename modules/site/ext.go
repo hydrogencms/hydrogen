@@ -66,10 +66,12 @@ type Registrar interface {
 // The site module provides it with kernel.Provide, so a module that Requires "site" can reach it from Register
 // with kernel.Lookup[*site.Extensions]; projects use UseTheme, Handle and Component instead.
 type Extensions struct {
-	themes map[string]Theme
-	routes []*CustomRoute
-	comps  map[string]ComponentFunc
-	funcs  template.FuncMap
+	themes    map[string]Theme
+	routes    []*CustomRoute
+	comps     map[string]ComponentFunc
+	funcs     template.FuncMap
+	view      []func(*View) template.FuncMap
+	viewNames []string
 }
 
 func newExtensions() *Extensions {

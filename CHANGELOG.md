@@ -8,12 +8,19 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Added
 
+- Site module templates: the request's query string (`.Query "name"`, `.QueryValues "name"`, cached per variant of
+  the parameters a page reads, bounded per path; pages that ignore the query keep one cache entry), the page for
+  block templates (`.Page` on a block), and `site.ViewFuncs` for project template functions that read the page's
+  view and content (`View.List`, `View.Get`).
 - Site module assets: `url(...)` and `@import` references in style sheets are rewritten to the fingerprinted URLs of
   the assets they name (quoted or not, relative or root-relative, `?#iefix` and `#icon` suffixes kept; `data:`,
   external, fragment-only and unknown references untouched), and the sheet's fingerprint covers the rewritten text.
   Projects no longer need to repeat Hydrogen's hashing rule in their CSS.
 - Site module assets requested without a fingerprint carry a strong `ETag`, `Last-Modified` and `Cache-Control:
   no-cache` and answer `304` to conditional requests.
+- Choose item ids on create: `content.CreateInput.ID`, `id` in the body of `POST /collections/{type}/items` and
+  `client.CreateInput.ID`. Any non-nil UUID is accepted; an id already in use, trashed items included, answers 409
+  `duplicate_id` (`content.ErrDuplicateID`).
 
 ### Changed
 
@@ -21,9 +28,7 @@ All notable changes to Hydrogen are documented here. The format follows
   site loads, and are served from the file system instead of memory. With 1,700 files (39 MB) loading takes about
   1.5 ms instead of 44 ms and allocates 0.9 MB instead of 43 MB. Fingerprints of files other than style sheets that
   contain references are unchanged.
-- Choose item ids on create: `content.CreateInput.ID`, `id` in the body of `POST /collections/{type}/items` and
-  `client.CreateInput.ID`. Any non-nil UUID is accepted; an id already in use, trashed items included, answers 409
-  `duplicate_id` (`content.ErrDuplicateID`).
+
 ### Fixed
 
 - Admin: with collaboration on, a rich text value the editor cannot load (a node or mark its schema lacks) was seeded
