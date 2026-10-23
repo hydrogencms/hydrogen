@@ -36,7 +36,7 @@ func registerDelivery(r *kernel.Registry, svc func() *Service) {
 	r.PatternURL(d.patternURL)
 	r.FrameOrigin(d.frameOrigin)
 	r.TagMapper(pageTags)
-	for _, n := range []string{optSite, optMatch, optReserved} {
+	for _, n := range []string{optSite, optMatch, optReserved, optRootReserved} {
 		r.PublicChannelOption(n)
 	}
 	r.DeliveryVary(d.vary)

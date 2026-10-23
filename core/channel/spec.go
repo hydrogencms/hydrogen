@@ -11,7 +11,10 @@ import (
 )
 
 var (
-	nameRE   = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	nameRE = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	// idRE is the name of a channel or group: nameRE with single dashes between parts (global-en). Nothing
+	// derives identifiers from it; it is used as a string in URLs, headers, cache tags and cookie names.
+	idRE     = regexp.MustCompile(`^[a-z][a-z0-9_]*(-[a-z0-9_]+)*$`)
 	localeRE = regexp.MustCompile(`^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
 )
 
@@ -133,8 +136,8 @@ func (cx *compiler) parseGroupName(v *config.Node) field[string] {
 		cx.add(err)
 		return field[string]{}
 	}
-	if !nameRE.MatchString(s) {
-		cx.fail(v, "group name %q: use lowercase letters, digits and underscores, starting with a letter", s)
+	if !idRE.MatchString(s) {
+		cx.fail(v, "group name %q: use lowercase letters, digits, underscores and single dashes, starting with a letter", s)
 		return field[string]{}
 	}
 	return field[string]{s, true, v}

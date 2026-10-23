@@ -17,6 +17,8 @@ const (
 	optSite     = "site"
 	optMatch    = "match"
 	optReserved = "reserved"
+	// optRootReserved lists root-level paths a prefixed channel also serves (and reserves).
+	optRootReserved = "root_reserved"
 )
 
 // matcher is the decoded `match` option of a web channel.
@@ -74,6 +76,17 @@ func (m matcher) overlaps(o matcher) bool {
 	return true
 }
 
+// sameRequests reports whether some request fits the host and header conditions of both matchers.
+func (m matcher) sameRequests(o matcher) bool {
+	m.Prefix, o.Prefix = "", ""
+	return m.overlaps(o)
+}
+
+// fitsRoot reports whether the request's host and header fit, whatever the path.
+func (m matcher) fitsRoot(host string, h http.Header) bool {
+	return (m.Host == "" || m.Host == host) && (m.Header == nil || h.Get(m.Header.Name) == m.Header.Value)
+}
+
 // matches reports the site path (after the prefix) when the request fits the matcher.
 func (m matcher) matches(host, path string, h http.Header) (string, bool) {
 	if m.Host != "" && m.Host != host {
@@ -122,6 +135,13 @@ func parseReserved(pattern string) reservedPath {
 }
 
 // matches compares case-sensitively; callers trim a trailing slash first.
+func (r reservedPath) String() string {
+	if r.wildcard {
+		return r.base + "/*"
+	}
+	return r.base
+}
+
 func (r reservedPath) matches(path string) bool {
 	if path == r.base {
 		return true
@@ -139,6 +159,7 @@ type webChannel struct {
 	site     string
 	m        matcher
 	reserved []reservedPath
+	roots    []reservedPath // root_reserved: served outside the prefix; also in reserved
 }
 
 func newWebChannel(ch *channel.Channel, defaultSite string) *webChannel {
@@ -152,7 +173,23 @@ func newWebChannel(ch *channel.Channel, defaultSite string) *webChannel {
 			w.reserved = append(w.reserved, parseReserved(p))
 		}
 	}
+	if list, ok := ch.Options[optRootReserved].([]string); ok {
+		for _, p := range list {
+			r := parseReserved(p)
+			w.roots = append(w.roots, r)
+			w.reserved = append(w.reserved, r)
+		}
+	}
 	return w
+}
+
+// rootMatch reports whether the request is for a root path the channel claims.
+func (w *webChannel) rootMatch(host, path string, h http.Header) bool {
+	if len(w.roots) == 0 || !w.m.fitsRoot(host, h) {
+		return false
+	}
+	t, _ := trimSlash(path)
+	return slices.ContainsFunc(w.roots, func(r reservedPath) bool { return r.matches(t) })
 }
 
 func (w *webChannel) isReserved(path string) bool {
@@ -271,8 +308,14 @@ func splitURL(raw string) (host, path string, bad bool, err error) {
 
 func hasEncodedSlash(escaped string) bool { return strings.Contains(strings.ToLower(escaped), "%2f") }
 
-// match picks the most specific web channel the request fits.
+// match picks the web channel for a request: the one that claims the path as a root path (root_reserved), else
+// the most specific one the request fits.
 func (x *webIndex) match(host, path string, h http.Header) (*webChannel, string, bool) {
+	for _, w := range x.bySpecific {
+		if w.rootMatch(host, path, h) {
+			return w, path, true
+		}
+	}
 	for _, w := range x.bySpecific {
 		if rest, ok := w.m.matches(host, path, h); ok {
 			return w, rest, true

@@ -63,6 +63,10 @@ All notable changes to Hydrogen are documented here. The format follows
   `unique: true` (top-level string, slug and email fields): no other item of the type, in the same locale for a
   translatable field, may hold the value. It is checked on draft writes, publish and restore under a lock
   (`store.ContentStore.LockName`, implemented by both adapters) and fails as a validation error with code `not_unique`.
+- Channel and group names may contain single hyphens (`global-en`).
+- Channel option `root_reserved` (pages module): root-level paths (`/legacy`, `/ajax/*`) that a channel matched by a
+  prefix also serves, so its custom routes and `GET /route` answer for them. `config:check` rejects a root path that
+  another channel claims or that falls under another channel's prefix.
 
 ### Changed
 

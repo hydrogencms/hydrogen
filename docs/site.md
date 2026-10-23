@@ -279,7 +279,7 @@ site.Handle(h, "GET /search", func(r *site.Request) (*site.Response, error) {
 - The route's whole pattern must be reserved: every path it can match has to fall under a `reserved` entry of
   each channel it applies to. `/account/{id}/edit` needs `/account/*`; `/{a}/edit` is refused because no
   reserved entry covers it. The path must be one the channel **reserves** (`reserved: [/search]` in `channels.yaml`; `/account/*` for a
-  subtree), so the page tree never routes it. `config:check` fails otherwise.
+  subtree; a prefixed channel can also serve root-level paths with `root_reserved`, see [channels](configuration.md#channels)), so the page tree never routes it. `config:check` fails otherwise.
 - A route can own the channel's root even when the tree has a root page: reserve it with `reserved: [/]` (exactly `/`;
   `/*` is refused) and register `site.Handle(h, "GET /{$}", fn)`. A bare `"/"` pattern matches every path and is refused.
   The root page stays in the tree but the root URL is the route's.

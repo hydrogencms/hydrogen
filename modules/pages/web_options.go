@@ -24,6 +24,7 @@ func channelOptions(sites []string) []channel.Option {
 		{Name: optSite, Decode: func(n *config.Node) (any, error) { return decodeSite(n, sites) }},
 		{Name: optMatch, Decode: func(n *config.Node) (any, error) { return decodeMatch(n) }},
 		{Name: optReserved, Decode: func(n *config.Node) (any, error) { return decodeReserved(n) }},
+		{Name: optRootReserved, Decode: func(n *config.Node) (any, error) { return decodeRootReserved(n) }},
 	}
 }
 
@@ -141,15 +142,39 @@ func decodeHeader(n *config.Node) (*headerMatch, error) {
 }
 
 func decodeReserved(n *config.Node) (any, error) {
+	return decodePaths(n, "reserved", checkReserved)
+}
+
+// decodeRootReserved reads root_reserved: reserved paths outside the channel's prefix.
+func decodeRootReserved(n *config.Node) (any, error) {
+	return decodePaths(n, optRootReserved, func(item *config.Node, pattern string) error {
+		if err := checkReserved(item, pattern); err != nil {
+			return err
+		}
+		if base := strings.TrimSuffix(pattern, "/*"); ownedRoot(base) {
+			return item.Errorf("root path %q belongs to the binary (%s); pick another path", pattern, strings.Join(ownedRoots, ", "))
+		}
+		return nil
+	})
+}
+
+// ownedRoots are the root paths the binary serves itself; no channel can claim them.
+var ownedRoots = []string{"/api", "/healthz", "/readyz"}
+
+func ownedRoot(base string) bool {
+	return slices.ContainsFunc(ownedRoots, func(o string) bool { return base == o || strings.HasPrefix(base, o+"/") })
+}
+
+func decodePaths(n *config.Node, what string, check func(*config.Node, string) error) (any, error) {
 	if n.Kind() != "list" {
-		return nil, n.Errorf("reserved must be a list of paths")
+		return nil, n.Errorf("%s must be a list of paths", what)
 	}
 	var out []string
 	var errs []error
 	for _, item := range n.Items() {
 		s, err := scalar(item)
 		if err == nil {
-			err = checkReserved(item, s)
+			err = check(item, s)
 		}
 		if err != nil {
 			errs = append(errs, err)
@@ -177,7 +202,59 @@ func checkReserved(n *config.Node, pattern string) error {
 }
 
 // checkMatchers fails when two web channels have the same matcher: the second could never be reached.
-func checkMatchers(s *channel.Set) error { return duplicateMatchers(s.All()) }
+func checkMatchers(s *channel.Set) error {
+	return errors.Join(duplicateMatchers(s.All()), rootConflicts(s.All()))
+}
+
+// rootConflicts checks the root_reserved paths of prefixed web channels: they need a prefix, must lie outside
+// it, and no other channel that can see the same requests may claim them, by the same root path or by a prefix
+// they fall under.
+func rootConflicts(chans []*channel.Channel) error {
+	var web []*webChannel
+	for _, ch := range chans {
+		if _, ok := ch.Options[optMatch].(matcher); ok {
+			web = append(web, newWebChannel(ch, ""))
+		}
+	}
+	var errs []error
+	for _, a := range web {
+		if len(a.roots) == 0 {
+			continue
+		}
+		if a.m.Prefix == "" {
+			errs = append(errs, fmt.Errorf("channel %s: %s needs match.prefix; a channel without one already serves every path", a.ch.Name, optRootReserved))
+			continue
+		}
+		for _, p := range a.roots {
+			if underPrefix(p.base, a.m.Prefix) {
+				errs = append(errs, fmt.Errorf("channel %s: root path %s lies under its own prefix %s; list it in reserved", a.ch.Name, p, a.m.Prefix))
+			}
+		}
+		for _, b := range web {
+			if a == b || !a.m.sameRequests(b.m) {
+				continue
+			}
+			for _, p := range a.roots {
+				if b.m.Prefix != "" && (underPrefix(p.base, b.m.Prefix) || p.wildcard && underPrefix(b.m.Prefix, p.base)) {
+					errs = append(errs, fmt.Errorf("channel %s: root path %s overlaps the prefix %s of channel %s", a.ch.Name, p, b.m.Prefix, b.ch.Name))
+				}
+				if a.ch.Name < b.ch.Name {
+					for _, q := range b.roots {
+						if p.matches(q.base) || q.matches(p.base) {
+							errs = append(errs, fmt.Errorf("channels %s and %s both claim the root path %s", a.ch.Name, b.ch.Name, p))
+						}
+					}
+				}
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func underPrefix(path, prefix string) bool {
+	_, ok := cutPrefix(path, prefix)
+	return ok
+}
 
 func duplicateMatchers(chans []*channel.Channel) error {
 	seen := map[string]string{}
