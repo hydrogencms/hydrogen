@@ -18,6 +18,9 @@ type Redirect struct {
 	Site       *string             `json:"site,omitempty"`
 	// Locale code; empty: every locale
 	ForLocale *string `json:"forLocale,omitempty"`
+	// Wins over a page or mounted item at this path, which is then unreachable there. The only way
+	// to redirect the site root (/).
+	Force *bool `json:"force,omitempty"`
 }
 
 // RedirectStatusCode is the allowed values of the "statusCode" field.

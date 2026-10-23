@@ -37,6 +37,30 @@ func stub(t *testing.T, status int, body string, hdr map[string]string) (*httpte
 	return srv, &got
 }
 
+func TestListGroupsAndFacets(t *testing.T) {
+	srv, got := stub(t, 200, `{"items":[],"hasMore":false,"facets":{"cat":[{"value":"news","count":2}]}}`, nil)
+	d := client.NewDelivery(srv.URL)
+	lr, err := d.List(context.Background(), "article", &client.ListOptions{
+		Where:  []client.Filter{{Field: "rank", Op: client.Gt, Value: 1}},
+		Or:     [][]client.Filter{{{Field: "cat", Value: "news"}, {Field: "rank", Op: client.Lt, Value: 9}}, {{Field: "featured", Value: true}}},
+		Not:    [][]client.Filter{{{Field: "kind", Op: client.In, Value: []string{"a", "b"}}}},
+		Facets: []string{"cat", "kind"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "where[rank][gt]=1&where[or][0][cat]=news&where[or][0][rank][lt]=9&where[or][1][featured]=true&where[not][0][kind][in]=a%2Cb&facets=cat%2Ckind"
+	if got.rawQuery != want {
+		t.Errorf("query %s\nwant  %s", got.rawQuery, want)
+	}
+	if len(lr.Facets["cat"]) != 1 || lr.Facets["cat"][0] != (client.FacetValue{Value: "news", Count: 2}) {
+		t.Errorf("facets %+v", lr.Facets)
+	}
+	if _, err := d.List(context.Background(), "article", &client.ListOptions{Facets: []string{"a,b"}}); err == nil {
+		t.Error("a facet field with a comma was accepted")
+	}
+}
+
 func TestListQuerySyntax(t *testing.T) {
 	srv, got := stub(t, 200, `{"items":[],"hasMore":true,"total":0}`, nil)
 	d := client.NewDelivery(srv.URL+"/", client.WithChannel("web"), client.WithToken("tok"), client.WithPreview("pv"),

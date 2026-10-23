@@ -11,6 +11,8 @@ type Page struct {
 	Title string  `json:"title,omitempty"`
 	Intro *string `json:"intro,omitempty"`
 	Slug  *string `json:"slug,omitempty"`
+	// URL path instead of the tree position, e.g. /services/seo; subpages build on it
+	CanonicalPath *string `json:"canonicalPath,omitempty"`
 	// Extra URL serving this page, e.g. /promo
 	VanityPath *string `json:"vanityPath,omitempty"`
 }

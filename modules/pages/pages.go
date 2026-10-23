@@ -28,8 +28,11 @@ const (
 	StateCurrent  = "current"  // the item's canonical path
 	StateAlias    = "alias"    // also serves the item (vanity path, non-canonical mount)
 	StateRedirect = "redirect" // a former path of the item; redirects to its current path
-	StateManual   = "manual"   // a published redirect item
+	StateManual   = "manual"   // a published redirect item (Route.Force: it wins over pages and mounted items)
 )
+
+// stateForced is what a lookup reports for a row of route_force: a forced redirect, ranked above every route.
+const stateForced = "forced"
 
 // Resolution kinds.
 const (
@@ -51,6 +54,11 @@ type MountSpec struct {
 	Route      string            `json:"route"`            // pattern relative to the mount, e.g. "{publishDate:yyyy}/{slug}"
 	Canonical  bool              `json:"canonical,omitempty"`
 	Label      map[string]string `json:"label,omitempty"` // by locale, for navigation
+	// RedirectField names a string field of the collection: an item with a non-empty value answers a redirect to
+	// it (an absolute http(s) URL or a site path starting with /) instead of showing itself, and its links point
+	// there. RedirectStatus is the status (301, 302, 307 or 308; default 302).
+	RedirectField  string `json:"redirectField,omitempty"`
+	RedirectStatus int    `json:"redirectStatus,omitempty"`
 }
 
 type LinkSpec struct {
@@ -120,24 +128,28 @@ type Route struct {
 	Node   *ids.UUID `json:"node,omitempty"`
 	Target string    `json:"target,omitempty"`
 	Status int       `json:"status,omitempty"`
+	Force  bool      `json:"force,omitempty"` // manual redirects: wins over a page or mounted item at the path
 }
 
 // Place puts a page item into the tree. Parent nil places the site's root page.
 type Place struct {
 	Item   ids.UUID
 	Parent *ids.UUID
-	After  *ids.UUID // sibling to follow; nil = first
+	After  *ids.UUID // sibling to follow; nil = last, or first with First
+	First  bool      // put the node first among its siblings (After must be nil)
 }
 
 type Mount struct {
 	Parent ids.UUID
-	After  *ids.UUID
+	After  *ids.UUID // as Place.After
+	First  bool
 	Spec   MountSpec
 }
 
 type Link struct {
 	Parent ids.UUID
-	After  *ids.UUID
+	After  *ids.UUID // as Place.After
+	First  bool
 	Spec   LinkSpec
 }
 

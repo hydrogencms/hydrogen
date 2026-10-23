@@ -147,6 +147,8 @@ func Fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeErrorBody(w, http.StatusConflict, errorBody{Code: code, Message: err.Error()})
 	case errors.Is(err, content.ErrReferenced):
 		writeErrorBody(w, http.StatusConflict, errorBody{Code: "referenced", Message: err.Error()})
+	case errors.Is(err, content.ErrDuplicateID):
+		writeErrorBody(w, http.StatusConflict, errorBody{Code: "duplicate_id", Message: "id is already in use"})
 	case errors.Is(err, content.ErrDuplicateKey), errors.Is(err, store.ErrDuplicateKey):
 		writeErrorBody(w, http.StatusConflict, errorBody{Code: "duplicate_key", Message: "key is already in use"})
 	default:

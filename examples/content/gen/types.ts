@@ -202,6 +202,8 @@ export interface Landing {
   title: string;
   headline?: string;
   slug?: string;
+  /** URL path instead of the tree position, e.g. /services/seo; subpages build on it */
+  canonicalPath?: string;
   /** Extra URL serving this page, e.g. /promo */
   vanityPath?: string;
   seo?: SeoGroup;
@@ -213,6 +215,8 @@ export interface Page {
   intro?: string;
   blocks?: Blocks<"hero" | "quote">;
   slug?: string;
+  /** URL path instead of the tree position, e.g. /services/seo; subpages build on it */
+  canonicalPath?: string;
   /** Extra URL serving this page, e.g. /promo */
   vanityPath?: string;
   seo?: SeoGroup;
@@ -239,6 +243,11 @@ export interface Redirect {
   site?: string;
   /** Locale code; empty: every locale */
   forLocale?: string;
+  /**
+   * Wins over a page or mounted item at this path, which is then unreachable there. The only way
+   * to redirect the site root (/).
+   */
+  force?: boolean;
 }
 
 /** The "settings" content type. */

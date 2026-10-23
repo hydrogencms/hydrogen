@@ -23,15 +23,30 @@ func routesAtAnyLocale(ctx context.Context, q store.SQL, site, path string) ([]r
 	return out, err
 }
 
-// syncRedirect makes a published redirect item the manual route of its `from` path (replacing its earlier one).
+// syncRedirect makes a published redirect item the manual route of its `from` path (replacing its earlier one);
+// a forced one goes to route_force instead, where it outranks every route.
 func (s *service) syncRedirect(ctx context.Context, q store.SQL, item ids.UUID, doc map[string]any) ([]change, error) {
 	r, problems := s.redirectOf(doc)
 	if _, err := q.Exec(ctx, "DELETE FROM route WHERE item_id = ? AND state = 'manual'", item); err != nil {
 		return nil, err
 	}
+	if _, err := q.Exec(ctx, "DELETE FROM route_force WHERE item_id = ?", item); err != nil {
+		return nil, err
+	}
 	if len(problems) > 0 {
 		s.log.WarnContext(ctx, "pages: invalid redirect skipped", "item", item, "field", problems[0].field, "problem", problems[0].msg)
 		return nil, nil
+	}
+	if r.Force {
+		n, err := insertRows(ctx, q, "route_force", "site, locale, path, item_id, target, status, updated_at",
+			"ON CONFLICT (site, locale, path) DO NOTHING", [][]any{{r.Site, r.Locale, r.From, item, r.To, r.Status, s.clock.Now()}})
+		if err != nil {
+			return nil, fmt.Errorf("redirect %s: %w", r.From, err)
+		}
+		if n != 1 {
+			return nil, conflict("the path %s is already used by another forced redirect", r.From)
+		}
+		return []change{{Site: r.Site}}, nil
 	}
 	row := []any{r.Site, r.Locale, r.From, StateManual, &item, nil, r.To, r.Status, s.clock.Now()}
 	if err := s.upsertRoutes(ctx, q, [][]any{row}); err != nil {

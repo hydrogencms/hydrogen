@@ -150,7 +150,7 @@ type createBody struct {
 	Kind       string            `json:"kind"`
 	Item       *ids.UUID         `json:"item"`
 	Parent     *ids.UUID         `json:"parent"`
-	After      *ids.UUID         `json:"after"`
+	After      json.RawMessage   `json:"after"` // absent (last), null (first) or a sibling id
 	Segment    string            `json:"segment"`
 	Collection string            `json:"collection"`
 	Filter     map[string]any    `json:"filter"`
@@ -159,6 +159,9 @@ type createBody struct {
 	Label      map[string]string `json:"label"`
 	Node       *ids.UUID         `json:"node"`
 	URL        string            `json:"url"`
+
+	RedirectField  string `json:"redirectField"`
+	RedirectStatus int    `json:"redirectStatus"`
 }
 
 func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
@@ -171,19 +174,22 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 		manage.Fail(w, r, err)
 		return
 	}
+	after, hasAfter, err := parseAfter(in.After)
+	if err != nil {
+		manage.Fail(w, r, err)
+		return
+	}
+	first := hasAfter && after == nil
 	site := r.PathValue("site")
-	var (
-		n   *Node
-		err error
-	)
+	var n *Node
 	switch in.Kind {
 	case KindPage:
 		if in.Item == nil {
 			err = manage.BadRequest("item is required for a page node")
-		} else if in.Segment != "" || in.Collection != "" || in.Route != "" || in.Filter != nil || in.Label != nil || in.Node != nil || in.URL != "" {
+		} else if in.Segment != "" || in.Collection != "" || in.Route != "" || in.RedirectField != "" || in.Filter != nil || in.Label != nil || in.Node != nil || in.URL != "" {
 			err = manage.BadRequest("a page node takes only item, parent and after")
 		} else {
-			n, err = a.Place(r.Context(), site, Place{Item: *in.Item, Parent: in.Parent, After: in.After})
+			n, err = a.Place(r.Context(), site, Place{Item: *in.Item, Parent: in.Parent, After: after, First: first})
 		}
 	case KindMount:
 		label := in.Label
@@ -195,9 +201,9 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 		case in.Item != nil || in.Node != nil || in.URL != "":
 			err = manage.BadRequest("a mount takes no item, node or url")
 		default:
-			n, err = a.AddMount(r.Context(), site, Mount{Parent: *in.Parent, After: in.After, Spec: MountSpec{
+			n, err = a.AddMount(r.Context(), site, Mount{Parent: *in.Parent, After: after, First: first, Spec: MountSpec{
 				Segment: in.Segment, Collection: in.Collection, Filter: in.Filter, Route: in.Route,
-				Canonical: in.Canonical, Label: label}})
+				Canonical: in.Canonical, Label: label, RedirectField: in.RedirectField, RedirectStatus: in.RedirectStatus}})
 		}
 	case KindLink:
 		label := in.Label
@@ -221,7 +227,7 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 		case in.Segment != "" || in.Collection != "" || in.Route != "" || in.Filter != nil || in.Canonical:
 			err = manage.BadRequest("a link takes no mount settings")
 		default:
-			n, err = a.AddLink(r.Context(), site, Link{Parent: *in.Parent, After: in.After,
+			n, err = a.AddLink(r.Context(), site, Link{Parent: *in.Parent, After: after, First: first,
 				Spec: LinkSpec{Label: label, Item: in.Item, Node: in.Node, URL: in.URL}})
 		}
 	default:
@@ -276,6 +282,24 @@ type patchBody struct {
 	Link   *LinkSpec       `json:"link"`
 }
 
+// parseAfter reads an optional position: absent, null (first) or a sibling id.
+func parseAfter(raw json.RawMessage) (after *ids.UUID, present bool, err error) {
+	if raw == nil {
+		return nil, false, nil
+	}
+	if string(raw) == "null" {
+		return nil, true, nil
+	}
+	var s string
+	if json.Unmarshal(raw, &s) != nil {
+		return nil, true, manage.BadRequest("after must be a UUID or null")
+	}
+	if after, err = optUUID("after", s); err != nil || after == nil {
+		return nil, true, manage.BadRequest("after must be a UUID or null")
+	}
+	return after, true, nil
+}
+
 func (h *handlers) patch(w http.ResponseWriter, r *http.Request) {
 	a := h.api(w, r)
 	if a == nil {
@@ -291,18 +315,10 @@ func (h *handlers) patch(w http.ResponseWriter, r *http.Request) {
 		manage.Fail(w, r, err)
 		return
 	}
-	hasAfter := in.After != nil
-	var after *ids.UUID
-	if hasAfter && string(in.After) != "null" {
-		var s string
-		if json.Unmarshal(in.After, &s) != nil {
-			manage.Fail(w, r, manage.BadRequest("after must be a UUID or null"))
-			return
-		}
-		if after, err = optUUID("after", s); err != nil || after == nil {
-			manage.Fail(w, r, manage.BadRequest("after must be a UUID or null"))
-			return
-		}
+	after, hasAfter, err := parseAfter(in.After)
+	if err != nil {
+		manage.Fail(w, r, err)
+		return
 	}
 	if in.Parent == nil && !hasAfter && in.Hidden == nil && in.Mount == nil && in.Link == nil {
 		manage.Fail(w, r, manage.BadRequest("nothing to update"))

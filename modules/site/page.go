@@ -7,6 +7,7 @@ import (
 	"html"
 	"html/template"
 	"log/slog"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -78,6 +79,7 @@ type BlockView struct {
 	Blocks []*BlockView // shared blocks: the shared item's blocks, read only
 	Path   string       // data-h-path; empty inside shared blocks
 	Attrs  template.HTMLAttr
+	Page   *View // the page being rendered: .Page.Path, .Page.Query "name"
 }
 
 // page is one render: the helpers read from it.
@@ -91,6 +93,7 @@ type page struct {
 	log      *slog.Logger
 	view     *View
 	links    map[string]string
+	lookups  int
 	canon    string
 	alts     []pages.Alternate
 	crumbs   []Crumb
@@ -108,6 +111,9 @@ type page struct {
 	rt         *schema.RichText // the project's custom rich text vocabulary; nil renders custom types by convention
 	rtv        *richVocab
 	depth      int
+	rawQuery   string
+	query      url.Values
+	qread      map[string]bool
 	guard      *formGuard // nil in site:check
 }
 
@@ -119,7 +125,7 @@ func (p *page) context() context.Context {
 }
 
 func (p *page) funcs() template.FuncMap {
-	return template.FuncMap{
+	m := template.FuncMap{
 		"blocks":      p.blocksFn,
 		"partial":     p.partialFn,
 		"hasTemplate": p.hasTemplateFn,
@@ -138,6 +144,41 @@ func (p *page) funcs() template.FuncMap {
 		"component":   p.componentFn,
 		"formGuard":   p.formGuardFn,
 	}
+	if p.eng != nil {
+		for _, f := range p.eng.viewFuncs {
+			for k, fn := range f(p.view) {
+				m[k] = fn
+			}
+		}
+	}
+	return m
+}
+
+// queryValues are the request's values of a query parameter. Reading one marks the render as depending on it,
+// which the page cache keys on; "preview" (the preview token) is never readable.
+func (p *page) queryValues(name string) []string {
+	if name == "preview" {
+		return nil
+	}
+	if p.qread == nil {
+		p.qread = map[string]bool{}
+	}
+	p.qread[name] = true
+	if p.query == nil {
+		p.query, _ = url.ParseQuery(p.rawQuery)
+		if p.query == nil {
+			p.query = url.Values{}
+		}
+	}
+	return p.query[name]
+}
+
+// queryNames are the query parameters the render read, sorted.
+func (p *page) queryNames() []string {
+	if len(p.qread) == 0 {
+		return nil
+	}
+	return sortedKeys(p.qread)
 }
 
 func (p *page) problem(format string, args ...any) error {
@@ -210,7 +251,7 @@ func (p *page) parseBlocks(raw any, path string, readOnly bool) []*BlockView {
 		if !ok {
 			continue
 		}
-		b := &BlockView{Slots: map[string][]*BlockView{}}
+		b := &BlockView{Slots: map[string][]*BlockView{}, Page: p.view}
 		b.ID, _ = m["id"].(string)
 		b.Type, _ = m["type"].(string)
 		if b.Props, _ = m["props"].(map[string]any); b.Props == nil {
@@ -318,7 +359,7 @@ func (p *page) richExec(typ string, d *RichElement) (string, bool, error) {
 func (p *page) linkFn(v any) string {
 	switch x := v.(type) {
 	case string:
-		return p.links[strings.TrimPrefix(x, "item:")]
+		return p.linkOf(strings.TrimPrefix(x, "item:"))
 	case *Item:
 		if x == nil {
 			return ""
@@ -329,6 +370,27 @@ func (p *page) linkFn(v any) string {
 		return p.links[x.ID]
 	}
 	return ""
+}
+
+const maxLinkLookups = 64
+
+// linkOf is the URL of an item by id: from the links of the items read so far, else by reading the item (its
+// page, or its collection route). The answer, empty included, is kept for the render.
+func (p *page) linkOf(id string) string {
+	if u, ok := p.links[id]; ok {
+		return u
+	}
+	if p.f == nil || p.itemPath == nil || !isUUID(id) || p.lookups >= maxLinkLookups {
+		return ""
+	}
+	p.lookups++
+	ref, err := p.f.item(p.context(), id, p.f.preview != "", p.locale)
+	if err != nil {
+		p.log.Warn("site: link lookup failed", "item", id, "err", err)
+	}
+	u := p.itemPath(ref)
+	p.links[id] = u
+	return u
 }
 
 func (p *page) tFn(key string, pairs ...any) string {
@@ -343,7 +405,10 @@ func (p *page) editFn(path string) template.HTMLAttr {
 }
 
 func (p *page) assetFn(name string) (string, error) {
-	u, ok := p.eng.assets.url(name)
+	u, ok, err := p.eng.assets.url(name)
+	if err != nil {
+		return "", fmt.Errorf("asset %q: %w", name, err)
+	}
 	if !ok {
 		if err := p.problem("asset %q does not exist in site/assets or the theme", name); err != nil {
 			return "", err
@@ -471,6 +536,37 @@ func (v *View) Breadcrumbs() []Crumb { return v.p.breadcrumbsFn() }
 
 // Asset is the fingerprinted URL of a file of the theme's or project's assets.
 func (v *View) Asset(name string) (string, error) { return v.p.assetFn(name) }
+
+// Query is the first value of a query parameter of the request, or "". Reading a parameter makes the cached page
+// depend on it; parameters a template does not read never split the cache. Static exports have no query.
+func (v *View) Query(name string) string {
+	if vals := v.p.queryValues(name); len(vals) > 0 {
+		return vals[0]
+	}
+	return ""
+}
+
+// QueryValues are all values of a query parameter, in request order.
+func (v *View) QueryValues(name string) []string { return slices.Clone(v.p.queryValues(name)) }
+
+// List reads a collection like {{items}}; params are its dict (limit, sort, where…). The page is tagged with
+// what it reads.
+func (v *View) List(typ string, params map[string]any) ([]*Item, error) {
+	return v.p.itemsFn(typ, dictArgs(params)...)
+}
+
+// Get reads one item by id like {{item}}; params may hold fields and locale. It is nil when the item is not
+// available.
+func (v *View) Get(id string, params map[string]any) (*Item, error) {
+	return v.p.itemFn(id, dictArgs(params)...)
+}
+
+func dictArgs(m map[string]any) []any {
+	if m == nil {
+		return nil
+	}
+	return []any{m}
+}
 
 // Link is the URL of a referenced item (id, or an item of a listing).
 func (v *View) Link(item any) string { return v.p.linkFn(item) }

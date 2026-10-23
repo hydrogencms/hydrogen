@@ -178,7 +178,11 @@ func (r *Request) Submit(typ string, fields map[string]any) (string, error) {
 	if len(missing) > 0 {
 		return "", &content.ValidationError{Locale: r.Locale, Errors: missing}
 	}
-	actor := audit.Actor{Kind: "system", ID: "site:" + r.route.path,
+	name := r.route.path
+	if name == "" {
+		name = r.route.pattern
+	}
+	actor := audit.Actor{Kind: "system", ID: "site:" + name,
 		Detail: map[string]string{"channel": r.Channel, "ip": s.svc.Auth.ClientIP(r.R)}}
 	v, err := s.svc.Content.Create(audit.WithActor(r.R.Context(), actor), content.CreateInput{Type: typ, Locale: r.Locale, Fields: doc})
 	if err != nil {
