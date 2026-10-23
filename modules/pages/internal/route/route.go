@@ -16,6 +16,10 @@ import (
 // MaxPath is the longest site path in bytes.
 const MaxPath = 1024
 
+// Joiners are the characters besides dashes that may join the runs of a path segment, where a slug field
+// allows them.
+const Joiners = ".,"
+
 type partKind uint8
 
 const (
@@ -173,6 +177,12 @@ func (p *Pattern) String() string { return p.src }
 // already slugs are slugified; date placeholders accept 2006-01-02 or RFC 3339 values (the UTC date is
 // used). A missing, empty or unparsable value is an error naming the field.
 func (p *Pattern) Fill(value func(field string) (string, bool)) (string, error) {
+	return p.FillAllow(value, nil)
+}
+
+// FillAllow is Fill where a value that is already a slug using the extra characters allow names for its
+// field (a subset of ".,") is kept as it is.
+func (p *Pattern) FillAllow(value func(field string) (string, bool), allow func(field string) string) (string, error) {
 	var sb strings.Builder
 	sb.Grow(len(p.src) + 16)
 	for i, seg := range p.segs {
@@ -194,7 +204,7 @@ func (p *Pattern) Fill(value func(field string) (string, bool)) (string, error) 
 				}
 				continue
 			}
-			if !validSlug(v) {
+			if !validSlug(v) && (allow == nil || !schema.IsSlug(v, allow(pt.text))) {
 				v = schema.Slugify(v)
 			}
 			if v == "" {
@@ -234,7 +244,7 @@ func writeDate(sb *strings.Builder, pt part, v string) error {
 }
 
 // Clean validates a site path and returns it. A path starts with "/", the root is "/", there is no trailing
-// slash otherwise, no empty, "." or ".." segments, every segment is a slug, and it is at most MaxPath bytes.
+// slash otherwise, no empty, "." or ".." segments, every segment is a slug (joiners allowed), and it is at most MaxPath bytes.
 func Clean(path string) (string, error) {
 	if len(path) > MaxPath {
 		return "", fmt.Errorf("route: path longer than %d bytes", MaxPath)
@@ -251,7 +261,7 @@ func Clean(path string) (string, error) {
 			return "", fmt.Errorf("route: path %q has an empty segment or trailing slash", path)
 		case seg == "." || seg == "..":
 			return "", fmt.Errorf("route: path %q has a %q segment", path, seg)
-		case !validSlug(seg):
+		case !schema.IsSlug(seg, Joiners):
 			return "", fmt.Errorf("route: path %q: segment %q is not a slug", path, seg)
 		}
 	}

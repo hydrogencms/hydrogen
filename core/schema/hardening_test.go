@@ -3,6 +3,7 @@ package schema
 import (
 	"encoding/json"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -347,14 +348,45 @@ func TestSlugSchemaPattern(t *testing.T) {
 		t.Fatalf("pattern = %v", p)
 	}
 	for _, in := range []string{"", "-", "a--b", "-a", "a-", "Ab", "a b", "ǅ", "a_b"} {
-		if isSlug(in) {
+		if IsSlug(in, "") {
 			t.Errorf("isSlug(%q)", in)
 		}
 	}
 	for _, in := range []string{"a", "a-b", "日本語", "привет-мир", "x1-2y", "ß-ø"} {
-		if !isSlug(in) {
+		if !IsSlug(in, "") {
 			t.Errorf("!isSlug(%q)", in)
 		}
+	}
+}
+
+func TestIsSlugAllow(t *testing.T) {
+	for _, in := range []string{"b.v", "acme,-inc", "a.b.c", "v1.2-x", "a,b"} {
+		if !IsSlug(in, ".,") || IsSlug(in, "") {
+			t.Errorf("IsSlug(%q) with and without allow", in)
+		}
+	}
+	for _, in := range []string{".", "a.", ".a", "a..b", "a.,b", "a,,b", "a-.b", "a.-.b", "a,--b", "A.b"} {
+		if IsSlug(in, ".,") {
+			t.Errorf("IsSlug(%q, \".,\")", in)
+		}
+	}
+	if IsSlug("a,b", ".") {
+		t.Error("comma accepted when only dot is allowed")
+	}
+}
+
+func TestSlugAllowJSONSchema(t *testing.T) {
+	s := mustCompile(t, "types:\n  a:\n    fields:\n      s: { type: slug, allow: \".,\", unique: true }\n")
+	a, _ := s.Type("a")
+	f, _ := a.Field("s")
+	re := regexp.MustCompile(f.Config.JSONSchema()["pattern"].(string))
+	for in, want := range map[string]bool{"b.v": true, "acme,-inc": true, "a-b": true, "a..b": false, ".a": false, "a-.b": false, "a": true} {
+		if re.MatchString(in) != want {
+			t.Errorf("pattern on %q = %v", in, !want)
+		}
+	}
+	if !f.Unique || !f.Index || len(f.Shape.Allow) != 2 {
+		t.Errorf("field = %+v", f)
 	}
 }
 

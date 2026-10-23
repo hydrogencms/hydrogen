@@ -6,6 +6,14 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Slug fields take `allow: ".,"`, so slugs and the paths built from them can keep dots and commas (`benelux-b.v`,
+  `acme,-inc`); the pages module accepts the same characters in site paths and vanity paths. Fields take
+  `unique: true` (top-level string, slug and email fields): no other item of the type, in the same locale for a
+  translatable field, may hold the value. It is checked on draft writes, publish and restore under a lock
+  (`store.ContentStore.LockName`, implemented by both adapters) and fails as a validation error with code `not_unique`.
+
 ## [0.3.0] - 2026-10-22
 
 ### Added

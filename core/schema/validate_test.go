@@ -37,6 +37,7 @@ types:
       d:    { type: date, min: "2020-01-01", max: "2030-01-01" }
       dt:   { type: datetime, min: "2020-01-01T00:00:00Z" }
       sl:   { type: slug, max: 10 }
+      sx:   { type: slug, allow: ".,", max: 20 }
       em:   { type: email }
       u:    { type: url }
       ur:   { type: url, relative: true }
@@ -90,6 +91,13 @@ func TestValidate(t *testing.T) {
 		{"nul in enum", "{\"e\":\"a\\u0000\"}", ModeDraft, []string{"e:format"}},
 		{"nul in email", "{\"em\":\"a@b.co\\u0000\"}", ModeDraft, []string{"em:format"}},
 		{"nul in url", "{\"u\":\"http://a.co/\\u0000\"}", ModeDraft, []string{"u:format"}},
+		{"extended slug dot", `{"sx":"benelux-b.v"}`, ModeDraft, nil},
+		{"extended slug comma dash", `{"sx":"acme,-inc"}`, ModeDraft, nil},
+		{"extended slug doubled dot", `{"sx":"a..b"}`, ModeDraft, []string{"sx:format"}},
+		{"extended slug leading dot", `{"sx":".a"}`, ModeDraft, []string{"sx:format"}},
+		{"extended slug trailing comma", `{"sx":"a,"}`, ModeDraft, []string{"sx:format"}},
+		{"extended slug dash dot", `{"sx":"a-.b"}`, ModeDraft, []string{"sx:format"}},
+		{"plain slug rejects dot", `{"sl":"a.b"}`, ModeDraft, []string{"sl:format"}},
 		{"unicode slug", `{"sl":"привет-мир"}`, ModeDraft, nil},
 		{"cjk slug", `{"sl":"日本語"}`, ModeDraft, nil},
 		{"upper unicode slug", `{"sl":"Привет"}`, ModeDraft, []string{"sl:format"}},
@@ -676,11 +684,11 @@ func TestSlugify(t *testing.T) {
 		}
 	}
 	got := Slugify(long)
-	if len(got) > 120 || strings.HasSuffix(got, "-") || !isSlug(got) {
+	if len(got) > 120 || strings.HasSuffix(got, "-") || !IsSlug(got, "") {
 		t.Fatalf("long slug %q (%d)", got, len(got))
 	}
 	cyr := Slugify(strings.Repeat("щ ", 200))
-	if n := utf8.RuneCountInString(cyr); n > 120 || strings.HasSuffix(cyr, "-") || !isSlug(cyr) {
+	if n := utf8.RuneCountInString(cyr); n > 120 || strings.HasSuffix(cyr, "-") || !IsSlug(cyr, "") {
 		t.Fatalf("long cyrillic slug (%d runes)", n)
 	}
 }

@@ -337,6 +337,11 @@ func (s *Service) prepareDraft(ctx context.Context, tx store.Tx, st *itemState, 
 			return err
 		}
 	}
+	if len(errs) == 0 {
+		if errs, err = s.checkUnique(ctx, tx.Content(), st.typ, st.item.ID, locale, doc, st.workingDoc(s, locale), true); err != nil {
+			return err
+		}
+	}
 	if len(errs) > 0 {
 		return &ValidationError{Locale: locale, Errors: errs}
 	}

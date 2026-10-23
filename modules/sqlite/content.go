@@ -723,3 +723,6 @@ func (s contentStore) SearchIndexEmpty(ctx context.Context) (bool, error) {
 	}
 	return empty, nil
 }
+
+// LockName does nothing: SQLite has a single writer.
+func (contentStore) LockName(context.Context, string) error { return nil }

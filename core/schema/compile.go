@@ -271,6 +271,7 @@ func (o *Options) parseCommon(f *Field) {
 	f.Required, _ = o.Bool("required")
 	f.Translatable, _ = o.Bool("translatable")
 	f.Index, _ = o.Bool("index")
+	f.Unique, _ = o.Bool("unique")
 	if v, ok := o.Raw("default"); ok {
 		if v == nil {
 			o.Errorf("default", "default must not be null")
@@ -281,7 +282,7 @@ func (o *Options) parseCommon(f *Field) {
 	o.parseAI(f)
 	o.parseAdmin(f)
 	if o.sc.item {
-		for _, k := range []string{"required", "translatable", "index", "when", "default"} {
+		for _, k := range []string{"required", "translatable", "index", "unique", "when", "default"} {
 			if o.Has(k) {
 				o.Errorf(k, "%s is not allowed on list items", k)
 			}
@@ -416,6 +417,15 @@ func (o *Options) siblingBefore(name string) bool {
 }
 
 func (o *Options) checkPlacement(f *Field) {
+	if f.Unique {
+		switch {
+		case o.sc.block:
+			o.Errorf("unique", "block props cannot be unique")
+		case !o.sc.top || f.Shape.Base != BaseString || f.Shape.Format != "" && f.Shape.Format != "slug" && f.Shape.Format != "email":
+			o.Errorf("unique", "unique is only allowed on top-level string, slug and email fields")
+		}
+		f.Index = true
+	}
 	if f.Translatable && o.sc.block {
 		o.Errorf("translatable", "block props are not translatable on their own; set translatable on the blocks field")
 	} else if f.Translatable && !o.sc.top {
