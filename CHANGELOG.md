@@ -63,6 +63,12 @@ All notable changes to Hydrogen are documented here. The format follows
   read (`item`, `items`, settings), not only the page's own; an id no read item carries is looked up once (at most 64
   per render, in the page's locale and preview).
 
+### Changed
+
+- Pages: placing a page, mount or link without `after` now puts it last among its siblings (it went first, so nodes
+  created in order came out reversed). `"after": null` (Go: `First: true`) still puts it first. Moving a node is
+  unchanged: without `after` it goes first.
+
 ## [0.3.0] - 2026-10-22
 
 ### Added

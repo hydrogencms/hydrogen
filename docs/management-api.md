@@ -119,7 +119,7 @@ of a collection, or a `link`). Reads need `pages.read`, writes `pages.edit`; a m
 | --- | --- | --- | --- |
 | `GET /pages/sites` | `pages.read` | | The sites the caller can see: `{items: [name]}`. |
 | `GET /pages/sites/{site}/tree` | `pages.read` | `locale`, `parent` (node id), `depth` (1 to 10, default 1) | The children of `parent`, or of the root with `root` in the answer. |
-| `POST /pages/sites/{site}/nodes` | `pages.edit` | `kind` `page`: `item`, `parent`, `after`. `mount`: `parent`, `segment`, `collection`, `route`, `filter`, `canonical`, `label`, `redirectField`, `redirectStatus`, `after`. `link`: `parent`, `label`, one of `item`, `node` or `url`, `after` | Add a node; `201` with the node. |
+| `POST /pages/sites/{site}/nodes` | `pages.edit` | `kind` `page`: `item`, `parent`, `after`. `mount`: `parent`, `segment`, `collection`, `route`, `filter`, `canonical`, `label`, `redirectField`, `redirectStatus`, `after`. `link`: `parent`, `label`, one of `item`, `node` or `url`, `after`. `after` is a sibling id, `null` for first; absent puts the node last | Add a node; `201` with the node. |
 | `GET /pages/nodes/{id}` | `pages.read` | | One node. |
 | `PATCH /pages/nodes/{id}` | `pages.edit` | `parent`, `after` (a sibling id, or `null` for first), `hidden`, `mount` or `link` (a new spec) | Move, reorder or update a node. |
 | `DELETE /pages/nodes/{id}` | `pages.edit` | | Delete a mount or link node (`204`). |
