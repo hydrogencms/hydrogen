@@ -38,8 +38,9 @@ type Request struct {
 	Query   url.Values
 	Preview bool
 
-	srv *server
-	ch  *channel.Channel
+	srv   *server
+	ch    *channel.Channel
+	route *CustomRoute
 }
 
 // URL is the URL path of a site path on this channel: the channel's prefix plus the path ("/search" →
@@ -152,6 +153,7 @@ type CustomRoute struct {
 	channels []string
 	maxBody  int64
 	crossOK  bool
+	limit    *Limit
 	err      error
 }
 
@@ -489,7 +491,7 @@ func (c *Client) Item(id string) (*Item, error) { return c.f.item(c.ctx, id, c.f
 // runCustom calls a custom route and turns its answer into a result.
 func (s *server) runCustom(rc *reqCtx, hit *customHit) *result {
 	req := &Request{Client: &Client{ctx: rc.ctx, f: rc.f}, R: rc.r, Channel: rc.ch.Name, Locale: rc.ch.Languages[0],
-		Path: rc.rest, Params: hit.params, Query: rc.r.URL.Query(), Preview: rc.preview(), srv: s, ch: rc.ch}
+		Path: rc.rest, Params: hit.params, Query: rc.r.URL.Query(), Preview: rc.preview(), srv: s, ch: rc.ch, route: hit.route}
 	resp, err := hit.route.fn(req)
 	var tooBig *http.MaxBytesError
 	switch {

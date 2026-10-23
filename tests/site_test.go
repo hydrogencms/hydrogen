@@ -45,6 +45,12 @@ types:
     fields:
       title: { type: string, translatable: true, required: true }
       slug:  { type: slug, from: title, translatable: true, index: true }
+  submission:
+    name: "{sender}"
+    fields:
+      sender:  { type: string, required: true }
+      email:   { type: string }
+      message: { type: text }
 `
 
 const siteChannels = `
@@ -54,7 +60,7 @@ groups:
   web:
     site: main
     render: go
-    reserved: [/raw/*, /search, /account/*, /tags/*, /comp, /contact, /small, /open]
+    reserved: [/raw/*, /search, /account/*, /tags/*, /comp, /contact, /small, /open, /forms/*]
 channels:
   en: { group: web, languages: [en], match: { prefix: /en } }
 `
@@ -119,7 +125,7 @@ func newSiteEnv(t testing.TB, db store.DB, clk *clock.Manual, themeName string, 
 	}
 	write("schema/s.yaml", siteSchema)
 	write("config/channels.yaml", siteChannels)
-	write("config/app.yaml", "content: { schema_dir: "+filepath.Join(dir, "schema")+" }\nmodules:\n  pages: { sites: [main] }\n  site: { theme: "+themeName+", dir: "+filepath.Join(dir, "nosite")+", routes: [{ path: /posts, type: article, template: posts, limit: 2 }] }\n")
+	write("config/app.yaml", "content: { schema_dir: "+filepath.Join(dir, "schema")+" }\nmodules:\n  pages: { sites: [main] }\n  site: { theme: "+themeName+", dir: "+filepath.Join(dir, "nosite")+", routes: [{ path: /posts, type: article, template: posts, limit: 2 }], submissions: [submission] }\n")
 	cfg, err := config.Load(config.Options{Dir: filepath.Join(dir, "config"), Env: "dev", LookupEnv: func(string) (string, bool) { return "", false }})
 	if err != nil {
 		t.Fatal(err)

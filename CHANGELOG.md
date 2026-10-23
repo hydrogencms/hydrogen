@@ -6,6 +6,15 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Site module forms: `Request.Submit` stores a form as a draft item of a type listed in `modules.site.submissions`
+  (never published; actor `system:site:<route>` with the client address in the audit entry; required fields enforced,
+  `site.FieldErrors` for re-rendering), `Request.CheckForm` and the `{{formGuard}}` template function add a signed
+  fill-time token and a honeypot (`modules.site.forms`), and `CustomRoute.Limit` rate-limits a route per client
+  address and in total, counted in the database (`site_limit`, migration `site` 0001; job `site.limits`) so several
+  servers share it. Run `hydrogen migrate` after updating.
+
 ## [0.3.0] - 2026-10-22
 
 ### Added

@@ -108,6 +108,7 @@ type page struct {
 	rt         *schema.RichText // the project's custom rich text vocabulary; nil renders custom types by convention
 	rtv        *richVocab
 	depth      int
+	guard      *formGuard // nil in site:check
 }
 
 func (p *page) context() context.Context {
@@ -135,6 +136,7 @@ func (p *page) funcs() template.FuncMap {
 		"edit":        p.editFn,
 		"setting":     p.settingFn,
 		"component":   p.componentFn,
+		"formGuard":   p.formGuardFn,
 	}
 }
 
