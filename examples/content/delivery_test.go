@@ -44,7 +44,7 @@ func dget(m map[string]any, path ...string) any {
 func deliveryFlow(t *testing.T, s *server) {
 	f := buildSite(t, s)
 
-	// The navigation: pages by position (newest first), the mount under its label, links resolved.
+	// The navigation: pages by position, the mount under its label, links resolved.
 	status, h, tree := s.deliver("/tree?depth=3")
 	if status != 200 || tree["site"] != "main" {
 		t.Fatalf("tree: %d %v", status, tree)
@@ -58,7 +58,7 @@ func deliveryFlow(t *testing.T, s *server) {
 			about = m
 		}
 	}
-	if strings.Join(names, ",") != "News,About,About us" {
+	if strings.Join(names, ",") != "About,About us,News" {
 		t.Errorf("nodes = %v", names)
 	}
 	if about == nil || about["path"] != "/about" {

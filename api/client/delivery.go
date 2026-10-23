@@ -45,6 +45,14 @@ type ListResult struct {
 	// ListOptions.Total is set.
 	Total    int
 	Included map[string]json.RawMessage
+	// Facets holds the value counts of ListOptions.Facets, most items first.
+	Facets map[string][]FacetValue
+}
+
+// FacetValue is one value of a facet and the number of matching items that have it.
+type FacetValue struct {
+	Value string `json:"value"`
+	Count int    `json:"count"`
 }
 
 // RouteResult is the answer to Route (pages module).
@@ -195,6 +203,7 @@ func (d *Delivery) List(ctx context.Context, typ string, o *ListOptions) (*ListR
 		HasMore  bool                       `json:"hasMore"`
 		Total    *int                       `json:"total"`
 		Included map[string]json.RawMessage `json:"included"`
+		Facets   map[string][]FacetValue    `json:"facets"`
 	}
 	etag := ""
 	if o != nil {
@@ -204,7 +213,7 @@ func (d *Delivery) List(ctx context.Context, typ string, o *ListOptions) (*ListR
 	if err != nil {
 		return nil, err
 	}
-	res := &ListResult{Meta: m, Items: body.Items, HasMore: body.HasMore, Total: -1, Included: body.Included}
+	res := &ListResult{Meta: m, Items: body.Items, HasMore: body.HasMore, Total: -1, Included: body.Included, Facets: body.Facets}
 	if body.Total != nil {
 		res.Total = *body.Total
 	}

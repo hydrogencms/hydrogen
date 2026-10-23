@@ -172,12 +172,6 @@
     return [];
   }
 
-  async function lastChild(parent: string): Promise<string | undefined> {
-    const res = await api.get('/pages/sites/{site}/tree', { params: { site }, query: { parent, depth: 1 } });
-    const list = (res as unknown as { items: PNode[] }).items;
-    return list[list.length - 1]?.id;
-  }
-
   async function changed(parents: string[], select?: string) {
     if (!store) return;
     for (const p of new Set(parents)) await store.refresh(p).catch((e: Error) => toast.error(e.message));
@@ -593,7 +587,6 @@
       node={addDlg.node}
       {locale}
       childTypes={childTypes(addDlg.parent)}
-      {lastChild}
       ondone={(r) => void changed([r.parent], r.select)}
     />
   {/key}

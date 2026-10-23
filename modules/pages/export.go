@@ -18,7 +18,7 @@ type exporter struct{ svc func() (*service, error) }
 
 // pageRecord is one line: T names the table and selects the fields in use.
 type pageRecord struct {
-	T string `json:"t"` // node, slug, mount, route
+	T string `json:"t"` // node, slug, mount, route, force
 
 	// node
 	ID         *ids.UUID       `json:"id,omitempty"`
@@ -41,15 +41,17 @@ type pageRecord struct {
 	Locale string `json:"locale,omitempty"`
 
 	// slug
-	Node   *ids.UUID `json:"node,omitempty"`
-	Slug   string    `json:"slug,omitempty"`
-	Name   string    `json:"name,omitempty"`
-	Vanity string    `json:"vanity,omitempty"`
+	Node      *ids.UUID `json:"node,omitempty"`
+	Slug      string    `json:"slug,omitempty"`
+	Name      string    `json:"name,omitempty"`
+	Vanity    string    `json:"vanity,omitempty"`
+	Canonical string    `json:"canonical,omitempty"`
 
 	// mount (Node, Item, Locale)
-	Rel string `json:"rel,omitempty"`
+	Rel      string `json:"rel,omitempty"`
+	Redirect string `json:"redirect,omitempty"`
 
-	// route (Site, Locale, Path; Item and Node as above)
+	// route and force (Site, Locale, Path; Item and Node as above; force rows have no Node or State)
 	State  string  `json:"state,omitempty"`
 	Target *string `json:"target,omitempty"`
 	Status int     `json:"status,omitempty"`
@@ -133,10 +135,10 @@ func (exporter) Export(ctx context.Context, tx store.Tx, w *exportfmt.ModuleWrit
 	}); err != nil {
 		return fmt.Errorf("pages: export nodes: %w", err)
 	}
-	if err := each(ctx, q, `SELECT node_id, locale, slug, name, vanity FROM page_slug ORDER BY node_id, locale`, nil, func(r store.Rows) error {
+	if err := each(ctx, q, `SELECT node_id, locale, slug, name, vanity, canonical FROM page_slug ORDER BY node_id, locale`, nil, func(r store.Rows) error {
 		s := pageRecord{T: "slug"}
 		var node ids.UUID
-		if err := r.Scan(&node, &s.Locale, &s.Slug, &s.Name, &s.Vanity); err != nil {
+		if err := r.Scan(&node, &s.Locale, &s.Slug, &s.Name, &s.Vanity, &s.Canonical); err != nil {
 			return err
 		}
 		if off.nodes[node] {
@@ -147,10 +149,10 @@ func (exporter) Export(ctx context.Context, tx store.Tx, w *exportfmt.ModuleWrit
 	}); err != nil {
 		return fmt.Errorf("pages: export slugs: %w", err)
 	}
-	if err := each(ctx, q, `SELECT node_id, item_id, locale, rel FROM page_mount_item ORDER BY node_id, item_id, locale`, nil, func(r store.Rows) error {
+	if err := each(ctx, q, `SELECT node_id, item_id, locale, rel, redirect FROM page_mount_item ORDER BY node_id, item_id, locale`, nil, func(r store.Rows) error {
 		m := pageRecord{T: "mount"}
 		var node, item ids.UUID
-		if err := r.Scan(&node, &item, &m.Locale, &m.Rel); err != nil {
+		if err := r.Scan(&node, &item, &m.Locale, &m.Rel, &m.Redirect); err != nil {
 			return err
 		}
 		if off.nodes[node] || off.items[item] {
@@ -175,6 +177,22 @@ func (exporter) Export(ctx context.Context, tx store.Tx, w *exportfmt.ModuleWrit
 		return w.Write(rt)
 	}); err != nil {
 		return fmt.Errorf("pages: export routes: %w", err)
+	}
+	if err := each(ctx, q, `SELECT site, locale, path, item_id, target, status, updated_at FROM route_force
+			ORDER BY site, locale, path`, nil, func(r store.Rows) error {
+		rt := pageRecord{T: "force"}
+		var updated time.Time
+		var target string
+		if err := r.Scan(&rt.Site, &rt.Locale, &rt.Path, &rt.Item, &target, &rt.Status, &updated); err != nil {
+			return err
+		}
+		if off.item(rt.Item) {
+			return nil
+		}
+		rt.Target, rt.Updated = &target, &updated
+		return w.Write(rt)
+	}); err != nil {
+		return fmt.Errorf("pages: export forced redirects: %w", err)
 	}
 	return nil
 }
@@ -221,14 +239,14 @@ func insertRecord(ctx context.Context, q store.SQL, rec pageRecord) error {
 		if rec.Node == nil {
 			return fmt.Errorf("slug without node")
 		}
-		_, err = q.Exec(ctx, `INSERT INTO page_slug (node_id, locale, slug, name, vanity) VALUES (?, ?, ?, ?, ?)`,
-			*rec.Node, rec.Locale, rec.Slug, rec.Name, rec.Vanity)
+		_, err = q.Exec(ctx, `INSERT INTO page_slug (node_id, locale, slug, name, vanity, canonical) VALUES (?, ?, ?, ?, ?, ?)`,
+			*rec.Node, rec.Locale, rec.Slug, rec.Name, rec.Vanity, rec.Canonical)
 	case "mount":
 		if rec.Node == nil || rec.Item == nil {
 			return fmt.Errorf("mount item without node or item")
 		}
-		_, err = q.Exec(ctx, `INSERT INTO page_mount_item (node_id, item_id, locale, rel) VALUES (?, ?, ?, ?)`,
-			*rec.Node, *rec.Item, rec.Locale, rec.Rel)
+		_, err = q.Exec(ctx, `INSERT INTO page_mount_item (node_id, item_id, locale, rel, redirect) VALUES (?, ?, ?, ?, ?)`,
+			*rec.Node, *rec.Item, rec.Locale, rec.Rel, rec.Redirect)
 	case "route":
 		if rec.Updated == nil {
 			return fmt.Errorf("route without time")
@@ -236,6 +254,12 @@ func insertRecord(ctx context.Context, q store.SQL, rec pageRecord) error {
 		_, err = q.Exec(ctx, `INSERT INTO route (site, locale, path, state, item_id, node_id, target, status, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, rec.Site, rec.Locale, rec.Path, rec.State, rec.Item, rec.Node, rec.Target,
 			rec.Status, *rec.Updated)
+	case "force":
+		if rec.Updated == nil || rec.Item == nil || rec.Target == nil {
+			return fmt.Errorf("forced redirect without item, target or time")
+		}
+		_, err = q.Exec(ctx, `INSERT INTO route_force (site, locale, path, item_id, target, status, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, rec.Site, rec.Locale, rec.Path, *rec.Item, *rec.Target, rec.Status, *rec.Updated)
 	default:
 		return fmt.Errorf("unknown record type %q", rec.T)
 	}

@@ -1,6 +1,7 @@
 package manage
 
 import (
+	"maps"
 	"net/url"
 	"slices"
 	"strconv"
@@ -76,7 +77,9 @@ func parseSort(s string) ([]content.SortSpec, error) {
 	return out, nil
 }
 
-// parseWhere reads where[field][op]=value (op defaults to eq); repeated keys are ANDed.
+// parseWhere reads where[field][op]=value (op defaults to eq); repeated keys are ANDed. Boolean groups:
+// where[or][i][field][op]=v ORs the groups i (the conditions of one group are ANDed), and where[not][i]... holds
+// when none of its groups is fully satisfied; where[not][field][op]=v is the group 0 of not.
 func parseWhere(q url.Values) ([]content.Filter, error) {
 	var keys []string
 	for k := range q {
@@ -86,53 +89,114 @@ func parseWhere(q url.Values) ([]content.Filter, error) {
 	}
 	slices.Sort(keys)
 	var out []content.Filter
+	groups := map[store.Op]map[int][]content.Filter{}
+	n := 0
 	for _, k := range keys {
-		field, op, err := splitWhereKey(k)
+		w, err := splitWhereKey(k)
 		if err != nil {
 			return nil, err
 		}
 		for _, v := range q[k] {
-			if len(out) >= content.MaxConditions {
+			if n++; n > content.MaxConditions {
 				return nil, BadRequest("too many filters (at most %d)", content.MaxConditions)
 			}
-			if op == store.OpIn {
-				if n := strings.Count(v, ",") + 1; n > content.MaxInValues {
-					return nil, BadRequest("too many values in %s: %d (at most %d)", k, n, content.MaxInValues)
-				}
+			f, err := whereFilter(k, w, v)
+			if err != nil {
+				return nil, err
 			}
-			var val any = v
-			if op == store.OpExists {
-				b, err := strconv.ParseBool(v)
-				if err != nil {
-					return nil, BadRequest("%s needs true or false", k)
-				}
-				val = b
+			if w.group == "" {
+				out = append(out, f)
+				continue
 			}
-			out = append(out, content.Filter{Field: field, Op: op, Value: val})
+			if groups[w.group] == nil {
+				groups[w.group] = map[int][]content.Filter{}
+			}
+			groups[w.group][w.index] = append(groups[w.group][w.index], f)
 		}
+	}
+	for _, op := range []store.Op{store.OpOr, store.OpNot} {
+		g := groups[op]
+		if len(g) == 0 {
+			continue
+		}
+		f := content.Filter{Op: op}
+		for _, i := range slices.Sorted(maps.Keys(g)) {
+			f.Groups = append(f.Groups, g[i])
+		}
+		out = append(out, f)
 	}
 	return out, nil
 }
 
-func splitWhereKey(k string) (string, store.Op, error) {
-	rest, _ := strings.CutPrefix(k, "where[")
-	field, rest, ok := strings.Cut(rest, "]")
-	if !ok || field == "" || strings.ContainsAny(field, "[") {
-		return "", "", BadRequest("malformed filter %q; use where[field][op]=value", k)
-	}
-	op := store.OpEq
-	if rest != "" {
-		name, ok := strings.CutPrefix(rest, "[")
-		name, ok2 := strings.CutSuffix(name, "]")
-		if !ok || !ok2 || strings.ContainsAny(name, "[]") {
-			return "", "", BadRequest("malformed filter %q; use where[field][op]=value", k)
-		}
-		op = store.Op(name)
-		if !slices.Contains(ops, op) {
-			return "", "", BadRequest("unknown filter operator %q in %q", name, k)
+func whereFilter(k string, w whereKey, v string) (content.Filter, error) {
+	if w.op == store.OpIn {
+		if n := strings.Count(v, ",") + 1; n > content.MaxInValues {
+			return content.Filter{}, BadRequest("too many values in %s: %d (at most %d)", k, n, content.MaxInValues)
 		}
 	}
-	return field, op, nil
+	var val any = v
+	if w.op == store.OpExists {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return content.Filter{}, BadRequest("%s needs true or false", k)
+		}
+		val = b
+	}
+	return content.Filter{Field: w.field, Op: w.op, Value: val}, nil
+}
+
+// whereKey is a parsed filter key; group is store.OpOr or store.OpNot for a condition inside a boolean group.
+type whereKey struct {
+	group store.Op
+	index int
+	field string
+	op    store.Op
+}
+
+const whereUsage = "use where[field][op]=value, where[or][0][field][op]=value or where[not][field][op]=value"
+
+func splitWhereKey(k string) (whereKey, error) {
+	var w whereKey
+	rest, _ := strings.CutPrefix(k, "where")
+	var segs []string
+	for rest != "" {
+		s, ok := strings.CutPrefix(rest, "[")
+		name, after, ok2 := strings.Cut(s, "]")
+		if !ok || !ok2 || name == "" || strings.Contains(name, "[") {
+			return w, BadRequest("malformed filter %q; %s", k, whereUsage)
+		}
+		segs = append(segs, name)
+		rest = after
+	}
+	if len(segs) > 0 && (segs[0] == "or" || segs[0] == "not") {
+		w.group = store.Op(segs[0])
+		segs = segs[1:]
+		if len(segs) > 0 {
+			if n, err := strconv.Atoi(segs[0]); err == nil {
+				if n < 0 || n >= content.MaxConditions {
+					return w, BadRequest("group index in %q must be from 0 to %d", k, content.MaxConditions-1)
+				}
+				w.index = n
+				segs = segs[1:]
+			} else if w.group == store.OpOr {
+				return w, BadRequest("malformed filter %q; where[or] needs a group index: where[or][0][field][op]=value", k)
+			}
+		}
+		if len(segs) == 0 {
+			return w, BadRequest("malformed filter %q; %s", k, whereUsage)
+		}
+	}
+	if len(segs) == 0 || len(segs) > 2 || strings.ContainsAny(segs[0], "]") {
+		return w, BadRequest("malformed filter %q; %s", k, whereUsage)
+	}
+	w.field, w.op = segs[0], store.OpEq
+	if len(segs) == 2 {
+		w.op = store.Op(segs[1])
+		if !slices.Contains(ops, w.op) {
+			return w, BadRequest("unknown filter operator %q in %q", segs[1], k)
+		}
+	}
+	return w, nil
 }
 
 func parseFacets(typ string, q url.Values) (content.FacetOptions, error) {

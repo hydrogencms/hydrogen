@@ -207,6 +207,11 @@ const (
 	OpExists   Op = "exists"   // Value is bool
 	OpPrefix   Op = "prefix"   // text only
 	OpUnder    Op = "under"    // text only: the value itself or a path below it ("/a" matches "/a" and "/a/b", not "/ab")
+	// Boolean groups take no field: Cond.Groups lists AND-lists of conditions. OpOr holds when every condition
+	// of at least one group does; OpNot holds when no group is fully satisfied (the negation of OpOr). Items
+	// without index rows for a field fail every positive condition on it, so they satisfy its negation.
+	OpOr  Op = "or"
+	OpNot Op = "not"
 )
 
 // Column says which field_index column a condition or sort uses.
@@ -227,6 +232,7 @@ type Cond struct {
 	Column Column
 	Op     Op
 	Value  any
+	Groups [][]Cond // OpOr and OpNot only
 }
 
 // Sort orders by an indexed field (Column set) or a meta field (Column empty): "name", "createdAt",
@@ -338,4 +344,6 @@ type Reader interface {
 	SnapshotsByKey(ctx context.Context, key string, locales []string) ([]Snapshot, error)
 	// Query has the same semantics as ContentStore.Query.
 	Query(ctx context.Context, q Query) (QueryResult, error)
+	// Facet has the same semantics as ContentStore.Facet.
+	Facet(ctx context.Context, q Query, field string, limit int) ([]FacetCount, error)
 }

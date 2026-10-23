@@ -178,6 +178,7 @@ func itemView(fields obj, typeName string) obj {
 
 func createRequest(fields obj) obj {
 	return obj{"type": "object", "additionalProperties": false, "properties": obj{
+		"id":     obj{"type": "string", "format": "uuid", "description": "The new item's id (any non-nil UUID); generated when absent. 409 duplicate_id when taken, trashed items included."},
 		"locale": openapi.Str(""), "key": openapi.Str(""), "alwaysAvailable": obj{"type": "boolean"}, "fields": fields}}
 }
 
@@ -240,7 +241,10 @@ func parameters(collections, singletons []*schema.Type) obj {
 		"Where": obj{"name": "where", "in": "query", "style": "deepObject", "explode": true,
 			"schema": obj{"type": "object", "additionalProperties": obj{"type": "object", "additionalProperties": openapi.Str("")}},
 			"description": "Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); " +
-				"repeated filters are ANDed; in takes comma-separated values."},
+				"repeated filters are ANDed; in takes comma-separated values. " +
+				"Groups: where[or][0][f][op]=v&where[or][1][g][op]=w matches items satisfying every filter of at least one numbered group; " +
+				"where[not][f][op]=v matches items that do not satisfy all of its filters (numbered groups, where[not][0]… and where[not][1]…, exclude items " +
+				"satisfying any of them). Items without a value for f satisfy a negation of a test on f. At most 32 filters in all."},
 		"IfMatch": obj{"name": "If-Match", "in": "header", "schema": openapi.Str(""),
 			"description": "The ETag of the item as read (GET returns it, writes return the new one). A mismatch answers 412; without the header nothing is checked."},
 		"Trashed": obj{"name": "trashed", "in": "query", "schema": obj{"type": "boolean"},

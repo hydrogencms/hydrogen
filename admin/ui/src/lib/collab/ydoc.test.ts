@@ -106,6 +106,23 @@ describe('mapping', () => {
     expect(read(d).body).toBeUndefined();
   });
 
+  it('keeps rich text the editor cannot load as it is, instead of an empty fragment', () => {
+    const odd = { type: 'doc', content: [{ type: 'callout', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'kept' }] }] }] };
+    const v = hyd();
+    v.body = odd;
+    const d = seeded(v);
+    expect(d.getMap('l:en').get('body')).not.toBeInstanceOf(Y.XmlFragment);
+    expect(read(d).body).toEqual(odd);
+    const updates: number[] = [];
+    d.on('update', (u: Uint8Array) => updates.push(u.length));
+    syncPart(d.getMap('l:en'), defs, v, env);
+    expect(updates).toHaveLength(0);
+    v.body = rich('fixed');
+    syncPart(d.getMap('l:en'), defs, v, env);
+    expect(d.getMap('l:en').get('body')).toBeInstanceOf(Y.XmlFragment);
+    expect(read(d).body).toEqual(rich('fixed'));
+  });
+
   it('canonicalises rich text like the editor emits it', () => {
     const s = richSchema();
     const json = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a', marks: [{ type: 'italic' }, { type: 'bold' }] }, { type: 'text', text: 'b' }] }] };
