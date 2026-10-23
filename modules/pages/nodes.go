@@ -746,7 +746,8 @@ func (s *service) updateMount(ctx context.Context, tx store.Tx, n nodeRow, spec 
 			return err
 		}
 	}
-	rebuild := old.Collection != spec.Collection || old.Route != spec.Route || !equalFilters(old.Filter, spec.Filter)
+	rebuild := old.Collection != spec.Collection || old.Route != spec.Route || !equalFilters(old.Filter, spec.Filter) ||
+		old.RedirectField != spec.RedirectField
 	if old.Collection != spec.Collection || !equalFilters(old.Filter, spec.Filter) {
 		if err := s.authorize(ctx, policyMount, n); err != nil {
 			return err

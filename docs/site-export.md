@@ -21,7 +21,7 @@ named after its `match.host` (else the channel name):
 |---|---|
 | `<root>/<path>/index.html` | every page, mounted or routed item, listing page (`/blog/page/2`) and custom route with static params, as a visitor receives them |
 | `<root>/<prefix>/404.html` | the channel's 404 page (rendered with status 404) |
-| `<root>/__hydrogen/assets/…` | the fingerprinted theme and project assets the pages link to |
+| `<root>/__hydrogen/assets/…` | the fingerprinted theme and project assets the pages link to (style sheets with their `url()` references already rewritten; every asset is hashed for the export) |
 | `<root>/_redirects`, `<root>/s3-routing-rules.json`, `<old path>/index.html`, and `redirects.nginx.conf` at the tree root | redirects, per configured format |
 | `manifest.json` | every file with its content hash, kind, URL and cache tags |
 

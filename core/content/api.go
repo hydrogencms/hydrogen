@@ -37,6 +37,7 @@ var (
 	ErrConflict     = errors.New("content: conflict")
 	ErrReferenced   = errors.New("content: referenced by other items")
 	ErrDuplicateKey = errors.New("content: key already in use")
+	ErrDuplicateID  = errors.New("content: id already in use")
 	ErrBadRequest   = errors.New("content: bad request") // malformed input outside field validation
 )
 
@@ -223,7 +224,10 @@ type Referrer struct {
 }
 
 type CreateInput struct {
-	Type            string
+	Type string
+	// ID is the new item's id; the zero value generates a UUIDv7. Any other UUID is accepted (listings tiebreak
+	// on the id but never rely on its time order); an id that exists, trashed items included, is ErrDuplicateID.
+	ID              ids.UUID
 	Locale          string // default: the service's default locale
 	Key             string
 	AlwaysAvailable bool

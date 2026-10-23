@@ -88,6 +88,7 @@ func Fields[T any](v *View) (T, error) {
 
 // CreateInput creates a draft item.
 type CreateInput struct {
+	ID              string // optional: the new item's id (any non-nil UUID); 409 when taken
 	Locale          string // default: the server's default locale
 	Key             string
 	AlwaysAvailable bool
@@ -126,6 +127,9 @@ func (m *Manage) Create(ctx context.Context, typ string, in CreateInput) (*View,
 	body := map[string]any{"fields": in.Fields}
 	if in.Fields == nil {
 		body["fields"] = map[string]any{}
+	}
+	if in.ID != "" {
+		body["id"] = in.ID
 	}
 	if in.Locale != "" {
 		body["locale"] = in.Locale

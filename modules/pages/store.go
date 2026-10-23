@@ -189,11 +189,12 @@ func ancestry(path string) ([]ids.UUID, error) {
 
 func ancestryPath(parentPath string, id ids.UUID) string { return parentPath + id.String() + "/" }
 
-// slugRow is a page's published slug, name and vanity path in one locale.
+// slugRow is a page's published slug, name, vanity path and canonical path override in one locale.
 type slugRow struct {
-	Slug   string
-	Name   string
-	Vanity string
+	Slug      string
+	Name      string
+	Vanity    string
+	Canonical string
 }
 
 type slugKey struct {
@@ -204,13 +205,13 @@ type slugKey struct {
 func loadSlugsOf(ctx context.Context, q store.SQL, list []ids.UUID, into map[slugKey]slugRow) error {
 	return chunks(list, func(part []ids.UUID) error {
 		ph, args := inArgs(part)
-		return each(ctx, q, "SELECT node_id, locale, slug, name, vanity FROM page_slug WHERE node_id IN "+ph,
+		return each(ctx, q, "SELECT node_id, locale, slug, name, vanity, canonical FROM page_slug WHERE node_id IN "+ph,
 			args, func(r store.Rows) error { return scanSlug(r, into) })
 	})
 }
 
 func loadSlugRange(ctx context.Context, q store.SQL, prefix string, into map[slugKey]slugRow) error {
-	return each(ctx, q, `SELECT s.node_id, s.locale, s.slug, s.name, s.vanity FROM page_slug s
+	return each(ctx, q, `SELECT s.node_id, s.locale, s.slug, s.name, s.vanity, s.canonical FROM page_slug s
 JOIN page_node n ON n.id = s.node_id WHERE n.path >= ? AND n.path < ?`, []any{prefix, pathUpper(prefix)},
 		func(r store.Rows) error { return scanSlug(r, into) })
 }
@@ -218,7 +219,7 @@ JOIN page_node n ON n.id = s.node_id WHERE n.path >= ? AND n.path < ?`, []any{pr
 func scanSlug(r store.Rows, into map[slugKey]slugRow) error {
 	var k slugKey
 	var s slugRow
-	if err := r.Scan(&k.Node, &k.Locale, &s.Slug, &s.Name, &s.Vanity); err != nil {
+	if err := r.Scan(&k.Node, &k.Locale, &s.Slug, &s.Name, &s.Vanity, &s.Canonical); err != nil {
 		return err
 	}
 	into[k] = s
@@ -226,9 +227,9 @@ func scanSlug(r store.Rows, into map[slugKey]slugRow) error {
 }
 
 func putSlug(ctx context.Context, q store.SQL, node ids.UUID, locale string, s slugRow) error {
-	_, err := q.Exec(ctx, `INSERT INTO page_slug (node_id, locale, slug, name, vanity) VALUES (?, ?, ?, ?, ?)
-ON CONFLICT (node_id, locale) DO UPDATE SET slug = excluded.slug, name = excluded.name, vanity = excluded.vanity`,
-		node, locale, s.Slug, s.Name, s.Vanity)
+	_, err := q.Exec(ctx, `INSERT INTO page_slug (node_id, locale, slug, name, vanity, canonical) VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (node_id, locale) DO UPDATE SET slug = excluded.slug, name = excluded.name, vanity = excluded.vanity, canonical = excluded.canonical`,
+		node, locale, s.Slug, s.Name, s.Vanity, s.Canonical)
 	return err
 }
 

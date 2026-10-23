@@ -38,6 +38,9 @@ func mountSpecS() obj {
 			"route":     strS("Pattern relative to the mount, e.g. {publishDate:yyyy}/{slug}."),
 			"canonical": obj{"type": "boolean"},
 			"label":     labelS(),
+			"redirectField": strS("A string field of the collection: items with a value answer a redirect to it (an absolute http(s) URL " +
+				"or a site path) instead of showing themselves, and links to them point there."),
+			"redirectStatus": obj{"type": "integer", "enum": []any{301, 302, 307, 308}, "description": "Status of those redirects (default 302)."},
 		}}
 }
 
@@ -111,6 +114,7 @@ func routeS() obj {
 		"node":   uuidS(""),
 		"target": strS(""),
 		"status": obj{"type": "integer"},
+		"force":  obj{"type": "boolean", "description": "Manual redirects: the redirect wins over a page or mounted item at its path."},
 	}}
 }
 
@@ -175,7 +179,8 @@ func opCreate() obj {
 		"additionalProperties": false, "properties": obj{
 			"kind": obj{"const": KindMount}, "parent": uuidS("Parent page node."), "after": after,
 			"segment": strS(""), "collection": strS(""), "filter": obj{"type": "object", "additionalProperties": true},
-			"route": strS(""), "canonical": obj{"type": "boolean"}, "label": labelS()}}
+			"route": strS(""), "canonical": obj{"type": "boolean"}, "label": labelS(),
+			"redirectField": strS("See the mount spec."), "redirectStatus": obj{"type": "integer"}}}
 	link := obj{"type": "object", "title": "link", "required": []any{"kind", "parent", "label"},
 		"description": "Exactly one of item, node or url.", "additionalProperties": false, "properties": obj{
 			"kind": obj{"const": KindLink}, "parent": uuidS("Parent page node."), "after": after, "label": labelS(),

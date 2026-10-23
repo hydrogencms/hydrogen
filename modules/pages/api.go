@@ -159,6 +159,9 @@ type createBody struct {
 	Label      map[string]string `json:"label"`
 	Node       *ids.UUID         `json:"node"`
 	URL        string            `json:"url"`
+
+	RedirectField  string `json:"redirectField"`
+	RedirectStatus int    `json:"redirectStatus"`
 }
 
 func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
@@ -180,7 +183,7 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 	case KindPage:
 		if in.Item == nil {
 			err = manage.BadRequest("item is required for a page node")
-		} else if in.Segment != "" || in.Collection != "" || in.Route != "" || in.Filter != nil || in.Label != nil || in.Node != nil || in.URL != "" {
+		} else if in.Segment != "" || in.Collection != "" || in.Route != "" || in.RedirectField != "" || in.Filter != nil || in.Label != nil || in.Node != nil || in.URL != "" {
 			err = manage.BadRequest("a page node takes only item, parent and after")
 		} else {
 			n, err = a.Place(r.Context(), site, Place{Item: *in.Item, Parent: in.Parent, After: in.After})
@@ -197,7 +200,7 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 		default:
 			n, err = a.AddMount(r.Context(), site, Mount{Parent: *in.Parent, After: in.After, Spec: MountSpec{
 				Segment: in.Segment, Collection: in.Collection, Filter: in.Filter, Route: in.Route,
-				Canonical: in.Canonical, Label: label}})
+				Canonical: in.Canonical, Label: label, RedirectField: in.RedirectField, RedirectStatus: in.RedirectStatus}})
 		}
 	case KindLink:
 		label := in.Label

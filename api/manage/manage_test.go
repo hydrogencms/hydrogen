@@ -172,6 +172,14 @@ func TestRoutes(t *testing.T) {
 					t.Errorf("number not kept exact: %#v", in.Fields["rating"])
 				}
 			}},
+		{"create with id", "POST", "/collections/article/items", `{"id":"0190b2c4-7a3e-7d11-8f00-1234567890ab","fields":{}}`, 201, "Create",
+			func(t *testing.T, _ *httptest.ResponseRecorder, c call) {
+				if c.arg.(content.CreateInput).ID.String() != "0190b2c4-7a3e-7d11-8f00-1234567890ab" {
+					t.Errorf("input %+v", c.arg)
+				}
+			}},
+		{"create with bad id", "POST", "/collections/article/items", `{"id":"nope","fields":{}}`, 400, "", nil},
+		{"create with nil id", "POST", "/collections/article/items", `{"id":"00000000-0000-0000-0000-000000000000","fields":{}}`, 400, "", nil},
 		{"create no fields", "POST", "/collections/article/items", `{"locale":"en"}`, 201, "Create",
 			func(t *testing.T, _ *httptest.ResponseRecorder, c call) {
 				if c.arg.(content.CreateInput).Fields == nil {
@@ -567,6 +575,7 @@ func TestErrorMapping(t *testing.T) {
 		{"conflict", &content.ConflictError{Parts: []string{"shared", "de"}}, 409, "conflict", `"parts":["shared","de"]`},
 		{"referenced", &content.ReferencedError{Referrers: refs}, 409, "referenced", `"referrers":[{"id":"` + testID.String()},
 		{"duplicate", content.ErrDuplicateKey, 409, "duplicate_key", ""},
+		{"duplicate id", fmt.Errorf("wrap: %w", content.ErrDuplicateID), 409, "duplicate_id", ""},
 		{"store duplicate", fmt.Errorf("x: %w", store.ErrDuplicateKey), 409, "duplicate_key", ""},
 		{"plain invalid", content.ErrInvalid, 422, "invalid", ""},
 		{"plain conflict", content.ErrConflict, 409, "conflict", ""},

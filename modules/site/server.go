@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -40,6 +41,7 @@ type server struct {
 	ext        *Extensions
 	src        *sources
 	custom     *customSet
+	hosts      map[string]bool // hosts of the web channels' absolute URLs, lower case
 }
 
 func newServer(cfg *Config, ext *Extensions, s *kernel.Services, ps *pages.Service) (*server, error) {
@@ -73,7 +75,7 @@ func newServer(cfg *Config, ext *Extensions, s *kernel.Services, ps *pages.Servi
 		return nil, err
 	}
 	srv := &server{proxies: proxies, cfg: cfg, svc: s, pages: ps, routes: routes, log: s.Log, dev: s.Env == config.DevEnv, clock: s.Clock,
-		ext: ext, custom: custom, src: &sources{chain: chain, dir: cfg.Dir, comps: ext.comps, funcs: ext.funcs}}
+		ext: ext, custom: custom, src: &sources{chain: chain, dir: cfg.Dir, comps: ext.comps, funcs: ext.funcs, view: ext.view, viewNames: ext.viewNames}}
 	if cfg.CacheBytes > 0 {
 		srv.cache = newPageCache(cfg.CacheBytes)
 	}
@@ -83,8 +85,14 @@ func newServer(cfg *Config, ext *Extensions, s *kernel.Services, ps *pages.Servi
 		}
 	}
 	served := false
+	srv.hosts = map[string]bool{}
 	for _, ch := range s.Channels.All() {
 		served = served || renders(ch)
+		if _, abs := ps.SiteURL(ch, "/"); abs != "" {
+			if u, err := url.Parse(abs); err == nil && u.Host != "" {
+				srv.hosts[strings.ToLower(u.Host)] = true
+			}
+		}
 	}
 	if !served {
 		return srv, nil

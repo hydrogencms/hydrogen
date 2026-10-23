@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
+	"io"
 	"net/http"
 	"net/url"
 	"slices"
@@ -224,12 +224,21 @@ func (e *Exporter) Assets() ([]AssetFile, error) {
 		return nil, fmt.Errorf("site: templates are not loaded: %v", s.loadErr)
 	}
 	var out []AssetFile
-	for fp, f := range eng.assets.byURL {
-		b, err := fs.ReadFile(f.fsys, f.name)
+	list, err := eng.assets.all()
+	if err != nil {
+		return nil, fmt.Errorf("site: hash assets: %w", err)
+	}
+	for _, en := range list {
+		r, _, done, err := eng.assets.body(en.name)
 		if err != nil {
-			return nil, fmt.Errorf("site: read asset %s: %w", f.where, err)
+			return nil, fmt.Errorf("site: read asset %s: %w", eng.assets.files[en.name].where, err)
 		}
-		out = append(out, AssetFile{URL: assetsURL + fp, Name: f.name, Data: b})
+		b, err := io.ReadAll(r)
+		done()
+		if err != nil {
+			return nil, fmt.Errorf("site: read asset %s: %w", eng.assets.files[en.name].where, err)
+		}
+		out = append(out, AssetFile{URL: assetsURL + en.fp, Name: en.name, Data: b})
 	}
 	slices.SortFunc(out, func(a, b AssetFile) int { return strings.Compare(a.URL, b.URL) })
 	return out, nil
@@ -335,7 +344,9 @@ func (e *Exporter) Targets(ctx context.Context, channelName string) ([]Target, e
 // itemPath is the URL path of a listed item: the pages module's, else its collection route's.
 func (s *server) itemPath(ch *channel.Channel, rt *route, it *Item) string {
 	if it.URL != "" {
-		if u, err := url.Parse(it.URL); err == nil && u.EscapedPath() != "" {
+		if u, err := url.Parse(it.URL); err == nil && s.foreign(u) {
+			return ""
+		} else if err == nil && u.EscapedPath() != "" {
 			return u.EscapedPath()
 		}
 	}

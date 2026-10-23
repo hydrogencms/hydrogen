@@ -86,6 +86,18 @@ func (p *page) withPath(it *Item) *Item {
 	return it
 }
 
+// adoptLinks makes the links an item carries available to link and rich text; the page's own win.
+func (p *page) adoptLinks(it *Item) {
+	if it == nil {
+		return
+	}
+	for k, u := range it.Links {
+		if _, ok := p.links[k]; !ok {
+			p.links[k] = u
+		}
+	}
+}
+
 // itemsFn lists a collection: items "post" (dict "limit" 4 "sort" "-publishedAt"). The page is tagged with what
 // it reads, and the items carry their page's URL for link.
 func (p *page) itemsFn(typ string, args ...any) ([]*Item, error) {
@@ -107,6 +119,7 @@ func (p *page) itemsFn(typ string, args ...any) ([]*Item, error) {
 		}
 		for _, it := range l.Items {
 			p.withPath(it)
+			p.adoptLinks(it)
 		}
 		return l.Items, nil
 	})
@@ -157,6 +170,7 @@ func (p *page) itemFn(id string, args ...any) (*Item, error) {
 	p.withLinkFields(q, "")
 	v, err := p.remember("item:"+id+"?"+q.Encode(), func() (any, error) {
 		it, err := p.f.itemQuery(p.context(), id, p.f.preview != "", q)
+		p.adoptLinks(it)
 		return p.withPath(it), err
 	})
 	if err != nil {

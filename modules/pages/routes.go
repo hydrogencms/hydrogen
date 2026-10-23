@@ -44,9 +44,16 @@ func sameOwner(a, b *ids.UUID) bool {
 	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
 }
 
-// rank orders what may claim a path: current and alias routes beat manual redirects, which beat history.
+// routeSource is what a lookup reads: the route table plus the forced redirects (state forced).
+const routeSource = `(SELECT site, locale, path, state, item_id, node_id, target, status FROM route
+UNION ALL SELECT site, locale, path, 'forced', item_id, NULL, target, status FROM route_force)`
+
+// rank orders what may claim a path: forced redirects beat current and alias routes, which beat manual
+// redirects, which beat history.
 func rank(state string) int {
 	switch state {
+	case stateForced:
+		return 4
 	case StateCurrent, StateAlias:
 		return 3
 	case StateManual:
@@ -163,14 +170,14 @@ func (p *routePlan) empty() bool { return len(p.demote) == 0 && len(p.upsert) ==
 func diffRoutes(ctx context.Context, q store.SQL, existing map[routeKey]routeRow, wants []want) (*routePlan, error) {
 	slices.SortStableFunc(wants, func(a, b want) int {
 		return cmp.Or(strings.Compare(a.Site, b.Site), strings.Compare(a.Locale, b.Locale), strings.Compare(a.Path, b.Path),
-			boolRank(b.page)-boolRank(a.page), bytes.Compare(idBytes(a.Item), idBytes(b.Item)))
+			boolRank(b.page)-boolRank(a.page), boolRank(a.soft)-boolRank(b.soft), bytes.Compare(idBytes(a.Item), idBytes(b.Item)))
 	})
 	plan := &routePlan{}
 	deduped := wants[:0:0]
 	for _, w := range wants {
 		if n := len(deduped); n > 0 && deduped[n-1].routeKey == w.routeKey {
 			prev := deduped[n-1]
-			if prev.page && w.page && !sameOwner(prev.Item, w.Item) {
+			if prev.page && w.page && !w.soft && !sameOwner(prev.Item, w.Item) {
 				plan.clashes = append(plan.clashes, clash{w, prev.routeRow})
 			}
 			continue
@@ -180,8 +187,11 @@ func diffRoutes(ctx context.Context, q store.SQL, existing map[routeKey]routeRow
 	var changed []want
 	wanted := make(map[routeKey]bool, len(deduped))
 	for _, w := range deduped {
-		wanted[w.routeKey] = true
-		if e, ok := existing[w.routeKey]; ok && e.State == w.State && sameOwner(e.Item, w.Item) && sameOwner(e.Node, w.Node) {
+		if !w.soft {
+			wanted[w.routeKey] = true
+		}
+		if e, ok := existing[w.routeKey]; ok && e.State == w.State && sameOwner(e.Item, w.Item) && sameOwner(e.Node, w.Node) &&
+			e.Target == w.Target && e.Status == w.Status {
 			continue
 		}
 		changed = append(changed, w)
@@ -195,6 +205,12 @@ func diffRoutes(ctx context.Context, q store.SQL, existing map[routeKey]routeRow
 		return nil, err
 	}
 	for _, w := range changed {
+		if w.soft {
+			if len(held[w.routeKey]) == 0 {
+				plan.upsert = append(plan.upsert, w)
+			}
+			continue
+		}
 		var blocker *routeRow
 		for _, h := range held[w.routeKey] {
 			if rank(h.State) > 1 && (h.State == StateManual || !sameOwner(h.Item, w.Item)) {
@@ -271,7 +287,11 @@ func (s *service) apply(ctx context.Context, q store.SQL, plan *routePlan, stric
 	}
 	rows := make([][]any, len(plan.upsert))
 	for i, w := range plan.upsert {
-		rows[i] = []any{w.Site, w.Locale, w.Path, w.State, w.Item, w.Node, nil, 0, now}
+		var target any
+		if w.Target != "" {
+			target = w.Target
+		}
+		rows[i] = []any{w.Site, w.Locale, w.Path, w.State, w.Item, w.Node, target, w.Status, now}
 	}
 	return s.upsertRoutes(ctx, q, rows)
 }

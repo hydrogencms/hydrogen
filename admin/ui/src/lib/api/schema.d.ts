@@ -1732,6 +1732,11 @@ export interface components {
         };
         /** Landing */
         Fields_landing: {
+            /**
+             * Canonical path
+             * @description URL path instead of the tree position, e.g. /services/seo; subpages build on it
+             */
+            canonicalPath?: string;
             /** Slug */
             slug?: string;
             /** Title */
@@ -1744,6 +1749,11 @@ export interface components {
         };
         /** Page */
         Fields_page: {
+            /**
+             * Canonical path
+             * @description URL path instead of the tree position, e.g. /services/seo; subpages build on it
+             */
+            canonicalPath?: string;
             /** Intro */
             intro?: string;
             /** Slug */
@@ -1773,6 +1783,12 @@ export interface components {
              * @description Locale code; empty: every locale
              */
             forLocale?: string;
+            /**
+             * Force
+             * @description Wins over a page or mounted item at this path, which is then unreachable there. The only way to redirect the site root (/).
+             * @default false
+             */
+            force: boolean;
             /**
              * From
              * @description Site path to redirect, e.g. /old-page
@@ -2075,12 +2091,14 @@ export interface components {
         };
         /** @description JSON merge patch: null removes a field. */
         Patch_landing: {
+            canonicalPath?: string | null;
             slug?: string | null;
             title?: string | null;
             vanityPath?: string | null;
         };
         /** @description JSON merge patch: null removes a field. */
         Patch_page: {
+            canonicalPath?: string | null;
             intro?: string | null;
             slug?: string | null;
             title?: string | null;
@@ -2094,6 +2112,7 @@ export interface components {
         /** @description JSON merge patch: null removes a field. */
         Patch_redirect: {
             forLocale?: string | null;
+            force?: boolean | null;
             from?: string | null;
             site?: string | null;
             statusCode?: ("301" | "302" | "307" | "308") | null;
@@ -4770,6 +4789,8 @@ export interface operations {
                 content: {
                     "application/json": {
                         items: {
+                            /** @description Manual redirects: the redirect wins over a page or mounted item at its path. */
+                            force?: boolean;
                             /** Format: uuid */
                             item?: string;
                             locale: string;
@@ -4939,6 +4960,13 @@ export interface operations {
                             label?: {
                                 [key: string]: string;
                             };
+                            /** @description A string field of the collection: items with a value answer a redirect to it (an absolute http(s) URL or a site path) instead of showing themselves, and links to them point there. */
+                            redirectField?: string;
+                            /**
+                             * @description Status of those redirects (default 302).
+                             * @enum {integer}
+                             */
+                            redirectStatus?: 301 | 302 | 307 | 308;
                             /** @description Pattern relative to the mount, e.g. {publishDate:yyyy}/{slug}. */
                             route: string;
                             /** @description The mount's own path segment under its parent. */
@@ -5079,6 +5107,13 @@ export interface operations {
                         label?: {
                             [key: string]: string;
                         };
+                        /** @description A string field of the collection: items with a value answer a redirect to it (an absolute http(s) URL or a site path) instead of showing themselves, and links to them point there. */
+                        redirectField?: string;
+                        /**
+                         * @description Status of those redirects (default 302).
+                         * @enum {integer}
+                         */
+                        redirectStatus?: 301 | 302 | 307 | 308;
                         /** @description Pattern relative to the mount, e.g. {publishDate:yyyy}/{slug}. */
                         route: string;
                         /** @description The mount's own path segment under its parent. */
@@ -5135,6 +5170,13 @@ export interface operations {
                             label?: {
                                 [key: string]: string;
                             };
+                            /** @description A string field of the collection: items with a value answer a redirect to it (an absolute http(s) URL or a site path) instead of showing themselves, and links to them point there. */
+                            redirectField?: string;
+                            /**
+                             * @description Status of those redirects (default 302).
+                             * @enum {integer}
+                             */
+                            redirectStatus?: 301 | 302 | 307 | 308;
                             /** @description Pattern relative to the mount, e.g. {publishDate:yyyy}/{slug}. */
                             route: string;
                             /** @description The mount's own path segment under its parent. */
@@ -5296,6 +5338,9 @@ export interface operations {
                      * @description Parent page node.
                      */
                     parent: string;
+                    /** @description See the mount spec. */
+                    redirectField?: string;
+                    redirectStatus?: number;
                     route: string;
                     segment: string;
                 } | {
@@ -5368,6 +5413,13 @@ export interface operations {
                             label?: {
                                 [key: string]: string;
                             };
+                            /** @description A string field of the collection: items with a value answer a redirect to it (an absolute http(s) URL or a site path) instead of showing themselves, and links to them point there. */
+                            redirectField?: string;
+                            /**
+                             * @description Status of those redirects (default 302).
+                             * @enum {integer}
+                             */
+                            redirectStatus?: 301 | 302 | 307 | 308;
                             /** @description Pattern relative to the mount, e.g. {publishDate:yyyy}/{slug}. */
                             route: string;
                             /** @description The mount's own path segment under its parent. */
@@ -5589,6 +5641,13 @@ export interface operations {
                                 label?: {
                                     [key: string]: string;
                                 };
+                                /** @description A string field of the collection: items with a value answer a redirect to it (an absolute http(s) URL or a site path) instead of showing themselves, and links to them point there. */
+                                redirectField?: string;
+                                /**
+                                 * @description Status of those redirects (default 302).
+                                 * @enum {integer}
+                                 */
+                                redirectStatus?: 301 | 302 | 307 | 308;
                                 /** @description Pattern relative to the mount, e.g. {publishDate:yyyy}/{slug}. */
                                 route: string;
                                 /** @description The mount's own path segment under its parent. */
@@ -5653,6 +5712,13 @@ export interface operations {
                                 label?: {
                                     [key: string]: string;
                                 };
+                                /** @description A string field of the collection: items with a value answer a redirect to it (an absolute http(s) URL or a site path) instead of showing themselves, and links to them point there. */
+                                redirectField?: string;
+                                /**
+                                 * @description Status of those redirects (default 302).
+                                 * @enum {integer}
+                                 */
+                                redirectStatus?: 301 | 302 | 307 | 308;
                                 /** @description Pattern relative to the mount, e.g. {publishDate:yyyy}/{slug}. */
                                 route: string;
                                 /** @description The mount's own path segment under its parent. */
