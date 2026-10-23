@@ -91,6 +91,7 @@ type page struct {
 	log      *slog.Logger
 	view     *View
 	links    map[string]string
+	lookups  int
 	canon    string
 	alts     []pages.Alternate
 	crumbs   []Crumb
@@ -316,7 +317,7 @@ func (p *page) richExec(typ string, d *RichElement) (string, bool, error) {
 func (p *page) linkFn(v any) string {
 	switch x := v.(type) {
 	case string:
-		return p.links[strings.TrimPrefix(x, "item:")]
+		return p.linkOf(strings.TrimPrefix(x, "item:"))
 	case *Item:
 		if x == nil {
 			return ""
@@ -327,6 +328,27 @@ func (p *page) linkFn(v any) string {
 		return p.links[x.ID]
 	}
 	return ""
+}
+
+const maxLinkLookups = 64
+
+// linkOf is the URL of an item by id: from the links of the items read so far, else by reading the item (its
+// page, or its collection route). The answer, empty included, is kept for the render.
+func (p *page) linkOf(id string) string {
+	if u, ok := p.links[id]; ok {
+		return u
+	}
+	if p.f == nil || p.itemPath == nil || !isUUID(id) || p.lookups >= maxLinkLookups {
+		return ""
+	}
+	p.lookups++
+	ref, err := p.f.item(p.context(), id, p.f.preview != "", p.locale)
+	if err != nil {
+		p.log.Warn("site: link lookup failed", "item", id, "err", err)
+	}
+	u := p.itemPath(ref)
+	p.links[id] = u
+	return u
 }
 
 func (p *page) tFn(key string, pairs ...any) string {

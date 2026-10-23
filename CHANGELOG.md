@@ -6,6 +6,12 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Site module: `link "item:<id>"` and `item:` links in rich text resolve references held by any item the render
+  read (`item`, `items`, settings), not only the page's own; an id no read item carries is looked up once (at most 64
+  per render, in the page's locale and preview).
+
 ## [0.3.0] - 2026-10-22
 
 ### Added
