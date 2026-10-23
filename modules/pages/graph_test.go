@@ -130,3 +130,34 @@ func TestGraphMountWants(t *testing.T) {
 		t.Errorf("wants = %q, want %q", got, want)
 	}
 }
+
+func TestGraphCanonicalPath(t *testing.T) {
+	g, id := treeFixture()
+	g.slugs[slugKey{id["a"], "en"}] = slugRow{Slug: "about", Canonical: "/company"}
+	g.slugs[slugKey{id["root"], "en"}] = slugRow{Slug: "ignored", Canonical: "/nope"}
+	g.slugs[slugKey{id["b"], "de"}] = slugRow{Slug: "mannschaft", Canonical: "no-slash"} // invalid: ignored
+	for _, c := range []struct{ node, locale, want string }{
+		{"a", "en", "/company"},
+		{"b", "en", "/company/team"},
+		{"root", "en", "/"},
+		{"a", "de", "/ueber"},
+		{"b", "de", "/ueber/mannschaft"},
+	} {
+		if got, _ := g.pathOf(id[c.node], c.locale); got != c.want {
+			t.Errorf("%s/%s = %q, want %q", c.node, c.locale, got, c.want)
+		}
+	}
+	var nodes []*gnode
+	for _, n := range g.nodes {
+		nodes = append(nodes, n)
+	}
+	var got []string
+	for _, w := range g.pageWants(nodes, []string{"en"}) {
+		got = append(got, w.State+" "+w.Path)
+	}
+	slices.Sort(got)
+	want := []string{"current /", "current /company", "current /company/team", "redirect /about"}
+	if !slices.Equal(got, want) {
+		t.Errorf("wants = %q, want %q", got, want)
+	}
+}

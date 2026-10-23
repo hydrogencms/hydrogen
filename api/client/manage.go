@@ -195,7 +195,7 @@ func (m *Manage) List(ctx context.Context, typ string, o *ManageListOptions) (*M
 			q.add("status", o.Status)
 		}
 		lo := o.ListOptions
-		lo.Include, lo.Total = 0, false // delivery-only options
+		lo.Include, lo.Total, lo.Facets = 0, false, nil // delivery-only options
 		if err := lo.encode(q); err != nil {
 			return nil, err
 		}

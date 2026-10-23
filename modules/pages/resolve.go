@@ -173,13 +173,13 @@ func (s *service) breadcrumbs(ctx context.Context, q store.SQL, h *routeHit, loc
 func loadAncestorGraph(ctx context.Context, q store.SQL, anc []ids.UUID, locale string) (*graph, error) {
 	g := newGraph(q)
 	ph, args := inArgs(anc, locale)
-	err := each(ctx, q, `SELECT n.id, n.kind, n.item_id, n.main_locale, n.data, s.locale, s.slug, s.name
+	err := each(ctx, q, `SELECT n.id, n.kind, n.item_id, n.main_locale, n.data, s.locale, s.slug, s.name, s.canonical
 FROM page_node n LEFT JOIN page_slug s ON s.node_id = n.id AND (s.locale = ? OR s.locale = n.main_locale)
 WHERE n.id IN `+ph, args, func(r store.Rows) error {
 		var n nodeRow
 		var data *json.RawMessage
-		var loc, slug, name *string
-		if err := r.Scan(&n.ID, &n.Kind, &n.Item, &n.MainLocale, &data, &loc, &slug, &name); err != nil {
+		var loc, slug, name, canonical *string
+		if err := r.Scan(&n.ID, &n.Kind, &n.Item, &n.MainLocale, &data, &loc, &slug, &name, &canonical); err != nil {
 			return err
 		}
 		if data != nil {
@@ -191,7 +191,7 @@ WHERE n.id IN `+ph, args, func(r store.Rows) error {
 			}
 		}
 		if loc != nil {
-			g.slugs[slugKey{n.ID, *loc}] = slugRow{Slug: *slug, Name: *name}
+			g.slugs[slugKey{n.ID, *loc}] = slugRow{Slug: *slug, Name: *name, Canonical: *canonical}
 		}
 		return nil
 	})

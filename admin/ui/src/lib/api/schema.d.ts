@@ -1732,6 +1732,11 @@ export interface components {
         };
         /** Landing */
         Fields_landing: {
+            /**
+             * Canonical path
+             * @description URL path instead of the tree position, e.g. /services/seo; subpages build on it
+             */
+            canonicalPath?: string;
             /** Slug */
             slug?: string;
             /** Title */
@@ -1744,6 +1749,11 @@ export interface components {
         };
         /** Page */
         Fields_page: {
+            /**
+             * Canonical path
+             * @description URL path instead of the tree position, e.g. /services/seo; subpages build on it
+             */
+            canonicalPath?: string;
             /** Intro */
             intro?: string;
             /** Slug */
@@ -2081,12 +2091,14 @@ export interface components {
         };
         /** @description JSON merge patch: null removes a field. */
         Patch_landing: {
+            canonicalPath?: string | null;
             slug?: string | null;
             title?: string | null;
             vanityPath?: string | null;
         };
         /** @description JSON merge patch: null removes a field. */
         Patch_page: {
+            canonicalPath?: string | null;
             intro?: string | null;
             slug?: string | null;
             title?: string | null;
@@ -2509,7 +2521,7 @@ export interface components {
         Trashed: boolean;
         UserId: string;
         VersionNumber: number;
-        /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
+        /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. Groups: where[or][0][f][op]=v&where[or][1][g][op]=w matches items satisfying every filter of at least one numbered group; where[not][f][op]=v matches items that do not satisfy all of its filters (numbered groups, where[not][0]… and where[not][1]…, exclude items satisfying any of them). Items without a value for f satisfy a negation of a test on f. At most 32 filters in all. */
         Where: {
             [key: string]: {
                 [key: string]: string;
@@ -3187,7 +3199,7 @@ export interface operations {
                 sort?: components["parameters"]["Sort"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
-                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. Groups: where[or][0][f][op]=v&where[or][1][g][op]=w matches items satisfying every filter of at least one numbered group; where[not][f][op]=v matches items that do not satisfy all of its filters (numbered groups, where[not][0]… and where[not][1]…, exclude items satisfying any of them). Items without a value for f satisfy a negation of a test on f. At most 32 filters in all. */
                 where?: components["parameters"]["Where"];
                 /** @description Comma-separated top-level fields (at most 10) to return in each item's fields. */
                 fields?: components["parameters"]["Fields"];
@@ -3256,7 +3268,7 @@ export interface operations {
                 sort?: components["parameters"]["Sort"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
-                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. Groups: where[or][0][f][op]=v&where[or][1][g][op]=w matches items satisfying every filter of at least one numbered group; where[not][f][op]=v matches items that do not satisfy all of its filters (numbered groups, where[not][0]… and where[not][1]…, exclude items satisfying any of them). Items without a value for f satisfy a negation of a test on f. At most 32 filters in all. */
                 where?: components["parameters"]["Where"];
                 /** @description Comma-separated top-level fields (at most 10) to return in each item's fields. */
                 fields?: components["parameters"]["Fields"];
@@ -3325,7 +3337,7 @@ export interface operations {
                 sort?: components["parameters"]["Sort"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
-                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. Groups: where[or][0][f][op]=v&where[or][1][g][op]=w matches items satisfying every filter of at least one numbered group; where[not][f][op]=v matches items that do not satisfy all of its filters (numbered groups, where[not][0]… and where[not][1]…, exclude items satisfying any of them). Items without a value for f satisfy a negation of a test on f. At most 32 filters in all. */
                 where?: components["parameters"]["Where"];
                 /** @description Comma-separated top-level fields (at most 10) to return in each item's fields. */
                 fields?: components["parameters"]["Fields"];
@@ -3394,7 +3406,7 @@ export interface operations {
                 sort?: components["parameters"]["Sort"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
-                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. Groups: where[or][0][f][op]=v&where[or][1][g][op]=w matches items satisfying every filter of at least one numbered group; where[not][f][op]=v matches items that do not satisfy all of its filters (numbered groups, where[not][0]… and where[not][1]…, exclude items satisfying any of them). Items without a value for f satisfy a negation of a test on f. At most 32 filters in all. */
                 where?: components["parameters"]["Where"];
                 /** @description Comma-separated top-level fields (at most 10) to return in each item's fields. */
                 fields?: components["parameters"]["Fields"];
@@ -3463,7 +3475,7 @@ export interface operations {
                 sort?: components["parameters"]["Sort"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
-                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. Groups: where[or][0][f][op]=v&where[or][1][g][op]=w matches items satisfying every filter of at least one numbered group; where[not][f][op]=v matches items that do not satisfy all of its filters (numbered groups, where[not][0]… and where[not][1]…, exclude items satisfying any of them). Items without a value for f satisfy a negation of a test on f. At most 32 filters in all. */
                 where?: components["parameters"]["Where"];
                 /** @description Comma-separated top-level fields (at most 10) to return in each item's fields. */
                 fields?: components["parameters"]["Fields"];
@@ -3526,7 +3538,7 @@ export interface operations {
                 /** @description Locale; default the item's main locale (reads) or the service default (writes). */
                 locale?: components["parameters"]["Locale"];
                 status?: components["parameters"]["Status"];
-                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. Groups: where[or][0][f][op]=v&where[or][1][g][op]=w matches items satisfying every filter of at least one numbered group; where[not][f][op]=v matches items that do not satisfy all of its filters (numbered groups, where[not][0]… and where[not][1]…, exclude items satisfying any of them). Items without a value for f satisfy a negation of a test on f. At most 32 filters in all. */
                 where?: components["parameters"]["Where"];
                 /** @description Comma-separated indexed text fields (at most 5), e.g. folder,tags. */
                 fields: string;
@@ -3571,7 +3583,7 @@ export interface operations {
                 sort?: components["parameters"]["Sort"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
-                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. */
+                /** @description Filters as where[field][op]=value, ops eq ne lt lte gt gte in contains exists prefix under; under takes a path and matches it and the paths below it (/a matches /a and /a/b, not /ab); repeated filters are ANDed; in takes comma-separated values. Groups: where[or][0][f][op]=v&where[or][1][g][op]=w matches items satisfying every filter of at least one numbered group; where[not][f][op]=v matches items that do not satisfy all of its filters (numbered groups, where[not][0]… and where[not][1]…, exclude items satisfying any of them). Items without a value for f satisfy a negation of a test on f. At most 32 filters in all. */
                 where?: components["parameters"]["Where"];
                 /** @description Comma-separated top-level fields (at most 10) to return in each item's fields. */
                 fields?: components["parameters"]["Fields"];

@@ -34,7 +34,8 @@ func (s *service) slugRowOf(typ string, doc map[string]any) slugRow {
 	if t, ok := s.schema.Type(typ); ok {
 		name = s.schema.Name(t, doc)
 	}
-	return slugRow{Slug: str(doc, "slug"), Name: name, Vanity: str(doc, "vanityPath")}
+	return slugRow{Slug: str(doc, "slug"), Name: name, Vanity: str(doc, "vanityPath"),
+		Canonical: str(doc, "canonicalPath")}
 }
 
 // itemClass tells the hooks what a content type is to the module.
@@ -100,6 +101,12 @@ func (s *service) checkPage(hc *hooks.Context) error {
 			return nil
 		}
 	}
+	if row.Canonical != "" {
+		if cp, err := route.Clean(row.Canonical); err != nil || cp != row.Canonical || cp == "/" {
+			hc.Errors.Add("canonicalPath", codeInvalidPath, "must be a site path such as /services/seo, not the root")
+			return nil
+		}
+	}
 	n, ok, err := s.lockedNodeByItem(hc, hc.Tx, hc.Item.ID)
 	if err != nil || !ok {
 		return err
@@ -153,15 +160,15 @@ func pageLabel(w want, self ids.UUID) string {
 	return "this page"
 }
 
-// slugUnchanged reports whether a publish leaves the node's stored slug, vanity path and main locale as they
+// slugUnchanged reports whether a publish leaves the node's stored slug, vanity and canonical paths and main locale as they
 // are, so no route can change.
 func slugUnchanged(ctx context.Context, q store.SQL, n nodeRow, locale, mainLocale string, row slugRow) (bool, error) {
 	var old slugRow
-	err := q.QueryRow(ctx, "SELECT slug, name, vanity FROM page_slug WHERE node_id = ? AND locale = ?", n.ID, locale).
-		Scan(&old.Slug, &old.Name, &old.Vanity)
+	err := q.QueryRow(ctx, "SELECT slug, name, vanity, canonical FROM page_slug WHERE node_id = ? AND locale = ?", n.ID, locale).
+		Scan(&old.Slug, &old.Name, &old.Vanity, &old.Canonical)
 	switch {
 	case err == nil:
-		return old.Slug == row.Slug && old.Vanity == row.Vanity && n.MainLocale == mainLocale, nil
+		return old.Slug == row.Slug && old.Vanity == row.Vanity && old.Canonical == row.Canonical && n.MainLocale == mainLocale, nil
 	case isNoRows(err):
 		return false, nil
 	}
@@ -174,8 +181,13 @@ func reportClashes(hc *hooks.Context, clashes []clash) {
 			break
 		}
 		field := schema.Path("slug")
-		if c.want.State == StateAlias && c.want.Item != nil && *c.want.Item == hc.Item.ID {
-			field = "vanityPath"
+		if c.want.Item != nil && *c.want.Item == hc.Item.ID {
+			switch {
+			case c.want.State == StateAlias:
+				field = "vanityPath"
+			case c.want.Path == str(hc.Doc, "canonicalPath"):
+				field = "canonicalPath"
+			}
 		}
 		msg := c.String()
 		if c.want.Item == nil || *c.want.Item != hc.Item.ID {

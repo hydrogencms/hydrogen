@@ -105,8 +105,8 @@ func (s *service) syncPage(ctx context.Context, tx store.Tx, item ids.UUID, main
 	}
 	var old slugRow
 	has := false
-	err = q.QueryRow(ctx, "SELECT slug, name, vanity FROM page_slug WHERE node_id = ? AND locale = ?", n.ID, locale).
-		Scan(&old.Slug, &old.Name, &old.Vanity)
+	err = q.QueryRow(ctx, "SELECT slug, name, vanity, canonical FROM page_slug WHERE node_id = ? AND locale = ?", n.ID, locale).
+		Scan(&old.Slug, &old.Name, &old.Vanity, &old.Canonical)
 	switch {
 	case err == nil:
 		has = true
@@ -128,7 +128,7 @@ func (s *service) syncPage(ctx context.Context, tx store.Tx, item ids.UUID, main
 	// A new name changes the navigation labels even when no route moves.
 	renamed := !has || old.Name != row.Name
 	self := []change{{n.Site, &n.ID}}
-	if has && old.Slug == row.Slug && old.Vanity == row.Vanity && !mainChanged {
+	if has && old.Slug == row.Slug && old.Vanity == row.Vanity && old.Canonical == row.Canonical && !mainChanged {
 		return self, nil
 	}
 	locales := []string{locale}

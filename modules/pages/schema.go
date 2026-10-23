@@ -37,7 +37,7 @@ func checkChildren(t *schema.TypeBuilder, v any) error {
 	return nil
 }
 
-// Schema adds the slug and vanityPath fields to page types and the redirect collection type.
+// Schema adds the slug, canonicalPath and vanityPath fields to page types and the redirect collection type.
 func (m *module) Schema(b *schema.Builder) error {
 	for _, t := range b.Types() {
 		if !t.Page() {
@@ -49,6 +49,13 @@ func (m *module) Schema(b *schema.Builder) error {
 				spec["from"] = "title"
 			}
 			if err := t.AddField("slug", spec); err != nil {
+				return err
+			}
+		}
+		if !t.HasField("canonicalPath") {
+			err := t.AddField("canonicalPath", schema.Spec{"type": "string", "translatable": true,
+				"description": "URL path instead of the tree position, e.g. /services/seo; subpages build on it"})
+			if err != nil {
 				return err
 			}
 		}

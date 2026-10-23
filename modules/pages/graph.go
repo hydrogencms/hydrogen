@@ -161,6 +161,22 @@ func (g *graph) slugOf(n *gnode, locale string) string {
 	return g.slugs[slugKey{n.ID, n.MainLocale}].Slug
 }
 
+// canonicalOf is the path a page serves instead of its tree position in a locale, or "". A locale without a
+// slug of its own follows the main locale, like the slug does.
+func (g *graph) canonicalOf(n *gnode, locale string) string {
+	if n.Kind != KindPage || n.Parent == nil {
+		return ""
+	}
+	s, ok := g.slugs[slugKey{n.ID, locale}]
+	if !ok || s.Slug == "" {
+		s = g.slugs[slugKey{n.ID, n.MainLocale}]
+	}
+	if c, err := route.Clean(s.Canonical); err != nil || c != s.Canonical || c == "/" {
+		return ""
+	}
+	return s.Canonical
+}
+
 // pathOf is the path of a node in a locale: ancestors without a translation use their main-locale slug.
 // Nodes whose ancestors have no slug have no path.
 func (g *graph) pathOf(id ids.UUID, locale string) (string, bool) {
@@ -174,6 +190,10 @@ func (g *graph) pathOf(id ids.UUID, locale string) (string, bool) {
 			v = pathVal{"/", true}
 		} else if pp, ok := g.pathOf(*n.Parent, locale); ok {
 			seg := ""
+			if c := g.canonicalOf(n, locale); c != "" {
+				g.memo[k] = pathVal{c, true}
+				return c, true
+			}
 			if n.mount != nil {
 				seg = n.mount.Segment
 			} else {
@@ -209,6 +229,8 @@ func (g *graph) treeKey(id ids.UUID) string {
 type want struct {
 	routeRow
 	page bool // a page (or vanity) route; pages win over mounted items
+	// soft marks a history redirect wanted only where nothing else sits: the tree path of a page with a canonical path.
+	soft bool
 }
 
 // pageWants lists the current and alias routes of the page nodes among nodes, in the given locales (nil: all).
@@ -217,7 +239,7 @@ func (g *graph) pageWants(nodes []*gnode, locales []string) []want {
 	for k := range g.slugs {
 		byNode[k.Node] = append(byNode[k.Node], k.Locale)
 	}
-	var out []want
+	var out, soft []want
 	for _, n := range nodes {
 		if n.Kind != KindPage || n.Item == nil {
 			continue
@@ -245,6 +267,16 @@ func (g *graph) pageWants(nodes []*gnode, locales []string) []want {
 			item, node := n.Item, n.ID
 			out = append(out, want{page: true, routeRow: routeRow{
 				routeKey: routeKey{n.Site, loc, p}, State: StateCurrent, Item: item, Node: &node}})
+			if g.canonicalOf(n, loc) != "" {
+				if pp, ok := g.pathOf(*n.Parent, loc); ok {
+					if tree := route.Join(pp, g.slugOf(n, loc)); tree != p {
+						if ct, err := route.Clean(tree); err == nil && ct == tree {
+							soft = append(soft, want{page: true, soft: true, routeRow: routeRow{
+								routeKey: routeKey{n.Site, loc, tree}, State: StateRedirect, Item: item, Status: 301}})
+						}
+					}
+				}
+			}
 			if v := g.slugs[slugKey{n.ID, loc}].Vanity; v != "" && v != p {
 				if cv, err := route.Clean(v); err == nil && cv != p {
 					out = append(out, want{page: true, routeRow: routeRow{
@@ -253,7 +285,7 @@ func (g *graph) pageWants(nodes []*gnode, locales []string) []want {
 			}
 		}
 	}
-	return out
+	return append(out, soft...)
 }
 
 // membership says a collection item matches a mount in a locale, at path rel below it.

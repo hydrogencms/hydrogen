@@ -62,8 +62,8 @@ Content of a type is reached through the collection, and then by id.
 | --- | --- | --- |
 | `GET /types`, `GET /types/{type}` | any | Compiled types, and one type with its JSON Schema. |
 | `GET /blocks` | any | Block types and token sets. |
-| `GET /collections/{type}/items` | `content.read` | List. Params: `locale`, `status` (`any`, `published`, `draft`), `q`, `sort`, `where[field][op]`, `fields`, `limit`, `offset`. |
-| `POST /collections/{type}/items` | `content.create` | Create a draft: `{"id"?, "key"?, "locale"?, "alwaysAvailable"?, "fields"}`. `id` (any non-nil UUID) chooses the new item's id, e.g. to keep ids stable across re-imports; without it one is generated. |
+| `GET /collections/{type}/items` | `content.read` | List. Params: `locale`, `status` (`any`, `published`, `draft`), `q`, `sort`, `where[field][op]` (also `where[or][i][field][op]` and `where[not][field][op]`, see the delivery API's lists), `fields`, `limit`, `offset`. |
+| `POST /collections/{type}/items` | `content.create` | Create a draft: `{"key"?, "locale"?, "alwaysAvailable"?, "fields"}`. |
 | `GET /collections/{type}/facets` | `content.read` | Counts per value of up to five indexed text fields. |
 | `GET /items/{id}` | `content.read` | Read the working view. `locale`, `draft`, `trashed`. |
 | `PATCH /items/{id}` | `content.edit` | Merge-patch the draft: `{"fields", "locale"?, "key"?}`. |
@@ -119,7 +119,7 @@ of a collection, or a `link`). Reads need `pages.read`, writes `pages.edit`; a m
 | --- | --- | --- | --- |
 | `GET /pages/sites` | `pages.read` | | The sites the caller can see: `{items: [name]}`. |
 | `GET /pages/sites/{site}/tree` | `pages.read` | `locale`, `parent` (node id), `depth` (1 to 10, default 1) | The children of `parent`, or of the root with `root` in the answer. |
-| `POST /pages/sites/{site}/nodes` | `pages.edit` | `kind` `page`: `item`, `parent`, `after`. `mount`: `parent`, `segment`, `collection`, `route`, `filter`, `canonical`, `label`, `redirectField`, `redirectStatus`, `after`. `link`: `parent`, `label`, one of `item`, `node` or `url`, `after`. `after` is a sibling id, `null` for first; absent puts the node last | Add a node; `201` with the node. |
+| `POST /pages/sites/{site}/nodes` | `pages.edit` | `kind` `page`: `item`, `parent`, `after`. `mount`: `parent`, `segment`, `collection`, `route`, `filter`, `canonical`, `label`, `redirectField`, `redirectStatus`, `after`. `link`: `parent`, `label`, one of `item`, `node` or `url`, `after` | Add a node; `201` with the node. |
 | `GET /pages/nodes/{id}` | `pages.read` | | One node. |
 | `PATCH /pages/nodes/{id}` | `pages.edit` | `parent`, `after` (a sibling id, or `null` for first), `hidden`, `mount` or `link` (a new spec) | Move, reorder or update a node. |
 | `DELETE /pages/nodes/{id}` | `pages.edit` | | Delete a mount or link node (`204`). |

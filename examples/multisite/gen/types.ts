@@ -101,6 +101,8 @@ export interface Article {
 export interface Landing {
   title: string;
   slug?: string;
+  /** URL path instead of the tree position, e.g. /services/seo; subpages build on it */
+  canonicalPath?: string;
   /** Extra URL serving this page, e.g. /promo */
   vanityPath?: string;
 }
@@ -110,6 +112,8 @@ export interface Page {
   title: string;
   intro?: string;
   slug?: string;
+  /** URL path instead of the tree position, e.g. /services/seo; subpages build on it */
+  canonicalPath?: string;
   /** Extra URL serving this page, e.g. /promo */
   vanityPath?: string;
 }
