@@ -205,7 +205,7 @@ site.Handle(h, "GET /search", func(r *site.Request) (*site.Response, error) {
 - The route's whole pattern must be reserved: every path it can match has to fall under a `reserved` entry of
   each channel it applies to. `/account/{id}/edit` needs `/account/*`; `/{a}/edit` is refused because no
   reserved entry covers it. The path must be one the channel **reserves** (`reserved: [/search]` in `channels.yaml`; `/account/*` for a
-  subtree), so the page tree never routes it. `config:check` fails otherwise.
+  subtree; a prefixed channel can also serve root-level paths with `root_reserved`, see [channels](configuration.md#channels)), so the page tree never routes it. `config:check` fails otherwise.
 - `Request` carries the HTTP request (`R`), the wildcards (`Params`), the query, and a content client: `Get`,
   `Items`, `Item` read the published content (drafts when previewing) in process and tag the page with what they
   read. `URL(path)` and `LinkTo(item)` build site URLs.

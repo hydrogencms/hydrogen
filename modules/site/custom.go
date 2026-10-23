@@ -317,6 +317,9 @@ func reservedBy(reserved []string, pattern string) bool {
 
 func reservedOf(ch *channel.Channel) []string {
 	l, _ := ch.Options["reserved"].([]string)
+	if roots, ok := ch.Options["root_reserved"].([]string); ok {
+		l = append(slices.Clone(l), roots...)
+	}
 	return l
 }
 

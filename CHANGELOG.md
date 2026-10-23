@@ -6,6 +6,13 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Channel and group names may contain single hyphens (`global-en`).
+- Channel option `root_reserved` (pages module): root-level paths (`/legacy`, `/ajax/*`) that a channel matched by a
+  prefix also serves, so its custom routes and `GET /route` answer for them. `config:check` rejects a root path that
+  another channel claims or that falls under another channel's prefix.
+
 ## [0.3.0] - 2026-10-22
 
 ### Added
