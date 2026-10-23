@@ -6,6 +6,12 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Admin: with collaboration on, a rich text value the editor cannot load (a node or mark its schema lacks) was seeded
+  as an empty document, so opening the item showed "Unsaved changes" and the next save removed the field. The value
+  now stays as stored and the field shows as invalid, with its JSON to fix.
+
 ## [0.3.0] - 2026-10-22
 
 ### Added
