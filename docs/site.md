@@ -43,6 +43,29 @@ Each layer may hold `templates/`, `assets/` and `translations/`. Templates are `
 `richtext/<type>.html` (rich text overrides), `routes/<name>.html` (custom routes) and any partials. Translation files (`translations/en.yaml`) merge key by key
 across layers. Assets are served under fingerprinted URLs (`{{asset "site.css"}}`).
 
+### Assets
+
+`{{asset "name"}}` returns `/__hydrogen/assets/<name>.<hash>.<ext>`, served with `Cache-Control: public,
+max-age=31536000, immutable`. Files are listed at start but not read: a file is hashed (SHA-256, streamed) the first
+time a template or a request needs its fingerprint, remembered until the next reload, and served from the file
+system (or the theme's embedded files) on each request, so start-up and memory do not grow with the size of the
+assets. A fingerprint that no longer matches the file answers 404.
+
+A request for the plain name (`/__hydrogen/assets/sprite.svg`, as a script-loaded chunk or an SVG sprite is
+fetched) works too. It is answered with a strong `ETag` (the content hash), `Last-Modified` (the file's modification
+time, when the file system has one) and `Cache-Control: no-cache`, so a browser revalidates and gets `304 Not
+Modified` while the file is unchanged.
+
+In style sheets (`.css`) the `url(...)` and `@import` references to other assets are rewritten to their fingerprinted
+URLs, whether quoted or not and for both plain and fingerprinted requests. A reference is relative to the sheet
+(`../fonts/a.woff2`) or root-relative into the assets directory (`/fonts/a.woff2`, or the full
+`/__hydrogen/assets/fonts/a.woff2`). `data:` and other schemes, `http(s):`, `//host/…`, `#id` alone, references to
+files that do not exist and paths that leave the assets directory stay as written; a `?query` or `#fragment`
+(`a.woff2?#iefix`, `sprite.svg#icon`) is kept. The sheet's own fingerprint is the hash of the rewritten text, so
+changing a font changes the sheet's URL too. Sheets that reference each other in a cycle keep those references as
+written. Sheets over 4 MiB are served as they are; rewritten sheets are kept in memory up to 8 MiB in total and
+recomputed beyond that.
+
 Collection listing routes are paged: `/blog` is page 1 and `/blog/page/2` the next, `limit` items each. A listing
 template gets `.Pager` (`.Page`, `.Prev`, `.Next`; nil on a single page); the starter theme shows it with
 `partials/pager.html`.
@@ -81,6 +104,51 @@ A function returns one value, or a value and an error. A name that collides with
 `component`), a Go template function or another registration fails start-up and `config:check`. A module that
 `Require`s `site` calls `kernel.Lookup[*site.Extensions](r).AddFuncs(m)`.
 
+### Page-aware functions
+
+`site.ViewFuncs` registers functions that know the page being rendered. The function runs on every render with the
+page's `*site.View` and returns the template functions, which close over the view:
+
+```go
+site.ViewFuncs(h, func(v *site.View) template.FuncMap {
+	return template.FuncMap{
+		"related": func(n int) ([]*site.Item, error) {
+			return v.List("post", map[string]any{"limit": n, "where[category][eq]": v.Query("category")})
+		},
+		"isHere": func(path string) bool { return v.Path == path },
+	}
+})
+```
+
+Inside, a view offers what templates have: `List` and `Get` (`items` and `item`), `Query`, `QueryValues`, `Nav`,
+`Breadcrumbs`, `Link`, `Setting`, `T`, `Client()` and the fields (`Path`, `Locale`, `Item`…). Reads tag the page like
+the template helpers do. Names follow the rules of `site.Funcs` and share their namespace. The function is also
+called once at registration with an empty view to learn the names, so build closures there and do not call the
+view's methods. Rendering cost is unchanged when none is registered; with one, the function runs each time a
+template set is prepared for a render.
+
+## The request in templates
+
+The view has the page's channel-relative URL as `.Path` (`/en/blog/page/2`; no query), and the request's query:
+
+- `.Query "category"` is the first value of a query parameter, or "" (`.QueryValues "tag"` all of them, in order).
+  Values are plain strings that `html/template` escapes like any other. The `preview` parameter is never readable.
+- Block templates get the block as their data; `.Page` is the page's view, so a block reads `.Page.Path`,
+  `.Page.Query "page"` or `.Page.Locale`. Partials default to the view; pass `.` when giving them a dict.
+
+```html
+{{range items "post" (dict "where[category][eq]" (.Query "category") "limit" 10)}}…{{end}}
+<a {{if eq .Path "/en/blog"}}aria-current="page"{{end}} href="?category=news">News</a>
+```
+
+Rendered pages are cached by path. A page that never reads the query keeps one cache entry whatever the URL carries,
+so `?utm_source=…` does not split it. A page that reads parameters is stored per variant: the path plus the values
+of the parameters its renders read (the names are learned from renders; a template that later reads another
+parameter re-keys the path). Bounds keep it from being flooded: at most 32 variants per path (the oldest makes
+room), at most 8 values per parameter and 128 bytes per value; a request beyond them is rendered and not stored.
+Publishing purges every variant by the page's tags. Previews are never cached. `site:check` and static exports
+have no query (reads are empty) unless an export target brings one in its URL.
+
 ## Reading content in templates
 
 These helpers read in process, as a public client of the channel (drafts when previewing), in the page's locale.
@@ -90,6 +158,9 @@ Identical calls within one render ask the delivery API once.
 - `items "post" (dict "limit" 4 "sort" "-slug" "where[category][eq]" "news")` returns the items (`[]*Item`, each with
   `.Path` so `{{link .}}` works). Dict values are strings, numbers, booleans or lists (repeated parameters); an
   unknown field or a 5xx answer is an error.
+  Keys are the delivery query parameters verbatim, so boolean groups work as keys too:
+  `(dict "where[or][0][featured]" true "where[or][1][category]" "blog" "where[not][kind]" "press")`. Facet counts
+  (`facets`) are not available through `items`; read them with `query "/collections/post/items" (dict "facets" "category" "limit" 1)`.
 - `item "id"` returns one item or nil. It takes the same kind of dict for `fields` and `locale`.
 - `query "/tree" (dict "depth" 3)` returns the decoded JSON (`map[string]any`) of a delivery path (`/tree`,
   `/search`, …) when it answers 200, else nil; a 5xx answer is an error.
@@ -99,6 +170,9 @@ Identical calls within one render ask the delivery API once.
   fields of its item as `fields`. A dot path keeps one member of a group, and an unknown field is an error. Links
   keep working: `items` and `item` also fetch the field a collection's detail route puts in its URL (`slug` for
   `/blog/{slug}`), and an item with a page keeps its page URL.
+- `link "item:<id>"` (and `item:` links in rich text) works for references in any item the render read, not only
+  the page's own: the links those items carry are merged in. An id nobody carries is read once (at most 64 per
+  render, in the page's locale) and linked to its page or collection route; an unavailable item gives no URL.
 - `partial "blocks/hero/wide.html" data` executes a template by a computed name (Go's `{{template}}` needs a
   constant) and returns its HTML; `data` defaults to the page's view. A missing template is an error in
   `site:check` and a logged, empty result when serving. Partials may nest up to 32 levels. `hasTemplate "name"`
@@ -206,6 +280,9 @@ site.Handle(h, "GET /search", func(r *site.Request) (*site.Response, error) {
   each channel it applies to. `/account/{id}/edit` needs `/account/*`; `/{a}/edit` is refused because no
   reserved entry covers it. The path must be one the channel **reserves** (`reserved: [/search]` in `channels.yaml`; `/account/*` for a
   subtree; a prefixed channel can also serve root-level paths with `root_reserved`, see [channels](configuration.md#channels)), so the page tree never routes it. `config:check` fails otherwise.
+- A route can own the channel's root even when the tree has a root page: reserve it with `reserved: [/]` (exactly `/`;
+  `/*` is refused) and register `site.Handle(h, "GET /{$}", fn)`. A bare `"/"` pattern matches every path and is refused.
+  The root page stays in the tree but the root URL is the route's.
 - `Request` carries the HTTP request (`R`), the wildcards (`Params`), the query, and a content client: `Get`,
   `Items`, `Item` read the published content (drafts when previewing) in process and tag the page with what they
   read. `URL(path)` and `LinkTo(item)` build site URLs.
@@ -257,10 +334,121 @@ return &site.Response{Body: []byte("User-agent: *\n"), ContentType: "text/plain;
 - `.Static(fn)` (or `.Export()` for a route without wildcards) lists the parameter sets that become files in a
   static export; `site.ClientFrom(ctx)` reads content inside it. `.Channels(names...)` restricts the route.
 
+### Not found
+
+A request no page, mounted item, collection route or custom route serves is answered by `404.html` (status 404). To
+answer it yourself, register one hook per project:
+
+```go
+site.NotFound(h, func(r *site.Request) (*site.Response, error) {
+	if to, ok := legacy[r.Path]; ok { // r.Path is channel-relative
+		return &site.Response{Redirect: r.URL(to), Status: http.StatusMovedPermanently}, nil
+	}
+	if strings.HasPrefix(r.Path, "/discontinued/") {
+		return &site.Response{Template: "routes/gone.html", Status: http.StatusGone}, nil
+	}
+	return nil, site.ErrNotFound // the ordinary 404 page
+})
+```
+
+It returns the same `Response` as a custom route, with two differences: `Status` defaults to 404 (302 with `Redirect`),
+and `ErrNotFound` or a nil response falls back to `404.html`. The hook also sees listing pages past the end and collection
+items that do not exist; it never sees reserved paths, the answers of custom routes, previews of a missing item or the
+static export's 404 file. Its answers are never stored by the page cache and are `no-store` for shared caches; reads
+through `r` still tag the answer. Other errors are a logged 500. Redirects that are plain data (a moved page, a retired
+URL) are better kept as `redirect` items, which delivery, exports and SDK frontends all see; use the hook for
+rules (patterns, lookups, a status of your own).
+
 Endpoints under `/api/x` (see [hooks](hooks.md#endpoints)) that want CDN caching can set the same headers with
 `cachetag.SetHeaders(w.Header(), ttl, tags)` (`core/cachetag`): `Cache-Control` with `s-maxage`, plus `Surrogate-Key`
 and `Cache-Tag` from tags such as `cachetag.Item(id)` or `cachetag.Collection("post")`, so purges reach them
 (`cachetag.NoStore` as the ttl sends `no-store`).
+
+## Forms
+
+A custom route can store a form submission as content (access control, audit, export and review come with it)
+and protect itself from abuse, without a module that captures the content service.
+
+```yaml
+# config/app.yaml
+modules:
+  site:
+    submissions: [contactMessage]   # the types Request.Submit may create
+    forms:                          # the spam checks (these are the defaults)
+      honeypot: website_url
+      min_fill: 3s                  # a form submitted sooner after it was rendered is refused; 0 turns it off
+      max_age: 4h                   # a rendered form stays valid this long
+```
+
+```yaml
+# schema: submissions are ordinary items; required fields are enforced
+types:
+  contactMessage:
+    name: "{sender}"
+    fields:
+      sender:  { type: string, required: true }
+      email:   { type: string, required: true }
+      message: { type: text, required: true }
+```
+
+```go
+site.Handle(h, "GET /contact", func(q *site.Request) (*site.Response, error) {
+	return &site.Response{Template: "routes/contact.html", Title: "Contact"}, nil
+})
+site.Handle(h, "POST /contact", func(q *site.Request) (*site.Response, error) {
+	_, err := q.Submit("contactMessage", map[string]any{
+		"sender": q.R.PostFormValue("sender"), "email": q.R.PostFormValue("email"), "message": q.R.PostFormValue("message"),
+	})
+	switch {
+	case err == nil: // also when the honeypot was filled: the bot is told it worked
+		return &site.Response{Redirect: q.URL("/contact/thanks")}, nil // post/redirect/get: a reload does not resubmit
+	case site.FieldErrors(err) != nil:
+		return &site.Response{Template: "routes/contact.html", Status: 422, Data: site.FieldErrors(err)}, nil
+	case errors.Is(err, site.ErrTooFast), errors.Is(err, site.ErrFormInvalid):
+		return &site.Response{Template: "routes/contact.html", Status: 400, Data: map[string]string{"form": "Please try again."}}, nil
+	}
+	return nil, err
+}).Limit(site.Limit{PerClient: 5, Total: 200, Window: time.Hour})
+```
+
+```html
+<!-- site/templates/routes/contact.html -->
+{{define "content"}}
+<form method="post" action="{{.Path}}">
+  {{formGuard}}
+  <label>Name <input name="sender" required></label>
+  <label>Email <input name="email" type="email" required></label>
+  <label>Message <textarea name="message" required></textarea></label>
+  {{with .Data}}<p class="error">{{index . "sender"}} {{index . "email"}} {{index . "message"}} {{index . "form"}}</p>{{end}}
+  <button>Send</button>
+</form>
+{{end}}
+```
+
+- **Submit.** `q.Submit(type, fields)` creates a draft of a type listed in `modules.site.submissions` and returns its
+  id; it never publishes. The route chooses `fields` (never pass the raw form). Required fields are enforced, and a
+  problem is a `*content.ValidationError`; `site.FieldErrors(err)` turns it into a path to message map for
+  re-rendering the form. A type that is not listed fails with `site.ErrNotAllowed`. Only routes that handle POST,
+  PUT, PATCH or DELETE may submit. The item is created with the actor `system:site:<route path>` (`created_by`),
+  and its audit entry records the channel and the client address (`http.trusted_proxies` decides which address that
+  is), so editors can tell submissions from edits. Give editors a role with `content.read` on the type.
+- **Cross-site posts** are refused by the custom-route rules above (`Origin` and `Sec-Fetch-Site`); do not use
+  `.AllowCrossSite()` on a form route.
+- **Spam.** `{{formGuard}}` renders a hidden input with a signed timestamp (an HMAC under a key derived from
+  `delivery.preview_secret`, or `manage.token` in dev, so every node agrees) and a honeypot field hidden with the
+  `hidden` attribute. `Submit` (or `q.CheckForm()` for routes that do something else with the form, such as sending
+  mail) answers `ErrFormInvalid` for a missing, forged or expired token, `ErrTooFast` below `min_fill`, and drops a
+  submission that filled the honeypot: `Submit` returns an empty id and no error, so answer as for a success. A
+  token proves only that a form was rendered a while ago, not who got it; a bot that loads the form first passes
+  it. Put the rate limit below, and a CAPTCHA at your edge if you need more. Render forms in custom routes, or
+  keep their pages out of shared caches: a cached token goes stale after `max_age` and is shared by every visitor.
+- **Rate limit.** `.Limit(site.Limit{PerClient, Total, Window})` counts the route's non-GET requests per client
+  address (IPv6 by /64) and for all clients, in one fixed window kept in the `site_limit` table, so servers that
+  share the database share the count. A request over a limit is answered 429 with `Retry-After`. Run
+  `hydrogen migrate` after updating (the module has its own migration); the `site.limits` job removes ended
+  windows every 10 minutes. Windows are fixed: up to twice the limit can pass around a boundary. Every counted
+  request is one small write, so a limit costs a transaction per request on that route; routes without a limit
+  cost nothing.
 
 ## Components and templ
 

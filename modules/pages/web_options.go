@@ -188,10 +188,15 @@ func decodePaths(n *config.Node, what string, check func(*config.Node, string) e
 	return out, nil
 }
 
+// checkReserved accepts clean paths, with /* for everything below; the root is reserved only as the exact
+// path "/" (the frontend or a custom route answers the channel's root; the root page is unreachable there).
 func checkReserved(n *config.Node, pattern string) error {
+	if pattern == "/" {
+		return nil
+	}
 	base := strings.TrimSuffix(pattern, "/*")
 	if _, err := route.Clean(base); err != nil || base == "/" || base == "" {
-		return n.Errorf("reserved path %q must be a clean path such as /cart or /account/*", pattern)
+		return n.Errorf("reserved path %q must be a clean path such as /cart or /account/* (/ alone reserves the root)", pattern)
 	}
 	return nil
 }

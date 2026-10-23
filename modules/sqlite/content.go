@@ -632,14 +632,14 @@ func (s contentStore) ReplaceSearch(ctx context.Context, item ids.UUID, proj sto
 	if len(docs) == 0 {
 		return nil
 	}
-	locales, bounded := storeutil.SearchTexts(docs)
-	args := make([]any, 0, len(locales)*3)
-	for _, l := range locales {
-		args = append(args, uid(item), scope, l)
+	merged := storeutil.SearchRows(docs)
+	args := make([]any, 0, len(merged)*3)
+	for _, r := range merged {
+		args = append(args, uid(item), scope, r.Locale)
 	}
 	// A page of locales is far below the variable limit, so one statement inserts them all.
 	rows, err := s.tx.QueryContext(ctx, `INSERT INTO content_search_doc (item_id, scope, locale) VALUES `+
-		strings.TrimSuffix(strings.Repeat("(?,?,?),", len(locales)), ",")+` RETURNING id, locale`, args...)
+		strings.TrimSuffix(strings.Repeat("(?,?,?),", len(merged)), ",")+` RETURNING id, locale`, args...)
 	if err != nil {
 		return fmt.Errorf("sqlite: replace search %s: %w", item, err)
 	}
@@ -651,12 +651,13 @@ func (s contentStore) ReplaceSearch(ctx context.Context, item ids.UUID, proj sto
 			_ = rows.Close()
 			return fmt.Errorf("sqlite: replace search %s: %w", item, err)
 		}
-		fts = append(fts, id, bounded[slices.Index(locales, locale)])
+		r := merged[slices.IndexFunc(merged, func(r storeutil.SearchRow) bool { return r.Locale == locale })]
+		fts = append(fts, id, r.High, r.Text, r.Low)
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return fmt.Errorf("sqlite: replace search %s: %w", item, err)
 	}
-	if err := s.insertRows(ctx, `INSERT INTO content_search (rowid, text) VALUES`, 2, fts); err != nil {
+	if err := s.insertRows(ctx, `INSERT INTO content_search (rowid, high, text, low) VALUES`, 4, fts); err != nil {
 		return fmt.Errorf("sqlite: replace search %s: %w", item, err)
 	}
 	return nil
@@ -723,3 +724,6 @@ func (s contentStore) SearchIndexEmpty(ctx context.Context) (bool, error) {
 	}
 	return empty, nil
 }
+
+// LockName does nothing: SQLite has a single writer.
+func (contentStore) LockName(context.Context, string) error { return nil }

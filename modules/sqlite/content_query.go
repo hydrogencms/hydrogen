@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -112,6 +113,9 @@ var compareOps = map[store.Op]string{
 // cond compiles one field condition into a predicate on item. Positive conditions are semi-joins on the
 // field's value index, negative ones probe the item's own rows.
 func (c *compiler) cond(cd store.Cond, probe, drive bool) (string, error) {
+	if storeutil.IsGroup(cd.Op) {
+		return storeutil.Group(cd, func(l store.Cond) (string, error) { return c.cond(l, probe, false) }, "1", "0")
+	}
 	if !storeutil.ValidField(cd.Field) {
 		return "", fmt.Errorf("invalid field name %q", cd.Field)
 	}
@@ -303,8 +307,7 @@ func (c *compiler) itemConds(probes bool) ([]string, error) {
 	if !probes {
 		for i, cd := range q.Where {
 			switch cd.Op {
-			case store.OpNe:
-			case store.OpExists:
+			case store.OpNe, store.OpExists, store.OpOr, store.OpNot:
 			case store.OpEq, store.OpIn, store.OpContains, store.OpPrefix, store.OpUnder:
 				if driver < 0 || !storeutil.Selective(q.Where[driver].Op) {
 					driver = i
@@ -316,11 +319,30 @@ func (c *compiler) itemConds(probes bool) ([]string, error) {
 			}
 		}
 	}
+	if driver < 0 && !probes {
+		for _, cd := range q.Where {
+			if cd.Op != store.OpOr {
+				continue
+			}
+			set, ok, err := c.orDriver(cd)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				c.driver = set
+				break
+			}
+		}
+	}
 	for i, cd := range q.Where {
 		// A selective driver becomes the outer table of the join: SQLite would otherwise scan every item of
-		// the type and test membership.
+		// the type and test membership. Groups probe the rows a driver leaves; without one they build sets.
 		drive := i == driver && storeutil.Selective(cd.Op) && cd.Op != store.OpExists
-		p, err := c.cond(cd, i != driver, drive)
+		probe := i != driver
+		if storeutil.IsGroup(cd.Op) {
+			probe = probes || driver >= 0 || c.driver != ""
+		}
+		p, err := c.cond(cd, probe, drive)
 		if err != nil {
 			return nil, err
 		}
@@ -331,6 +353,30 @@ func (c *compiler) itemConds(probes bool) ([]string, error) {
 		conds = append(conds, p)
 	}
 	return conds, nil
+}
+
+// orDriver builds the item ids that can satisfy an or group when each of its groups has a selective
+// condition: the union of those conditions' value-index sets. The group's predicate still filters the rows.
+func (c *compiler) orDriver(or store.Cond) (string, bool, error) {
+	sets := make([]string, 0, len(or.Groups))
+	for _, g := range or.Groups {
+		i := slices.IndexFunc(g, func(l store.Cond) bool { return storeutil.Selective(l.Op) })
+		if i < 0 {
+			return "", false, nil
+		}
+		set, err := c.cond(g[i], false, true)
+		if err != nil {
+			return "", false, err
+		}
+		if set == "0" {
+			return "", false, nil
+		}
+		sets = append(sets, set)
+	}
+	if len(sets) == 0 {
+		return "", false, nil
+	}
+	return strings.Join(sets, " UNION "), true, nil
 }
 
 // itemFrom is the FROM clause the conditions of itemConds expect.
@@ -375,7 +421,7 @@ func (c *compiler) searchLocale() string {
 }
 
 // searchJoin is the subquery of (item_id, rank) for the items matching the search terms.
-// The rank column is bm25 with default weights (lower is better). The bm25() function itself cannot be used
+// The rank column is bm25 with the per-tier column weights set by migration 0013 (lower is better). The bm25() function itself cannot be used
 // through this join, and the inner select keeps the aggregate away from the FTS cursor.
 func (c *compiler) searchJoin(terms []string) string {
 	return `(
@@ -490,7 +536,7 @@ func fillSnippets(ctx context.Context, db queryer, q store.Query, items []store.
 	for i, it := range items {
 		marks[i] = c.bind(uid(it.ID))
 	}
-	text := `SELECT sd.item_id, snippet(content_search, 0, char(2), char(3), '…', 20)
+	text := `SELECT sd.item_id, snippet(content_search, -1, char(2), char(3), '…', 20)
 		FROM content_search JOIN content_search_doc sd ON sd.id = content_search.rowid JOIN item it ON it.id = sd.item_id
 		WHERE content_search MATCH ` + c.bind(match(terms)) + ` AND sd.scope = ` + c.projection() +
 		` AND ` + c.searchLocale() + ` AND sd.item_id IN (` + strings.Join(marks, ",") + `)
@@ -532,6 +578,10 @@ func (s contentStore) Query(ctx context.Context, q store.Query) (store.QueryResu
 }
 
 func (s contentStore) Facet(ctx context.Context, q store.Query, field string, limit int) ([]store.FacetCount, error) {
+	return runFacet(ctx, s.tx, q, field, limit)
+}
+
+func runFacet(ctx context.Context, db queryer, q store.Query, field string, limit int) ([]store.FacetCount, error) {
 	if !storeutil.ValidField(field) {
 		return nil, fmt.Errorf("invalid field name %q", field)
 	}
@@ -555,7 +605,7 @@ func (s contentStore) Facet(ctx context.Context, q store.Query, field string, li
 		"fi.locale IN ('', " + c.locale() + ")", "fi.v_text IS NOT NULL"}, conds...)
 	text := "SELECT fi.v_text, COUNT(DISTINCT fi.item_id) FROM field_index fi CROSS JOIN item ON item.id = fi.item_id WHERE " +
 		strings.Join(conds, " AND ") + " GROUP BY fi.v_text ORDER BY 2 DESC, 1 LIMIT " + c.bind(max(limit, 1))
-	rows, err := s.tx.QueryContext(ctx, text, c.args...)
+	rows, err := db.QueryContext(ctx, text, c.args...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: facet %q: %w", field, err)
 	}

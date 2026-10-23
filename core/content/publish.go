@@ -405,6 +405,13 @@ func (s *Service) prepareOuts(ctx context.Context, tx store.Tx, st *itemState, s
 			}
 			o.errs = append(o.errs, rep.Errors()...)
 		}
+		if len(o.errs) == 0 {
+			ue, err := s.checkUnique(ctx, tx.Content(), st.typ, st.item.ID, o.code, doc, nil, false)
+			if err != nil {
+				return nil, err
+			}
+			o.errs = ue
+		}
 		o.doc, o.name, o.refs, o.final = doc, sc.Name(st.typ, doc), sc.Refs(st.typ, doc), true
 	}
 	return s.persistHookChanges(st, sharedData, pre, outs)

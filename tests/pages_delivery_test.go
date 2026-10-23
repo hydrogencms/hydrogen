@@ -300,6 +300,18 @@ func TestPagesDeliveryRedirects(t *testing.T) {
 			return field(j, "located", "kind") == "redirect"
 		})
 		deq(t, "manual location", field(j, "located", "resolution", "location"), "/en/media")
+
+		// A forced redirect wins over the root page.
+		_, j = e.getJSON(routePath("https://a.test/en", "web_en"), 200)
+		deq(t, "root before", field(j, "located", "kind"), "page")
+		e.create("redirect", "", "en", `{"from":"/","to":"/media","force":true,"statusCode":"302"}`, true)
+		e.drain()
+		eventually(t, "the forced root redirect", func() bool {
+			_, j = e.getJSON(routePath("https://a.test/en", "web_en"), 200)
+			return field(j, "located", "kind") == "redirect"
+		})
+		deq(t, "forced status", field(j, "located", "resolution", "status"), float64(302))
+		deq(t, "forced location", field(j, "located", "resolution", "location"), "/en/media")
 	})
 }
 
@@ -367,8 +379,8 @@ func TestPagesDeliveryTree(t *testing.T) {
 			return out
 		}
 		r, j := e.getJSON("/tree?channel=web_en", 200)
-		// Hidden and unpublished pages are out. New nodes go first.
-		deq(t, "top level", strings.Join(names(j), ","), "Local,Docs,Press link,News,Landing,Press")
+		// Hidden and unpublished pages are out. New nodes go last.
+		deq(t, "top level", strings.Join(names(j), ","), "Press,Landing,News,Press link,Docs,Local")
 		deq(t, "site", j["site"], "main")
 		deq(t, "locale", j["locale"], "en")
 		by := func(j map[string]any, name string) map[string]any {
@@ -419,7 +431,7 @@ func TestPagesDeliveryTree(t *testing.T) {
 
 		// collections the channel allows
 		_, j = e.getJSON("/tree?channel=lim", 200)
-		deq(t, "lim", strings.Join(names(j), ","), "Local,Docs,Press link,Press")
+		deq(t, "lim", strings.Join(names(j), ","), "Press,Press link,Docs,Local")
 
 		// other site; unknown site
 		_, j = e.getJSON("/tree?channel=web_en&site=careers", 200)
@@ -438,10 +450,10 @@ func TestPagesDeliveryTree(t *testing.T) {
 func TestPagesDeliveryTreePurge(t *testing.T) {
 	runPD(t, func(t *testing.T, e *pdEnv) {
 		path := "/tree?channel=web_en&depth=2"
-		// The page sits last among the top-level nodes.
+		// The page sits first among the top-level nodes.
 		pressNode := func(j map[string]any) map[string]any {
 			nodes := j["nodes"].([]any)
-			return nodes[len(nodes)-1].(map[string]any)
+			return nodes[0].(map[string]any)
 		}
 		title := func() any {
 			_, j := e.getJSON(path, 200)

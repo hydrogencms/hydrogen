@@ -7,7 +7,7 @@ import (
 	"github.com/hydrogencms/hydrogen/modules/site"
 )
 
-const siteRootChannels = `
+const siteRootLevelChannels = `
 languages:
   en: {}
 groups:
@@ -21,7 +21,7 @@ channels:
 func TestSiteRootLevelRoutes(t *testing.T) {
 	forEachBackend(t, func(t *testing.T, b backend) {
 		clk := newClock()
-		e, err := newSiteEnvWith(t, b.open(t, clk), clk, "routes", siteRootChannels, func(r *siteRegistrar) {
+		e, err := newSiteEnvWith(t, b.open(t, clk), clk, "routes", siteSchema, siteRootLevelChannels, func(r *siteRegistrar) {
 			site.UseTheme(r, routesTheme())
 			site.Handle(r, "GET /legacy", func(q *site.Request) (*site.Response, error) {
 				return &site.Response{Template: "routes/info.html", Title: "Legacy", Data: "ch=" + q.URL("/x")}, nil

@@ -88,13 +88,45 @@ add `?total=true` to also get an exact `total`, which costs a count.
 | --- | --- |
 | `limit`, `offset` | Page size (default 50, at most 500) and start (at most 1,000,000). |
 | `sort` | Comma-separated fields, `-` for descending: `-publishedOn,name`. Sortable: indexed fields, `name`, `key`, `createdAt`, `updatedAt`, `publishedAt` (the latest publication; never published items last). At most 4. |
-| `where[field][op]=value` | Filter on an indexed field. Ops: `eq` (default), `ne`, `lt`, `lte`, `gt`, `gte`, `in` (comma-separated), `contains`, `exists` (`true` or `false`), `prefix`, `under`. Repeated filters are ANDed, at most 32. |
+| `where[field][op]=value` | Filter on an indexed field. Ops: `eq` (default), `ne`, `lt`, `lte`, `gt`, `gte`, `in` (comma-separated), `contains`, `exists` (`true` or `false`), `prefix`, `under`. Repeated filters are ANDed, at most 32 in all (groups included). Boolean groups below. |
+| `where[or][i][field][op]=value` | Any-of: an item matches when it satisfies every filter of at least one numbered group `i`. |
+| `where[not][field][op]=value` | Not: an item matches when it does not satisfy all of the filters. Numbered groups (`where[not][0]…`, `where[not][1]…`) exclude an item that satisfies any of them. |
+| `facets=a,b` | Value counts of up to five indexed text fields over the listing's matches. |
 | `q` | Full-text words (at most 16). |
 | `include`, `fields`, `total`, `locale`, `channel`, `preview` | As above. |
 
 ```sh
 curl -s 'localhost:8080/api/deliver/v1/collections/article/items?where[publishedOn][gte]=2026-01-01&sort=-publishedOn&limit=10&include=1'
 ```
+
+Boolean groups combine with plain filters, which are ANDed with them:
+
+```sh
+# featured, or in the blog category; and not an investor story
+curl -s '.../collections/article/items?where[or][0][featured]=true&where[or][1][category]=blog&where[not][kind][in]=investor,press'
+```
+
+The conditions of one `or` group are ANDed, the groups ORed. `where[not]` negates the AND of its filters, and numbered
+`not` groups are all negated (an item is excluded when it satisfies any of them). Groups hold plain filters only
+(they do not nest), and a group index is a whole number below 32. A field named `or` or `not` cannot be
+filtered in the plain form. An item without a value for a field satisfies the negation of any
+test on it: `where[not][category]=news` also matches items that have no category, like `ne`. `/search` does not accept
+groups. Everything is still answered from the index tables, never from the documents.
+
+Facets count the values of indexed text fields for the whole filtered, published set the channel can show (not only the
+page; a list field counts an item once per value), most items first, at most 1000 values per field:
+
+```sh
+curl -s '.../collections/article/items?channel=web&limit=1&facets=category,tags&where[featured]=true'
+```
+
+```json
+{ "items": [{ … }], "hasMore": true, "facets": { "category": [{ "value": "news", "count": 12 }, …], "tags": […] } }
+```
+
+Items the channel cannot show (unpublished, or without a language of the channel) are not counted. A facet field
+that is not an indexed text field, or more than five fields, is `400`. A preview token does not add its draft to the
+counts. The response is cached like the listing.
 
 An unknown parameter is `400`, as is a repeated single-valued one. Filters on a field that is not `index: true` are
 refused with a message naming the field.

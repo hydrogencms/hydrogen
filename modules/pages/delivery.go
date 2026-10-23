@@ -386,7 +386,7 @@ func (s *service) routesOf(ctx context.Context, q store.SQL, list []ids.UUID) (m
 	types := make(map[ids.UUID]string, len(list))
 	err := chunks(list, func(part []ids.UUID) error {
 		ph, args := inArgs(part)
-		return each(ctx, q, `SELECT r.item_id, r.site, r.locale, r.path, i.type FROM route r JOIN item i ON i.id = r.item_id
+		return each(ctx, q, `SELECT r.item_id, r.site, r.locale, COALESCE(r.target, r.path), i.type FROM route r JOIN item i ON i.id = r.item_id
 WHERE r.state = 'current' AND r.item_id IN `+ph, args, func(rows store.Rows) error {
 			var id ids.UUID
 			var site, locale, path, typ string

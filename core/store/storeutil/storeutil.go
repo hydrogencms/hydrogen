@@ -144,26 +144,40 @@ func anySlice[T any](l []T) []any {
 	return out
 }
 
-// SearchTexts merges docs of the same locale (joined by a newline), caps each text at MaxSearchChars and
-// returns the locales in sorted order with their texts alongside.
-func SearchTexts(docs []store.SearchDoc) (locales, texts []string) {
-	by := make(map[string]string, len(docs))
+// SearchRow is the merged search text of one locale, as an adapter stores it.
+type SearchRow struct{ Locale, High, Text, Low string }
+
+// SearchRows merges docs of the same locale (joined by a newline), caps the normal tier at MaxSearchChars and
+// the high and low tiers at a quarter of it, and returns the rows in locale order.
+func SearchRows(docs []store.SearchDoc) []SearchRow {
+	by := make(map[string]SearchRow, len(docs))
 	for _, d := range docs {
-		if prev, ok := by[d.Locale]; ok {
-			d.Text = prev + "\n" + d.Text
-		}
-		by[d.Locale] = capChars(StripControls(d.Text), MaxSearchChars)
+		r := by[d.Locale]
+		r.Locale = d.Locale
+		r.High = joinLines(r.High, d.High)
+		r.Text = joinLines(r.Text, d.Text)
+		r.Low = joinLines(r.Low, d.Low)
+		by[d.Locale] = r
 	}
-	locales = make([]string, 0, len(by))
-	for l := range by {
-		locales = append(locales, l)
+	out := make([]SearchRow, 0, len(by))
+	for _, r := range by {
+		r.High = capChars(StripControls(r.High), MaxSearchChars/4)
+		r.Text = capChars(StripControls(r.Text), MaxSearchChars)
+		r.Low = capChars(StripControls(r.Low), MaxSearchChars/4)
+		out = append(out, r)
 	}
-	slices.Sort(locales)
-	texts = make([]string, len(locales))
-	for i, l := range locales {
-		texts[i] = by[l]
+	slices.SortFunc(out, func(a, b SearchRow) int { return strings.Compare(a.Locale, b.Locale) })
+	return out
+}
+
+func joinLines(a, b string) string {
+	if a == "" {
+		return b
 	}
-	return locales, texts
+	if b == "" {
+		return a
+	}
+	return a + "\n" + b
 }
 
 // StripControls removes C0 control characters other than tab, newline and carriage return, so indexed text can
@@ -308,15 +322,93 @@ const MaxWalkConds = 3
 // than to walk an index that may hold few matches; the walk wins when the conditions are ranges or tests
 // that most items pass, because the page then fills after a short walk. q must be normalised.
 func IndexWalk(q store.Query) bool {
-	if len(q.Sort) != 1 || q.Sort[0].Column == "" || len(q.Where) > MaxWalkConds || strings.TrimSpace(q.Search) != "" {
+	if len(q.Sort) != 1 || q.Sort[0].Column == "" || leafCount(q.Where) > MaxWalkConds || strings.TrimSpace(q.Search) != "" {
 		return false
 	}
 	for _, c := range q.Where {
-		if Selective(c.Op) {
+		if Selective(c.Op) || SelectiveOr(c) {
 			return false
 		}
 	}
 	return true
+}
+
+func leafCount(conds []store.Cond) int {
+	n := 0
+	for _, c := range conds {
+		if !IsGroup(c.Op) {
+			n++
+		}
+		for _, g := range c.Groups {
+			n += leafCount(g)
+		}
+	}
+	return n
+}
+
+// SelectiveOr reports whether c is an or group in which every group has a selective condition, so that the
+// union of those conditions' matches is small.
+func SelectiveOr(c store.Cond) bool {
+	if c.Op != store.OpOr || len(c.Groups) == 0 {
+		return false
+	}
+	for _, g := range c.Groups {
+		if !slices.ContainsFunc(g, func(l store.Cond) bool { return Selective(l.Op) }) {
+			return false
+		}
+	}
+	return true
+}
+
+// MaxGroupDepth bounds how deep boolean groups nest in a compiled query; the content service allows less.
+const MaxGroupDepth = 3
+
+// IsGroup reports whether op is a boolean group (store.OpOr, store.OpNot).
+func IsGroup(op store.Op) bool { return op == store.OpOr || op == store.OpNot }
+
+// Group compiles a boolean group condition to a boolean expression: leaf compiles the field conditions inside,
+// yes and no are the dialect's constants true and false. Adapters call it from their condition compiler, so
+// every group form compiles to plain AND/OR/NOT over the leaves' index-row subqueries, never null-valued.
+func Group(c store.Cond, leaf func(store.Cond) (string, error), yes, no string) (string, error) {
+	return group(c, leaf, yes, no, 1)
+}
+
+func group(c store.Cond, leaf func(store.Cond) (string, error), yes, no string, depth int) (string, error) {
+	if depth > MaxGroupDepth {
+		return "", fmt.Errorf("boolean groups nest too deep (at most %d)", MaxGroupDepth)
+	}
+	terms := make([]string, 0, len(c.Groups))
+	for _, g := range c.Groups {
+		parts := make([]string, 0, len(g))
+		for _, sub := range g {
+			var p string
+			var err error
+			if IsGroup(sub.Op) {
+				p, err = group(sub, leaf, yes, no, depth+1)
+			} else {
+				p, err = leaf(sub)
+			}
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, p)
+		}
+		if len(parts) == 0 {
+			parts = append(parts, yes)
+		}
+		terms = append(terms, "("+strings.Join(parts, " AND ")+")")
+	}
+	or := no
+	if len(terms) > 0 {
+		or = "(" + strings.Join(terms, " OR ") + ")"
+	}
+	if c.Op == store.OpNot {
+		return "(NOT " + or + ")", nil
+	}
+	if c.Op != store.OpOr {
+		return "", fmt.Errorf("unknown group operator %q", c.Op)
+	}
+	return or, nil
 }
 
 // UnderBounds splits an OpUnder value into the exact path and the prefix of its descendants: "/a" and "/a/",

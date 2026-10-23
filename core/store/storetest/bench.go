@@ -3,9 +3,11 @@ package storetest
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/hydrogencms/hydrogen/core/ids"
 	"github.com/hydrogencms/hydrogen/core/store"
 )
 
@@ -91,6 +93,28 @@ func BenchQueries() map[string]store.Query {
 			Where: []store.Cond{{Field: "rating", Column: store.ColNum, Op: store.OpLt, Value: 50.0}},
 		},
 	}
+	base["OrFilterSortLimit"] = store.Query{
+		Type: "article", Locale: "en", Limit: 50,
+		Where: []store.Cond{{Op: store.OpOr, Groups: [][]store.Cond{
+			{{Field: "category", Column: store.ColText, Op: store.OpEq, Value: "c07"}},
+			{{Field: "rating", Column: store.ColNum, Op: store.OpGte, Value: 95.0}},
+		}}},
+		Sort: []store.Sort{{Field: "published", Column: store.ColTime, Desc: true}},
+	}
+	base["OrSelectiveSortLimit"] = store.Query{
+		Type: "article", Locale: "en", Limit: 50,
+		Where: []store.Cond{{Op: store.OpOr, Groups: [][]store.Cond{
+			{{Field: "category", Column: store.ColText, Op: store.OpEq, Value: "c07"}, {Field: "rating", Column: store.ColNum, Op: store.OpGte, Value: 50.0}},
+			{{Field: "category", Column: store.ColText, Op: store.OpEq, Value: "c13"}},
+		}}},
+		Sort: []store.Sort{{Field: "published", Column: store.ColTime, Desc: true}},
+	}
+	base["NotFilterSortLimit"] = store.Query{
+		Type: "article", Locale: "en", Limit: 50,
+		Where: []store.Cond{{Field: "rating", Column: store.ColNum, Op: store.OpGte, Value: 50.0},
+			{Op: store.OpNot, Groups: [][]store.Cond{{{Field: "category", Column: store.ColText, Op: store.OpIn, Value: []string{"c01", "c02", "c03"}}}}}},
+		Sort: []store.Sort{{Field: "published", Column: store.ColTime, Desc: true}},
+	}
 	for _, name := range []string{"FilterSortLimit", "Default", "SortByIndexField", "Deep"} {
 		q := base[name]
 		q.Working = true
@@ -106,9 +130,76 @@ func BenchmarkQuery(b *testing.B, db store.DB) {
 	SeedBench(b, db)
 	ctx := context.Background()
 	for _, name := range []string{"FilterSortLimit", "Default", "SortByIndexField", "Deep", "FilterSortLimitAvailable", "SortByIndexFieldAvailable",
-		"WorkingFilterSortLimit", "WorkingDefault", "WorkingSortByIndexField", "WorkingDeep"} {
+		"WorkingFilterSortLimit", "WorkingDefault", "WorkingSortByIndexField", "WorkingDeep", "OrFilterSortLimit", "OrSelectiveSortLimit", "NotFilterSortLimit"} {
 		q := BenchQueries()[name]
 		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := db.View(ctx, func(tx store.Tx) error {
+					res, err := tx.Content().Query(ctx, q)
+					if err == nil && len(res.Items) == 0 {
+						err = fmt.Errorf("no items")
+					}
+					return err
+				}); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// searchBenchText is the deterministic text of the i-th benchmark document: words from a 5000-word vocabulary.
+func searchBenchText(i, words int) string {
+	var sb strings.Builder
+	x := uint32(i)*2654435761 + 12345
+	for range words {
+		x = x*1664525 + 1013904223
+		fmt.Fprintf(&sb, "wd%04d ", (x>>8)%5000)
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+// BenchmarkSearch fills the search rows of the SeedBench catalog (a 4-word title and a 60-word body each;
+// tiered puts the title in the high tier) and benchmarks text queries. The time to write the rows is logged.
+func BenchmarkSearch(b *testing.B, db store.DB, tiered bool) {
+	SeedBench(b, db)
+	ctx := context.Background()
+	var all []ids.UUID
+	if err := db.View(ctx, func(tx store.Tx) error {
+		var after ids.UUID
+		for {
+			page, err := tx.Content().ItemIDsOfType(ctx, "article", after, 1000)
+			if err != nil {
+				return err
+			}
+			all = append(all, page...)
+			if len(page) < 1000 {
+				return nil
+			}
+			after = page[len(page)-1]
+		}
+	}); err != nil {
+		b.Fatal(err)
+	}
+	start := time.Now()
+	for i, id := range all {
+		doc := store.SearchDoc{Locale: "en", Text: searchBenchText(i, 60)}
+		if title := searchBenchText(i+BenchItems, 4); tiered {
+			doc.High = title
+		} else {
+			doc.Text = title + " " + doc.Text
+		}
+		if err := db.Tx(ctx, func(tx store.Tx) error {
+			return tx.Content().ReplaceSearch(ctx, id, store.ProjectionPublished, []store.SearchDoc{doc})
+		}); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.Logf("wrote the search rows of %d items in %s", len(all), time.Since(start).Round(time.Millisecond))
+	for _, c := range []struct{ name, text string }{{"Word", "wd0042"}, {"Prefix", "wd004"}, {"TwoWords", "wd004 wd005"}, {"CommonPrefix", "wd00"}} {
+		q := store.Query{Type: "article", Locale: "en", Limit: 20, Search: c.text}
+		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				if err := db.View(ctx, func(tx store.Tx) error {

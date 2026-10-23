@@ -143,6 +143,29 @@ func sortKeyFor(ctx context.Context, q store.SQL, parent *ids.UUID, self ids.UUI
 	return key, nil
 }
 
+// placeKey is the sort key of a new node: right after the sibling `after`, first when first is set, else last.
+func placeKey(ctx context.Context, q store.SQL, parent *ids.UUID, after *ids.UUID, first bool) (string, error) {
+	if first && after != nil {
+		return "", badRequest("first and after cannot be combined")
+	}
+	if after != nil || first || parent == nil {
+		return sortKeyFor(ctx, q, parent, ids.Nil, after)
+	}
+	var last *string
+	if err := q.QueryRow(ctx, "SELECT MAX(sort_key) FROM page_node WHERE parent_id = ?", *parent).Scan(&last); err != nil {
+		return "", err
+	}
+	prev := ""
+	if last != nil {
+		prev = *last
+	}
+	key, err := frac.Between(prev, "")
+	if err != nil {
+		return "", fmt.Errorf("pages: sort key: %w", err)
+	}
+	return key, nil
+}
+
 func (s *service) insertNode(ctx context.Context, q store.SQL, n nodeRow) error {
 	_, err := q.Exec(ctx, "INSERT INTO page_node ("+nodeCols+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		n.ID, n.Site, n.Parent, n.Path, n.Depth, n.SortKey, n.Kind, n.Item, n.Hidden, rawOrNil(n.Data), n.MainLocale,
@@ -263,7 +286,7 @@ func (s *service) place(ctx context.Context, site string, in Place) (*Node, erro
 		if parent != nil {
 			parentID = &parent.ID
 		}
-		key, err := sortKeyFor(ctx, q, parentID, ids.Nil, in.After)
+		key, err := placeKey(ctx, q, parentID, in.After, in.First)
 		if err != nil {
 			return err
 		}
@@ -350,7 +373,7 @@ func (s *service) addMount(ctx context.Context, site string, in Mount) (*Node, e
 		if err := checkSegmentFree(ctx, q, parent.ID, spec.Segment, ids.Nil); err != nil {
 			return err
 		}
-		key, err := sortKeyFor(ctx, q, &parent.ID, ids.Nil, in.After)
+		key, err := placeKey(ctx, q, &parent.ID, in.After, in.First)
 		if err != nil {
 			return err
 		}
@@ -499,7 +522,7 @@ func (s *service) addLink(ctx context.Context, site string, in Link) (*Node, err
 		if err := s.checkLinkSpec(ctx, q, tx.Content(), site, &in.Spec); err != nil {
 			return err
 		}
-		key, err := sortKeyFor(ctx, q, &parent.ID, ids.Nil, in.After)
+		key, err := placeKey(ctx, q, &parent.ID, in.After, in.First)
 		if err != nil {
 			return err
 		}
@@ -746,7 +769,8 @@ func (s *service) updateMount(ctx context.Context, tx store.Tx, n nodeRow, spec 
 			return err
 		}
 	}
-	rebuild := old.Collection != spec.Collection || old.Route != spec.Route || !equalFilters(old.Filter, spec.Filter)
+	rebuild := old.Collection != spec.Collection || old.Route != spec.Route || !equalFilters(old.Filter, spec.Filter) ||
+		old.RedirectField != spec.RedirectField
 	if old.Collection != spec.Collection || !equalFilters(old.Filter, spec.Filter) {
 		if err := s.authorize(ctx, policyMount, n); err != nil {
 			return err

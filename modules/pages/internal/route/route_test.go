@@ -117,12 +117,28 @@ func TestFill(t *testing.T) {
 	}
 }
 
+func TestFillAllow(t *testing.T) {
+	p, _ := Parse("{slug}")
+	allow := func(string) string { return ".," }
+	for in, want := range map[string]string{"acme,-inc": "acme,-inc", "b.v": "b.v", "A.B": "a-b", "a..b": "a-b"} {
+		got, err := p.FillAllow(func(string) (string, bool) { return in, true }, allow)
+		if err != nil || got != want {
+			t.Errorf("FillAllow(%q) = %q, %v, want %q", in, got, err, want)
+		}
+	}
+	if got, _ := p.Fill(func(string) (string, bool) { return "b.v", true }); got != "b-v" {
+		t.Errorf("Fill without allow = %q", got)
+	}
+}
+
 func TestClean(t *testing.T) {
 	long := "/" + strings.Repeat("a", MaxPath)
 	tests := []struct {
 		path string
 		ok   bool
 	}{
+		{"/benelux-b.v", true}, {"/acme,-inc", true}, {"/a.b/c,d", true}, {"/a..b", false}, {"/.a", false}, {"/a.", false},
+		{"/a.,b", false}, {"/a-.b", false}, {"/..", false},
 		{"/", true}, {"/a", true}, {"/a/b-c/d1", true}, {"/größe/日本", true},
 		{"", false}, {"a", false}, {"a/b", false}, {"/a/", false}, {"//", false}, {"/a//b", false},
 		{"/.", false}, {"/a/..", false}, {"/A", false}, {"/a_b", false}, {"/-a", false}, {"/a-", false},

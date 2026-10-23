@@ -153,6 +153,9 @@ func (s *Service) PlanSearch(types []string, where []Filter, sort []SortSpec, fa
 		ts = append(ts, t)
 	}
 	for _, f := range where {
+		if f.Op == store.OpOr || f.Op == store.OpNot {
+			return p, badRequest("search does not support where[%s] groups", f.Op)
+		}
 		if f.Op == store.OpUnder {
 			return p, badRequest("unknown operator %q", f.Op)
 		}

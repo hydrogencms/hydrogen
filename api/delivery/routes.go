@@ -189,7 +189,7 @@ func (a *API) byKey(w http.ResponseWriter, r *http.Request, st *state, key, tag 
 }
 
 // listParams are the query parameters of a listing besides where[field][op].
-var listParams = []string{"include", "fields", "locale", "q", "sort", "limit", "offset", "total", "channel", "preview"}
+var listParams = []string{"include", "fields", "locale", "q", "sort", "limit", "offset", "total", "channel", "preview", "facets"}
 
 func (a *API) listItems(w http.ResponseWriter, r *http.Request) {
 	st := stateOf(r)
@@ -211,6 +211,11 @@ func (a *API) listItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wantTotal, err := st.totalFlag()
+	if err != nil {
+		Fail(w, r, err)
+		return
+	}
+	facetFields, err := st.facetFields(typ)
 	if err != nil {
 		Fail(w, r, err)
 		return
@@ -252,6 +257,13 @@ func (a *API) listItems(w http.ResponseWriter, r *http.Request) {
 		Fail(w, r, err)
 		return
 	}
+	var facets map[string][]facet
+	if len(facetFields) > 0 {
+		if facets, err = st.facets(ctx, sq, facetFields); err != nil {
+			Fail(w, r, err)
+			return
+		}
+	}
 	hasMore := sq.Offset+min(len(res.Items), want) < res.Total
 	if probe {
 		hasMore = len(res.Items) > want
@@ -286,7 +298,7 @@ func (a *API) listItems(w http.ResponseWriter, r *http.Request) {
 	if wantTotal {
 		total = res.Total
 	}
-	write(w, appendList(make([]byte, 0, 64+len(items)*256), items, inc, hasMore, total))
+	write(w, appendList(make([]byte, 0, 64+len(items)*256), items, inc, hasMore, total, facets))
 }
 
 // listQuery turns the request's parameters into the store query of a listing. Published listings are limited
@@ -296,7 +308,7 @@ func (st *state) listQuery(typ string) (store.Query, error) {
 	q := url.Values{}
 	for k, v := range st.q {
 		switch k {
-		case "include", "fields", "locale", "channel", "preview", "total":
+		case "include", "fields", "locale", "channel", "preview", "total", "facets":
 		default:
 			q[k] = v
 		}
@@ -352,6 +364,43 @@ func (st *state) previewed(ctx context.Context, typ string, sq store.Query) (*re
 // maxPage is the largest page a store returns; a page that size cannot be probed with one more row.
 const maxPage = 500
 
+// facetFields reads ?facets=a,b: indexed text fields of the listed type.
+func (st *state) facetFields(typ string) ([]string, error) {
+	raw := st.q.Get("facets")
+	if raw == "" {
+		return nil, nil
+	}
+	var fields []string
+	for f := range strings.SplitSeq(raw, ",") {
+		if f = strings.TrimSpace(f); f == "" {
+			return nil, manage.BadRequest("facets must be a comma-separated list of field names")
+		}
+		fields = append(fields, f)
+	}
+	if err := st.a.o.Content.CheckFacetFields(typ, fields); err != nil {
+		return nil, err
+	}
+	return fields, nil
+}
+
+// facets counts the values of fields over the items sq selects: the listing's published, channel-available
+// set before paging.
+func (st *state) facets(ctx context.Context, sq store.Query, fields []string) (map[string][]facet, error) {
+	out := make(map[string][]facet, len(fields))
+	for _, name := range fields {
+		counts, err := st.a.o.Reader.Facet(ctx, sq, name, content.MaxFacetValues)
+		if err != nil {
+			return nil, err
+		}
+		vals := make([]facet, len(counts))
+		for i, c := range counts {
+			vals[i] = facet{c.Value, c.Count}
+		}
+		out[name] = vals
+	}
+	return out, nil
+}
+
 // totalFlag reads ?total=: true makes the listing count its matches.
 func (st *state) totalFlag() (bool, error) {
 	switch st.q.Get("total") {
@@ -363,8 +412,9 @@ func (st *state) totalFlag() (bool, error) {
 	return false, manage.BadRequest("total must be true or false")
 }
 
-// appendList appends {"items":[…],"hasMore":b,"total":n,"included":{…}}; total only when it is not negative.
-func appendList(buf []byte, items, inc []*resolved, hasMore bool, total int) []byte {
+// appendList appends {"items":[…],"hasMore":b,"total":n,"facets":{…},"included":{…}}; total only when it is not
+// negative, facets only when asked for.
+func appendList(buf []byte, items, inc []*resolved, hasMore bool, total int, facets map[string][]facet) []byte {
 	buf = append(buf, `{"items":[`...)
 	for i, it := range items {
 		if i > 0 {
@@ -377,6 +427,11 @@ func appendList(buf []byte, items, inc []*resolved, hasMore bool, total int) []b
 	if total >= 0 {
 		buf = append(buf, `,"total":`...)
 		buf = strconv.AppendInt(buf, int64(total), 10)
+	}
+	if facets != nil {
+		fb, _ := marshal(facets)
+		buf = append(buf, `,"facets":`...)
+		buf = append(buf, fb...)
 	}
 	buf = appendIncluded(buf, inc)
 	return append(buf, '}')

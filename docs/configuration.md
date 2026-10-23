@@ -234,7 +234,7 @@ Channel and group names are lower-case letters, digits, `_` and single `-` betwe
 Modules add keys. The pages module adds `site` (one of `modules.pages.sites`), `match` (`host`, `prefix` and/or a
 `header: {name, value}`; two channels cannot match the same way; `prefix: /` serves every path, so a site with one web
 channel needs only `match: { prefix: / }`, and a more specific channel still wins where it fits) and `reserved` (paths the frontend owns, such as
-`/cart` or `/account/*`) and `root_reserved` (see below). The site module adds `render: go`; the images module adds `image_presets`. A key no module
+`/cart` or `/account/*`; `/` alone reserves the channel's root, for a custom route or frontend page that replaces the root page, which is then unreachable there) and `root_reserved` (see below). The site module adds `render: go`; the images module adds `image_presets`. A key no module
 registered fails with the list of known ones.
 
 A channel matched by a prefix serves only that prefix, but a site often needs a few root-level URLs, such as an endpoint

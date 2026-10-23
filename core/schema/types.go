@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	slugPattern    = `^[\p{Ll}\p{Lo}\p{Lm}\p{Nd}]+(-[\p{Ll}\p{Lo}\p{Lm}\p{Nd}]+)*$`
+	slugRun        = `[\p{Ll}\p{Lo}\p{Lm}\p{Nd}]+`
+	slugPattern    = `^` + slugRun + `(-` + slugRun + `)*$`
 	dateLayout     = "2006-01-02"
 	datetimeLayout = "2006-01-02T15:04:05.000Z07:00"
 	defaultSlugMax = 120
@@ -169,6 +170,9 @@ func (slugType) Compile(o *Options) (Shape, Config, error) {
 		}
 		cfg.max = v
 	}
+	if v, ok := o.String("allow"); ok {
+		cfg.allow = slugAllow(o, v)
+	}
 	if from, ok := o.String("from"); ok {
 		typ, found := o.SiblingType(from)
 		if !found || (typ != "string" && typ != "text") {
@@ -176,12 +180,39 @@ func (slugType) Compile(o *Options) (Shape, Config, error) {
 		}
 		cfg.from = from
 	}
-	return Shape{Base: BaseString, Format: "slug"}, cfg, nil
+	shape := Shape{Base: BaseString, Format: "slug"}
+	for i := range cfg.allow {
+		shape.Allow = append(shape.Allow, cfg.allow[i:i+1])
+	}
+	return shape, cfg, nil
+}
+
+// slugAllow normalises the allow option: any of "." and ",", each once.
+func slugAllow(o *Options, v string) string {
+	var out []byte
+	for _, c := range []byte(".,") {
+		if strings.IndexByte(v, c) >= 0 {
+			out = append(out, c)
+		}
+	}
+	if len(out) != len(v) {
+		o.Errorf("allow", "allow takes any of %q and %q, each once", ".", ",")
+	}
+	return string(out)
 }
 
 type slugConfig struct {
-	max  int
-	from string
+	max   int
+	from  string
+	allow string // extra joining characters, a subset of ".," in that order
+}
+
+func (c *slugConfig) allowList() string {
+	parts := make([]string, len(c.allow))
+	for i := range c.allow {
+		parts[i] = strconv.Quote(c.allow[i : i+1])
+	}
+	return strings.Join(parts, ", ")
 }
 
 // slugRune reports whether r may appear in a slug: a lower-case letter, another letter without case, a
@@ -193,22 +224,30 @@ func slugRune(r rune) bool {
 	return unicode.In(r, unicode.Ll, unicode.Lo, unicode.Lm, unicode.Nd)
 }
 
-func isSlug(s string) bool {
-	prevDash := true
-	for _, r := range s {
+// IsSlug reports whether s is runs of slug characters joined by single dashes. Characters of allow (a subset
+// of ".,") may also join runs, alone or followed by a dash: "b.v", "acme,-inc".
+func IsSlug(s, allow string) bool {
+	start := true
+	for i := 0; i < len(s); {
+		r, n := utf8.DecodeRuneInString(s[i:])
 		switch {
-		case r == '-':
-			if prevDash {
-				return false
-			}
-			prevDash = true
 		case slugRune(r):
-			prevDash = false
+			start = false
+		case start:
+			return false
+		case r == '-':
+			start = true
+		case r < utf8.RuneSelf && strings.IndexByte(allow, byte(r)) >= 0:
+			start = true
+			if i+n < len(s) && s[i+n] == '-' {
+				n++
+			}
 		default:
 			return false
 		}
+		i += n
 	}
-	return !prevDash
+	return !start
 }
 
 func (c *slugConfig) Validate(v any, _ Mode, r *Report) {
@@ -220,8 +259,12 @@ func (c *slugConfig) Validate(v any, _ Mode, r *Report) {
 	if hasNUL(s, r) {
 		return
 	}
-	if !isSlug(s) {
-		r.Fail("format", "must be a slug (lowercase letters, digits and single dashes)")
+	if !IsSlug(s, c.allow) {
+		if c.allow != "" {
+			r.Fail("format", "must be a slug (lowercase letters, digits, single dashes and %s between them)", c.allowList())
+		} else {
+			r.Fail("format", "must be a slug (lowercase letters, digits and single dashes)")
+		}
 		return
 	}
 	if utf8.RuneCountInString(s) > c.max {
@@ -232,7 +275,12 @@ func (c *slugConfig) Validate(v any, _ Mode, r *Report) {
 func (c *slugConfig) IsEmpty(v any) bool { return v == "" }
 
 func (c *slugConfig) JSONSchema() map[string]any {
-	return map[string]any{"type": "string", "pattern": slugPattern, "maxLength": c.max}
+	pattern := slugPattern
+	if c.allow != "" {
+		pattern = slugRun + `(?:(?:-|[` + regexp.QuoteMeta(c.allow) + `]-?)` + slugRun + `)*$`
+		pattern = "^" + pattern
+	}
+	return map[string]any{"type": "string", "pattern": pattern, "maxLength": c.max}
 }
 
 // ---- email, url
