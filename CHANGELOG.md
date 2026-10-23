@@ -6,6 +6,13 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Site module templates: the request's query string (`.Query "name"`, `.QueryValues "name"`, cached per variant of
+  the parameters a page reads, bounded per path; pages that ignore the query keep one cache entry), the page for
+  block templates (`.Page` on a block), and `site.ViewFuncs` for project template functions that read the page's
+  view and content (`View.List`, `View.Get`).
+
 ## [0.3.0] - 2026-10-22
 
 ### Added

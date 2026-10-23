@@ -81,6 +81,51 @@ A function returns one value, or a value and an error. A name that collides with
 `component`), a Go template function or another registration fails start-up and `config:check`. A module that
 `Require`s `site` calls `kernel.Lookup[*site.Extensions](r).AddFuncs(m)`.
 
+### Page-aware functions
+
+`site.ViewFuncs` registers functions that know the page being rendered. The function runs on every render with the
+page's `*site.View` and returns the template functions, which close over the view:
+
+```go
+site.ViewFuncs(h, func(v *site.View) template.FuncMap {
+	return template.FuncMap{
+		"related": func(n int) ([]*site.Item, error) {
+			return v.List("post", map[string]any{"limit": n, "where[category][eq]": v.Query("category")})
+		},
+		"isHere": func(path string) bool { return v.Path == path },
+	}
+})
+```
+
+Inside, a view offers what templates have: `List` and `Get` (`items` and `item`), `Query`, `QueryValues`, `Nav`,
+`Breadcrumbs`, `Link`, `Setting`, `T`, `Client()` and the fields (`Path`, `Locale`, `Item`…). Reads tag the page like
+the template helpers do. Names follow the rules of `site.Funcs` and share their namespace. The function is also
+called once at registration with an empty view to learn the names, so build closures there and do not call the
+view's methods. Rendering cost is unchanged when none is registered; with one, the function runs each time a
+template set is prepared for a render.
+
+## The request in templates
+
+The view has the page's channel-relative URL as `.Path` (`/en/blog/page/2`; no query), and the request's query:
+
+- `.Query "category"` is the first value of a query parameter, or "" (`.QueryValues "tag"` all of them, in order).
+  Values are plain strings that `html/template` escapes like any other. The `preview` parameter is never readable.
+- Block templates get the block as their data; `.Page` is the page's view, so a block reads `.Page.Path`,
+  `.Page.Query "page"` or `.Page.Locale`. Partials default to the view; pass `.` when giving them a dict.
+
+```html
+{{range items "post" (dict "where[category][eq]" (.Query "category") "limit" 10)}}…{{end}}
+<a {{if eq .Path "/en/blog"}}aria-current="page"{{end}} href="?category=news">News</a>
+```
+
+Rendered pages are cached by path. A page that never reads the query keeps one cache entry whatever the URL carries,
+so `?utm_source=…` does not split it. A page that reads parameters is stored per variant: the path plus the values
+of the parameters its renders read (the names are learned from renders; a template that later reads another
+parameter re-keys the path). Bounds keep it from being flooded: at most 32 variants per path (the oldest makes
+room), at most 8 values per parameter and 128 bytes per value; a request beyond them is rendered and not stored.
+Publishing purges every variant by the page's tags. Previews are never cached. `site:check` and static exports
+have no query (reads are empty) unless an export target brings one in its URL.
+
 ## Reading content in templates
 
 These helpers read in process, as a public client of the channel (drafts when previewing), in the page's locale.
