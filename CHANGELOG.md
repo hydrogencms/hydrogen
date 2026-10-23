@@ -6,6 +6,22 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Site module assets: `url(...)` and `@import` references in style sheets are rewritten to the fingerprinted URLs of
+  the assets they name (quoted or not, relative or root-relative, `?#iefix` and `#icon` suffixes kept; `data:`,
+  external, fragment-only and unknown references untouched), and the sheet's fingerprint covers the rewritten text.
+  Projects no longer need to repeat Hydrogen's hashing rule in their CSS.
+- Site module assets requested without a fingerprint carry a strong `ETag`, `Last-Modified` and `Cache-Control:
+  no-cache` and answer `304` to conditional requests.
+
+### Changed
+
+- Site module assets are listed at start and hashed on first use instead of being read and hashed in full when the
+  site loads, and are served from the file system instead of memory. With 1,700 files (39 MB) loading takes about
+  1.5 ms instead of 44 ms and allocates 0.9 MB instead of 43 MB. Fingerprints of files other than style sheets that
+  contain references are unchanged.
+
 ## [0.3.0] - 2026-10-22
 
 ### Added

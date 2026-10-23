@@ -43,6 +43,29 @@ Each layer may hold `templates/`, `assets/` and `translations/`. Templates are `
 `richtext/<type>.html` (rich text overrides), `routes/<name>.html` (custom routes) and any partials. Translation files (`translations/en.yaml`) merge key by key
 across layers. Assets are served under fingerprinted URLs (`{{asset "site.css"}}`).
 
+### Assets
+
+`{{asset "name"}}` returns `/__hydrogen/assets/<name>.<hash>.<ext>`, served with `Cache-Control: public,
+max-age=31536000, immutable`. Files are listed at start but not read: a file is hashed (SHA-256, streamed) the first
+time a template or a request needs its fingerprint, remembered until the next reload, and served from the file
+system (or the theme's embedded files) on each request, so start-up and memory do not grow with the size of the
+assets. A fingerprint that no longer matches the file answers 404.
+
+A request for the plain name (`/__hydrogen/assets/sprite.svg`, as a script-loaded chunk or an SVG sprite is
+fetched) works too. It is answered with a strong `ETag` (the content hash), `Last-Modified` (the file's modification
+time, when the file system has one) and `Cache-Control: no-cache`, so a browser revalidates and gets `304 Not
+Modified` while the file is unchanged.
+
+In style sheets (`.css`) the `url(...)` and `@import` references to other assets are rewritten to their fingerprinted
+URLs, whether quoted or not and for both plain and fingerprinted requests. A reference is relative to the sheet
+(`../fonts/a.woff2`) or root-relative into the assets directory (`/fonts/a.woff2`, or the full
+`/__hydrogen/assets/fonts/a.woff2`). `data:` and other schemes, `http(s):`, `//host/…`, `#id` alone, references to
+files that do not exist and paths that leave the assets directory stay as written; a `?query` or `#fragment`
+(`a.woff2?#iefix`, `sprite.svg#icon`) is kept. The sheet's own fingerprint is the hash of the rewritten text, so
+changing a font changes the sheet's URL too. Sheets that reference each other in a cycle keep those references as
+written. Sheets over 4 MiB are served as they are; rewritten sheets are kept in memory up to 8 MiB in total and
+recomputed beyond that.
+
 Collection listing routes are paged: `/blog` is page 1 and `/blog/page/2` the next, `limit` items each. A listing
 template gets `.Pager` (`.Page`, `.Prev`, `.Next`; nil on a single page); the starter theme shows it with
 `partials/pager.html`.

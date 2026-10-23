@@ -341,7 +341,10 @@ func (p *page) editFn(path string) template.HTMLAttr {
 }
 
 func (p *page) assetFn(name string) (string, error) {
-	u, ok := p.eng.assets.url(name)
+	u, ok, err := p.eng.assets.url(name)
+	if err != nil {
+		return "", fmt.Errorf("asset %q: %w", name, err)
+	}
 	if !ok {
 		if err := p.problem("asset %q does not exist in site/assets or the theme", name); err != nil {
 			return "", err
