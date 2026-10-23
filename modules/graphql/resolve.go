@@ -438,6 +438,8 @@ func (b *builder) resolveRoute() gql.FieldResolveFn {
 }
 
 // whereParams writes a where argument ({"field": {"op": value}} or {"field": value}) as where[field][op]=value.
+// "or" (a list of objects, any of which must match) and "not" (an object, or a list of objects none of which may
+// match) are the delivery API's boolean groups; their objects hold plain conditions.
 func whereParams(v any, q url.Values) error {
 	if v == nil {
 		return nil
@@ -447,21 +449,51 @@ func whereParams(v any, q url.Values) error {
 		return userError("where must be an object such as {\"title\": {\"eq\": \"x\"}}")
 	}
 	for _, field := range sortedKeys(m) {
+		switch field {
+		case "or", "not":
+			groups, isList := m[field].([]any)
+			if !isList {
+				groups = []any{m[field]}
+			}
+			if field == "or" && !isList {
+				return userError("where.or must be a list of objects")
+			}
+			for i, g := range groups {
+				gm, ok := g.(map[string]any)
+				if !ok {
+					return userError("where.%s must hold objects of conditions", field)
+				}
+				prefix := "where[" + field + "][" + strconv.Itoa(i) + "]"
+				if err := whereConds(prefix, "where."+field, gm, q); err != nil {
+					return err
+				}
+			}
+		default:
+			if err := whereConds("where", "where", map[string]any{field: m[field]}, q); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func whereConds(prefix, label string, m map[string]any, q url.Values) error {
+	for _, field := range sortedKeys(m) {
 		if sub, ok := m[field].(map[string]any); ok {
 			for _, op := range sortedKeys(sub) {
 				s, err := whereValue(sub[op])
 				if err != nil {
-					return userError("where.%s.%s: %v", field, op, err)
+					return userError("%s.%s.%s: %v", label, field, op, err)
 				}
-				q.Add("where["+field+"]["+op+"]", s)
+				q.Add(prefix+"["+field+"]["+op+"]", s)
 			}
 			continue
 		}
 		s, err := whereValue(m[field])
 		if err != nil {
-			return userError("where.%s: %v", field, err)
+			return userError("%s.%s: %v", label, field, err)
 		}
-		q.Add("where["+field+"]", s)
+		q.Add(prefix+"["+field+"]", s)
 	}
 	return nil
 }

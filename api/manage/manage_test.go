@@ -481,6 +481,28 @@ func TestListQuery(t *testing.T) {
 		{name: "repeated where", query: "where[tags][contains]=a&where[tags][contains]=b",
 			want: content.ListOptions{Type: "article", Limit: 50, Where: []content.Filter{
 				{Field: "tags", Op: store.OpContains, Value: "a"}, {Field: "tags", Op: store.OpContains, Value: "b"}}}},
+		{name: "or and not groups", query: "where[rating][gte]=3&where[or][1][tags][contains]=b&where[or][0][author]=abc&where[or][0][rating][lt]=9&where[not][type][in]=a,b",
+			want: content.ListOptions{Type: "article", Limit: 50, Where: []content.Filter{
+				{Field: "rating", Op: store.OpGte, Value: "3"},
+				{Op: store.OpOr, Groups: [][]content.Filter{
+					{{Field: "author", Op: store.OpEq, Value: "abc"}, {Field: "rating", Op: store.OpLt, Value: "9"}},
+					{{Field: "tags", Op: store.OpContains, Value: "b"}}}},
+				{Op: store.OpNot, Groups: [][]content.Filter{{{Field: "type", Op: store.OpIn, Value: "a,b"}}}},
+			}}},
+		{name: "not groups by index", query: "where[not][0][title]=x&where[not][1][rating][gt]=2&where[not][1][author][exists]=true",
+			want: content.ListOptions{Type: "article", Limit: 50, Where: []content.Filter{
+				{Op: store.OpNot, Groups: [][]content.Filter{
+					{{Field: "title", Op: store.OpEq, Value: "x"}},
+					{{Field: "author", Op: store.OpExists, Value: true}, {Field: "rating", Op: store.OpGt, Value: "2"}}}},
+			}}},
+		{name: "or needs an index", query: "where[or][title]=x", bad: true},
+		{name: "or without a condition", query: "where[or][0]=x", bad: true},
+		{name: "bare or", query: "where[or]=x", bad: true},
+		{name: "group index too high", query: "where[or][32][title]=x", bad: true},
+		{name: "negative group index", query: "where[or][-1][title]=x", bad: true},
+		{name: "bad op in a group", query: "where[or][0][title][like]=x", bad: true},
+		{name: "bad exists in a group", query: "where[not][title][exists]=maybe", bad: true},
+		{name: "group conditions count", query: strings.Repeat("where[rating][gte]=1&", 16) + strings.Repeat("where[or][0][rating][lt]=1&", 17), bad: true},
 		{name: "limit max", query: "limit=500", want: content.ListOptions{Type: "article", Limit: 500}},
 		{name: "bad status", query: "status=gone", bad: true},
 		{name: "limit zero", query: "limit=0", bad: true},

@@ -252,10 +252,14 @@ type PublishOptions struct {
 
 // Filter is one list condition; Value comes from a typed caller or from a query string (string values are
 // parsed by the field's type).
+//
+// Op store.OpOr holds when all filters of at least one of Groups do, store.OpNot when no group is fully
+// satisfied; groups take no Field and their members are plain filters (no nesting).
 type Filter struct {
-	Field string
-	Op    store.Op
-	Value any
+	Field  string
+	Op     store.Op
+	Value  any
+	Groups [][]Filter
 }
 
 type SortSpec struct {

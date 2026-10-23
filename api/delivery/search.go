@@ -216,6 +216,12 @@ func (a *API) searchItems(w http.ResponseWriter, r *http.Request) {
 	write(w, appendSearch(make([]byte, 0, 128+len(items)*256), items, inc, hits, res, req.Facets))
 }
 
+// facet is one value of a facet and the number of items that have it.
+type facet struct {
+	Value string `json:"value"`
+	Count int    `json:"count"`
+}
+
 // appendSearch appends {"items":[…],"hits":[…],"total":n,"estimated":b,"facets":{…},"included":{…}}.
 func appendSearch(buf []byte, items, inc []*resolved, hits []searchHit, res search.Result, facets []string) []byte {
 	buf = append(buf, `{"items":[`...)
@@ -233,10 +239,6 @@ func appendSearch(buf []byte, items, inc []*resolved, hits []searchHit, res sear
 	buf = append(buf, `,"estimated":`...)
 	buf = strconv.AppendBool(buf, res.Estimated)
 	if len(facets) > 0 {
-		type facet struct {
-			Value string `json:"value"`
-			Count int    `json:"count"`
-		}
 		out := make(map[string][]facet, len(facets))
 		for _, f := range facets {
 			vals := make([]facet, 0, len(res.Facets[f]))

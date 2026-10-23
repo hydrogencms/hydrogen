@@ -62,7 +62,7 @@ Content of a type is reached through the collection, and then by id.
 | --- | --- | --- |
 | `GET /types`, `GET /types/{type}` | any | Compiled types, and one type with its JSON Schema. |
 | `GET /blocks` | any | Block types and token sets. |
-| `GET /collections/{type}/items` | `content.read` | List. Params: `locale`, `status` (`any`, `published`, `draft`), `q`, `sort`, `where[field][op]`, `fields`, `limit`, `offset`. |
+| `GET /collections/{type}/items` | `content.read` | List. Params: `locale`, `status` (`any`, `published`, `draft`), `q`, `sort`, `where[field][op]` (also `where[or][i][field][op]` and `where[not][field][op]`, see the delivery API's lists), `fields`, `limit`, `offset`. |
 | `POST /collections/{type}/items` | `content.create` | Create a draft: `{"key"?, "locale"?, "alwaysAvailable"?, "fields"}`. |
 | `GET /collections/{type}/facets` | `content.read` | Counts per value of up to five indexed text fields. |
 | `GET /items/{id}` | `content.read` | Read the working view. `locale`, `draft`, `trashed`. |

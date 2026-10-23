@@ -99,6 +99,16 @@ func TestGraphQLQueries(t *testing.T) {
 			t.Errorf("post list = %v", items)
 		}
 
+		// Boolean groups.
+		gq := `{ articleList(where: {or: [{rank: 1}, {rank: {gte: 3}}], not: {rank: {eq: 3}}}, sort: "rank") { items { title } } }`
+		items, _ = asMap(gqlData(t, n.gqlGet("web", gq), "articleList"))["items"].([]any)
+		if len(items) != 1 || field(asMap(items[0]), "title") != "First" {
+			t.Errorf("or/not list = %v", items)
+		}
+		if r := n.gqlGet("web", `{ articleList(where: {or: {rank: 1}}) { items { title } } }`); r.json()["errors"] == nil {
+			t.Errorf("or needs a list: %s", r.Body)
+		}
+
 		// Singleton.
 		n.create("settings", "", "en", `{"siteName":"Hydrogen"}`, true)
 		deq(t, "singleton", field(asMap(gqlData(t, n.gqlGet("web", `{ settings { siteName } }`))), "settings", "siteName"), "Hydrogen")

@@ -91,6 +91,28 @@ func BenchQueries() map[string]store.Query {
 			Where: []store.Cond{{Field: "rating", Column: store.ColNum, Op: store.OpLt, Value: 50.0}},
 		},
 	}
+	base["OrFilterSortLimit"] = store.Query{
+		Type: "article", Locale: "en", Limit: 50,
+		Where: []store.Cond{{Op: store.OpOr, Groups: [][]store.Cond{
+			{{Field: "category", Column: store.ColText, Op: store.OpEq, Value: "c07"}},
+			{{Field: "rating", Column: store.ColNum, Op: store.OpGte, Value: 95.0}},
+		}}},
+		Sort: []store.Sort{{Field: "published", Column: store.ColTime, Desc: true}},
+	}
+	base["OrSelectiveSortLimit"] = store.Query{
+		Type: "article", Locale: "en", Limit: 50,
+		Where: []store.Cond{{Op: store.OpOr, Groups: [][]store.Cond{
+			{{Field: "category", Column: store.ColText, Op: store.OpEq, Value: "c07"}, {Field: "rating", Column: store.ColNum, Op: store.OpGte, Value: 50.0}},
+			{{Field: "category", Column: store.ColText, Op: store.OpEq, Value: "c13"}},
+		}}},
+		Sort: []store.Sort{{Field: "published", Column: store.ColTime, Desc: true}},
+	}
+	base["NotFilterSortLimit"] = store.Query{
+		Type: "article", Locale: "en", Limit: 50,
+		Where: []store.Cond{{Field: "rating", Column: store.ColNum, Op: store.OpGte, Value: 50.0},
+			{Op: store.OpNot, Groups: [][]store.Cond{{{Field: "category", Column: store.ColText, Op: store.OpIn, Value: []string{"c01", "c02", "c03"}}}}}},
+		Sort: []store.Sort{{Field: "published", Column: store.ColTime, Desc: true}},
+	}
 	for _, name := range []string{"FilterSortLimit", "Default", "SortByIndexField", "Deep"} {
 		q := base[name]
 		q.Working = true
@@ -106,7 +128,7 @@ func BenchmarkQuery(b *testing.B, db store.DB) {
 	SeedBench(b, db)
 	ctx := context.Background()
 	for _, name := range []string{"FilterSortLimit", "Default", "SortByIndexField", "Deep", "FilterSortLimitAvailable", "SortByIndexFieldAvailable",
-		"WorkingFilterSortLimit", "WorkingDefault", "WorkingSortByIndexField", "WorkingDeep"} {
+		"WorkingFilterSortLimit", "WorkingDefault", "WorkingSortByIndexField", "WorkingDeep", "OrFilterSortLimit", "OrSelectiveSortLimit", "NotFilterSortLimit"} {
 		q := BenchQueries()[name]
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()

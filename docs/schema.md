@@ -122,7 +122,7 @@ see [hooks](hooks.md).
 
 `index: true` stores the value in a real, indexed column. Only indexed fields (plus `name`, `key`, `createdAt`,
 `updatedAt` and `publishedAt` for sorting) can be used in `where[field][op]` filters and `sort`. Filters are `eq` (the default), `ne`,
-`lt`, `lte`, `gt`, `gte`, `in`, `contains`, `exists`, `prefix` and `under`. Nothing queries inside JSON documents.
+`lt`, `lte`, `gt`, `gte`, `in`, `contains`, `exists`, `prefix` and `under`, combined with `where[or]` and `where[not]` groups. Nothing queries inside JSON documents.
 
 ## Groups
 
