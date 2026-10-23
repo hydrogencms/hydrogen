@@ -8,6 +8,15 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Added
 
+- Delivery and management queries: boolean filter groups. `where[or][0][f][op]=v&where[or][1][g][op]=w` matches items
+  satisfying every filter of at least one group and `where[not][f][op]=v` matches items that do not satisfy all of
+  its filters (numbered `not` groups exclude items satisfying any), next to the plain ANDed `where[field][op]`
+  filters, at most 32 conditions in all. An item without a value for a field satisfies the negation of a test on
+  it. Both adapters compile groups to the index tables (`store.OpOr`, `store.OpNot` with `store.Cond.Groups`,
+  checked by `storetest`); the GraphQL module accepts `or` and `not` in `where`.
+- `facets=a,b` on delivery collection listings: value counts of up to five indexed text fields over the whole
+  filtered set the channel can show (published, available in the channel's languages), answered as `facets`.
+  `store.Reader` gains `Facet`, and `content.Service.CheckFacetFields` validates the fields.
 - Pages: a page type field `canonicalPath` (translatable) makes a page's URL differ from its tree position, for sites whose
   navigation and URL structure disagree. The page's subpages build on it, its tree path answers a 301, and routes, `/tree`,
   `links`, breadcrumbs, canonical and hreflang follow. A taken, malformed or root path refuses the publish. Stored in

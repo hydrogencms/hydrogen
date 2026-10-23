@@ -19,6 +19,17 @@ test('buildQuery orders parameters and encodes values', () => {
     'limit=1&where[d][exists]=true&where[n][in]=1%2C2&where[slug][eq]=a&where[title][contains]=x&where[title][prefix]=y')
 })
 
+test('boolean groups and facets', async () => {
+  assert.equal(
+    buildQuery({ facets: 'a,b' }, { n: { gt: 1 } }, [{ x: 'a', y: { in: [1, 2] } }, { z: true }], [{ k: 'press' }]),
+    'facets=a%2Cb&where[n][gt]=1&where[not][0][k][eq]=press&where[or][0][x][eq]=a&where[or][0][y][in]=1%2C2&where[or][1][z][eq]=true')
+  const m = mock(() => ({ body: { items: [], hasMore: false, facets: { a: [{ value: 'x', count: 2 }] } } }))
+  const c = createClient({ baseUrl: 'https://x.test', channel: 'web', fetch: m.fetch })
+  const r = await c.list('article', { or: [{ title: 'a' }, { title: 'b' }], not: [{ slug: 'z' }], facets: ['title', 'slug'] })
+  assert.equal(m.calls[0].url, 'https://x.test/api/deliver/v1/collections/article/items?channel=web&facets=title%2Cslug&where[not][0][slug][eq]=z&where[or][0][title][eq]=a&where[or][1][title][eq]=b')
+  assert.deepEqual(r.data.facets, { a: [{ value: 'x', count: 2 }] })
+})
+
 test('buildQuery is independent of key insertion order', () => {
   const a = buildQuery({ limit: 1, q: 'x' }, { a: 1, b: { gt: 2 } })
   const b = buildQuery({ q: 'x', limit: 1 }, { b: { gt: 2 }, a: 1 })

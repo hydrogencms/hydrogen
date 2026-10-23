@@ -126,6 +126,16 @@ var compareOps = map[store.Op]string{
 
 // cond compiles one field condition into a predicate on item.
 func (c *compiler) cond(cd store.Cond) (string, error) {
+	if storeutil.IsGroup(cd.Op) {
+		return storeutil.Group(cd, func(l store.Cond) (string, error) { return c.leaf(l, cd.Op == store.OpOr) }, "true", "false")
+	}
+	return c.leaf(cd, false)
+}
+
+// leaf compiles a field condition. Inside an or group a positive condition is a membership test against
+// the matching item ids (an uncorrelated subquery Postgres hashes once); an or of correlated EXISTS probes
+// could not be planned as a join and would probe the index once per item.
+func (c *compiler) leaf(cd store.Cond, member bool) (string, error) {
 	if !storeutil.ValidField(cd.Field) {
 		return "", fmt.Errorf("invalid field name %q", cd.Field)
 	}
@@ -191,6 +201,10 @@ func (c *compiler) cond(cd store.Cond) (string, error) {
 		default:
 			return "", fmt.Errorf("unknown operator %q", cd.Op)
 		}
+	}
+	if member && exists == "EXISTS" {
+		return "item.id IN (SELECT fi.item_id FROM field_index fi WHERE fi.scope = " + c.projection() + " AND fi.field = " + c.bind(cd.Field) +
+			" AND fi.locale IN ('', " + c.locale() + ")" + pred + ")", nil
 	}
 	return exists + " (SELECT 1 FROM field_index fi WHERE fi.item_id = item.id AND fi.scope = " + c.projection() + " AND fi.field = " + c.bind(cd.Field) +
 		" AND fi.locale IN ('', " + c.locale() + ")" + pred + ")", nil
@@ -456,6 +470,10 @@ func (s contentStore) Query(ctx context.Context, q store.Query) (store.QueryResu
 }
 
 func (s contentStore) Facet(ctx context.Context, q store.Query, field string, limit int) ([]store.FacetCount, error) {
+	return runFacet(ctx, s.tx, q, field, limit)
+}
+
+func runFacet(ctx context.Context, db queryer, q store.Query, field string, limit int) ([]store.FacetCount, error) {
 	if !storeutil.ValidField(field) {
 		return nil, fmt.Errorf("invalid field name %q", field)
 	}
@@ -480,7 +498,7 @@ func (s contentStore) Facet(ctx context.Context, q store.Query, field string, li
 		"fi.locale IN ('', " + c.locale() + ")", "fi.v_text IS NOT NULL"}, conds...)
 	text := "SELECT fi.v_text, COUNT(DISTINCT fi.item_id) FROM field_index fi JOIN item ON item.id = fi.item_id WHERE " +
 		strings.Join(conds, " AND ") + ` GROUP BY fi.v_text ORDER BY 2 DESC, fi.v_text COLLATE "C" LIMIT ` + c.bind(max(limit, 1))
-	rows, err := s.tx.Query(ctx, text, c.args...)
+	rows, err := db.Query(ctx, text, c.args...)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: facet %q: %w", field, err)
 	}

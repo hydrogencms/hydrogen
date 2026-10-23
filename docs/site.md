@@ -158,6 +158,9 @@ Identical calls within one render ask the delivery API once.
 - `items "post" (dict "limit" 4 "sort" "-slug" "where[category][eq]" "news")` returns the items (`[]*Item`, each with
   `.Path` so `{{link .}}` works). Dict values are strings, numbers, booleans or lists (repeated parameters); an
   unknown field or a 5xx answer is an error.
+  Keys are the delivery query parameters verbatim, so boolean groups work as keys too:
+  `(dict "where[or][0][featured]" true "where[or][1][category]" "blog" "where[not][kind]" "press")`. Facet counts
+  (`facets`) are not available through `items`; read them with `query "/collections/post/items" (dict "facets" "category" "limit" 1)`.
 - `item "id"` returns one item or nil. It takes the same kind of dict for `fields` and `locale`.
 - `query "/tree" (dict "depth" 3)` returns the decoded JSON (`map[string]any`) of a delivery path (`/tree`,
   `/search`, …) when it answers 200, else nil; a 5xx answer is an error.

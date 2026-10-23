@@ -49,7 +49,7 @@ func (b *builder) queryType(lists map[string]*gql.Object) (*gql.Object, error) {
 		l := lists[t.Name]
 		fields[pick(getters[t.Name]+"List")] = &gql.Field{Type: l, Description: "A page of " + b.objects[t.Name].Name() + " items.",
 			Args: gql.FieldConfigArgument{
-				"where":  {Type: b.json, Description: `Filters on indexed fields: {"title": {"eq": "x"}}.`},
+				"where":  {Type: b.json, Description: `Filters on indexed fields: {"title": {"eq": "x"}}. {"or": [{…}, {…}]} matches any of the objects, {"not": {…}} none.`},
 				"sort":   {Type: gql.String, Description: "Comma-separated fields, - for descending."},
 				"limit":  {Type: gql.Int},
 				"offset": {Type: gql.Int},
