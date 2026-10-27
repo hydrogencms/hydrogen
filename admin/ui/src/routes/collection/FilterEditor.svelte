@@ -48,12 +48,12 @@
     submit();
   }}
 >
-  <Select aria-label={t('collections.filterField')} value={draft.field} onchange={(e) => setField((e.currentTarget as HTMLSelectElement).value)} options={fields.map((x) => ({ value: x.name, label: x.label }))} />
-  <Select aria-label={t('collections.filterOp')} value={draft.op} onchange={(e) => setOp((e.currentTarget as HTMLSelectElement).value)} options={(def ? opsFor(def) : []).map((o) => ({ value: o, label: t(`collections.op.${o}`) }))} />
+  <Select aria-label={t('collections.filterField')} value={draft.field} onchange={(v) => setField(v)} options={fields.map((x) => ({ value: x.name, label: x.label }))} />
+  <Select aria-label={t('collections.filterOp')} value={draft.op} onchange={(v) => setOp(v)} options={(def ? opsFor(def) : []).map((o) => ({ value: o, label: t(`collections.op.${o}`) }))} />
   {#if draft.op === 'exists' || (elem && elem.shape.base === 'boolean' && single)}
-    <Select aria-label={t('collections.filterValue')} value={draft.value} placeholder="" onchange={(e) => (draft.value = (e.currentTarget as HTMLSelectElement).value)} options={yesNo()} />
+    <Select aria-label={t('collections.filterValue')} value={draft.value} placeholder="" onchange={(v) => (draft.value = v)} options={yesNo()} />
   {:else if elem && elem.shape.format === 'enum' && single}
-    <Select aria-label={t('collections.filterValue')} value={draft.value} placeholder="" onchange={(e) => (draft.value = (e.currentTarget as HTMLSelectElement).value)} options={(elem.shape.enum ?? []).map((v) => ({ value: v, label: v }))} />
+    <Select aria-label={t('collections.filterValue')} value={draft.value} placeholder="" onchange={(v) => (draft.value = v)} options={(elem.shape.enum ?? []).map((v) => ({ value: v, label: v }))} />
   {:else if elem && elem.shape.base === 'number' && single}
     <Input type="number" aria-label={t('collections.filterValue')} value={draft.value} oninput={(e) => (draft.value = (e.currentTarget as HTMLInputElement).value)} />
   {:else if elem && elem.shape.format === 'date' && single}

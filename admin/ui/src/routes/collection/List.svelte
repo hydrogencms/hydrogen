@@ -365,7 +365,7 @@
         {/snippet}
         {#snippet footer()}
           {#if total > 0}
-            <span class="h-rows"><span class="h-muted" aria-hidden="true">{t('collections.rows')}</span><Select compact aria-label={t('collections.pageSize')} value={String(q.pageSize)} options={sizeOptions} onchange={(e) => update({ pageSize: Number((e.currentTarget as HTMLSelectElement).value) })} /></span>
+            <span class="h-rows"><span class="h-muted" aria-hidden="true">{t('collections.rows')}</span><Select compact aria-label={t('collections.pageSize')} value={String(q.pageSize)} options={sizeOptions} onchange={(v) => update({ pageSize: Number(v) })} /></span>
             <Pagination page={q.page} pageSize={q.pageSize} {total} onpage={(p) => update({ page: p }, { push: true })} />
           {/if}
         {/snippet}

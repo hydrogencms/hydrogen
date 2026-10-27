@@ -170,7 +170,7 @@
       <Tree label={t('media.library')} {nodes} bind:expanded bind:selected={sel} onselect={chooseFolder} />
       <Button size="sm" variant="ghost" icon="plus" onclick={() => (folderOpen = true)}>{t('media.newFolder')}</Button>
       {#if lib.tags.length}
-        <Select compact aria-label={t('media.filterTag')} value={lib.tag} placeholder={t('media.allTags')} options={lib.tags.map((x) => ({ value: x, label: x }))} onchange={(e) => router.setQuery({ tag: (e.currentTarget as HTMLSelectElement).value || undefined, page: undefined })} />
+        <Select compact aria-label={t('media.filterTag')} value={lib.tag} placeholder={t('media.allTags')} options={lib.tags.map((x) => ({ value: x, label: x }))} onchange={(v) => router.setQuery({ tag: v || undefined, page: undefined })} />
       {/if}
     </nav>
 
@@ -188,7 +188,7 @@
           oninput={(e) => typed((e.currentTarget as HTMLInputElement).value)}
         />
         {#if names.length > 1}
-          <Select compact aria-label={t('media.type')} value={lib.type} options={typeOptions} onchange={(e) => router.setQuery({ type: (e.currentTarget as HTMLSelectElement).value, folder: undefined, tag: undefined, page: undefined, item: undefined })} />
+          <Select compact aria-label={t('media.type')} value={lib.type} options={typeOptions} onchange={(v) => router.setQuery({ type: v, folder: undefined, tag: undefined, page: undefined, item: undefined })} />
         {/if}
         <Segmented
           size="sm"

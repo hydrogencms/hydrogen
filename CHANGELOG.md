@@ -83,6 +83,8 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Changed
 
+- Admin: dropdowns are the admin's own listbox instead of the browser's native `<select>` popup (keyboard,
+  type-ahead and screen readers as before). `Select`'s `onchange` now receives the new value instead of a DOM event.
 - Site module assets are listed at start and hashed on first use instead of being read and hashed in full when the
   site loads, and are served from the file system instead of memory. With 1,700 files (39 MB) loading takes about
   1.5 ms instead of 44 ms and allocates 0.9 MB instead of 43 MB. Fingerprints of files other than style sheets that
