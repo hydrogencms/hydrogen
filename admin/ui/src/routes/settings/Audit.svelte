@@ -16,10 +16,12 @@
   import Table from '../../lib/ui/Table.svelte';
   import Time from '../../lib/ui/Time.svelte';
   import {
-    ACTION_GROUPS, SINCE_PRESETS, assignmentRole, auditQuery, describeEntry, filtersFromQuery, humanizeAction, itemIdOf, referencedIds, releaseOf, restoredVersion, reviewBypassed, shortId, subjectKind, type AuditFilters,
+    ACTION_GROUPS, SINCE_PRESETS, assignmentRole, auditQuery, describeEntry, filtersFromQuery, humanizeAction, itemIdOf, itemRefOf, referencedIds, releaseOf, restoredVersion, reviewBypassed, shortId, subjectKind, type AuditFilters,
   } from './audit';
   import Dialog from '../../lib/ui/Dialog.svelte';
   import { formatDateTime } from '../../lib/format';
+  import { channels } from '../../lib/channels.svelte';
+  import { config } from '../../lib/config';
   import SettingsHead from './SettingsHead.svelte';
   import { reportError } from '../../lib/errors';
 
@@ -176,6 +178,39 @@
     void resolve([e]);
   }
 
+  // For content entries: the editor in the entry's language, the version it published, and the item's public
+  // addresses today (looked up when the dialog opens; routes may have moved since the entry was written).
+  const ref = $derived(sel ? itemRefOf(sel) : undefined);
+  const refLocale = $derived(ref?.locales[0] ?? '');
+  // The version is shown with its compare link above, so it is not repeated among the changes.
+  const changes = $derived((desc?.changes ?? []).filter((c) => ref?.version === undefined || c.label !== t('settings.audit.f.version')));
+  const editorHref = (id: string) => `/items/${id}${refLocale ? `?locale=${encodeURIComponent(refLocale)}` : ''}`;
+  const compareHref = (id: string, v: number) => `/items/${id}/compare?a=${v - 1}&b=${v}${refLocale ? `&locale=${encodeURIComponent(refLocale)}` : ''}`;
+  type PathRow = { locale: string; path: string; site: string; state: string };
+  let addresses = $state<{ locale: string; url: string }[] | null>(null);
+  $effect(() => {
+    const id = ref?.id;
+    const want = ref?.locales ?? [];
+    addresses = null;
+    if (!id || !config().pages || !session.can('pages.read')) return;
+    const ctl = new AbortController();
+    api
+      .get('/pages/items/{id}/paths', { params: { id }, signal: ctl.signal })
+      .then((r) => {
+        const out: { locale: string; url: string }[] = [];
+        for (const p of r.items as PathRow[]) {
+          if (p.state !== 'current' || (want.length > 0 && !want.includes(p.locale))) continue;
+          const base = channels.items.find((c) => (c.options as { site?: string }).site === p.site && c.languages.includes(p.locale))?.frontend;
+          if (base) out.push({ locale: p.locale, url: `${base.replace(/\/$/, '')}${p.path}` });
+        }
+        addresses = out;
+      })
+      .catch(() => {
+        if (!ctl.signal.aborted) addresses = [];
+      });
+    return () => ctl.abort();
+  });
+
   // Filters. Each popover writes the URL straight away; the free-text ones apply on Enter or the button.
   const set = (patch: Record<string, string | undefined>) => router.setQuery(patch);
   const anyFilter = $derived(!!(applied.actor || applied.action || applied.subject || applied.since));
@@ -330,10 +365,34 @@
             {s.tail.word ?? '·'} {s.tail.text}{/if}</dd>
       {/if}
     </dl>
-    <h3 class="h-aud__h">{t('settings.audit.changes')}</h3>
-    {#if desc.changes.length}
+    {#if ref}
+      <h3 class="h-aud__h">{t('settings.audit.content')}</h3>
       <dl class="h-aud__dl">
-        {#each desc.changes as c, i (i)}
+        <dt>{t('settings.audit.editor')}</dt>
+        <dd><a use:link href={href(editorHref(ref.id))} onclick={() => (detailsOpen = false)}>{t('settings.audit.openEditor')}</a></dd>
+        {#if ref.version !== undefined}
+          <dt>{t('settings.audit.versionLabel')}</dt>
+          <dd>
+            {ref.version}{#if ref.version > 1}{' · '}<a use:link href={href(compareHref(ref.id, ref.version))} onclick={() => (detailsOpen = false)}>{t('settings.audit.comparePrev', { n: ref.version - 1 })}</a>{/if}
+          </dd>
+        {/if}
+        {#if addresses?.length}
+          <dt>{t('settings.audit.onSite')}</dt>
+          <dd>
+            <ul class="h-aud__urls">
+              {#each addresses as a (a.locale + a.url)}
+                <li><a href={a.url} target="_blank" rel="noopener noreferrer"><code>{a.url}</code><Icon name="external-link" size={14} /></a> <span class="h-muted">{a.locale}</span></li>
+              {/each}
+            </ul>
+            <span class="h-muted h-aud__sub">{t('settings.audit.onSiteHint')}</span>
+          </dd>
+        {/if}
+      </dl>
+    {/if}
+    <h3 class="h-aud__h">{t('settings.audit.changes')}</h3>
+    {#if changes.length}
+      <dl class="h-aud__dl">
+        {#each changes as c, i (i)}
           <dt>{c.label}</dt>
           <dd>{c.value}</dd>
         {/each}
@@ -468,6 +527,20 @@
   .h-aud__dl dd {
     margin: 0;
     overflow-wrap: anywhere;
+  }
+  .h-aud__dl a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .h-aud__urls {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .h-aud__urls a {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--h-space-1);
   }
   .h-aud__tech {
     margin-top: var(--h-space-4);

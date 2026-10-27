@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import '../../lib/messages/settings';
 import '../../lib/messages/history';
 import { t } from '../../lib/i18n';
-import { describeEntry, referencedIds, type Lookup, ACTION_GROUPS, AUDIT_PAGE, assignmentRole, auditQuery, itemIdOf, releaseOf, restoredVersion, reviewBypassed, emptyFilters, filtersFromQuery, humanizeAction, shortId, sinceToRFC3339, subjectKind } from './audit';
+import { describeEntry, itemRefOf, referencedIds, type Lookup, ACTION_GROUPS, AUDIT_PAGE, assignmentRole, auditQuery, itemIdOf, releaseOf, restoredVersion, reviewBypassed, emptyFilters, filtersFromQuery, humanizeAction, shortId, sinceToRFC3339, subjectKind } from './audit';
 
 describe('audit filters', () => {
   it('reads filters from the URL', () => {
@@ -164,5 +164,20 @@ describe('audit descriptions', () => {
     expect(referencedIds({ action: 'assignment.delete', subject: 'a', data: { roleId: R, principalKind: 'token', principalId: 'tid' } })).toEqual([['role', R], ['token', 'tid']]);
     expect(referencedIds({ action: 'release.publish', subject: 'r', data: { items: [I, 'x'] } })).toEqual([['item', I]]);
     expect(referencedIds({ action: 'auth.login', subject: U })).toEqual([['user', U]]);
+  });
+});
+
+describe('itemRefOf', () => {
+  const id = '01a17b79-8836-771b-8f16-31a1419425dd';
+  it('gives the published version and its languages', () => {
+    expect(itemRefOf({ action: 'item.publish', subject: id, data: { type: 'article', version: 3, locales: ['en', 'de'] } })).toEqual({ id, locales: ['en', 'de'], version: 3 });
+  });
+  it('gives the language of a draft write, without a version', () => {
+    expect(itemRefOf({ action: 'item.update', subject: id, data: { type: 'article', locale: 'en' } })).toEqual({ id, locales: ['en'], version: undefined });
+  });
+  it('finds the item of a page placement and ignores entries about no item', () => {
+    expect(itemRefOf({ action: 'page.place', subject: 'node', data: { item: id } })?.id).toBe(id);
+    expect(itemRefOf({ action: 'group.member_add', subject: id, data: { user: id } })).toBeUndefined();
+    expect(itemRefOf({ action: 'item.restore_version', subject: id, data: { version: 2 } })?.version).toBeUndefined();
   });
 });

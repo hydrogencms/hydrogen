@@ -108,6 +108,24 @@ export const restoredVersion = (e: Entry): number | undefined => {
   return e.action === 'item.restore_version' && typeof v === 'number' ? v : undefined;
 };
 
+/** Where to look an item entry up again: the item, the languages it touched and the version it published or unpublished. */
+export interface ItemRef {
+  id: string;
+  locales: string[];
+  version?: number;
+}
+
+export function itemRefOf(e: Entry): ItemRef | undefined {
+  const id = itemIdOf(e);
+  if (!id) return undefined;
+  const d = dataOf(e);
+  const locales = Array.isArray(d.locales) ? d.locales.filter((l): l is string => typeof l === 'string' && l !== '') : [];
+  if (typeof d.locale === 'string' && d.locale) locales.push(d.locale);
+  const v = d.version;
+  const versioned = e.action === 'item.publish' || e.action === 'item.unpublish';
+  return { id, locales, version: versioned && typeof v === 'number' && v > 0 ? v : undefined };
+}
+
 // Readable descriptions -------------------------------------------------------------------------------------------
 
 /** Name of the thing `id` of `kind` (user, group, role, token, item), when it has been looked up. */
