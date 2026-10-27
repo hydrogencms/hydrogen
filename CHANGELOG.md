@@ -85,6 +85,9 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Changed
 
+- Access: users can add and remove their own roles and groups. Adding still needs every policy held unrestricted
+  (no self-escalation); a change that would cost the caller `role.manage` or `user.manage` (removing an assignment,
+  theirs or their group's, leaving or deleting a group, editing or deleting a role) is refused in its transaction.
 - Admin icons are Google's Material Symbols (Outlined, weight 400; Apache-2.0) as inline SVG paths, replacing the
   hand-drawn line set. Icon names are unchanged, so schema `icon:` values and extensions keep working.
 - Admin: dropdowns are the admin's own listbox instead of the browser's native `<select>` popup (keyboard,
