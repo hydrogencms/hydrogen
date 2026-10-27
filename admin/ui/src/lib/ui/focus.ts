@@ -30,8 +30,22 @@ export function trapTab(e: KeyboardEvent, root: HTMLElement): boolean {
   return false;
 }
 
-/** Svelte action: move the node to document.body (dialogs, menus escaping overflow). */
+const origins = new WeakMap<Node, Node>();
+
+/** Svelte action: move the node to document.body (dialogs, menus escaping overflow). Remembers where it came from. */
 export function portal(node: HTMLElement) {
+  if (node.parentNode) origins.set(node, node.parentNode);
   document.body.appendChild(node);
   return { destroy: () => node.remove() };
+}
+
+/** True when `n` is inside `root`, or inside a portaled layer that was opened from within `root`. */
+export function within(root: Node | undefined | null, n: Node): boolean {
+  for (let cur: Node | null = n, hops = 0; cur && hops < 50; hops++) {
+    if (root?.contains(cur)) return true;
+    let layer: Node | null = cur;
+    while (layer && !origins.has(layer)) layer = layer.parentNode;
+    cur = layer ? (origins.get(layer) ?? null) : null;
+  }
+  return false;
 }

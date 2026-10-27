@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { portal, trapTab } from './focus';
+  import { portal, trapTab, within } from './focus';
 
   let {
     label,
@@ -56,7 +56,7 @@
     queueMicrotask(() => box?.querySelector<HTMLElement>('input,select,button,a[href]')?.focus());
     const away = (e: PointerEvent) => {
       const n = e.target as Node;
-      if (!box?.contains(n) && !btn?.contains(n)) hide(false);
+      if (!within(box, n) && !within(btn, n)) hide(false);
     };
     addEventListener('pointerdown', away, true);
     return () => removeEventListener('pointerdown', away, true);
