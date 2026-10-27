@@ -228,3 +228,21 @@ test.describe.serial('exit scenario: an editor confined to the careers site', ()
     expect((await manage('GET', `/items/${jobs.id}`)).id).toBe(jobs.id);
   });
 });
+
+test('create screens cancel back to their list, asking first when something was typed', async ({ page }) => {
+  await signIn(page, adminLogin, adminPassword);
+  await page.goto('/admin/collections/article/new?locale=en');
+  const cancel = page.getByRole('button', { name: 'Cancel' });
+  await page.getByLabel('Title').fill(`Never saved ${tag()}`);
+  page.once('dialog', (d) => void d.dismiss());
+  await cancel.click();
+  await expect(page).toHaveURL(/\/collections\/article\/new/);
+  page.once('dialog', (d) => void d.accept());
+  await cancel.click();
+  await expect(page).toHaveURL(/\/collections\/article(\?|$)/);
+
+  await page.goto('/admin/settings/roles/new');
+  await expect(page.getByRole('heading', { name: 'New role' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page).toHaveURL(/\/settings\/roles$/);
+});

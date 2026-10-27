@@ -8,6 +8,8 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Added
 
+- Admin: a Cancel button on the full-page create screens (new content item, new role) that returns to the list,
+  asking first when something was typed.
 - Admin: a user's page lists the roles they get through their groups (read-only, with the group and any
   limitations) under their direct roles, so a user whose rights come from a group no longer shows "No roles
   assigned".

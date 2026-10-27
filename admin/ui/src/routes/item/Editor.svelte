@@ -1145,6 +1145,9 @@
   {:else}
     <Button icon="eye" aria-pressed={previewOpen} title={t('preview.toggleTitle')} onclick={togglePreview}>{t('collections.preview.button')}</Button>
   {/if}
+  {#if mode === 'new' && !embedded}
+    <Button disabled={form.pending} onclick={() => void router.navigate(`/collections/${typeName}`)}>{t('common.cancel')}</Button>
+  {/if}
   <Button
     variant={isNew ? 'primary' : 'secondary'}
     icon={saveLabel === t('editor.saved') ? 'check' : undefined}
