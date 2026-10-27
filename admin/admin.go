@@ -62,6 +62,7 @@ type Options struct {
 	Pages          bool   // the pages module is on
 	Collab         bool   // co-editing is on (collab.enabled)
 	NoShareLinks   bool   // delivery.share_links is off: the admin hides Share
+	DefaultLocale  string // content.default_locale: the language screens start in
 	// Media is set when the media service is on: the upload limit and where files are served.
 	Media *Media
 	// DevURL, when set, proxies everything except config.json to a dev server (Vite) instead of serving dist.
@@ -146,10 +147,11 @@ func Handler(prefix string, dist fs.FS, o Options) http.Handler {
 		Pages          bool        `json:"pages"`
 		Collab         bool        `json:"collab"`
 		DeliveryPrefix string      `json:"deliveryPrefix"`
+		DefaultLocale  string      `json:"defaultLocale,omitempty"`
 		ShareLinks     *bool       `json:"shareLinks,omitempty"`
 		Media          *Media      `json:"media,omitempty"`
 		Extensions     *Extensions `json:"extensions"`
-	}{o.APIPrefix, prefix, o.Pages, o.Collab, o.DeliveryPrefix, shareLinks, o.Media, o.Extensions})
+	}{o.APIPrefix, prefix, o.Pages, o.Collab, o.DeliveryPrefix, o.DefaultLocale, shareLinks, o.Media, o.Extensions})
 	h.proxy = devProxy(o.DevURL)
 	h.xdev = devProxy(o.ElementsDevURL)
 	if b, err := fs.ReadFile(dist, "index.html"); err == nil {

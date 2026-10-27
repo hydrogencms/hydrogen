@@ -5,6 +5,7 @@
   import { api, ApiError } from '../../lib/api/client';
   import { session } from '../../lib/auth/session.svelte';
   import { channels } from '../../lib/channels.svelte';
+  import { knownLocales } from '../../lib/fields/locales';
   import { t } from '../../lib/i18n';
   import { router } from '../../lib/router.svelte';
   import { types } from '../../lib/types.svelte';
@@ -70,13 +71,26 @@
       return [];
     }
   }
+  function readStr(k: string): string {
+    try {
+      return localStorage.getItem(k) ?? '';
+    } catch {
+      return '';
+    }
+  }
+  $effect(() => {
+    if (!ready || !locale) return;
+    try {
+      localStorage.setItem(key('locale'), locale);
+    } catch {
+      /* storage unavailable */
+    }
+  });
   $effect(() => {
     localStorage.setItem(key('expanded'), JSON.stringify([...expanded].filter((i) => !i.includes(':'))));
   });
 
-  const languages = $derived(
-    channels.active?.languages ?? [...new Set(channels.items.flatMap((c) => c.languages))],
-  );
+  const languages = $derived(knownLocales());
   $effect(() => {
     if (ready && languages.length && !languages.includes(locale)) {
       locale = languages[0];
@@ -89,7 +103,8 @@
     try {
       await Promise.all([types.load(), channels.load()]);
       sites = (await api.get('/pages/sites')).items;
-      locale = languages[0] ?? '';
+      const saved = readStr(key('locale'));
+      locale = languages.includes(saved) ? saved : (languages[0] ?? '');
       await start();
     } catch (e) {
       error = (e as Error).message;

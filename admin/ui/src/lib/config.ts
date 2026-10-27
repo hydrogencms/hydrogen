@@ -3,6 +3,8 @@ export interface AdminConfig {
   prefix: string;
   pages: boolean;
   deliveryPrefix: string;
+  /** `content.default_locale`: the language screens start in when nothing else says. */
+  defaultLocale?: string;
   /** `delivery.share_links`: false hides the Share button (absent = on). */
   shareLinks?: boolean;
   /** Raw `extensions` manifest; parsed by lib/extensions.svelte.ts. */

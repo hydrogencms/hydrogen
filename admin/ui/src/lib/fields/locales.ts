@@ -1,4 +1,5 @@
 import { channels } from '../channels.svelte';
+import { config } from '../config';
 
 export type LocaleState = 'published' | 'draft' | 'fallback' | 'missing';
 
@@ -13,13 +14,15 @@ export function localeState(
   return 'missing';
 }
 
-/** The languages the admin offers: the active channel's, else every channel's (first appearance order). */
+/** The languages the admin offers: the active channel's, else every channel's (the default locale first, then
+ * first appearance order). */
 export function knownLocales(): string[] {
   const active = channels.languages;
   if (active) return active;
+  const def = config().defaultLocale;
   const seen: string[] = [];
   for (const c of channels.items) for (const l of c.languages) if (!seen.includes(l)) seen.push(l);
-  return seen;
+  return def && seen.includes(def) ? [def, ...seen.filter((l) => l !== def)] : seen;
 }
 
 /** Locales shown for one item: the offered ones plus any the item already has. */
