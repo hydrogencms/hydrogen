@@ -328,6 +328,14 @@ func TestValidateRole(t *testing.T) {
 	}
 }
 
+func TestValidateRoleStarCannotBeLimited(t *testing.T) {
+	e := newEnv(t)
+	got := fieldsOf(t, e.cat.ValidateRole(context.Background(), []access.RolePolicy{pol("*", "locale", vs("en"))}))
+	if !strings.Contains(got["policies[0].limitations"], "cannot be limited") || len(got) != 1 {
+		t.Errorf("%v", got)
+	}
+}
+
 func TestValidateAssignment(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -344,8 +352,12 @@ func TestValidateAssignment(t *testing.T) {
 		got["limitations.nope"] == "" || got["limitations.owner"] == "" {
 		t.Errorf("%v", got)
 	}
-	if err := e.cat.ValidateAssignment(ctx, []access.RolePolicy{pol("*")}, map[string][]string{"locale": vs("en")}); err != nil {
-		t.Errorf("star role: %v", err)
+	got = fieldsOf(t, e.cat.ValidateAssignment(ctx, []access.RolePolicy{pol("*")}, map[string][]string{"locale": vs("en")}))
+	if got["limitations"] == "" {
+		t.Errorf("star role must reject assignment limitations: %v", got)
+	}
+	if err := e.cat.ValidateAssignment(ctx, []access.RolePolicy{pol("*")}, nil); err != nil {
+		t.Errorf("star role, no limitations: %v", err)
 	}
 }
 
@@ -469,7 +481,7 @@ func TestStarGrant(t *testing.T) {
 	if scoped, _, _ := e.chk.ListScope(e.ctx(), access.PolicyContentRead, "job"); scoped {
 		t.Error("star grant restricted")
 	}
-	// A limitation on an assignment of "*" narrows every policy: no type means no match.
+	// Legacy data: new writes are rejected, but a stored limitation on an assignment of "*" still narrows every policy: no type means no match.
 	e2 := newEnv(t)
 	e2.grant("administrator", []access.RolePolicy{pol("*")}, map[string][]string{"channel": vs("careers_en")})
 	if err := e2.chk.Can(e2.ctx(), access.PolicyContentEdit, access.Target{Type: "job", Locales: vs("en")}); err != nil {

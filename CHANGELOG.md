@@ -80,6 +80,9 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Changed
 
+- Access: the everything policy (`*`) cannot carry limitations. Roles and assignments that would limit it are
+  refused (a role that gains `*` while its assignments carry limitations too); the admin no longer offers them.
+  Already stored limitations keep restricting until removed, and a role holding them must drop them to be saved.
 - Site module assets are listed at start and hashed on first use instead of being read and hashed in full when the
   site loads, and are served from the file system instead of memory. With 1,700 files (39 MB) loading takes about
   1.5 ms instead of 44 ms and allocates 0.9 MB instead of 43 MB. Fingerprints of files other than style sheets that
