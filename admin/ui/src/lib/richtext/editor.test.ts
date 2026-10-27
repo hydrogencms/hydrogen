@@ -169,9 +169,10 @@ describe('custom nodes and the core formatting controls', () => {
     edit.click();
     flushSync();
     const dialog = document.querySelector<HTMLElement>('[role=dialog]')!;
-    const select = dialog.querySelector<HTMLSelectElement>('select')!;
-    select.value = 'warning';
-    select.dispatchEvent(new Event('change', { bubbles: true }));
+    dialog.querySelector<HTMLButtonElement>('button[role=combobox]')!.click();
+    flushSync();
+    [...document.querySelectorAll<HTMLElement>('[role=option]')].find((o) => o.textContent?.trim() === 'warning')!.click();
+    flushSync();
     dialog.querySelector<HTMLButtonElement>('button[type=submit]')!.click();
     await vi.waitFor(() => expect(JSON.stringify(onchange.mock.lastCall![0])).toContain('"variant":"warning"'));
   });

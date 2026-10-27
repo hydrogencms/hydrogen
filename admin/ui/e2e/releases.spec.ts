@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { adminLogin, adminPassword, manage, signIn, tag, watchErrors } from './helpers';
+import { pick, adminLogin, adminPassword, manage, signIn, tag, watchErrors } from './helpers';
 import { axeViolations, deliveredStatus, draftArticle, expectDelivered, publishedArticle } from './publishing-helpers';
 
 // H8a releases and scheduling. The server's `releases` job runs every minute (the runner polls each second) and
@@ -68,7 +68,7 @@ test.describe('releases', () => {
     await page.getByRole('menuitem', { name: 'Add to release…' }).click();
     const dlg = page.getByRole('dialog', { name: 'Add to release' });
     await expect(dlg).toBeVisible();
-    await dlg.getByLabel('Release', { exact: true }).selectOption({ label: rel.name });
+    await pick(page, dlg, 'Release', rel.name, true);
     await dlg.getByRole('button', { name: 'Add', exact: true }).click();
     await expect(dlg).toHaveCount(0);
     await expect.poll(async () => ((await manage('GET', `/items/${a.id}/releases`)).items ?? []).length).toBe(1);

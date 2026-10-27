@@ -2,10 +2,7 @@
 
 .h-icon {
   flex: none;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  fill: currentColor;
 }
 
 @keyframes h-spin {
@@ -240,7 +237,37 @@
 }
 .h-select {
   appearance: none;
+  display: block;
   padding-inline-end: 2.25rem;
+  text-align: start;
+  cursor: pointer;
+}
+.h-select:disabled {
+  cursor: default;
+}
+.h-select__text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.h-select--empty {
+  color: var(--h-text-muted);
+}
+.h-menu.h-select__list {
+  z-index: calc(var(--h-z-dialog) + 1);
+  max-width: min(32rem, calc(100vw - 16px));
+  max-height: min(16rem, 60vh);
+}
+.h-menu__item.h-select__opt {
+  justify-content: space-between;
+  cursor: pointer;
+}
+.h-menu__item.h-select__opt--active {
+  background: var(--h-surface-2);
+}
+.h-menu__item.h-select__opt[aria-selected='true'] {
+  font-weight: 600;
 }
 .h-input--icon {
   padding-inline-start: 2.25rem;

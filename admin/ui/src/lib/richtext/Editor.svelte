@@ -503,13 +503,13 @@
 </script>
 
 {#snippet ico(name: string)}
-  <svg class="h-icon" width="16" height="16" viewBox="0 0 24 24" stroke-width="1.75" aria-hidden="true" focusable="false"><use href="#{uid}-{name}" /></svg>
+  <svg class="h-icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#{uid}-{name}" /></svg>
 {/snippet}
 
 <svg class="h-sprite" width="0" height="0" aria-hidden="true" focusable="false">
   <defs>
     {#each Object.entries(editorIcons) as [name, d] (name)}
-      <symbol id="{uid}-{name}" viewBox="0 0 24 24"><path {d} /></symbol>
+      <symbol id="{uid}-{name}" viewBox="0 -960 960 960"><path {d} /></symbol>
     {/each}
   </defs>
 </svg>
