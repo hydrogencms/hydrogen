@@ -239,6 +239,25 @@ func opPaths() obj {
 			"properties": obj{"items": openapi.ArrayOf(routeS())}}), "200", "400")}
 }
 
+func opUnplaced() obj {
+	return obj{"operationId": "listUnplacedPages", "tags": []any{"pages"},
+		"description": "Page-type items that are not trashed and are in no site's tree, newest update first. Only items the caller can read are listed; with item, the list holds that item or nothing.",
+		"parameters": []any{
+			queryParam("locale", "Language of the names (default: each item's main locale).", strS(""), false),
+			queryParam("item", "Only this item.", uuidS(""), false),
+			queryParam("limit", "Page size (default 50, at most 200).", obj{"type": "integer", "minimum": 1, "maximum": 200}, false),
+			queryParam("offset", "Items to skip.", obj{"type": "integer", "minimum": 0}, false),
+		},
+		"responses": respond(jsonResp("A page of unplaced items.", obj{"type": "object", "required": []any{"items", "total"},
+			"properties": obj{
+				"items": openapi.ArrayOf(obj{"type": "object", "required": []any{"id", "type", "name", "status", "updatedAt"},
+					"properties": obj{"id": uuidS(""), "type": strS(""), "name": strS(""),
+						"status":    obj{"type": "string", "enum": []any{"draft", "published", "changed"}},
+						"updatedAt": obj{"type": "string", "format": "date-time"}}}),
+				"total": obj{"type": "integer", "description": "Items the caller can read."},
+			}}), "200", "400")}
+}
+
 func locatedS() obj {
 	return obj{"type": "object", "required": []any{"kind"}, "properties": obj{
 		"channel": strS("The web channel that matched the URL."),

@@ -24,6 +24,7 @@ type pagesAPI interface {
 	TreeRoot(ctx context.Context, site, locale string) (*TreeNode, error)
 	Resolve(ctx context.Context, site, locale, path string) (*Resolution, error)
 	Paths(ctx context.Context, item ids.UUID) ([]Route, error)
+	Unplaced(ctx context.Context, locale string, item *ids.UUID, limit, offset int) (*UnplacedList, error)
 	Locate(ctx context.Context, rawURL string, h http.Header) (*Located, error)
 }
 
@@ -55,6 +56,7 @@ func apiRoutes(get func() pagesAPI) []manage.Route {
 		{Method: "DELETE", Path: "/pages/nodes/{id}", Summary: "Delete a mount or link node", Policy: policyEdit, Handler: h.remove, OpenAPI: opDelete()},
 		{Method: "GET", Path: "/pages/sites/{site}/resolve", Summary: "Resolve a path", Policy: policyRead, Handler: h.resolve, OpenAPI: opResolve()},
 		{Method: "GET", Path: "/pages/items/{id}/paths", Summary: "Paths of an item", Policy: policyRead, Handler: h.paths, OpenAPI: opPaths()},
+		{Method: "GET", Path: "/pages/unplaced", Summary: "Page items that are in no tree", Policy: policyRead, Handler: h.unplaced, OpenAPI: opUnplaced()},
 		{Method: "GET", Path: "/pages/locate", Summary: "Locate a URL through the channels", Policy: policyRead, Handler: h.locate, OpenAPI: opLocate()},
 	}
 }
@@ -406,4 +408,39 @@ func (h *handlers) paths(w http.ResponseWriter, r *http.Request) {
 		rts = []Route{}
 	}
 	manage.WriteJSON(w, http.StatusOK, map[string]any{"items": rts})
+}
+
+const (
+	defaultUnplaced = 50
+	maxUnplaced     = 200
+)
+
+func (h *handlers) unplaced(w http.ResponseWriter, r *http.Request) {
+	a := h.api(w, r)
+	if a == nil {
+		return
+	}
+	q := r.URL.Query()
+	item, err := optUUID("item", q.Get("item"))
+	if err != nil {
+		manage.Fail(w, r, err)
+		return
+	}
+	limit, offset := defaultUnplaced, 0
+	for name, dst := range map[string]*int{"limit": &limit, "offset": &offset} {
+		if s := q.Get(name); s != "" {
+			n, perr := strconv.Atoi(s)
+			if perr != nil || n < 0 || (name == "limit" && (n < 1 || n > maxUnplaced)) {
+				manage.Fail(w, r, manage.BadRequest("%s must be an integer (limit 1 to %d)", name, maxUnplaced))
+				return
+			}
+			*dst = n
+		}
+	}
+	list, err := a.Unplaced(r.Context(), q.Get("locale"), item, limit, offset)
+	if err != nil {
+		manage.Fail(w, r, err)
+		return
+	}
+	manage.WriteJSON(w, http.StatusOK, list)
 }

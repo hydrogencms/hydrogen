@@ -125,6 +125,7 @@ of a collection, or a `link`). Reads need `pages.read`, writes `pages.edit`; a m
 | `DELETE /pages/nodes/{id}` | `pages.edit` | | Delete a mount or link node (`204`). |
 | `GET /pages/sites/{site}/resolve` | `pages.read` | `path` (required), `locale` | What a path resolves to: a page, a redirect or nothing. |
 | `GET /pages/items/{id}/paths` | `pages.read` | | Every route of an item, with its state. |
+| `GET /pages/unplaced` | `pages.read` | `locale`, `item`, `limit` (50, at most 200), `offset` | Page-type items that are in no site tree (not trashed), newest first, limited to items the caller can read. |
 | `GET /pages/locate` | `pages.read` | `url` (required), `header.<Name>` to simulate request headers | Find the site, locale and page a URL belongs to through the web channels. |
 
 A mount's `redirectField` names a top-level `string` or `url` field of its collection. An item whose value there is an

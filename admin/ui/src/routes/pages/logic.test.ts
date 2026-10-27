@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addableTypes, canHold, emptyFilter, filterText, matchesFilter, mountQuery, parseFilter, placement, urlChanges,
+  addableTypes, canHold, defaultParent, emptyFilter, filterText, matchesFilter, mountQuery, parseFilter, placeTarget, placement, urlChanges,
   visibleIds, type PNode,
 } from './logic';
 
@@ -121,5 +121,24 @@ describe('mount list query', () => {
     expect(f).toEqual({ category: 'news', tags: ['a', 'b'] });
     expect(parseFilter(filterText(f))).toEqual(f);
     expect(parseFilter('')).toBeUndefined();
+  });
+});
+
+describe('placing an existing page', () => {
+  const optionsOf2 = (t: string) => (t === 'home' ? { children: ['section'] } : undefined);
+  const root = { id: 'r', kind: 'page' as const, type: 'home' };
+
+  it('offers the root only when it may hold the type', () => {
+    expect(defaultParent(root, 'section', optionsOf2)).toBe('r');
+    expect(defaultParent(root, 'landing', optionsOf2)).toBe('');
+    expect(defaultParent({ ...root, restricted: true }, 'section', optionsOf2)).toBe('');
+    expect(defaultParent(undefined, 'section', optionsOf2)).toBe('');
+  });
+
+  it('needs a parent, unless the site is empty', () => {
+    expect(placeTarget('main', 'p', false)).toEqual({ site: 'main', parent: 'p' });
+    expect(placeTarget('main', '', true)).toEqual({ site: 'main' });
+    expect(placeTarget('main', '', false)).toBeNull();
+    expect(placeTarget('', 'p', false)).toBeNull();
   });
 });

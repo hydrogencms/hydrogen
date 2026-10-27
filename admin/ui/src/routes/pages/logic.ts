@@ -232,3 +232,31 @@ export function filterText(f: Record<string, unknown> | undefined): string {
 
 /** Languages of the page nodes' completeness dots: those the item has content in. */
 export const hasLocale = (locales: string[] | undefined, l: string) => !!locales?.includes(l);
+
+/** The node a new page is offered under first: the site's root page when it may hold the type, else none. */
+export function defaultParent(
+  root: Pick<PNode, 'id' | 'kind' | 'restricted' | 'type'> | undefined,
+  type: string,
+  optionsOf: (type: string) => Record<string, unknown> | undefined,
+): string {
+  return root && canHold(root, { kind: 'page', type }, optionsOf) ? root.id : '';
+}
+
+/** Where an existing page item goes: a parent node, or nothing when the site is empty and the item becomes its
+ *  root. null = not placeable yet (a parent is still to be chosen). */
+export function placeTarget(site: string, parent: string, siteEmpty: boolean): { site: string; parent?: string } | null {
+  if (!site) return null;
+  if (parent) return { site, parent };
+  return siteEmpty ? { site } : null;
+}
+
+/** An item of GET /pages/unplaced. */
+export interface UnplacedItem {
+  id: string;
+  type: string;
+  name: string;
+  status: 'draft' | 'published' | 'changed';
+  updatedAt: string;
+}
+
+export const UNPLACED_PAGE = 20;

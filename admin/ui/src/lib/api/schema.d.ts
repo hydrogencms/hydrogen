@@ -867,6 +867,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pages/unplaced": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Page items that are in no tree */
+        get: operations["listUnplacedPages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pages/locate": {
         parameters: {
             query?: never;
@@ -4833,6 +4850,66 @@ export interface operations {
                             status?: number;
                             target?: string;
                         }[];
+                    };
+                };
+            };
+            /** @description Bad request. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Missing or invalid token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listUnplacedPages: {
+        parameters: {
+            query?: {
+                /** @description Language of the names (default: each item's main locale). */
+                locale?: string;
+                /** @description Only this item. */
+                item?: string;
+                /** @description Page size (default 50, at most 200). */
+                limit?: number;
+                /** @description Items to skip. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of unplaced items. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            status: "draft" | "published" | "changed";
+                            type: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        }[];
+                        /** @description Items the caller can read. */
+                        total: number;
                     };
                 };
             };

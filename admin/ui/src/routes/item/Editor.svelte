@@ -17,7 +17,7 @@
   import { provideFields, type OverlayCtx } from '../../lib/fields/context';
   import '../../lib/messages/overlays';
   import Fields from '../../lib/fields/Fields.svelte';
-  import { setContext, untrack, type Component } from 'svelte';
+  import { setContext, untrack, type Component, type Snippet } from 'svelte';
   import '../../lib/messages/preview';
   import { copyTranslatable, fieldsPatch, isHomePage, hydrate, initialValues, cleanDoc, jsonEqual, overlayState, overrideValue, resolvedDoc, unroutedErrors, viewValues, type Doc } from '../../lib/fields/logic';
   import { itemLocales, knownLocales, localeState, overlayNote } from '../../lib/fields/locales';
@@ -66,7 +66,18 @@
     id = '',
     typeName = '',
     embedded = false,
-  }: { mode: 'item' | 'new' | 'singleton'; id?: string; typeName?: string; embedded?: boolean } = $props();
+    aside,
+    oncreated,
+  }: {
+    mode: 'item' | 'new' | 'singleton';
+    id?: string;
+    typeName?: string;
+    embedded?: boolean;
+    /** Rendered above the form (the loaded item, null while new). */
+    aside?: Snippet<[ItemData | null]>;
+    /** Awaited after a new item is saved, before the editor moves to it. Must not throw. */
+    oncreated?: (item: ItemData) => Promise<void>;
+  } = $props();
 
   interface Values {
     fields: Doc;
@@ -529,6 +540,7 @@
       } else apply(result);
       await ensureTag();
       toast.success(t(created ? 'collections.created' : 'collections.saved'));
+      if (created) await oncreated?.(result);
       if (created) void router.navigate(`/items/${result.id}${result.locale ? `?locale=${encodeURIComponent(result.locale)}` : ''}`, { replace: true, force: true });
     }
     return true;
@@ -984,6 +996,7 @@
 
     <div class="h-item__grid" class:h-item__grid--preview={previewOpen} style:--h-preview-w="{paneWidth}px">
       <div class="h-item__main">
+        {@render aside?.(data)}
         {#if data?.inherits}
           <div class="h-item__translate"><span class="h-muted">{t('overlay.banner', { locale, parent: data.inherits })}</span></div>
         {:else if data && locale !== data.mainLocale && hasTranslatable && canEdit}

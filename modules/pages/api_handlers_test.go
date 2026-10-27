@@ -77,6 +77,10 @@ func (f *fakeAPI) Resolve(_ context.Context, site, locale, path string) (*Resolu
 	f.rec(fmt.Sprintf("resolve %s %s %s", site, locale, path))
 	return f.res, f.err
 }
+func (f *fakeAPI) Unplaced(context.Context, string, *ids.UUID, int, int) (*UnplacedList, error) {
+	f.rec("unplaced")
+	return &UnplacedList{Items: []UnplacedItem{}}, f.err
+}
 func (f *fakeAPI) Paths(_ context.Context, item ids.UUID) ([]Route, error) {
 	f.rec("paths " + item.String())
 	return nil, f.err
@@ -385,7 +389,7 @@ func TestAPIOpenAPI(t *testing.T) {
 			}
 		}
 	}
-	if len(seen) != 9 {
+	if len(seen) != 10 {
 		t.Errorf("%d operations", len(seen))
 	}
 }

@@ -33,6 +33,7 @@
   } from './logic';
   import { copyText, errorMessage } from '../../lib/errors';
   import MountList from './MountList.svelte';
+  import UnplacedList from './UnplacedList.svelte';
   import MoveDialog from './MoveDialog.svelte';
   import { siteName } from '../../lib/format';
   import { MOUNT_PAGE, SiteTree, type RowData } from './siteTree.svelte';
@@ -494,6 +495,19 @@
             {canDrop}
             onmoverequest={canEdit ? moveRequest : undefined}
             {row}
+          />
+        {/if}
+        {#if store && ready && !filtering}
+          <UnplacedList
+            {site}
+            {sites}
+            {locale}
+            {canEdit}
+            bind:selected
+            onplaced={(r) => {
+              toast.success(t('pages.placed'));
+              if (r.site === site) void changed([r.parent], r.node);
+            }}
           />
         {/if}
       </div>

@@ -2,6 +2,19 @@ import { register } from '../i18n';
 
 // Keys for the pages screens: prefix every key with "pages."
 export const pages: Record<string, string> = {
+  'pages.unplacedTitle': 'Unplaced pages ({n})',
+  'pages.unplacedHint': 'Pages that are in no site tree yet.',
+  'pages.placeAction': 'Place…',
+  'pages.place': 'Place',
+  'pages.placeUnder': 'Place under',
+  'pages.placeTitle': 'Place “{name}” in the site tree',
+  'pages.placed': 'The page is in the tree.',
+  'pages.becomesRoot': 'This site has no pages yet: the page becomes its root.',
+  'pages.pickParent': 'Choose the page it goes under.',
+  'pages.notInTree': 'Not in the site tree',
+  'pages.placeCardTitle': 'Site tree',
+  'pages.placeNow': 'Add it to the site tree',
+  'pages.placeLater': 'The page stays under Unplaced pages until you place it.',
   'pages.discardDraft': 'Discard the draft',
   'pages.title': 'Pages: {site}',
   'pages.site': 'Site',
