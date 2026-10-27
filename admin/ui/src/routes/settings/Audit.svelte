@@ -16,8 +16,12 @@
   import Table from '../../lib/ui/Table.svelte';
   import Time from '../../lib/ui/Time.svelte';
   import {
-    ACTION_GROUPS, SINCE_PRESETS, assignmentRole, auditQuery, filtersFromQuery, humanizeAction, itemIdOf, releaseOf, restoredVersion, reviewBypassed, shortId, subjectKind, type AuditFilters,
+    ACTION_GROUPS, SINCE_PRESETS, assignmentRole, auditQuery, describeEntry, filtersFromQuery, humanizeAction, itemIdOf, itemRefOf, referencedIds, releaseOf, restoredVersion, reviewBypassed, shortId, subjectKind, type AuditFilters,
   } from './audit';
+  import Dialog from '../../lib/ui/Dialog.svelte';
+  import { formatDateTime } from '../../lib/format';
+  import { channels } from '../../lib/channels.svelte';
+  import { config } from '../../lib/config';
   import SettingsHead from './SettingsHead.svelte';
   import { reportError } from '../../lib/errors';
 
@@ -87,18 +91,10 @@
     for (const e of batch) {
       if (e.actorKind === 'user') kinds.add('user');
       if (e.actorKind === 'token' || e.actorKind === 'agent') kinds.add('token');
-      const k = subjectKind(e.action);
-      const d = e.data as { principalKind?: string; user?: string } | undefined;
-      if (k === 'assignment') {
-        if (d?.principalKind && d.principalKind in directory) kinds.add(d.principalKind);
-        if (assignmentRole(e).id) kinds.add('role');
+      for (const [kind, id] of referencedIds(e)) {
+        if (kind === 'item') ids.add(id);
+        else if (kind in directory) kinds.add(kind);
       }
-      if (e.action.startsWith('group.member_') && d?.user) kinds.add('user');
-      const itemId = itemIdOf(e);
-      if (itemId) ids.add(itemId);
-      if (!e.subject) continue;
-      if (k in directory) kinds.add(k);
-      else if (k === 'auth') kinds.add('user');
     }
     const wait: Promise<unknown>[] = [...kinds].map((k) => dir(k, directory[k]!));
     for (const id of [...ids].filter((i) => !(`item:${i}` in names)).slice(0, 40)) {
@@ -166,10 +162,54 @@
     if (k === 'page' || !e.subject) return undefined;
     const text = names[`${k === 'auth' ? 'user' : k}:${e.subject}`] || shortId(e.subject);
     const to = { user: `/settings/users/${e.subject}`, group: `/settings/groups/${e.subject}`, role: `/settings/roles/${e.subject}`, token: '/settings/tokens' }[k];
-    const member = e.action.startsWith('group.member_') && d?.user ? names[`user:${d.user}`] : undefined;
+    const member = e.action.startsWith('group.member_') && d?.user ? names[`user:${d.user}`] || (e.data as { login?: string }).login : undefined;
     return { text, to, tail: member ? { text: member, to: `/settings/users/${d!.user}` } : undefined };
   }
   const json = (v: unknown) => JSON.stringify(v ?? null, null, 2);
+
+  // The details dialog: the entry is described from the names already loaded, plus the few ids only it mentions.
+  let sel = $state<Entry | null>(null);
+  let detailsOpen = $state(false);
+  const lookup = (kind: string, id: string) => names[`${kind}:${id}`] || undefined;
+  const desc = $derived(sel ? describeEntry(sel, lookup, t) : null);
+  function show(e: Entry) {
+    sel = e;
+    detailsOpen = true;
+    void resolve([e]);
+  }
+
+  // For content entries: the editor in the entry's language, the version it published, and the item's public
+  // addresses today (looked up when the dialog opens; routes may have moved since the entry was written).
+  const ref = $derived(sel ? itemRefOf(sel) : undefined);
+  const refLocale = $derived(ref?.locales[0] ?? '');
+  // The version is shown with its compare link above, so it is not repeated among the changes.
+  const changes = $derived((desc?.changes ?? []).filter((c) => ref?.version === undefined || c.label !== t('settings.audit.f.version')));
+  const editorHref = (id: string) => `/items/${id}${refLocale ? `?locale=${encodeURIComponent(refLocale)}` : ''}`;
+  const compareHref = (id: string, v: number) => `/items/${id}/compare?a=${v - 1}&b=${v}${refLocale ? `&locale=${encodeURIComponent(refLocale)}` : ''}`;
+  type PathRow = { locale: string; path: string; site: string; state: string };
+  let addresses = $state<{ locale: string; url: string }[] | null>(null);
+  $effect(() => {
+    const id = ref?.id;
+    const want = ref?.locales ?? [];
+    addresses = null;
+    if (!id || !config().pages || !session.can('pages.read')) return;
+    const ctl = new AbortController();
+    api
+      .get('/pages/items/{id}/paths', { params: { id }, signal: ctl.signal })
+      .then((r) => {
+        const out: { locale: string; url: string }[] = [];
+        for (const p of r.items as PathRow[]) {
+          if (p.state !== 'current' || (want.length > 0 && !want.includes(p.locale))) continue;
+          const base = channels.items.find((c) => (c.options as { site?: string }).site === p.site && c.languages.includes(p.locale))?.frontend;
+          if (base) out.push({ locale: p.locale, url: `${base.replace(/\/$/, '')}${p.path}` });
+        }
+        addresses = out;
+      })
+      .catch(() => {
+        if (!ctl.signal.aborted) addresses = [];
+      });
+    return () => ctl.abort();
+  });
 
   // Filters. Each popover writes the URL straight away; the free-text ones apply on Enter or the button.
   const set = (patch: Record<string, string | undefined>) => router.setQuery(patch);
@@ -304,13 +344,70 @@
   </span>
 {/snippet}
 {#snippet dataCell(r: Entry)}
-  {#if r.data !== undefined && r.data !== null}
-    <details>
-      <summary class="h-aud__sum"><span class="h-aud__chev"><Icon name="chevron-right" size={14} /></span>{t('settings.audit.show')}</summary>
-      <pre class="h-audit__json">{json(r.data)}</pre>
-    </details>
-  {/if}
+  <Button variant="ghost" size="sm" onclick={() => show(r)}>{t('settings.audit.details')}</Button>
 {/snippet}
+
+<Dialog bind:open={detailsOpen} title={t('settings.audit.detailsOf')} size="lg" onclose={() => (sel = null)}>
+  {#if sel && desc}
+    {@const a = actorOf(sel)}
+    {@const s = subjectOf(sel)}
+    <p class="h-aud__lead">{desc.text}</p>
+    <dl class="h-aud__dl">
+      <dt>{t('settings.audit.when')}</dt>
+      <dd>{formatDateTime(sel.at)}</dd>
+      <dt>{t('settings.audit.actor')}</dt>
+      <dd>{a.name}{#if a.sub}<span class="h-muted"> · {a.sub}</span>{/if}</dd>
+      <dt>{t('settings.audit.action')}</dt>
+      <dd>{verb(sel.action)} <code class="h-muted">{sel.action}</code></dd>
+      {#if s}
+        <dt>{t('settings.audit.subject')}</dt>
+        <dd>{#if s.to}<a use:link href={href(s.to)} onclick={() => (detailsOpen = false)}>{s.text}</a>{:else}<strong>{s.text}</strong>{/if}{#if s.tail}
+            {s.tail.word ?? '·'} {s.tail.text}{/if}</dd>
+      {/if}
+    </dl>
+    {#if ref}
+      <h3 class="h-aud__h">{t('settings.audit.content')}</h3>
+      <dl class="h-aud__dl">
+        <dt>{t('settings.audit.editor')}</dt>
+        <dd><a use:link href={href(editorHref(ref.id))} onclick={() => (detailsOpen = false)}>{t('settings.audit.openEditor')}</a></dd>
+        {#if ref.version !== undefined}
+          <dt>{t('settings.audit.versionLabel')}</dt>
+          <dd>
+            {ref.version}{#if ref.version > 1}{' · '}<a use:link href={href(compareHref(ref.id, ref.version))} onclick={() => (detailsOpen = false)}>{t('settings.audit.comparePrev', { n: ref.version - 1 })}</a>{/if}
+          </dd>
+        {/if}
+        {#if addresses?.length}
+          <dt>{t('settings.audit.onSite')}</dt>
+          <dd>
+            <ul class="h-aud__urls">
+              {#each addresses as a (a.locale + a.url)}
+                <li><a href={a.url} target="_blank" rel="noopener noreferrer"><code>{a.url}</code><Icon name="external-link" size={14} /></a> <span class="h-muted">{a.locale}</span></li>
+              {/each}
+            </ul>
+            <span class="h-muted h-aud__sub">{t('settings.audit.onSiteHint')}</span>
+          </dd>
+        {/if}
+      </dl>
+    {/if}
+    <h3 class="h-aud__h">{t('settings.audit.changes')}</h3>
+    {#if changes.length}
+      <dl class="h-aud__dl">
+        {#each changes as c, i (i)}
+          <dt>{c.label}</dt>
+          <dd>{c.value}</dd>
+        {/each}
+      </dl>
+    {:else}
+      <p class="h-muted">{t('settings.audit.noChanges')}</p>
+    {/if}
+    {#if sel.data !== undefined && sel.data !== null}
+      <details class="h-aud__tech">
+        <summary class="h-aud__sum"><span class="h-aud__chev"><Icon name="chevron-right" size={14} /></span>{t('settings.audit.technical')}</summary>
+        <pre class="h-audit__json">{json(sel.data)}</pre>
+      </details>
+    {/if}
+  {/if}
+</Dialog>
 
 <style>
   .h-aud__sum {
@@ -409,8 +506,46 @@
   .h-aud__sub {
     font-size: var(--h-text-xs);
   }
+  .h-aud__lead {
+    margin: 0 0 var(--h-space-4);
+    font-size: var(--h-text-lg, 1.05rem);
+    font-weight: 600;
+  }
+  .h-aud__h {
+    margin: var(--h-space-4) 0 var(--h-space-2);
+    font-size: var(--h-text-md);
+  }
+  .h-aud__dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--h-space-1) var(--h-space-4);
+    margin: 0;
+  }
+  .h-aud__dl dt {
+    color: var(--h-text-muted);
+  }
+  .h-aud__dl dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .h-aud__dl a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .h-aud__urls {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .h-aud__urls a {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--h-space-1);
+  }
+  .h-aud__tech {
+    margin-top: var(--h-space-4);
+  }
   .h-audit__json {
-    max-width: 36rem;
     max-height: 18rem;
     overflow: auto;
     margin: var(--h-space-2) 0 0;

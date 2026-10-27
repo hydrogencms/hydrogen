@@ -85,6 +85,12 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Changed
 
+- Admin audit log: Details opens a dialog instead of expanding the row (no more layout shift), with a sentence
+  saying what happened ("Added jane to the group Editors"), labelled changes with ids resolved to names, and the
+  raw JSON under "Technical details". Content entries link to the item in the editor (in the entry's language),
+  to a comparison with the previous version for publishes, and to the item's current public addresses. Membership
+  changes record the user's login and the group's name, and assignment removals the role's name, so entries stay
+  readable after those are deleted.
 - Access: the everything policy (`*`) cannot carry limitations. Roles and assignments that would limit it are
   refused (a role that gains `*` while its assignments carry limitations too); the admin no longer offers them.
   Already stored limitations keep restricting until removed, and a role holding them must drop them to be saved.

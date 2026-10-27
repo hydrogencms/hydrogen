@@ -434,6 +434,19 @@ func (a *Admin) GroupsOf(ctx context.Context, user ids.UUID) ([]ids.UUID, error)
 	return gs, err
 }
 
+// memberData is the audit data of a membership change: the ids plus the names at the time, so the log stays
+// readable after the user or group is deleted. Zero values (a lookup that failed) leave the names out.
+func memberData(user ids.UUID, g store.Group, u store.User) map[string]any {
+	d := map[string]any{"user": user.String()}
+	if u.Login != "" {
+		d["login"] = u.Login
+	}
+	if g.Name != "" {
+		d["group"] = g.Name
+	}
+	return d
+}
+
 func (a *Admin) AddMember(ctx context.Context, group, user ids.UUID) error {
 	if err := a.can(ctx, PolicyUserManage); err != nil {
 		return err
@@ -444,16 +457,18 @@ func (a *Admin) AddMember(ctx context.Context, group, user ids.UUID) error {
 	}
 	return a.mutate(ctx, "group.member_add", group.String(), func(tx store.Tx) (any, error) {
 		as := tx.Auth()
-		if _, err := as.GetGroup(ctx, group); err != nil {
+		g, err := as.GetGroup(ctx, group)
+		if err != nil {
 			return nil, err
 		}
-		if _, err := as.GetUser(ctx, user); err != nil {
+		u, err := as.GetUser(ctx, user)
+		if err != nil {
 			return nil, err
 		}
 		if err := h.requireGroup(ctx, as, group); err != nil {
 			return nil, err
 		}
-		return map[string]any{"user": user.String()}, as.AddMember(ctx, group, user)
+		return memberData(user, g, u), as.AddMember(ctx, group, user)
 	})
 }
 
@@ -470,9 +485,11 @@ func (a *Admin) RemoveMember(ctx context.Context, group, user ids.UUID) error {
 		if err := h.requireGroup(ctx, as, group); err != nil {
 			return nil, err
 		}
+		g, _ := as.GetGroup(ctx, group)
+		u, _ := as.GetUser(ctx, user)
 		err := keepAdmin(ctx, as, func() error {
 			return keepSelf(ctx, as, func() error { return as.RemoveMember(ctx, group, user) })
 		})
-		return map[string]any{"user": user.String()}, err
+		return memberData(user, g, u), err
 	})
 }

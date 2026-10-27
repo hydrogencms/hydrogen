@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -324,6 +325,23 @@ func TestAdminAuditOutboxNotify(t *testing.T) {
 			if len(e.audits(a)) == 0 {
 				t.Errorf("no %s audit", a)
 			}
+		}
+		// membership and assignment entries carry names, so the log reads after the targets are gone
+		for _, a := range []string{"group.member_add", "group.member_remove"} {
+			var d map[string]any
+			if err := json.Unmarshal(e.audits(a)[0].Data, &d); err != nil {
+				t.Fatal(err)
+			}
+			if d["user"] != u.ID.String() || d["login"] != u.Login || d["group"] != "g" {
+				t.Errorf("%s data = %v", a, d)
+			}
+		}
+		var ad map[string]any
+		if err := json.Unmarshal(e.audits("assignment.delete")[0].Data, &ad); err != nil {
+			t.Fatal(err)
+		}
+		if ad["role"] != "r1" || ad["roleId"] != r.ID.String() {
+			t.Errorf("assignment.delete data = %v", ad)
 		}
 		// failures leave nothing behind
 		n0 := len(e.audits("user.create"))
