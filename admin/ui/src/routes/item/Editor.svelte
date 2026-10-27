@@ -38,7 +38,6 @@
   import { relayApi } from '../../lib/preview/share';
   import { ShareList } from '../../lib/preview/shares.svelte';
   import type { PreviewChannel } from '../../lib/preview/PreviewPane.svelte';
-  import Select from '../../lib/ui/Select.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import Time from '../../lib/ui/Time.svelte';
   import { toast } from '../../lib/ui/toast.svelte';
@@ -800,9 +799,22 @@
         sub: parent ? t('overlay.inherits', { locale: parent }) : undefined,
         title: [parent ? t('overlay.inherits', { locale: parent }) : '', state].filter(Boolean).join(', ') || undefined,
         dot,
+        status: t(`editor.locale.${s}`),
         disabled: isNew && l !== locale,
       };
     }),
+  );
+
+  // More languages than this fit no pill row: one pill with the current language opens a menu.
+  const LOCALE_MENU_FROM = 4;
+  const localeMenu = $derived<MenuItem[]>(
+    localeOptions.map((o) => ({
+      label: o.sub ? `${o.label} (${o.sub})` : o.label,
+      hint: o.status,
+      checked: o.value === locale,
+      disabled: o.disabled,
+      onselect: () => void switchLocale(o.value),
+    })),
   );
 
   // The inspector sits beside the form when there is room (the window for a full page, the pane when embedded) and
@@ -1132,12 +1144,13 @@
 
 {#snippet actions()}
   <PresenceAvatars others={presence.others} />
-  {#if locales.length > 5}
-    <Select
-      aria-label={t('collections.languages')}
-      bind:value={() => locale, (l) => void switchLocale(l)}
-      options={localeOptions.map((o) => ({ value: o.value, label: o.sub ? `${o.label} (${o.sub})` : o.label, disabled: o.disabled }))}
-    />
+  {#if locales.length > LOCALE_MENU_FROM}
+    {@const cur = localeOptions.find((o) => o.value === locale)}
+    <Menu items={localeMenu} label={t('collections.languages')} triggerClass="h-pill">
+      {#snippet trigger()}
+        <span class="h-dot h-dot--{cur?.dot ?? 'hollow'}" aria-hidden="true"></span><span class="h-pill__text">{locale}</span><span class="h-sr">{t('collections.languages')}, {cur?.status}</span><Icon name="chevron-down" size={14} />
+      {/snippet}
+    </Menu>
   {:else if locales.length > 1}
     <Segmented label={t('collections.languages')} options={localeOptions} bind:value={() => locale, (l) => void switchLocale(l)} />
   {/if}
