@@ -16,8 +16,10 @@
   import Table from '../../lib/ui/Table.svelte';
   import Time from '../../lib/ui/Time.svelte';
   import {
-    ACTION_GROUPS, SINCE_PRESETS, assignmentRole, auditQuery, filtersFromQuery, humanizeAction, itemIdOf, releaseOf, restoredVersion, reviewBypassed, shortId, subjectKind, type AuditFilters,
+    ACTION_GROUPS, SINCE_PRESETS, assignmentRole, auditQuery, describeEntry, filtersFromQuery, humanizeAction, itemIdOf, referencedIds, releaseOf, restoredVersion, reviewBypassed, shortId, subjectKind, type AuditFilters,
   } from './audit';
+  import Dialog from '../../lib/ui/Dialog.svelte';
+  import { formatDateTime } from '../../lib/format';
   import SettingsHead from './SettingsHead.svelte';
   import { reportError } from '../../lib/errors';
 
@@ -87,18 +89,10 @@
     for (const e of batch) {
       if (e.actorKind === 'user') kinds.add('user');
       if (e.actorKind === 'token' || e.actorKind === 'agent') kinds.add('token');
-      const k = subjectKind(e.action);
-      const d = e.data as { principalKind?: string; user?: string } | undefined;
-      if (k === 'assignment') {
-        if (d?.principalKind && d.principalKind in directory) kinds.add(d.principalKind);
-        if (assignmentRole(e).id) kinds.add('role');
+      for (const [kind, id] of referencedIds(e)) {
+        if (kind === 'item') ids.add(id);
+        else if (kind in directory) kinds.add(kind);
       }
-      if (e.action.startsWith('group.member_') && d?.user) kinds.add('user');
-      const itemId = itemIdOf(e);
-      if (itemId) ids.add(itemId);
-      if (!e.subject) continue;
-      if (k in directory) kinds.add(k);
-      else if (k === 'auth') kinds.add('user');
     }
     const wait: Promise<unknown>[] = [...kinds].map((k) => dir(k, directory[k]!));
     for (const id of [...ids].filter((i) => !(`item:${i}` in names)).slice(0, 40)) {
@@ -166,10 +160,21 @@
     if (k === 'page' || !e.subject) return undefined;
     const text = names[`${k === 'auth' ? 'user' : k}:${e.subject}`] || shortId(e.subject);
     const to = { user: `/settings/users/${e.subject}`, group: `/settings/groups/${e.subject}`, role: `/settings/roles/${e.subject}`, token: '/settings/tokens' }[k];
-    const member = e.action.startsWith('group.member_') && d?.user ? names[`user:${d.user}`] : undefined;
+    const member = e.action.startsWith('group.member_') && d?.user ? names[`user:${d.user}`] || (e.data as { login?: string }).login : undefined;
     return { text, to, tail: member ? { text: member, to: `/settings/users/${d!.user}` } : undefined };
   }
   const json = (v: unknown) => JSON.stringify(v ?? null, null, 2);
+
+  // The details dialog: the entry is described from the names already loaded, plus the few ids only it mentions.
+  let sel = $state<Entry | null>(null);
+  let detailsOpen = $state(false);
+  const lookup = (kind: string, id: string) => names[`${kind}:${id}`] || undefined;
+  const desc = $derived(sel ? describeEntry(sel, lookup, t) : null);
+  function show(e: Entry) {
+    sel = e;
+    detailsOpen = true;
+    void resolve([e]);
+  }
 
   // Filters. Each popover writes the URL straight away; the free-text ones apply on Enter or the button.
   const set = (patch: Record<string, string | undefined>) => router.setQuery(patch);
@@ -304,13 +309,46 @@
   </span>
 {/snippet}
 {#snippet dataCell(r: Entry)}
-  {#if r.data !== undefined && r.data !== null}
-    <details>
-      <summary class="h-aud__sum"><span class="h-aud__chev"><Icon name="chevron-right" size={14} /></span>{t('settings.audit.show')}</summary>
-      <pre class="h-audit__json">{json(r.data)}</pre>
-    </details>
-  {/if}
+  <Button variant="ghost" size="sm" onclick={() => show(r)}>{t('settings.audit.details')}</Button>
 {/snippet}
+
+<Dialog bind:open={detailsOpen} title={t('settings.audit.detailsOf')} size="lg" onclose={() => (sel = null)}>
+  {#if sel && desc}
+    {@const a = actorOf(sel)}
+    {@const s = subjectOf(sel)}
+    <p class="h-aud__lead">{desc.text}</p>
+    <dl class="h-aud__dl">
+      <dt>{t('settings.audit.when')}</dt>
+      <dd>{formatDateTime(sel.at)}</dd>
+      <dt>{t('settings.audit.actor')}</dt>
+      <dd>{a.name}{#if a.sub}<span class="h-muted"> · {a.sub}</span>{/if}</dd>
+      <dt>{t('settings.audit.action')}</dt>
+      <dd>{verb(sel.action)} <code class="h-muted">{sel.action}</code></dd>
+      {#if s}
+        <dt>{t('settings.audit.subject')}</dt>
+        <dd>{#if s.to}<a use:link href={href(s.to)} onclick={() => (detailsOpen = false)}>{s.text}</a>{:else}<strong>{s.text}</strong>{/if}{#if s.tail}
+            {s.tail.word ?? '·'} {s.tail.text}{/if}</dd>
+      {/if}
+    </dl>
+    <h3 class="h-aud__h">{t('settings.audit.changes')}</h3>
+    {#if desc.changes.length}
+      <dl class="h-aud__dl">
+        {#each desc.changes as c, i (i)}
+          <dt>{c.label}</dt>
+          <dd>{c.value}</dd>
+        {/each}
+      </dl>
+    {:else}
+      <p class="h-muted">{t('settings.audit.noChanges')}</p>
+    {/if}
+    {#if sel.data !== undefined && sel.data !== null}
+      <details class="h-aud__tech">
+        <summary class="h-aud__sum"><span class="h-aud__chev"><Icon name="chevron-right" size={14} /></span>{t('settings.audit.technical')}</summary>
+        <pre class="h-audit__json">{json(sel.data)}</pre>
+      </details>
+    {/if}
+  {/if}
+</Dialog>
 
 <style>
   .h-aud__sum {
@@ -409,8 +447,32 @@
   .h-aud__sub {
     font-size: var(--h-text-xs);
   }
+  .h-aud__lead {
+    margin: 0 0 var(--h-space-4);
+    font-size: var(--h-text-lg, 1.05rem);
+    font-weight: 600;
+  }
+  .h-aud__h {
+    margin: var(--h-space-4) 0 var(--h-space-2);
+    font-size: var(--h-text-md);
+  }
+  .h-aud__dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--h-space-1) var(--h-space-4);
+    margin: 0;
+  }
+  .h-aud__dl dt {
+    color: var(--h-text-muted);
+  }
+  .h-aud__dl dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .h-aud__tech {
+    margin-top: var(--h-space-4);
+  }
   .h-audit__json {
-    max-width: 36rem;
     max-height: 18rem;
     overflow: auto;
     margin: var(--h-space-2) 0 0;

@@ -406,7 +406,7 @@ func (a *Admin) DeleteAssignment(ctx context.Context, id ids.UUID) error {
 		if err := h.require(names); err != nil {
 			return nil, err
 		}
-		data := map[string]any{"roleId": cur.RoleID.String(), "principalKind": cur.Principal.Kind, "principalId": cur.Principal.ID.String()}
+		data := map[string]any{"role": role.Name, "roleId": cur.RoleID.String(), "principalKind": cur.Principal.Kind, "principalId": cur.Principal.ID.String()}
 		return data, keepAdmin(ctx, as, func() error { return as.DeleteAssignment(ctx, id) })
 	})
 }

@@ -80,6 +80,10 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Changed
 
+- Admin audit log: Details opens a dialog instead of expanding the row (no more layout shift), with a sentence
+  saying what happened ("Added jane to the group Editors"), labelled changes with ids resolved to names, and the
+  raw JSON under "Technical details". Membership changes record the user's login and the group's name, and
+  assignment removals the role's name, so entries stay readable after those are deleted.
 - Site module assets are listed at start and hashed on first use instead of being read and hashed in full when the
   site loads, and are served from the file system instead of memory. With 1,700 files (39 MB) loading takes about
   1.5 ms instead of 44 ms and allocates 0.9 MB instead of 43 MB. Fingerprints of files other than style sheets that
