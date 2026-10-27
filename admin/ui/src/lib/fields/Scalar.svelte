@@ -124,7 +124,7 @@
     disabled={readonly}
     placeholder={placeholder ?? (field.required ? t('collections.choose') : t('collections.none'))}
     options={(field.shape.enum ?? []).map((v) => ({ value: v, label: v }))}
-    onchange={(e) => set((e.currentTarget as HTMLSelectElement).value)}
+    onchange={(v) => set(v)}
   />
 {:else if format === 'text'}
   <Textarea {...attrs} rows={5} value={str} {invalid} {placeholder} disabled={readonly} oninput={(e) => set((e.currentTarget as HTMLTextAreaElement).value)} />

@@ -1131,12 +1131,8 @@
   {#if locales.length > 5}
     <Select
       aria-label={t('collections.languages')}
-      value={locale}
+      bind:value={() => locale, (l) => void switchLocale(l)}
       options={localeOptions.map((o) => ({ value: o.value, label: o.sub ? `${o.label} (${o.sub})` : o.label, disabled: o.disabled }))}
-      onchange={(e) => {
-        const el = e.currentTarget as HTMLSelectElement;
-        if (!switchLocale(el.value)) el.value = locale;
-      }}
     />
   {:else if locales.length > 1}
     <Segmented label={t('collections.languages')} options={localeOptions} bind:value={() => locale, (l) => void switchLocale(l)} />

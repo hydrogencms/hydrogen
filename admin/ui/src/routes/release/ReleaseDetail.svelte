@@ -394,7 +394,7 @@
         { value: 'publish', label: t('releases.action.publish') },
         { value: 'unpublish', label: t('releases.action.unpublish') },
       ]}
-      onchange={(e) => void setAction(r, (e.currentTarget as HTMLSelectElement).value)} />
+      onchange={(v) => void setAction(r, v)} />
   {:else}
     {t(`releases.action.${r.action}`)}
   {/if}

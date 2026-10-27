@@ -10,6 +10,9 @@ All notable changes to Hydrogen are documented here. The format follows
 
 - Admin: a Cancel button on the full-page create screens (new content item, new role) that returns to the list,
   asking first when something was typed.
+- Admin: a user's page lists the roles they get through their groups (read-only, with the group and any
+  limitations) under their direct roles, so a user whose rights come from a group no longer shows "No roles
+  assigned".
 - `hydrogen dev` also watches the packages a project compiles from local directories (a `replace` to a local
   checkout, as `hydrogen new -core` writes, or another `go.work` module), so editing Hydrogen itself restarts the
   project. Restarts are faster: the watcher polls every 100 ms, dev builds link without DWARF (unless `GOFLAGS` sets
@@ -82,6 +85,8 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Changed
 
+- Admin: dropdowns are the admin's own listbox instead of the browser's native `<select>` popup (keyboard,
+  type-ahead and screen readers as before). `Select`'s `onchange` now receives the new value instead of a DOM event.
 - Site module assets are listed at start and hashed on first use instead of being read and hashed in full when the
   site loads, and are served from the file system instead of memory. With 1,700 files (39 MB) loading takes about
   1.5 ms instead of 44 ms and allocates 0.9 MB instead of 43 MB. Fingerprints of files other than style sheets that

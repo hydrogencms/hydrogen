@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { adminLogin, adminPassword, draftOf, manage, signIn, tag, watchErrors } from './helpers';
+import { pick, adminLogin, adminPassword, draftOf, manage, signIn, tag, watchErrors } from './helpers';
 
 const text = (s: string) => ({ type: 'text', text: s });
 
@@ -37,7 +37,7 @@ test.describe.serial('rich text: custom nodes (examples/content)', () => {
     // Edit the callout's attributes from the toolbar.
     await bar.getByRole('button', { name: 'Edit Callout' }).click();
     const dlg = page.getByRole('dialog', { name: 'Edit Callout' });
-    await dlg.getByLabel('variant').selectOption('warning');
+    await pick(page, dlg, 'variant', 'warning');
     await dlg.getByRole('button', { name: 'Apply' }).click();
     await expect(callout).toHaveAttribute('data-variant', 'warning');
 

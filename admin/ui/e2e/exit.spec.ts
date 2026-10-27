@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { adminLogin, adminPassword, careersURL, draftOf, manage, openSettings, route, seedPage, seedRoots, signIn, signOut, tag, watchErrors } from './helpers';
+import { pick, adminLogin, adminPassword, careersURL, draftOf, manage, openSettings, route, seedPage, seedRoots, signIn, signOut, tag, watchErrors } from './helpers';
 
 // The H5b exit scenario as one ordered story: each test builds on the previous one, so the describe is serial.
 test.describe.serial('exit scenario: an editor confined to the careers site', () => {
@@ -34,7 +34,7 @@ test.describe.serial('exit scenario: an editor confined to the careers site', ()
 
     await page.getByRole('button', { name: 'Add role' }).click();
     const assign = page.getByRole('dialog', { name: 'Add role' });
-    await assign.getByLabel('Role').selectOption({ label: 'editor' });
+    await pick(page, assign, 'Role', 'editor');
     // Limitations the role supports: the channel and the pages site, both ticked from the catalog.
     await assign.getByRole('group', { name: 'channel' }).getByLabel('careers_en').check();
     await assign.getByRole('group', { name: 'pages.site' }).getByLabel('careers', { exact: true }).check();
@@ -102,7 +102,7 @@ test.describe.serial('exit scenario: an editor confined to the careers site', ()
     }).toPass();
     await page.getByRole('menuitem', { name: 'Add child page' }).click();
     const dlg = page.getByRole('dialog', { name: 'Add child page' });
-    await dlg.getByLabel('Type').selectOption({ label: 'Page' });
+    await pick(page, dlg, 'Type', 'Page');
     await dlg.getByLabel('Name').fill(jobs.title);
     await dlg.getByRole('button', { name: 'Create' }).click();
 
@@ -110,7 +110,7 @@ test.describe.serial('exit scenario: an editor confined to the careers site', ()
     await expect(form.getByLabel('Title')).toHaveValue(jobs.title);
     await form.getByLabel('Intro').fill('Work with us');
     await expect(form.getByLabel('Slug', { exact: true })).toHaveValue(jobs.slug);
-    await form.getByLabel('Kind').selectOption('team');
+    await pick(page, form, 'Kind', 'team');
     await form.getByRole('combobox', { name: /Related/ }).fill('Teams');
     await page.getByRole('option', { name: new RegExp(target.title) }).click();
     await form.getByRole('button', { name: /Add item/ }).click();

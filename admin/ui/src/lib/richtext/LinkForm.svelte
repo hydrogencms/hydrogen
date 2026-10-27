@@ -115,7 +115,7 @@
     {#if problem}<p class="h-field__error" id="{uid}-e" role="alert">{problem}</p>{/if}
     {#if ids.length}
       <label class="h-field__label" for="{uid}-h">{t('richtext.linkAnchorPage')}</label>
-      <Select id="{uid}-h" value={url.startsWith('#') && ids.includes(url.slice(1)) ? url.slice(1) : ''} options={ids.map((i) => ({ value: i, label: `#${i}` }))} placeholder={t('richtext.linkAnchorNone')} onchange={(e) => (url = e.currentTarget.value ? `#${e.currentTarget.value}` : '')} />
+      <Select id="{uid}-h" value={url.startsWith('#') && ids.includes(url.slice(1)) ? url.slice(1) : ''} options={ids.map((i) => ({ value: i, label: `#${i}` }))} placeholder={t('richtext.linkAnchorNone')} onchange={(v) => (url = v ? `#${v}` : '')} />
     {/if}
     <Checkbox label={t('richtext.linkNewTab')} bind:checked={blank} />
     <div class="h-rte__linkactions">
