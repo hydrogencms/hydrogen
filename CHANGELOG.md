@@ -8,6 +8,11 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Added
 
+- `hydrogen dev` also watches the packages a project compiles from local directories (a `replace` to a local
+  checkout, as `hydrogen new -core` writes, or another `go.work` module), so editing Hydrogen itself restarts the
+  project. Restarts are faster: the watcher polls every 100 ms, dev builds link without DWARF (unless `GOFLAGS` sets
+  `-ldflags`) and alternate between two binaries rewritten in place, which macOS does not check again on launch.
+  A project edit restarts in under a second, down from about two.
 - Delivery and management queries: boolean filter groups. `where[or][0][f][op]=v&where[or][1][g][op]=w` matches items
   satisfying every filter of at least one group and `where[not][f][op]=v` matches items that do not satisfy all of
   its filters (numbered `not` groups exclude items satisfying any), next to the plain ANDed `where[field][op]`

@@ -111,7 +111,9 @@ built admin: a project that requires an unreleased commit (`go get github.com/hy
 
 - `go run . serve` builds once. After changing Go code, stop it and run it again. `hydrogen dev` (build it with
   `go build -o bin/hydrogen ./cmd/hydrogen`, run `../../bin/hydrogen dev` in the example) restarts on changes to the
-  example's own files (schema, config, Go code) but does not watch the rest of the repository.
+  example's own files (schema, config, Go code) and to the packages of this checkout it compiles, so editing
+  `core/` or a module restarts it too. A restart takes under a second after a project edit and one to two after an
+  edit deep in `core/` (more packages recompile).
 - Open the admin and the frontend on the same host name (`localhost` for both, or `127.0.0.1` for both). Otherwise
   the browser treats the preview frame as another site and drops its preview cookie.
 - Start over with an empty database: delete the example's `.work/hydrogen.db`, then `migrate` and `import` again.

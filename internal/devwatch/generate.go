@@ -18,19 +18,23 @@ import (
 // Prepare builds the project, after refreshing modules_gen.go from hydrogen.yaml. If the build fails, it regenerates gen/ from the schema files alone (stale
 // generated code is the usual cause after a schema change) and builds again.
 func Prepare(ctx context.Context, dir, bin string, stderr io.Writer) error {
+	return prepare(ctx, dir, bin, false, stderr)
+}
+
+func prepare(ctx context.Context, dir, bin string, inPlace bool, stderr io.Writer) error {
 	if _, err := projectfile.Sync(dir); err != nil {
 		fmt.Fprintln(stderr, err)
 		return err
 	}
 	var out bytes.Buffer
-	if err := Build(ctx, dir, bin, &out); err == nil {
+	if err := build(ctx, dir, bin, inPlace, &out); err == nil {
 		return nil
 	}
 	if err := Bootstrap(dir); err != nil {
 		_, _ = stderr.Write(out.Bytes())
 		return fmt.Errorf("build failed (regenerating gen/ from the schema files also failed: %w)", err)
 	}
-	if err := Build(ctx, dir, bin, stderr); err != nil {
+	if err := build(ctx, dir, bin, inPlace, stderr); err != nil {
 		return fmt.Errorf("build failed")
 	}
 	return nil
@@ -58,7 +62,7 @@ func Bootstrap(dir string) error {
 
 // Generate runs the project's generate command and reports whether generated files changed.
 func Generate(ctx context.Context, dir, bin string, args []string, stdout, stderr io.Writer) (bool, error) {
-	before, err := scan(filepath.Join(dir, "gen"))
+	before, err := scan(filepath.Join(dir, "gen"), local{})
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return false, err
 	}
@@ -67,21 +71,22 @@ func Generate(ctx context.Context, dir, bin string, args []string, stdout, stder
 	if err := cmd.Run(); err != nil {
 		return false, fmt.Errorf("generate failed: %w", err)
 	}
-	after, err := scan(filepath.Join(dir, "gen"))
+	after, err := scan(filepath.Join(dir, "gen"), local{})
 	if err != nil {
 		return false, err
 	}
 	return !same(before, after), nil
 }
 
-// prepareAndGenerate is the dev loop's build step: build, refresh gen/, and rebuild if it changed.
+// prepareAndGenerate is the dev loop's build step: build, refresh gen/, and rebuild if it changed. It overwrites
+// bin in place, so bin must not be the running server's binary.
 func prepareAndGenerate(ctx context.Context, dir, bin string, stderr io.Writer) error {
-	if err := Prepare(ctx, dir, bin, stderr); err != nil {
+	if err := prepare(ctx, dir, bin, true, stderr); err != nil {
 		return err
 	}
 	changed, err := Generate(ctx, dir, bin, nil, io.Discard, stderr)
 	if err != nil || !changed {
 		return err
 	}
-	return Build(ctx, dir, bin, stderr)
+	return build(ctx, dir, bin, true, stderr)
 }
