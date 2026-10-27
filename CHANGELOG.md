@@ -85,6 +85,9 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Changed
 
+- Access: the everything policy (`*`) cannot carry limitations. Roles and assignments that would limit it are
+  refused (a role that gains `*` while its assignments carry limitations too); the admin no longer offers them.
+  Already stored limitations keep restricting until removed, and a role holding them must drop them to be saved.
 - Access: users can add and remove their own roles and groups. Adding still needs every policy held unrestricted
   (no self-escalation); a change that would cost the caller `role.manage` or `user.manage` (removing an assignment,
   theirs or their group's, leaving or deleting a group, editing or deleting a role) is refused in its transaction.

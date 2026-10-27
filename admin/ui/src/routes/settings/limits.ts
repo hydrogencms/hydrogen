@@ -54,16 +54,17 @@ export function setLimit(limits: Limits | undefined, name: string, values: strin
   return next;
 }
 
-/** Limitation names that apply to a policy ('*' accepts every limitation). */
-export function applicableTo(policy: string, policies: PolicyDef[], limits: LimitDef[]): string[] {
-  if (policy === ALL) return limits.map((l) => l.name);
+/** Limitation names that apply to a policy ('*' cannot be limited). */
+export function applicableTo(policy: string, policies: PolicyDef[]): string[] {
+  if (policy === ALL) return [];
   return policies.find((p) => p.name === policy)?.limitations ?? [];
 }
 
 /** Limitation names that apply to any of a role's policies (for assignments). */
 export function applicableToRole(role: { policy: string }[], policies: PolicyDef[], limits: LimitDef[]): string[] {
+  if (role.some((rp) => rp.policy === ALL)) return [];
   const names = new Set<string>();
-  for (const rp of role) for (const n of applicableTo(rp.policy, policies, limits)) names.add(n);
+  for (const rp of role) for (const n of applicableTo(rp.policy, policies)) names.add(n);
   return limits.map((l) => l.name).filter((n) => names.has(n));
 }
 

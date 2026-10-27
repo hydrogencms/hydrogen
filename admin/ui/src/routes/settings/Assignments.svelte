@@ -14,7 +14,7 @@
   import { toast } from '../../lib/ui/toast.svelte';
   import Confirm from './Confirm.svelte';
   import LimitationEditor from './LimitationEditor.svelte';
-  import { applicableToRole, formatValues, type LimitDef, type Limits, type PolicyDef } from './limits';
+  import { ALL, applicableToRole, formatValues, type LimitDef, type Limits, type PolicyDef } from './limits';
   import { reportError } from '../../lib/errors';
   import { loadCatalog } from './util';
   import { inheritedRows, type Inherited } from './inherited';
@@ -228,8 +228,12 @@
       {/snippet}
     </Field>
     {#if role}
-      <h3>{t('settings.assign.limits')}</h3>
-      <LimitationEditor {names} defs={catalog.limitations} bind:value={limits} errors={fieldErrors} prefix="as" />
+      {#if role.policies.some((p) => p.policy === ALL)}
+        <p class="h-muted">{t('settings.assign.noLimitEverything')}</p>
+      {:else}
+        <h3>{t('settings.assign.limits')}</h3>
+        <LimitationEditor {names} defs={catalog.limitations} bind:value={limits} errors={fieldErrors} prefix="as" />
+      {/if}
     {/if}
     {#if formError}<p class="h-alert" role="alert">{formError}</p>{/if}
   </form>

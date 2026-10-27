@@ -178,6 +178,18 @@ func (a *Admin) UpdateRole(ctx context.Context, id ids.UUID, p RolePatch) (Role,
 			if err := h.require(removed); err != nil {
 				return nil, err
 			}
+			if slices.Contains(next, PolicyAll) && !slices.Contains(old, PolicyAll) {
+				asg, err := as.RoleAssignments(ctx, id)
+				if err != nil {
+					return nil, err
+				}
+				for _, x := range asg {
+					var lim map[string][]string
+					if len(x.Limitations) > 0 && json.Unmarshal(x.Limitations, &lim) == nil && len(lim) > 0 {
+						return nil, invalid("policies", "the everything policy cannot be added while assignments of this role carry limitations; remove them first")
+					}
+				}
+			}
 			r.Policies = encodePolicies(*p.Policies)
 			fields = append(fields, "policies")
 			save = func() error {

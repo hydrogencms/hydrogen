@@ -153,6 +153,8 @@ func (c *Catalog) Limitations() []Limitation {
 	return out
 }
 
+const errStarLimited = "the everything policy cannot be limited"
+
 // ValidateRole checks a role's policies: known policies, limitations that apply to them, valid values
 // (*InvalidError).
 func (c *Catalog) ValidateRole(ctx context.Context, ps []RolePolicy) error {
@@ -161,7 +163,10 @@ func (c *Catalog) ValidateRole(ctx context.Context, ps []RolePolicy) error {
 		base := "policies[" + strconv.Itoa(i) + "]"
 		var applies func(string) bool
 		if rp.Policy == PolicyAll {
-			applies = func(string) bool { return true }
+			if len(rp.Limitations) > 0 {
+				fields[base+".limitations"] = errStarLimited
+			}
+			continue
 		} else if p, ok := c.policies[rp.Policy]; ok {
 			applies = func(name string) bool { return slices.Contains(p.Limitations, name) }
 		} else {
@@ -176,11 +181,12 @@ func (c *Catalog) ValidateRole(ctx context.Context, ps []RolePolicy) error {
 // ValidateAssignment checks assignment limitations against the role's policies (*InvalidError).
 func (c *Catalog) ValidateAssignment(ctx context.Context, role []RolePolicy, lim map[string][]string) error {
 	fields := map[string]string{}
+	if len(lim) > 0 && slices.ContainsFunc(role, func(rp RolePolicy) bool { return rp.Policy == PolicyAll }) {
+		fields["limitations"] = "a role with the everything policy cannot be limited per assignment"
+		return invalidFields(fields)
+	}
 	applies := func(name string) bool {
 		for _, rp := range role {
-			if rp.Policy == PolicyAll {
-				return true
-			}
 			if p, ok := c.policies[rp.Policy]; ok && slices.Contains(p.Limitations, name) {
 				return true
 			}

@@ -474,9 +474,15 @@ func TestAdminKeepsAnAdministrator(t *testing.T) {
 		wantLast("delete the group's admin assignment", e.admin.DeleteAssignment(sys, ga.ID))
 		_, err = e.admin.UpdateUser(sys, dana.ID, access.UserPatch{Disabled: &off})
 		wantLast("disable the last group admin", err)
-		// a restricted assignment of * does not count
-		if _, err := e.admin.CreateAssignment(sys, access.AssignmentInput{RoleID: adminRole.ID, Principal: userRef(dana),
-			Limitations: map[string][]string{"collection": {"article"}}}); err != nil {
+		// new limited assignments of * are rejected
+		wantInvalid(t, "limited * assignment", "limitations", assignErr(e.admin.CreateAssignment(sys, access.AssignmentInput{RoleID: adminRole.ID, Principal: userRef(dana),
+			Limitations: map[string][]string{"collection": {"article"}}})))
+		// a legacy restricted assignment of * (stored before the rule) does not count
+		err = e.db.Tx(sys, func(tx store.Tx) error {
+			return tx.Auth().CreateAssignment(sys, store.Assignment{ID: ids.UUID{15: 9}, RoleID: adminRole.ID, Principal: userRef(dana),
+				Limitations: []byte(`{"collection":["article"]}`), CreatedAt: e.clk.Now()})
+		})
+		if err != nil {
 			t.Fatal(err)
 		}
 		wantLast("restricted * is not an administrator", e.admin.DeleteGroup(sys, g.ID))
@@ -592,6 +598,37 @@ func TestAdminSetupRefusedOnceAUserExists(t *testing.T) {
 		}
 		if _, err := e.admin.CompleteSetup(ctx, tok, "intruder", authPassword); !errors.Is(err, access.ErrSetupToken) {
 			t.Fatalf("token kept after refusal: %v", err)
+		}
+	})
+}
+
+func assignErr(_ access.Assignment, err error) error { return err }
+
+func TestAdminStarCannotBeLimited(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, b backend) {
+		e := newAuthEnv(t, b, nil)
+		sys := context.Background()
+		_, err := e.admin.CreateRole(sys, access.RoleInput{Name: "bad", Policies: []access.RolePolicy{
+			{Policy: access.PolicyAll, Limitations: map[string][]string{"collection": {"article"}}}}})
+		wantInvalid(t, "create limited *", "policies[0].limitations", err)
+		r, err := e.admin.CreateRole(sys, access.RoleInput{Name: "ed", Policies: []access.RolePolicy{{Policy: access.PolicyContentRead}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		u := e.user("erin")
+		if _, err := e.admin.CreateAssignment(sys, access.AssignmentInput{RoleID: r.ID, Principal: userRef(u),
+			Limitations: map[string][]string{"collection": {"article"}}}); err != nil {
+			t.Fatal(err)
+		}
+		star := []access.RolePolicy{{Policy: access.PolicyAll}}
+		_, err = e.admin.UpdateRole(sys, r.ID, access.RolePatch{Policies: &star})
+		wantInvalid(t, "add * while assignments are limited", "policies", err)
+		as, _ := e.admin.AssignmentsOf(sys, userRef(u))
+		if err := e.admin.DeleteAssignment(sys, as[0].ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.admin.UpdateRole(sys, r.ID, access.RolePatch{Policies: &star}); err != nil {
+			t.Fatal(err)
 		}
 	})
 }
