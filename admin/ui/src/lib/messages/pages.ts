@@ -39,6 +39,7 @@ export const pages: Record<string, string> = {
   'pages.status.hidden': 'Hidden',
   'pages.broken': 'Broken link',
   'pages.languagesHave': 'Languages with content: {list}',
+  'pages.languagesMissing': 'Missing: {list}',
   'pages.languages': 'Languages',
   'pages.itemCount': '{n} items',
   'pages.updated': 'Updated',

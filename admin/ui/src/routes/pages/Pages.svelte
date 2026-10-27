@@ -331,6 +331,15 @@
 
   const statusTone = (s?: string) => (s === 'published' ? 'success' : s === 'changed' ? 'warning' : 'neutral');
   const complete = (ls: string[] | undefined) => (ls ? languages.filter((l) => ls.includes(l)) : []);
+  // More languages than this make the per-language dots unreadable: rows show a count instead.
+  const DOTS_UP_TO = 4;
+  const langsLabel = (have: string[]) =>
+    [
+      t('pages.languagesHave', { list: have.join(', ') || t('common.none') }),
+      have.length < languages.length ? t('pages.languagesMissing', { list: languages.filter((l) => !have.includes(l)).join(', ') }) : '',
+    ]
+      .filter(Boolean)
+      .join('. ');
 
   // Split view
   const splitKey = `h.pages.split.${user}`;
@@ -573,9 +582,13 @@
         {#if n.kind === 'page'}
           {#if languages.length > 1 && store?.locales.has(n.item ?? '')}
             {@const have = complete(store.locales.get(n.item ?? ''))}
-            <span class="h-pages__dots" role="img" aria-label={t('pages.languagesHave', { list: have.join(', ') || t('common.none') })}>
-              {#each languages as l (l)}<span class="h-pages__dot" class:h-pages__dot--on={have.includes(l)} title={l}></span>{/each}
-            </span>
+            {#if languages.length > DOTS_UP_TO}
+              <span class="h-pages__langs" class:h-pages__langs--full={have.length === languages.length} role="img" aria-label={langsLabel(have)} title={langsLabel(have)}>{have.length}/{languages.length}</span>
+            {:else}
+              <span class="h-pages__dots" role="img" aria-label={langsLabel(have)}>
+                {#each languages as l (l)}<span class="h-pages__dot" class:h-pages__dot--on={have.includes(l)} title={l}></span>{/each}
+              </span>
+            {/if}
           {/if}
           {#if n.status}
             <span class="h-dot h-dot--{dotOf(n.status)}" role="img" aria-label={t('pages.status.' + n.status)} title={t('pages.status.' + n.status)}></span>
@@ -867,6 +880,14 @@
   .h-pages__dot--on {
     border-color: var(--h-success);
     background: var(--h-success);
+  }
+  .h-pages__langs {
+    color: var(--h-text-muted);
+    font-size: var(--h-text-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .h-pages__langs--full {
+    color: var(--h-success);
   }
   .h-pages__menu {
     display: inline-flex;
