@@ -85,6 +85,8 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Changed
 
+- Admin icons are Google's Material Symbols (Outlined, weight 400; Apache-2.0) as inline SVG paths, replacing the
+  hand-drawn line set. Icon names are unchanged, so schema `icon:` values and extensions keep working.
 - Admin: dropdowns are the admin's own listbox instead of the browser's native `<select>` popup (keyboard,
   type-ahead and screen readers as before). `Select`'s `onchange` now receives the new value instead of a DOM event.
 - Site module assets are listed at start and hashed on first use instead of being read and hashed in full when the
