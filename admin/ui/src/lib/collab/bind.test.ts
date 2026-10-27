@@ -473,3 +473,42 @@ describe('bindForm with sparse documents (overlay locales)', () => {
     b.destroy();
   });
 });
+
+describe('switching locales', () => {
+  const en = () => structuredClone(draft.fields);
+  const sharedOnly = () => {
+    const f = en();
+    for (const k of ['title', 'body', 'blocks']) delete f[k];
+    return f;
+  };
+  const fresh = (f: Doc) => ({ fields: hydrate(type.fields, structuredClone(f)) as Doc, key: '', alwaysAvailable: false });
+  async function visit(s: FakeServer, locale: string, fields: Doc, form = new Form(fresh(fields))) {
+    const t = s.connect();
+    const join = await t.join(locale);
+    const b = bindForm({ form, transport: t as unknown as CollabTransport, join: join as JoinResult, type: type as never, locale, draft: { ...draft, locale, fields } });
+    await b.ready;
+    await settle();
+    return { form, b };
+  }
+
+  // The editor stops the binding before it replaces the form: destroy flushes the form into the binding's parts.
+  it('keeps the left locale intact when the binding stops before the form is replaced', async () => {
+    const s = new FakeServer();
+    const a = await visit(s, 'en', en());
+    a.b.destroy();
+    a.form.reset(fresh(sharedOnly()));
+    const back = await visit(s, 'en', en());
+    expect(back.form.dirty).toBe(false);
+    expect((back.form.values.fields as Doc).title).toBe('Hello');
+  });
+
+  it('empties the left locale for the next visit when the form is replaced first', async () => {
+    const s = new FakeServer();
+    const a = await visit(s, 'en', en());
+    a.form.reset(fresh(sharedOnly()));
+    a.b.destroy();
+    await settle();
+    const back = await visit(s, 'en', en());
+    expect(back.form.dirty).toBe(true);
+  });
+});

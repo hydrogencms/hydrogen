@@ -459,6 +459,10 @@
       // Untracked: the options read the etag and the collab connection, which loading and joining change.
       .read(tgt, loc, ctl.signal, untrack(() => cc()))
       .then((d) => {
+        // Before the form is replaced: stopping flushes the form into the old binding's parts, so a form already
+        // holding another locale would empty them for the next visit. A reload of the same view drops unsent edits.
+        const cur = untrack(() => data);
+        stopCollab({ discard: !!cur && cur.id === d.id && cur.locale === d.locale });
         apply(d);
         loading = false;
         void startCollab(d);
