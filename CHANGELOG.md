@@ -80,6 +80,9 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Changed
 
+- Access: users can add and remove their own roles and groups. Adding still needs every policy held unrestricted
+  (no self-escalation); a change that would cost the caller `role.manage` or `user.manage` (removing an assignment,
+  theirs or their group's, leaving or deleting a group, editing or deleting a role) is refused in its transaction.
 - Site module assets are listed at start and hashed on first use instead of being read and hashed in full when the
   site loads, and are served from the file system instead of memory. With 1,700 files (39 MB) loading takes about
   1.5 ms instead of 44 ms and allocates 0.9 MB instead of 43 MB. Fingerprints of files other than style sheets that
