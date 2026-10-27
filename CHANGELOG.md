@@ -8,6 +8,8 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Added
 
+- Admin: a Cancel button on the full-page create screens (new content item, new role) that returns to the list,
+  asking first when something was typed.
 - `hydrogen dev` also watches the packages a project compiles from local directories (a `replace` to a local
   checkout, as `hydrogen new -core` writes, or another `go.work` module), so editing Hydrogen itself restarts the
   project. Restarts are faster: the watcher polls every 100 ms, dev builds link without DWARF (unless `GOFLAGS` sets
