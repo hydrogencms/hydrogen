@@ -113,13 +113,13 @@
         <div class="h-picker__bar">
           <Input class="h-assets__search" icon="search" type="search" aria-label={t('media.search')} placeholder={t('media.searchPlaceholder')} autocomplete="off" value={qText} oninput={(e) => typed((e.currentTarget as HTMLInputElement).value)} />
           {#if names.length > 1}
-            <Select compact aria-label={t('media.type')} value={lib.type} options={typeOptions} onchange={(e) => { lib.type = (e.currentTarget as HTMLSelectElement).value; lib.folder = ''; lib.tag = ''; lib.page = 1; }} />
+            <Select compact aria-label={t('media.type')} value={lib.type} options={typeOptions} onchange={(v) => { lib.type = v; lib.folder = ''; lib.tag = ''; lib.page = 1; }} />
           {/if}
           {#if lib.folderPaths.length}
-            <Select compact aria-label={t('media.filterFolder')} value={lib.folder} placeholder={t('media.allFolders')} options={lib.folderPaths.map((p) => ({ value: p, label: p }))} onchange={(e) => { lib.folder = (e.currentTarget as HTMLSelectElement).value; lib.page = 1; }} />
+            <Select compact aria-label={t('media.filterFolder')} value={lib.folder} placeholder={t('media.allFolders')} options={lib.folderPaths.map((p) => ({ value: p, label: p }))} onchange={(v) => { lib.folder = v; lib.page = 1; }} />
           {/if}
           {#if lib.tags.length}
-            <Select compact aria-label={t('media.filterTag')} value={lib.tag} placeholder={t('media.allTags')} options={lib.tags.map((x) => ({ value: x, label: x }))} onchange={(e) => { lib.tag = (e.currentTarget as HTMLSelectElement).value; lib.page = 1; }} />
+            <Select compact aria-label={t('media.filterTag')} value={lib.tag} placeholder={t('media.allTags')} options={lib.tags.map((x) => ({ value: x, label: x }))} onchange={(v) => { lib.tag = v; lib.page = 1; }} />
           {/if}
         </div>
         {#if lib.failed}

@@ -114,7 +114,7 @@
       value={type}
       placeholder={t('trash.allTypes')}
       options={typeOptions}
-      onchange={(e) => router.setQuery({ type: (e.currentTarget as HTMLSelectElement).value || undefined, page: undefined })} />
+      onchange={(v) => router.setQuery({ type: v || undefined, page: undefined })} />
   </div>
 
   {#if failed}

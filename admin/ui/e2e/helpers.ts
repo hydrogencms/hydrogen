@@ -1,4 +1,12 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
+
+/** Choose an option in the admin's Select: click the trigger (found by label inside scope), then the option in the popup. */
+export async function pick(page: Page, scope: Page | Locator, label: string, option: string, exact = false): Promise<void> {
+  const trigger = scope.getByLabel(label, { exact });
+  await trigger.click();
+  await page.getByRole('option', { name: option, exact: true }).click();
+  await expect(trigger).toContainText(option);
+}
 
 export const base = process.env.BASE_URL ?? 'http://127.0.0.1:8080';
 export const adminLogin = process.env.ADMIN_LOGIN ?? 'admin';
