@@ -14,12 +14,25 @@
   import { toast } from '../../lib/ui/toast.svelte';
   import Confirm from './Confirm.svelte';
   import LimitationEditor from './LimitationEditor.svelte';
-  import { applicableToRole, formatValues, type LimitDef, type Limits, type PolicyDef } from './limits';
+  import { ALL, applicableToRole, formatValues, type LimitDef, type Limits, type PolicyDef } from './limits';
   import { reportError } from '../../lib/errors';
   import { loadCatalog } from './util';
+  import { inheritedRows, type Inherited } from './inherited';
 
   type Assignment = Schemas['Assignment'];
-  let { kind, id, bare = false }: { kind: 'user' | 'group' | 'token'; id: string; /** Without the card (inside a dialog). */ bare?: boolean } = $props();
+  let {
+    kind,
+    id,
+    bare = false,
+    groups = null,
+  }: {
+    kind: 'user' | 'group' | 'token';
+    id: string;
+    /** Without the card (inside a dialog). */
+    bare?: boolean;
+    /** A user's groups: their roles are listed read-only as inherited. */
+    groups?: Schemas['Group'][] | null;
+  } = $props();
 
   let rows = $state<Assignment[] | null>(null);
   let failed = $state(false);
@@ -48,6 +61,27 @@
   }
   $effect(() => {
     void load();
+  });
+
+  let inherited = $state<Inherited[]>([]);
+  // One request per group; a viewer without role rights simply sees no inherited rows.
+  $effect(() => {
+    const gs = groups;
+    if (!gs) return;
+    let stale = false;
+    void Promise.all(
+      gs.map((g) =>
+        api.get('/assignments', { query: { principalKind: 'group', principalId: g.id } }).then(
+          (r) => r.items,
+          () => [] as Assignment[],
+        ),
+      ),
+    ).then((per) => {
+      if (!stale) inherited = inheritedRows(gs, per);
+    });
+    return () => {
+      stale = true;
+    };
   });
 
   async function openAdd() {
@@ -122,8 +156,20 @@
           { key: 'limitations', label: t('settings.assign.limits'), cell: limitCell },
           { key: 'actions', label: t('common.actions'), align: 'end', cell: actionCell },
         ]}>
-        {#snippet empty()}<p class="h-muted">{t('settings.assign.empty')}</p>{/snippet}
+        {#snippet empty()}<p class="h-muted">{inherited.length ? t('settings.assign.noneDirect') : t('settings.assign.empty')}</p>{/snippet}
       </Table>
+      {#if inherited.length}
+        <h3 class="h-assign__sub">{t('settings.assign.inherited')}</h3>
+        <Table
+          caption={t('settings.assign.inherited')}
+          rows={inherited}
+          rowKey={(r) => r.assignment.id}
+          columns={[
+            { key: 'role', label: t('settings.assign.role'), cell: inhRoleCell },
+            { key: 'group', label: t('settings.assign.viaGroup'), cell: inhGroupCell },
+            { key: 'limitations', label: t('settings.assign.limits'), cell: inhLimitCell },
+          ]} />
+      {/if}
     </div>
   {/if}
 {/snippet}
@@ -149,6 +195,9 @@
   {@const l = limitList(r.limitations)}
   {#if l.length === 0}<span class="h-muted">{t('settings.assign.unlimited')}</span>{:else}<span class="h-limits">{#each l as x (x)}<Badge>{x}</Badge>{/each}</span>{/if}
 {/snippet}
+{#snippet inhRoleCell(r: Inherited)}<a use:link href={href(`/settings/roles/${r.assignment.roleId}`)}>{r.assignment.role ?? r.assignment.roleId}</a>{/snippet}
+{#snippet inhGroupCell(r: Inherited)}<a use:link href={href(`/settings/groups/${r.group.id}`)}>{r.group.name}</a>{/snippet}
+{#snippet inhLimitCell(r: Inherited)}{@render limitCell(r.assignment)}{/snippet}
 {#snippet actionCell(r: Assignment)}
   <IconButton
     icon="trash"
@@ -179,8 +228,12 @@
       {/snippet}
     </Field>
     {#if role}
-      <h3>{t('settings.assign.limits')}</h3>
-      <LimitationEditor {names} defs={catalog.limitations} bind:value={limits} errors={fieldErrors} prefix="as" />
+      {#if role.policies.some((p) => p.policy === ALL)}
+        <p class="h-muted">{t('settings.assign.noLimitEverything')}</p>
+      {:else}
+        <h3>{t('settings.assign.limits')}</h3>
+        <LimitationEditor {names} defs={catalog.limitations} bind:value={limits} errors={fieldErrors} prefix="as" />
+      {/if}
     {/if}
     {#if formError}<p class="h-alert" role="alert">{formError}</p>{/if}
   </form>
@@ -205,6 +258,13 @@
   }
   .h-assign__title {
     font-size: var(--h-text-lg);
+  }
+  .h-assign__sub {
+    margin: 0;
+    padding: var(--h-space-4) var(--h-space-4) var(--h-space-2);
+    font-size: var(--h-text-sm);
+    font-weight: 600;
+    color: var(--h-text-muted);
   }
   .h-limits {
     display: flex;

@@ -85,6 +85,15 @@ Listings are narrowed the same way: a principal who may read only `article` sees
 An assignment can add limitations of its own (`POST /assignments {"roleId", "principalKind", "principalId",
 "limitations": {…}}`), so one role can be handed out to different people for different parts of the site.
 
+The everything policy (`*`) cannot be limited: a role policy `*` with limitations is rejected, and so is an assignment
+limitation on a role that contains `*` (use a narrower role instead). A role can only gain `*` once none of its
+assignments carries limitations. Limited `*` grants stored by earlier versions stay restricted until you remove their
+limitations (the admin shows them and lets you remove them).
+You can only hand out (to anyone, yourself included) what you hold unrestricted, and you can change your own roles
+and groups like anyone else's, with one exception: a change that would leave you without `role.manage` or
+`user.manage` (removing a role assignment, yours or your group's, leaving or deleting a group, editing or deleting a
+role) is refused, and so is anything that would leave no enabled administrator.
+
 ### Role templates
 
 On first start Hydrogen creates these roles once. They are ordinary roles afterwards: edit or delete them freely, and

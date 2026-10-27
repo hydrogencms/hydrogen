@@ -82,7 +82,7 @@
         class="h-tb__locale"
         aria-label={t('collections.locale')}
         value={q.locale || offered[0]}
-        onchange={(e) => onchange({ locale: (e.currentTarget as HTMLSelectElement).value })}
+        onchange={(v) => onchange({ locale: v })}
         options={offered.map((l) => ({ value: l, label: l }))}
       />
     {/if}

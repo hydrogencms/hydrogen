@@ -178,7 +178,7 @@ project overrides (`register({...})`).
 ## Styling and the design system
 
 Look: calm, neutral and monochrome-first. Soft canvas, white cards with a hairline border (no shadow), a black
-(white in dark mode) pill for the one primary action, flat line icons. Colour means something (status, errors,
+(white in dark mode) pill for the one primary action, Material Symbols icons. Colour means something (status, errors,
 focus) or is the project's accent. Light and dark must both look right: always use tokens, never literal colours.
 
 Files: `src/styles/tokens.css` (all variables), `base.css` (reset, type, `h-sr`, `h-muted`, `h-stack`, `h-row`,
@@ -242,8 +242,10 @@ The top bar (shell) shows the breadcrumbs; the page header shows title, badge, m
 - Cards: border, no shadow, radius 16. Shadows only for raised things (menus, active nav, dialogs, bulk bar).
 - Show times relative with the exact time in `title`: `<Time at={iso} />` or `relativeTime(iso)` + `formatDateTime`.
   Never show raw ids or audit codes where a person reads.
-- Icons: only the flat line set in `lib/ui/icons.ts` (24 grid, 1.5 stroke, round caps), drawn at 14/16 (dense),
-  18 (nav), 28-32 (empty states). No filled, duotone or emoji icons; add a new icon to `icons.ts` in the same style.
+- Icons: only the Material Symbols set in `lib/ui/icons.ts` (Outlined, weight 400, fill 0, grade 0; Apache-2.0; path
+  data on a `0 -960 960 960` viewBox, filled with `currentColor`, no icon font), drawn at 14/16 (dense), 18 (nav),
+  28-32 (empty states). No duotone or emoji icons; add a new icon by copying its path from
+  `@material-symbols/svg-400/outlined/<name>.svg` into `icons.ts` (keep our name; aliases share one string).
 - Loading is a `Skeleton` in the shape of the content, never a blank area or a lone spinner; empty is an
   `EmptyState` that says what to do next with a button; completed actions toast.
 - Status is never colour only: `Badge` carries text; language dots carry the code next to them.
@@ -381,7 +383,7 @@ Import by path: `import Button from '../../lib/ui/Button.svelte'`. All pass extr
 | `IconButton` | `icon`, `label` (required: aria-label and tooltip via `title`), `variant: 'ghost'\|'secondary'\|'danger'`, `size: 'sm'\|'md'\|'lg'`; a 36 px circle |
 | `Input` | `value` (bindable), `type`, `invalid?`, `icon?` (leading icon, `search` for search boxes), `large?` (44 px), `el?` (bindable element), HTML input attributes |
 | `Textarea` | `value` (bindable), `rows` (4), `invalid?` |
-| `Select` | `value` (bindable), `options: {value, label, disabled?}[]`, `placeholder?` (adds an empty first option), `invalid?`; `class` goes on the wrapper (width), other attributes on the `<select>` |
+| `Select` | `value` (bindable), `options: {value, label, disabled?}[]`, `placeholder?` (adds an empty first option, shown muted on the trigger), `invalid?`, `compact?`, `disabled?`, `name?` (hidden input), `onchange?(value: string)` (not a DOM event); `class` goes on the wrapper (width), other attributes (`id`, `aria-*`) on the trigger. A button with `role=combobox` that opens a portaled listbox (menu styling, flips above when it does not fit, z-index above dialogs): Enter/Space/arrows open, arrows/Home/End move, type-ahead, Enter/Space select, Esc and Tab close without changing, focus stays on the trigger. Playwright: click the trigger, then `getByRole('option')` (`pick` in `e2e/helpers.ts`), never `selectOption` |
 | `Checkbox` | `checked` (bindable), `indeterminate?`, `label?` or children |
 | `Switch` | `checked` (bindable), `label?` or children (role=switch) |
 | `Field` | `label`, `description?` (shown under the label), `error?` (icon + message, role=alert), `required?` (muted `*`), `id?`, children snippet receiving `{id, 'aria-describedby', 'aria-invalid', invalid}`: spread it on the control: `{#snippet children(c)}<Input {...c} bind:value />{/snippet}` |

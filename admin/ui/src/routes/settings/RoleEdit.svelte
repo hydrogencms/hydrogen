@@ -147,6 +147,7 @@
     {overflow}>
     {#snippet badge()}{#if role?.template}<Badge tone="info">{t('settings.roles.fromTemplate', { name: role.template })}</Badge>{/if}{/snippet}
     {#snippet primary()}
+      {#if catalog && isNew}<Button disabled={form.pending} onclick={() => void router.navigate('/settings/roles')}>{t('common.cancel')}</Button>{/if}
       {#if catalog}<Button type="submit" form="role-form" variant="primary" loading={form.pending} disabled={!form.dirty}>{t('common.save')}</Button>{/if}
     {/snippet}
   </PageHeader>
@@ -214,7 +215,7 @@
                 {#each sec.indices as i (form.values.policies[i].policy)}
                   {@const rp = form.values.policies[i]}
                   {@const labels = limitLabels(rp.limitations)}
-                  {@const names = applicableTo(rp.policy, catalog!.policies, catalog!.limitations)}
+                  {@const names = applicableTo(rp.policy, catalog!.policies)}
                   {@const errs = limitErrors(i)}
                   {@const open = editing[rp.policy] || Object.values(errs).some(Boolean)}
                   <div class="h-roles__row" data-policy={rp.policy}>
@@ -246,6 +247,8 @@
                           onclick={() => (form.values.policies = removePolicy(form.values.policies, i))} />
                       </span>
                     </div>
+                    {#if rp.policy === ALL}<p class="h-muted">{t(labels.length ? 'settings.roles.everythingLegacy' : 'settings.roles.everythingNoLimit')}</p>{/if}
+                    {#if form.error(`policies[${i}].limitations`)}<p class="h-field__error" role="alert">{form.error(`policies[${i}].limitations`)}</p>{/if}
                     {#if form.error(`policies[${i}].policy`)}<p class="h-field__error" role="alert">{form.error(`policies[${i}].policy`)}</p>{/if}
                     {#if open}
                       <div class="h-roles__edit">

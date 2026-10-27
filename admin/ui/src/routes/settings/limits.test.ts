@@ -36,14 +36,15 @@ describe('limitation values', () => {
 });
 
 describe('applicable limitations', () => {
-  it('uses the policy list, and every limitation for *', () => {
-    expect(applicableTo('content.read', policies, limits)).toEqual(['channel']);
-    expect(applicableTo('*', policies, limits)).toEqual(['channel', 'owner']);
-    expect(applicableTo('nope.x', policies, limits)).toEqual([]);
+  it('uses the policy list; * cannot be limited', () => {
+    expect(applicableTo('content.read', policies)).toEqual(['channel']);
+    expect(applicableTo('*', policies)).toEqual([]);
+    expect(applicableTo('nope.x', policies)).toEqual([]);
   });
   it('unions a role', () => {
     expect(applicableToRole([{ policy: 'content.read' }, { policy: 'user.manage' }], policies, limits)).toEqual(['channel']);
-    expect(applicableToRole([{ policy: '*' }], policies, limits)).toEqual(['channel', 'owner']);
+    expect(applicableToRole([{ policy: '*' }], policies, limits)).toEqual([]);
+    expect(applicableToRole([{ policy: 'content.read' }, { policy: '*' }], policies, limits)).toEqual([]);
   });
 });
 
