@@ -167,13 +167,13 @@
   {:else}
     <div class="h-cmp__bar" role="group" aria-label={t('history.compare.title')}>
       <Field label={t('history.compare.a')}>
-        {#snippet children(c)}<Select {...c} value={sideA} options={sideOptions} onchange={(e) => set({ a: (e.currentTarget as HTMLSelectElement).value })} />{/snippet}
+        {#snippet children(c)}<Select {...c} value={sideA} options={sideOptions} onchange={(v) => set({ a: v })} />{/snippet}
       </Field>
       <Field label={t('history.compare.b')}>
-        {#snippet children(c)}<Select {...c} value={sideB} options={sideOptions} onchange={(e) => set({ b: (e.currentTarget as HTMLSelectElement).value })} />{/snippet}
+        {#snippet children(c)}<Select {...c} value={sideB} options={sideOptions} onchange={(v) => set({ b: v })} />{/snippet}
       </Field>
       <Field label={t('history.compare.locale')}>
-        {#snippet children(c)}<Select {...c} value={locale} options={localeOptions.map((l) => ({ value: l, label: l }))} onchange={(e) => set({ locale: (e.currentTarget as HTMLSelectElement).value })} />{/snippet}
+        {#snippet children(c)}<Select {...c} value={locale} options={localeOptions.map((l) => ({ value: l, label: l }))} onchange={(v) => set({ locale: v })} />{/snippet}
       </Field>
       <Button variant="ghost" icon="refresh" onclick={() => set({ a: sideB, b: sideA })}>{t('history.compare.swap')}</Button>
     </div>

@@ -89,6 +89,10 @@ The everything policy (`*`) cannot be limited: a role policy `*` with limitation
 limitation on a role that contains `*` (use a narrower role instead). A role can only gain `*` once none of its
 assignments carries limitations. Limited `*` grants stored by earlier versions stay restricted until you remove their
 limitations (the admin shows them and lets you remove them).
+You can only hand out (to anyone, yourself included) what you hold unrestricted, and you can change your own roles
+and groups like anyone else's, with one exception: a change that would leave you without `role.manage` or
+`user.manage` (removing a role assignment, yours or your group's, leaving or deleting a group, editing or deleting a
+role) is refused, and so is anything that would leave no enabled administrator.
 
 ### Role templates
 

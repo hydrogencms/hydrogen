@@ -325,7 +325,7 @@
 <div class="h-preview" data-preview-phase={status.phase}>
   <div class="h-preview__bar">
     {#if channels.length > 1}
-      <Select compact aria-label={t('preview.channel')} value={channel?.name ?? ''} options={channels.map((c) => ({ value: c.name, label: c.name }))} onchange={(e) => (chosen = (e.currentTarget as HTMLSelectElement).value)} />
+      <Select compact aria-label={t('preview.channel')} value={channel?.name ?? ''} options={channels.map((c) => ({ value: c.name, label: c.name }))} onchange={(v) => (chosen = v)} />
     {/if}
     <Segmented label={t('preview.device')} size="sm" options={devices} value={device} onchange={(v) => (device = v as Device)} />
     <IconButton

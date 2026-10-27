@@ -375,7 +375,9 @@ func (a *Admin) DeleteGroup(ctx context.Context, id ids.UUID) error {
 		if err := h.requireGroup(ctx, as, id); err != nil {
 			return nil, err
 		}
-		err = keepAdmin(ctx, as, func() error { return as.DeleteGroup(ctx, id) })
+		err = keepAdmin(ctx, as, func() error {
+			return keepSelf(ctx, as, func() error { return as.DeleteGroup(ctx, id) })
+		})
 		return map[string]any{"name": g.Name}, err
 	})
 }
@@ -436,9 +438,6 @@ func (a *Admin) AddMember(ctx context.Context, group, user ids.UUID) error {
 	if err := a.can(ctx, PolicyUserManage); err != nil {
 		return err
 	}
-	if isSelf(ctx, user) {
-		return invalid("user", "you cannot change your own group membership")
-	}
 	h, err := a.holder(ctx)
 	if err != nil {
 		return err
@@ -462,9 +461,6 @@ func (a *Admin) RemoveMember(ctx context.Context, group, user ids.UUID) error {
 	if err := a.can(ctx, PolicyUserManage); err != nil {
 		return err
 	}
-	if isSelf(ctx, user) {
-		return invalid("user", "you cannot change your own group membership")
-	}
 	h, err := a.holder(ctx)
 	if err != nil {
 		return err
@@ -474,7 +470,9 @@ func (a *Admin) RemoveMember(ctx context.Context, group, user ids.UUID) error {
 		if err := h.requireGroup(ctx, as, group); err != nil {
 			return nil, err
 		}
-		err := keepAdmin(ctx, as, func() error { return as.RemoveMember(ctx, group, user) })
+		err := keepAdmin(ctx, as, func() error {
+			return keepSelf(ctx, as, func() error { return as.RemoveMember(ctx, group, user) })
+		})
 		return map[string]any{"user": user.String()}, err
 	})
 }

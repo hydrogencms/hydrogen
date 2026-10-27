@@ -164,11 +164,7 @@ func TestAdminEscalationAndSelfChanges(t *testing.T) {
 		if _, err = e.admin.CreateAssignment(cctx, access.AssignmentInput{RoleID: mgr.ID, Principal: userRef(bob)}); err != nil {
 			t.Fatalf("assign held role: %v", err)
 		}
-		// not to herself, in any form
-		_, err = e.admin.CreateAssignment(cctx, access.AssignmentInput{RoleID: mgr.ID, Principal: userRef(carol)})
-		wantInvalid(t, "self assign", "principalId", err)
-		as, _ := e.admin.AssignmentsOf(sys, userRef(carol))
-		wantInvalid(t, "self unassign", "id", e.admin.DeleteAssignment(cctx, as[0].ID))
+		// her own account state stays off limits (roles and groups: TestAdminSelfRolesAndGroups)
 		off := true
 		_, err = e.admin.UpdateUser(cctx, carol.ID, access.UserPatch{Disabled: &off})
 		wantInvalid(t, "self disable", "disabled", err)
@@ -208,7 +204,7 @@ func TestAdminEscalationAndSelfChanges(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantForbidden(t, "join admin group", e.admin.AddMember(cctx, g.ID, bob.ID))
-		wantInvalid(t, "join self", "user", e.admin.AddMember(cctx, g.ID, carol.ID))
+		wantForbidden(t, "join admin group herself", e.admin.AddMember(cctx, g.ID, carol.ID))
 		// a restricted grant is not enough: content.read limited to one collection cannot be re-granted
 		_, _ = e.admin.CreateRole(sys, access.RoleInput{Name: "lim", Policies: []access.RolePolicy{
 			{Policy: access.PolicyRoleManage}, {Policy: access.PolicyContentRead, Limitations: map[string][]string{"collection": {"article"}}}}})

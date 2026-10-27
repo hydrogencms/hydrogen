@@ -192,7 +192,11 @@ func (a *Admin) UpdateRole(ctx context.Context, id ids.UUID, p RolePatch) (Role,
 			}
 			r.Policies = encodePolicies(*p.Policies)
 			fields = append(fields, "policies")
-			save = func() error { return keepAdmin(ctx, as, func() error { return as.UpdateRole(ctx, r) }) }
+			save = func() error {
+				return keepAdmin(ctx, as, func() error {
+					return keepSelf(ctx, as, func() error { return as.UpdateRole(ctx, r) })
+				})
+			}
 		}
 		r.UpdatedAt = a.clock.Now()
 		out = r
@@ -225,7 +229,9 @@ func (a *Admin) DeleteRole(ctx context.Context, id ids.UUID) error {
 		if err := h.require(names); err != nil {
 			return nil, err
 		}
-		err = keepAdmin(ctx, as, func() error { return as.DeleteRole(ctx, id) })
+		err = keepAdmin(ctx, as, func() error {
+			return keepSelf(ctx, as, func() error { return as.DeleteRole(ctx, id) })
+		})
 		return map[string]any{"name": r.Name}, err
 	})
 }
@@ -340,13 +346,10 @@ func principalExists(ctx context.Context, tx store.Tx, ref store.PrincipalRef) e
 }
 
 // CreateAssignment gives a role to a principal. The caller needs role.manage, must hold every policy of the
-// role unrestricted, and cannot give roles to themselves.
+// role unrestricted.
 func (a *Admin) CreateAssignment(ctx context.Context, in AssignmentInput) (Assignment, error) {
 	if err := a.can(ctx, PolicyRoleManage); err != nil {
 		return Assignment{}, err
-	}
-	if in.Principal.Kind == store.PrincipalUser && isSelf(ctx, in.Principal.ID) {
-		return Assignment{}, invalid("principalId", "you cannot change your own roles")
 	}
 	var role store.Role
 	if err := a.view(ctx, func(s store.AuthStore) (err error) { role, err = s.GetRole(ctx, in.RoleID); return }); err != nil {
@@ -390,13 +393,6 @@ func (a *Admin) DeleteAssignment(ctx context.Context, id ids.UUID) error {
 	if err := a.can(ctx, PolicyRoleManage); err != nil {
 		return err
 	}
-	var cur store.Assignment
-	if err := a.view(ctx, func(s store.AuthStore) (err error) { cur, err = s.GetAssignment(ctx, id); return }); err != nil {
-		return err
-	}
-	if cur.Principal.Kind == store.PrincipalUser && isSelf(ctx, cur.Principal.ID) {
-		return invalid("id", "you cannot change your own roles")
-	}
 	h, err := a.holder(ctx)
 	if err != nil {
 		return err
@@ -419,7 +415,9 @@ func (a *Admin) DeleteAssignment(ctx context.Context, id ids.UUID) error {
 			return nil, err
 		}
 		data := map[string]any{"roleId": cur.RoleID.String(), "principalKind": cur.Principal.Kind, "principalId": cur.Principal.ID.String()}
-		return data, keepAdmin(ctx, as, func() error { return as.DeleteAssignment(ctx, id) })
+		return data, keepAdmin(ctx, as, func() error {
+			return keepSelf(ctx, as, func() error { return as.DeleteAssignment(ctx, id) })
+		})
 	})
 }
 

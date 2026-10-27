@@ -243,7 +243,7 @@
             </div>
           {/if}
         </Card>
-        <Assignments kind="user" {id} />
+        <Assignments kind="user" {id} {groups} />
       {/snippet}
     </DetailLayout>
   {/if}

@@ -147,6 +147,7 @@
     {overflow}>
     {#snippet badge()}{#if role?.template}<Badge tone="info">{t('settings.roles.fromTemplate', { name: role.template })}</Badge>{/if}{/snippet}
     {#snippet primary()}
+      {#if catalog && isNew}<Button disabled={form.pending} onclick={() => void router.navigate('/settings/roles')}>{t('common.cancel')}</Button>{/if}
       {#if catalog}<Button type="submit" form="role-form" variant="primary" loading={form.pending} disabled={!form.dirty}>{t('common.save')}</Button>{/if}
     {/snippet}
   </PageHeader>
