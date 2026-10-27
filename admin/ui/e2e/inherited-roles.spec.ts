@@ -15,5 +15,4 @@ test("a user's page lists the roles they get through their groups", async ({ pag
   const inherited = page.getByRole('table', { name: 'Roles through groups' });
   await expect(inherited.getByRole('link', { name: 'editor' })).toBeVisible();
   await expect(inherited.getByRole('link', { name: `Writers ${t}` })).toHaveAttribute('href', `/admin/settings/groups/${group.id}`);
-  await page.screenshot({ path: process.env.SHOT ?? 'test-results/inherited-roles.png', fullPage: true });
 });
