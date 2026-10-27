@@ -220,6 +220,7 @@ make next-e2e                   # examples/next-site against examples/multisite 
 make starter-next-e2e           # packages/starters/next on examples/starter (SQLite) + conformance suite
 make conformance                # the conformance suite against every frontend (Next starter; site module)
 make admin                      # admin/ui: npm ci, typecheck, vitest, build into admin/dist, gzip budgets
+make dev [DIR=dir]              # project on this checkout (created in .work/dev when missing) + admin on Vite HMR
 make admin-e2e                  # Playwright: admin exit scenarios + axe; page builder live preview on the real
                                 # Next starter and the fullstack site module (ADMIN_E2E_ONLY=starter|next|fullstack
                                 # runs one phase on the admin/dist already built, or builds it if missing; E2E_GREP=… filters tests)

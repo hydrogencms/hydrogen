@@ -16,6 +16,7 @@ change `core/`, `api/`, `features/` or `modules/`, restart, and the example runs
 | Core, APIs, pages, blocks, preview, visual editing, the site module | [Fullstack](#fullstack-one-process): one process, no Node |
 | The TypeScript SDK, the bridge, a framework adapter | [CMS + Next.js starter](#cms--a-javascript-frontend) |
 | The admin app (`admin/ui`) | Either of the above plus [the admin dev server](#the-admin-with-hot-reload) |
+| A new scratch project | `make dev` ([the admin with hot reload](#the-admin-with-hot-reload)) |
 | A project of your own | [Point it at this checkout](#your-own-project-on-this-checkout) |
 
 ## Fullstack: one process
@@ -67,6 +68,18 @@ After changing anything in `packages/`, run `npm run build` in `packages/` again
 ## The admin with hot reload
 
 ```sh
+make dev                            # http://localhost:8080/admin
+make dev DIR=examples/multisite     # or any project on this checkout
+```
+
+`make dev` builds the CLI from this checkout, creates a project in `DIR` (default `.work/dev`) with
+`hydrogen new -core` when it has no `go.mod`, and runs the admin's Vite dev server next to `hydrogen dev` with
+`ADMIN_DEV_URL` set: edits under `admin/ui` hot-reload, and the project's schema, config and Go code restart the
+server. Ctrl-C stops both. `ADMIN_DEV_PORT` moves Vite off 5173, `LISTEN_ADDR` the CMS off `:8080`.
+
+By hand, in any example:
+
+```sh
 cd admin/ui && npm ci && npm run dev                          # Vite on http://localhost:5173
 ADMIN_DEV_URL=http://localhost:5173 go run . serve            # in the example, instead of plain serve
 ```
@@ -76,8 +89,9 @@ The CMS proxies `/admin` to Vite (dev environment only). `admin/dist` is not com
 
 ## Your own project on this checkout
 
-To try a change in a project outside the repository before it is released, point its Go modules and npm packages at
-this checkout:
+A new project made with `hydrogen new -core /path/to/hydrogencms <dir>` (or `make dev DIR=<dir>`) already points at
+this checkout. To try a change in an existing project outside the repository before it is released, point its Go
+modules and npm packages at this checkout:
 
 ```sh
 go mod edit -replace github.com/hydrogencms/hydrogen=/path/to/hydrogencms
