@@ -8,6 +8,9 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Added
 
+- Admin: a user's page lists the roles they get through their groups (read-only, with the group and any
+  limitations) under their direct roles, so a user whose rights come from a group no longer shows "No roles
+  assigned".
 - `hydrogen dev` also watches the packages a project compiles from local directories (a `replace` to a local
   checkout, as `hydrogen new -core` writes, or another `go.work` module), so editing Hydrogen itself restarts the
   project. Restarts are faster: the watcher polls every 100 ms, dev builds link without DWARF (unless `GOFLAGS` sets
