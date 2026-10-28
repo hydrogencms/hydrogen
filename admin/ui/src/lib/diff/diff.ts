@@ -220,6 +220,15 @@ interface Entry {
   container: string;
 }
 
+/** The blocks of both sides by id, with the container each sits in, and the options of the diff. */
+interface BlockContext {
+  before: Map<string, Entry>;
+  after: Map<string, Entry>;
+  options: DiffOptions;
+}
+
+type BlockList = { rows: BlockRow[]; same: number };
+
 const keyOf = (c: string, id: string) => `${c}\u0000${id}`;
 const rootKey = '';
 
@@ -232,17 +241,26 @@ function index(list: Block[], container: string, into: Map<string, Entry>) {
 }
 
 /** Blocks of a removed block that are gone for good: children that live on elsewhere (moved) are not counted, nor what they carry. */
-const countGone = (list: Block[], ib: Map<string, Entry>): number =>
-  list.reduce((n, b) => (b.id && ib.has(b.id) ? n : n + 1 + Object.values(b.slots ?? {}).reduce((m, k) => m + countGone(k, ib), 0)), 0);
+function countGone(list: Block[], after: Map<string, Entry>): number {
+  let gone = 0;
+  for (const b of list) {
+    if (b.id && after.has(b.id)) continue;
+    gone += 1 + countGone(Object.values(b.slots ?? {}).flat(), after);
+  }
+  return gone;
+}
 
 /** Copies of the blocks where every block has an id: those without one get a positional pseudo-id (parent, slot, index). */
 function withIds(list: Block[], parent: string): Block[] {
   return list.map((b, i) => {
     const id = b.id || `~${parent}/${i}`;
-    const slots = b.slots ? Object.fromEntries(Object.entries(b.slots).map(([name, kids]) => [name, withIds(kids, `${id}/${name}`)])) : undefined;
+    const slots = b.slots ? mapValues(b.slots, (kids, name) => withIds(kids, `${id}/${name}`)) : undefined;
     return { ...b, id, ...(slots ? { slots } : {}) };
   });
 }
+
+const mapValues = <T, U>(o: Record<string, T>, fn: (v: T, k: string) => U): Record<string, U> =>
+  Object.fromEntries(Object.entries(o).map(([k, v]) => [k, fn(v, k)]));
 
 const defOf = (type: string, o: DiffOptions): BlockType | undefined => {
   if (type === SHARED) {
@@ -251,45 +269,44 @@ const defOf = (type: string, o: DiffOptions): BlockType | undefined => {
   return o.block?.(type);
 };
 
-export function diffBlocks(a0: Block[], b0: Block[], o: DiffOptions = {}): { rows: BlockRow[]; same: number } {
-  const a = withIds(a0, '');
-  const b = withIds(b0, '');
-  const ia = new Map<string, Entry>();
-  const ib = new Map<string, Entry>();
-  index(a, rootKey, ia);
-  index(b, rootKey, ib);
-  return diffBlockList(a, b, rootKey, ia, ib, o);
+export function diffBlocks(before: Block[], after: Block[], options: DiffOptions = {}): BlockList {
+  const a = withIds(before, '');
+  const b = withIds(after, '');
+  const ctx: BlockContext = { before: new Map(), after: new Map(), options };
+  index(a, rootKey, ctx.before);
+  index(b, rootKey, ctx.after);
+  return diffBlockList(a, b, rootKey, ctx);
 }
 
-function diffBlockList(a: Block[], b: Block[], container: string, ia: Map<string, Entry>, ib: Map<string, Entry>, o: DiffOptions): { rows: BlockRow[]; same: number } {
+function diffBlockList(before: Block[], after: Block[], container: string, ctx: BlockContext): BlockList {
   // Reordered: among blocks that stayed in this container, the ones outside the longest unchanged sequence.
-  const aIds = a.filter((x) => x.id && ib.get(x.id)?.container === container).map((x) => x.id!);
-  const bIds = b.filter((x) => x.id && ia.get(x.id)?.container === container).map((x) => x.id!);
-  const keep = new Set(diffSeq(aIds, bIds).filter((op) => op.k === 'eq').map((op) => bIds[op.b!]!));
+  const beforeIds = before.filter((x) => x.id && ctx.after.get(x.id)?.container === container).map((x) => x.id!);
+  const afterIds = after.filter((x) => x.id && ctx.before.get(x.id)?.container === container).map((x) => x.id!);
+  const keep = new Set(diffSeq(beforeIds, afterIds).filter((op) => op.k === 'eq').map((op) => afterIds[op.b!]!));
   const rows: BlockRow[] = [];
   let same = 0;
-  for (const blk of b) {
-    const before = blk.id ? ia.get(blk.id) : undefined;
-    if (!before) {
-      rows.push(blockRow(blk, 'added', false, o, undefined, ia, ib));
+  for (const blk of after) {
+    const previous = blk.id ? ctx.before.get(blk.id) : undefined;
+    if (!previous) {
+      rows.push(addedOrRemovedRow(blk, 'added', ctx));
       continue;
     }
-    const moved = before.container !== container || !keep.has(blk.id!);
-    const row = blockRow(blk, 'context', moved, o, before.block, ia, ib);
+    const moved = previous.container !== container || !keep.has(blk.id!);
+    const row = changedRow(blk, previous.block, moved, ctx);
     if (row.status === 'context') same++;
     else rows.push(row);
   }
-  for (const blk of a) if (blk.id && !ib.has(blk.id)) rows.push(blockRow(blk, 'removed', false, o, undefined, ia, ib));
+  for (const blk of before) if (blk.id && !ctx.after.has(blk.id)) rows.push(addedOrRemovedRow(blk, 'removed', ctx));
   return { rows, same };
 }
 
-function blockRow(blk: Block, status: BlockRow['status'], moved: boolean, o: DiffOptions, before: Block | undefined, ia: Map<string, Entry>, ib: Map<string, Entry>): BlockRow {
-  const def = defOf(blk.type, o);
-  const row: BlockRow = {
+function newRow(blk: Block, status: BlockRow['status'], moved: boolean, def: BlockType | undefined, options: DiffOptions): BlockRow {
+  const sharedName = blk.type === SHARED ? (options.names?.[String(blk.props?.item ?? '')] ?? '') : '';
+  return {
     id: blk.id ?? '',
     type: blk.type,
     label: def?.label ?? blk.type,
-    summary: '',
+    summary: summary(blk, def) || sharedName,
     status,
     moved,
     props: [],
@@ -297,30 +314,38 @@ function blockRow(blk: Block, status: BlockRow['status'], moved: boolean, o: Dif
     slots: [],
     nested: 0,
   };
-  row.summary = summary(blk, def) || (blk.type === SHARED ? (o.names?.[String(blk.props?.item ?? '')] ?? '') : '');
-  if (status === 'added' || status === 'removed') {
-    const added = status === 'added';
-    row.props = diffFields(propFields(def, blk.props), added ? {} : (blk.props ?? {}), added ? (blk.props ?? {}) : {}, o).fields;
-    if (added) {
-      // Children that already existed elsewhere show up as moved into the new block.
-      for (const [name, kids] of Object.entries(blk.slots ?? {})) {
-        const r = diffBlockList([], kids, keyOf(blk.id ?? '', name), ia, ib, o);
-        if (r.rows.length) row.slots.push({ name, label: def?.slots?.find((s) => s.name === name)?.label ?? name, ...r });
-      }
-    } else {
-      row.nested = countGone(Object.values(blk.slots ?? {}).flat(), ib);
-    }
+}
+
+const slotLabel = (def: BlockType | undefined, name: string) => def?.slots?.find((s) => s.name === name)?.label ?? name;
+
+function addedOrRemovedRow(blk: Block, status: 'added' | 'removed', ctx: BlockContext): BlockRow {
+  const def = defOf(blk.type, ctx.options);
+  const row = newRow(blk, status, false, def, ctx.options);
+  const props = blk.props ?? {};
+  const added = status === 'added';
+  row.props = diffFields(propFields(def, blk.props), added ? {} : props, added ? props : {}, ctx.options).fields;
+  if (!added) {
+    row.nested = countGone(Object.values(blk.slots ?? {}).flat(), ctx.after);
     return row;
   }
-  const prev = before!;
-  const fields = propFields(def, prev.props, blk.props);
-  const d = diffFields(fields, prev.props ?? {}, blk.props ?? {}, o);
-  row.props = d.fields;
-  row.sameProps = d.same.map((s) => s.label);
-  const names = new Set([...Object.keys(prev.slots ?? {}), ...Object.keys(blk.slots ?? {})]);
-  for (const name of [...names].sort()) {
-    const r = diffBlockList(prev.slots?.[name] ?? [], blk.slots?.[name] ?? [], keyOf(blk.id!, name), ia, ib, o);
-    if (r.rows.length) row.slots.push({ name, label: def?.slots?.find((s) => s.name === name)?.label ?? name, ...r });
+  // Children that already existed elsewhere show up as moved into the new block.
+  for (const [name, kids] of Object.entries(blk.slots ?? {})) {
+    const list = diffBlockList([], kids, keyOf(blk.id ?? '', name), ctx);
+    if (list.rows.length) row.slots.push({ name, label: slotLabel(def, name), ...list });
+  }
+  return row;
+}
+
+function changedRow(blk: Block, previous: Block, moved: boolean, ctx: BlockContext): BlockRow {
+  const def = defOf(blk.type, ctx.options);
+  const row = newRow(blk, 'context', moved, def, ctx.options);
+  const props = diffFields(propFields(def, previous.props, blk.props), previous.props ?? {}, blk.props ?? {}, ctx.options);
+  row.props = props.fields;
+  row.sameProps = props.same.map((s) => s.label);
+  const slotNames = new Set([...Object.keys(previous.slots ?? {}), ...Object.keys(blk.slots ?? {})]);
+  for (const name of [...slotNames].sort()) {
+    const list = diffBlockList(previous.slots?.[name] ?? [], blk.slots?.[name] ?? [], keyOf(blk.id!, name), ctx);
+    if (list.rows.length) row.slots.push({ name, label: slotLabel(def, name), ...list });
   }
   row.status = row.props.length || row.slots.length ? 'changed' : moved ? 'moved' : 'context';
   return row;
@@ -329,8 +354,8 @@ function blockRow(blk: Block, status: BlockRow['status'], moved: boolean, o: Dif
 function propFields(def: BlockType | undefined, ...bags: (Doc | undefined)[]): CompiledField[] {
   const known = def?.props ?? [];
   const names = new Set(known.map((p) => p.name));
-  const extra = inferFields(...bags.map((x) => (x ? Object.fromEntries(Object.entries(x).filter(([k]) => !names.has(k))) : undefined)));
-  return [...known, ...extra];
+  const unknownProps = (bag: Doc | undefined) => (bag ? Object.fromEntries(Object.entries(bag).filter(([k]) => !names.has(k))) : undefined);
+  return [...known, ...inferFields(...bags.map(unknownProps))];
 }
 
 // ---- versions and locales

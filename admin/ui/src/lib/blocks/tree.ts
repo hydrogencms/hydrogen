@@ -61,14 +61,14 @@ export function uuidv7(now = Date.now(), rnd: (n: number) => Uint8Array = (n) =>
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-const sameC = (a: Container, b: Container) => (a.id ?? '') === (b.id ?? '') && (a.slot ?? '') === (b.slot ?? '');
+export const sameContainer = (a: Container, b: Container) => (a.id ?? '') === (b.id ?? '') && (a.slot ?? '') === (b.slot ?? '');
 
 // ---- reading
 
 export function listAt(root: Block[], c: Container): Block[] | undefined {
   if (!c.id) return root;
-  const f = find(root, c.id);
-  return f ? (f.block.slots?.[c.slot ?? ''] ?? []) : undefined;
+  const found = find(root, c.id);
+  return found ? (found.block.slots?.[c.slot ?? ''] ?? []) : undefined;
 }
 
 export interface Found {
@@ -83,8 +83,8 @@ export function find(root: Block[], id: string, container: Container = {}): Foun
     if (b.id === id) return { block: b, container, index: i };
     for (const [slot, list] of Object.entries(b.slots ?? {})) {
       if (!b.id) continue;
-      const f = find(list, id, { id: b.id, slot });
-      if (f) return f;
+      const found = find(list, id, { id: b.id, slot });
+      if (found) return found;
     }
   }
   return undefined;
@@ -168,7 +168,7 @@ export function moveTo(root: Block[], id: string, to: Container, index: number):
   const f = find(root, id);
   if (!f) return undefined;
   if (to.id && (to.id === id || descendantIds(f.block).has(to.id))) return undefined;
-  const same = sameC(f.container, to);
+  const same = sameContainer(f.container, to);
   let at = index;
   if (same && f.index < index) at--;
   if (same && at === f.index) return root;
@@ -226,12 +226,25 @@ export function containerLevel(root: Block[], c: Container): number {
   return level;
 }
 
-/**
- * Whether blocks of `types` may go into `c`: allowed type, the list's maximum, the nesting depth and the block count
- * the server enforces. `added` are the blocks themselves when they have children (a paste, a duplicate, a move);
- * `moving` skips the count (the blocks are already in the tree).
- */
-export function canInsert(s: Schema, root: Block[], c: Container, types: string[], extra = 0, added?: Block[], moving = false): Refusal {
+export interface InsertOptions {
+  /** Blocks of `types` that already sit in the list (a move within it), not counted against its maximum. */
+  extra?: number;
+  /** The blocks themselves, when they have children (a paste, a duplicate, a move). */
+  added?: Block[];
+  /** The blocks are already in the tree: skip the block count. */
+  moving?: boolean;
+}
+
+/** Blocks in the trees of `added`, each with its descendants. */
+const countAdded = (added: Block[]): number => {
+  let n = 0;
+  for (const b of added) walk([b], () => n++);
+  return n;
+};
+
+/** Whether blocks of `types` may go into `c`: allowed type, the list's maximum, the nesting depth and the block count the server enforces. */
+export function canInsert(s: Schema, root: Block[], c: Container, types: string[], opts: InsertOptions = {}): Refusal {
+  const { extra = 0, added, moving = false } = opts;
   const rule = ruleOf(s, c, root);
   if (!rule) return { ok: false, reason: 'type' };
   if (types.some((t) => !rule.allow.includes(t))) return { ok: false, reason: 'type' };
@@ -241,10 +254,8 @@ export function canInsert(s: Schema, root: Block[], c: Container, types: string[
   const inner = Math.max(0, ...(added ?? []).map(slotDepth));
   if (level + inner > MAX_DEPTH) return { ok: false, reason: 'depth', limit: MAX_DEPTH };
   if (!moving) {
-    let n = 0;
-    for (const b of added ?? []) walk([b], () => n++);
-    if (!added) n = types.length;
-    if (countBlocks(root) + n > MAX_BLOCKS) return { ok: false, reason: 'count', limit: MAX_BLOCKS };
+    const incoming = added ? countAdded(added) : types.length;
+    if (countBlocks(root) + incoming > MAX_BLOCKS) return { ok: false, reason: 'count', limit: MAX_BLOCKS };
   }
   return OK;
 }
@@ -263,8 +274,8 @@ export function canMove(s: Schema, root: Block[], id: string, to: Container): Re
   const f = find(root, id);
   if (!f) return { ok: false, reason: 'type' };
   if (to.id && (to.id === id || descendantIds(f.block).has(to.id))) return { ok: false, reason: 'self' };
-  const same = sameC(f.container, to);
-  const ins = canInsert(s, root, to, [f.block.type], same ? 1 : 0, [f.block], true);
+  const same = sameContainer(f.container, to);
+  const ins = canInsert(s, root, to, [f.block.type], { extra: same ? 1 : 0, added: [f.block], moving: true });
   if (!ins.ok) return ins;
   return same ? OK : canRemove(s, root, id);
 }
@@ -278,25 +289,24 @@ export interface Target {
 
 /** Every list the block could be moved to (including its own, for a different position), with a readable trail. */
 export function targets(s: Schema, root: Block[], id: string, fieldLabel: string): Target[] {
-  const f = find(root, id);
-  if (!f) return [];
+  if (!find(root, id)) return [];
   const out: Target[] = [];
-  const consider = (c: Container, trail: string[], list: Block[]) => {
-    if (canMove(s, root, id, c).ok) out.push({ container: c, trail, length: list.length });
+  const consider = (container: Container, trail: string[], list: Block[]) => {
+    if (canMove(s, root, id, container).ok) out.push({ container, trail, length: list.length });
   };
-  consider({}, [fieldLabel], root);
-  const rec = (list: Block[], trail: string[]) => {
+  const visit = (list: Block[], trail: string[]) => {
     list.forEach((b, i) => {
       const def = s.block(b.type);
-      for (const sl of def?.slots ?? []) {
-        const t = [...trail, `${def!.label} ${i + 1}`, sl.label];
-        const children = b.slots?.[sl.name] ?? [];
-        if (b.id) consider({ id: b.id, slot: sl.name }, t, children);
-        rec(children, t);
+      for (const slot of def?.slots ?? []) {
+        const slotTrail = [...trail, `${def!.label} ${i + 1}`, slot.label];
+        const children = b.slots?.[slot.name] ?? [];
+        if (b.id) consider({ id: b.id, slot: slot.name }, slotTrail, children);
+        visit(children, slotTrail);
       }
     });
   };
-  rec(root, [fieldLabel]);
+  consider({}, [fieldLabel], root);
+  visit(root, [fieldLabel]);
   return out;
 }
 
@@ -330,7 +340,10 @@ export function richText(v: unknown, max = 200): string {
   return out.trim();
 }
 
-const textish = (f: CompiledField) => (f.shape.base === 'string' && !['token', 'enum', 'slug', 'url', 'email', 'date', 'datetime'].includes(f.shape.format ?? '')) || f.shape.base === 'richtext';
+const NON_TEXT_FORMATS = ['token', 'enum', 'slug', 'url', 'email', 'date', 'datetime'];
+
+const textish = (f: CompiledField) =>
+  f.shape.base === 'richtext' || (f.shape.base === 'string' && !NON_TEXT_FORMATS.includes(f.shape.format ?? ''));
 
 /** One line for the collapsed card: the first filled text-like prop. */
 export function summary(b: Block, def: BlockType | undefined, max = 90): string {

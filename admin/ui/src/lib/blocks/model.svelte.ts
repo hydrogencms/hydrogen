@@ -53,6 +53,24 @@ export interface Drop {
 }
 
 const SCROLL_EDGE = 64;
+const FOCUSABLE =
+  'input:not([type=hidden]):not(:disabled), textarea:not(:disabled), select:not(:disabled), [contenteditable=""], ' +
+  '[contenteditable="true"], button:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+const typeRefusal: Refusal = { ok: false, reason: 'type' };
+
+const containerOf = (id: string | undefined, slot: string | undefined): Container => (id ? { id, slot } : {});
+
+const dropOfCard = (card: HTMLElement, y: number): Drop => {
+  const rect = card.getBoundingClientRect();
+  const index = Number(card.dataset.index);
+  return { container: containerOf(card.dataset.contId, card.dataset.contSlot), index: y < rect.top + rect.height / 2 ? index : index + 1 };
+};
+
+const dropOfZone = (zone: HTMLElement): Drop => ({
+  container: containerOf(zone.dataset.contId, zone.dataset.contSlot),
+  index: Number(zone.dataset.length ?? 0),
+});
 
 /** State and operations of one blocks field: selection, open cards, drag and drop, clipboard, undo. */
 export class BlocksModel {
@@ -157,29 +175,32 @@ export class BlocksModel {
     this.selected = id;
     await tick();
     const card = document.querySelector<HTMLElement>(`[data-block-id="${id}"]`);
-    let el: HTMLElement | null | undefined = card;
-    const chain = prop ? chainOf(this.root, id) : undefined;
-    if (prop && chain) {
-      const fp = formPath({ field: this.path, chain, prop }).replace(/(["\\])/g, '\\$1');
-      el = card?.querySelector<HTMLElement>(`[data-field="${fp}"]`) ?? card;
-    }
-    el?.scrollIntoView?.({ block: 'nearest' });
+    const selector = prop ? this.#propSelector(id, prop) : undefined;
+    const target = selector ? (card?.querySelector<HTMLElement>(selector) ?? card) : card;
+    target?.scrollIntoView?.({ block: 'nearest' });
+  }
+
+  /** The attribute selector of a prop's form row, or undefined when the block is not in the tree. */
+  #propSelector(id: string, prop: string): string | undefined {
+    const chain = chainOf(this.root, id);
+    if (!chain) return undefined;
+    const path = formPath({ field: this.path, chain, prop }).replace(/(["\\])/g, '\\$1');
+    return `[data-field="${path}"]`;
   }
 
   /** Reveals the block and focuses the first control of the prop's row. */
   async focusProp(id: string, prop: string): Promise<void> {
     await this.reveal(id, prop);
-    const chain = chainOf(this.root, id);
-    if (!chain) return;
-    const fp = formPath({ field: this.path, chain, prop }).replace(/(["\\])/g, '\\$1');
-    const row = document.querySelector<HTMLElement>(`[data-block-id="${id}"] [data-field="${fp}"]`);
-    row?.querySelector<HTMLElement>('input:not([type=hidden]):not(:disabled), textarea:not(:disabled), select:not(:disabled), [contenteditable=""], [contenteditable="true"], button:not(:disabled), [tabindex]:not([tabindex="-1"])')?.focus();
+    const selector = this.#propSelector(id, prop);
+    if (!selector) return;
+    const row = document.querySelector<HTMLElement>(`[data-block-id="${id}"] ${selector}`);
+    row?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
   }
 
   // ---- insert / delete / copy
 
   addable(c: Container, extra: string[] = [], added?: Block[]): Refusal {
-    return canInsert(this.schema, this.root, c, extra, 0, added);
+    return canInsert(this.schema, this.root, c, extra, { added });
   }
 
   add(c: Container, index: number, type: string, props?: Record<string, unknown>): Block | undefined {
@@ -216,7 +237,7 @@ export class BlocksModel {
       label: t('blocks.undo'),
       run: () => {
         const home = listAt(this.root, f.container) ? f.container : undefined;
-        const ok = home ? canInsert(this.schema, this.root, home, [copy.type], 0, [copy]) : ({ ok: false, reason: 'type' } as Refusal);
+        const ok = home ? canInsert(this.schema, this.root, home, [copy.type], { added: [copy] }) : typeRefusal;
         if (!home || !ok.ok) {
           toast.error(t('blocks.restoreFailed', { label, reason: this.reason(ok) }));
           return;
@@ -231,7 +252,7 @@ export class BlocksModel {
   duplicate(id: string) {
     const f = find(this.root, id);
     if (!f) return;
-    const ok = canInsert(this.schema, this.root, f.container, [f.block.type], 0, [f.block]);
+    const ok = canInsert(this.schema, this.root, f.container, [f.block.type], { added: [f.block] });
     if (!ok.ok) {
       toast.error(this.reason(ok));
       return;
@@ -254,15 +275,9 @@ export class BlocksModel {
   }
 
   pasteState(c: Container): Refusal {
-    if (!clipboard.blocks.length) return { ok: false, reason: 'type' };
-    return canInsert(
-      this.schema,
-      this.root,
-      c,
-      clipboard.blocks.map((b) => b.type),
-      0,
-      clipboard.blocks,
-    );
+    if (!clipboard.blocks.length) return typeRefusal;
+    const types = clipboard.blocks.map((b) => b.type);
+    return canInsert(this.schema, this.root, c, types, { added: clipboard.blocks });
   }
 
   paste(c: Container, index: number) {
@@ -385,16 +400,9 @@ export class BlocksModel {
     const card = el?.closest<HTMLElement>('[data-block-id]');
     const zone = el?.closest<HTMLElement>('[data-drop-list]');
     let drop: Drop | null = null;
-    if (card && card.dataset.blockId !== id) {
-      const r = card.getBoundingClientRect();
-      const i = Number(card.dataset.index);
-      const c: Container = card.dataset.contId ? { id: card.dataset.contId, slot: card.dataset.contSlot } : {};
-      drop = { container: c, index: y < r.top + r.height / 2 ? i : i + 1 };
-    } else if (!card && zone) {
-      drop = { container: zone.dataset.contId ? { id: zone.dataset.contId, slot: zone.dataset.contSlot } : {}, index: Number(zone.dataset.length ?? 0) };
-    } else if (card && card.dataset.blockId === id) {
-      return null;
-    }
+    if (card && card.dataset.blockId !== id) drop = dropOfCard(card, y);
+    else if (!card && zone) drop = dropOfZone(zone);
+    else if (card) return null;
     if (!drop || !canMove(this.schema, this.root, id, drop.container).ok) return null;
     return drop;
   }
@@ -427,7 +435,8 @@ export class BlocksModel {
       const types = copies.map((b) => b.type);
       const rule = this.rules(f.container);
       const base = removeById(this.root, id);
-      const ok = rule && !types.some((x) => !rule.allow.includes(x)) ? canInsert(this.schema, base, f.container, types, 0, copies) : ({ ok: false, reason: 'type' } as Refusal);
+      const allowed = !!rule && types.every((type) => rule.allow.includes(type));
+      const ok = allowed ? canInsert(this.schema, base, f.container, types, { added: copies }) : typeRefusal;
       if (!ok.ok) {
         toast.error(t('blocks.sharedDetachFail', { reason: this.reason(ok) }));
         return;

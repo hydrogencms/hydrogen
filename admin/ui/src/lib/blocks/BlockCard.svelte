@@ -10,7 +10,7 @@
   import { clipboard, type BlocksModel } from './model.svelte';
   import SharedBody from './SharedBody.svelte';
   import { types } from '../types.svelte';
-  import { blockPath, blocksFieldOf, canRemove, listAt, propsPath, ruleOfField, slotPath, summary, SHARED, targets, type Block, type Container } from './tree';
+  import { blockPath, blocksFieldOf, canRemove, listAt, propsPath, ruleOfField, sameContainer, slotPath, summary, SHARED, targets, type Block, type Container } from './tree';
 
   let {
     model,
@@ -41,31 +41,55 @@
   const uid = $props.id();
   const dragging = $derived(model.drag?.id === id);
 
+  const item = (key: string, icon: string, rest: Omit<MenuItem, 'label' | 'icon'>): MenuItem => ({ label: t(key), icon, ...rest });
+
   const menu = $derived.by<MenuItem[]>(() => {
-    const rm = canRemove(model.schema, model.root, id);
-    const dup = model.addable(container, [block.type], [block]);
-    const moves = targets(model.schema, model.root, id, model.label).filter((x) => !(x.container.id === container.id && (x.container.slot ?? '') === (container.slot ?? '') && x.length <= 1));
+    const removal = canRemove(model.schema, model.root, id);
+    const duplicate = model.addable(container, [block.type], [block]);
     const paste = model.pasteState(container);
-    const sharedTypes = isShared ? [] : sharedOptions();
+    const isFirst = index === 0;
+    const isLast = index === sibs.length - 1;
+    const moveTargets = targets(model.schema, model.root, id, model.label).filter(
+      (target) => !(sameContainer(target.container, container) && target.length <= 1),
+    );
+    const noSharedTypes = isShared || sharedOptions().length === 0;
+    const pasteHint = !clipboard.blocks.length ? t('blocks.reason.empty') : paste.ok ? undefined : model.reason(paste);
     const items: MenuItem[] = [
-      { label: t('blocks.moveUp'), icon: 'arrow-up', disabled: index === 0, hint: index === 0 ? t('blocks.reason.first') : 'Alt+↑', onselect: () => model.nudge(id, -1) },
-      { label: t('blocks.moveDown'), icon: 'arrow-down', disabled: index === sibs.length - 1, hint: index === sibs.length - 1 ? t('blocks.reason.last') : 'Alt+↓', onselect: () => model.nudge(id, 1) },
-      { label: t('blocks.moveTo'), icon: 'folder-tree', disabled: moves.length === 0, hint: moves.length === 0 ? t('blocks.reason.noTarget') : undefined, onselect: () => (model.moving = id) },
-      { label: t('blocks.duplicate'), icon: 'copy', separator: true, disabled: !dup.ok, hint: dup.ok ? undefined : model.reason(dup), onselect: () => model.duplicate(id) },
-      { label: t('blocks.copy'), icon: 'copy', onselect: () => model.copy(id) },
-      { label: t('blocks.pasteAfter'), icon: 'copy', disabled: !paste.ok, hint: clipboard.blocks.length ? (paste.ok ? undefined : model.reason(paste)) : t('blocks.reason.empty'), onselect: () => model.paste(container, index + 1) },
+      item('blocks.moveUp', 'arrow-up', { disabled: isFirst, hint: isFirst ? t('blocks.reason.first') : 'Alt+↑', onselect: () => model.nudge(id, -1) }),
+      item('blocks.moveDown', 'arrow-down', { disabled: isLast, hint: isLast ? t('blocks.reason.last') : 'Alt+↓', onselect: () => model.nudge(id, 1) }),
+      item('blocks.moveTo', 'folder-tree', {
+        disabled: moveTargets.length === 0,
+        hint: moveTargets.length === 0 ? t('blocks.reason.noTarget') : undefined,
+        onselect: () => (model.moving = id),
+      }),
+      item('blocks.duplicate', 'copy', {
+        separator: true,
+        disabled: !duplicate.ok,
+        hint: duplicate.ok ? undefined : model.reason(duplicate),
+        onselect: () => model.duplicate(id),
+      }),
+      item('blocks.copy', 'copy', { onselect: () => model.copy(id) }),
+      item('blocks.pasteAfter', 'copy', { disabled: !paste.ok, hint: pasteHint, onselect: () => model.paste(container, index + 1) }),
     ];
     if (!isShared) {
-      items.push({
-        label: t('blocks.saveShared'),
-        icon: 'link',
-        separator: true,
-        disabled: sharedTypes.length === 0,
-        hint: sharedTypes.length === 0 ? t('blocks.reason.noShared') : undefined,
-        onselect: () => (model.sharing = id),
-      });
+      items.push(
+        item('blocks.saveShared', 'link', {
+          separator: true,
+          disabled: noSharedTypes,
+          hint: noSharedTypes ? t('blocks.reason.noShared') : undefined,
+          onselect: () => (model.sharing = id),
+        }),
+      );
     }
-    items.push({ label: t('blocks.delete'), icon: 'trash', danger: true, separator: true, disabled: !rm.ok, hint: rm.ok ? 'Del' : model.reason(rm), onselect: () => model.remove(id) });
+    items.push(
+      item('blocks.delete', 'trash', {
+        danger: true,
+        separator: true,
+        disabled: !removal.ok,
+        hint: removal.ok ? 'Del' : model.reason(removal),
+        onselect: () => model.remove(id),
+      }),
+    );
     return items;
   });
 

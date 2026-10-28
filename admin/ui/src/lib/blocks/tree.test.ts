@@ -249,8 +249,8 @@ describe('server limits', () => {
     const tree = [box('a', box('b', box('c'))), box('d', box('e', box('f', box('g', box('h', box('i', box('j')))))))];
     const sub = tree[0]!;
     expect(slotDepth(sub)).toBe(2);
-    expect(canInsert(nestSchema, tree, { id: 'g', slot: 'items' }, ['box'], 0, [sub]).ok).toBe(true);
-    expect(canInsert(nestSchema, tree, { id: 'j', slot: 'items' }, ['box'], 0, [sub])).toEqual({ ok: false, reason: 'depth', limit: 8 });
+    expect(canInsert(nestSchema, tree, { id: 'g', slot: 'items' }, ['box'], { added: [sub] }).ok).toBe(true);
+    expect(canInsert(nestSchema, tree, { id: 'j', slot: 'items' }, ['box'], { added: [sub] })).toEqual({ ok: false, reason: 'depth', limit: 8 });
     expect(canMove(nestSchema, tree, 'a', { id: 'j', slot: 'items' }).ok).toBe(false);
   });
 
@@ -258,6 +258,6 @@ describe('server limits', () => {
     const many = Array.from({ length: 999 }, (_, i) => box('x' + i));
     expect(canInsert(nestSchema, many, {}, ['box']).ok).toBe(true);
     expect(canInsert(nestSchema, [...many, box('y')], {}, ['box'])).toEqual({ ok: false, reason: 'count', limit: 1000 });
-    expect(canInsert(nestSchema, many, {}, ['box'], 0, [box('p', box('q'))])).toEqual({ ok: false, reason: 'count', limit: 1000 });
+    expect(canInsert(nestSchema, many, {}, ['box'], { added: [box('p', box('q'))] })).toEqual({ ok: false, reason: 'count', limit: 1000 });
   });
 });
