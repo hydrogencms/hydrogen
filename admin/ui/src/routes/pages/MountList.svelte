@@ -3,6 +3,7 @@
   import { t } from '../../lib/i18n';
   import { formatDateTime } from '../../lib/format';
   import { link, href } from '../../lib/router.svelte';
+  import { itemStatusTone } from '../../lib/status';
   import Badge from '../../lib/ui/Badge.svelte';
   import Button from '../../lib/ui/Button.svelte';
   import Input from '../../lib/ui/Input.svelte';
@@ -60,7 +61,6 @@
       else page = 1;
     }, 250);
   }
-  const tone = (s: string) => (s === 'published' ? 'success' : s === 'changed' ? 'warning' : 'neutral');
 </script>
 
 <div class="h-stack h-pages__node">
@@ -99,7 +99,7 @@
 </div>
 
 {#snippet nameCell(r: Schemas['Summary'])}<a use:link href={href('/items/' + r.id)}>{r.name}</a>{/snippet}
-{#snippet statusCell(r: Schemas['Summary'])}<Badge tone={tone(r.status)}>{t('pages.status.' + r.status)}</Badge>{/snippet}
+{#snippet statusCell(r: Schemas['Summary'])}<Badge tone={itemStatusTone(r.status)}>{t('pages.status.' + r.status)}</Badge>{/snippet}
 {#snippet langCell(r: Schemas['Summary'])}{languages.filter((l) => r.locales.includes(l)).join(', ') || r.locales.join(', ')}{/snippet}
 {#snippet updCell(r: Schemas['Summary'])}{formatDateTime(r.updatedAt)}{/snippet}
 

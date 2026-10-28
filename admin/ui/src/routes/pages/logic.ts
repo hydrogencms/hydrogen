@@ -260,3 +260,31 @@ export interface UnplacedItem {
 }
 
 export const UNPLACED_PAGE = 20;
+
+export interface PagePath {
+  locale: string;
+  path: string;
+  state: string;
+}
+
+/** The URL to copy for a page: its current path in the locale, else any current path, else the fallback. */
+export function currentPath(rows: PagePath[], locale: string, fallback?: string): string | undefined {
+  const current = rows.filter((r) => r.state === 'current');
+  return current.find((r) => r.locale === locale)?.path ?? current[0]?.path ?? fallback;
+}
+
+/** Pixels the splitter moves for a key (Home and End jump to the limits); 0 for any other key. */
+export function splitStep(key: string, left: number, min: number, max: number): number {
+  switch (key) {
+    case 'ArrowLeft':
+      return -24;
+    case 'ArrowRight':
+      return 24;
+    case 'Home':
+      return min - left;
+    case 'End':
+      return max - left;
+    default:
+      return 0;
+  }
+}

@@ -5,6 +5,7 @@
   import Icon from '../ui/Icon.svelte';
   import { t } from '../i18n';
   import { href, link } from '../router.svelte';
+  import { itemStatusTone } from '../status';
   import { blocksCatalog } from './catalog.svelte';
   import type { BlocksModel } from './model.svelte';
   import type { Block } from './tree';
@@ -26,7 +27,7 @@
         <div class="h-shared__title">
           <Icon name="link" size={16} />
           <strong>{s.name}</strong>
-          <Badge tone={s.status === 'published' ? 'success' : s.status === 'changed' ? 'warning' : 'neutral'}>{t(`collections.status.${s.status}`)}</Badge>
+          <Badge tone={itemStatusTone(s.status)}>{t(`collections.status.${s.status}`)}</Badge>
         </div>
         {#if !model.readonly}
           <div class="h-shared__actions">

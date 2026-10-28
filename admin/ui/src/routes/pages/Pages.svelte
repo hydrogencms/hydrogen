@@ -29,7 +29,8 @@
   import AddDialog from './AddDialog.svelte';
   import LinkForm from './LinkForm.svelte';
   import {
-    addableTypes, canHold, emptyFilter, filterActive, matchesFilter, placement, visibleIds, type PNode, type Placement,
+    addableTypes, canHold, currentPath, emptyFilter, filterActive, matchesFilter, placement, splitStep, visibleIds,
+    type PagePath, type PNode, type Placement,
   } from './logic';
   import { copyText, errorMessage } from '../../lib/errors';
   import MountList from './MountList.svelte';
@@ -214,8 +215,8 @@
     try {
       let url = n.target ?? n.path;
       if (n.kind === 'page' && n.item) {
-        const rows = ((await api.get('/pages/items/{id}/paths', { params: { id: n.item } })) as unknown as { items: { locale: string; path: string; state: string }[] }).items;
-        url = rows.find((r) => r.state === 'current' && r.locale === locale)?.path ?? rows.find((r) => r.state === 'current')?.path ?? url;
+        const res = (await api.get('/pages/items/{id}/paths', { params: { id: n.item } })) as unknown as { items: PagePath[] };
+        url = currentPath(res.items, locale, url);
       }
       if (!url) {
         toast.info(t('pages.noUrl'));
@@ -268,7 +269,10 @@
     if (n.restricted) return [];
     const items: MenuItem[] = [];
     if (n.kind === 'page' && n.item) items.push({ label: t('pages.open'), icon: 'edit', href: '/items/' + n.item });
-    if (n.kind === 'mount') items.push({ label: t('pages.editMount'), icon: 'edit', disabled: !canMount, onselect: () => openAdd('mount-edit', store!.byId.get(n.parent ?? '') ?? n, n) });
+    if (n.kind === 'mount') {
+      const owner = store!.byId.get(n.parent ?? '') ?? n;
+      items.push({ label: t('pages.editMount'), icon: 'edit', disabled: !canMount, onselect: () => openAdd('mount-edit', owner, n) });
+    }
     items.push({ label: t('pages.copyUrl'), icon: 'copy', onselect: () => void copyUrl(n) });
     if (canEdit) {
       if (n.kind === 'page') {
@@ -329,7 +333,6 @@
     else if (d.n.kind === 'page' && d.n.item) void router.navigate('/items/' + d.n.item);
   }
 
-  const statusTone = (s?: string) => (s === 'published' ? 'success' : s === 'changed' ? 'warning' : 'neutral');
   const complete = (ls: string[] | undefined) => (ls ? languages.filter((l) => ls.includes(l)) : []);
   // More languages than this make the per-language dots unreadable: rows show a count instead.
   const DOTS_UP_TO = 4;
@@ -364,7 +367,7 @@
     el.addEventListener('pointerup', stop, { once: true });
   }
   function splitKeys(e: KeyboardEvent) {
-    const d = e.key === 'ArrowLeft' ? -24 : e.key === 'ArrowRight' ? 24 : e.key === 'Home' ? MIN - left : e.key === 'End' ? MAX - left : 0;
+    const d = splitStep(e.key, left, MIN, MAX);
     if (!d) return;
     e.preventDefault();
     resizeTo(left + d);

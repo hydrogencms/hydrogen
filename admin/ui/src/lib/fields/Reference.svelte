@@ -7,6 +7,7 @@
   import type { CompiledField } from '../types.svelte';
   import { t } from '../i18n';
   import { href, link } from '../router.svelte';
+  import { itemStatusTone } from '../status';
   import { useFields } from './context';
 
   let {
@@ -89,7 +90,7 @@
   <a class="h-ref__chip" use:link href={href(`/items/${info.id}`)}>
     <span class="h-ref__name">{info.name}</span>
     <span class="h-ref__type">{types.get(info.type)?.label ?? info.type}</span>
-    <Badge tone={info.status === 'published' ? 'success' : info.status === 'changed' ? 'warning' : 'neutral'}>{t(`collections.status.${info.status}`)}</Badge>
+    <Badge tone={itemStatusTone(info.status)}>{t(`collections.status.${info.status}`)}</Badge>
   </a>
 {/if}
 </div>

@@ -10,6 +10,7 @@
   import '../messages/collections';
   import '../messages/media';
   import { href, link } from '../router.svelte';
+  import { itemStatusTone } from '../status';
   import { session } from '../auth/session.svelte';
   import { types, type CompiledField } from '../types.svelte';
   import { itemApi, type ItemData } from '../../routes/item/model';
@@ -83,7 +84,8 @@
     if (confirmDiscard(isDirty, (m) => confirm(m))) reloadTick++;
   }
 
-  const pick = (fields: CompiledField[], doc: Doc): Doc => Object.fromEntries(fields.filter((f) => f.name in doc).map((f) => [f.name, structuredClone(doc[f.name])]));
+  const pick = (fields: CompiledField[], doc: Doc): Doc =>
+    Object.fromEntries(fields.filter((f) => f.name in doc).map((f) => [f.name, structuredClone(doc[f.name])]));
   const folderOf = (v: unknown) => (typeof v === 'string' && v.trim() && normFolder(v) !== '/' ? normFolder(v) : undefined);
   const normShared = (d: Doc): Doc => ({ ...d, folder: folderOf(d.folder) });
 
@@ -104,7 +106,8 @@
   $effect(() => () => {
     dirty = false;
   });
-  const alt = $derived(typeof loc[main]?.alt === 'string' ? (loc[main]!.alt as string).trim() : '');
+  const mainAlt = $derived(loc[main]?.alt);
+  const alt = $derived(typeof mainAlt === 'string' ? mainAlt.trim() : '');
   const hasAlt = $derived(translatable.some((f) => f.name === 'alt'));
   const edited = (path: string) => {
     if (path in errors) delete errors[path];
@@ -121,7 +124,9 @@
       if (signal?.aborted) return;
       const reads = [first, ...rest];
       const s: Doc = {};
-      for (const f of def?.fields ?? []) if (!f.translatable && first.fields[f.name] !== undefined) s[f.name] = structuredClone(first.fields[f.name]);
+      for (const f of def?.fields ?? []) {
+        if (!f.translatable && first.fields[f.name] !== undefined) s[f.name] = structuredClone(first.fields[f.name]);
+      }
       shared = structuredClone(s);
       savedShared = structuredClone(s);
       const docs: Record<string, Doc> = {};
@@ -261,6 +266,14 @@
     }
     tagText = '';
   }
+  function setFolder(e: Event) {
+    shared.folder = (e.currentTarget as HTMLInputElement).value;
+    edited('folder');
+  }
+  function removeTag(tag: string) {
+    shared.tags = tags.filter((x) => x !== tag);
+    edited('tags');
+  }
   const tags = $derived(Array.isArray(shared.tags) ? (shared.tags as string[]) : []);
 
   async function trash() {
@@ -305,7 +318,7 @@
         <div><dt>{t('media.uploaded')}</dt><dd><Time at={data.createdAt} /></dd></div>
         <div>
           <dt>{t('media.status')}</dt>
-          <dd><Badge tone={data.status === 'published' ? 'success' : data.status === 'changed' ? 'warning' : 'neutral'}>{t(`collections.status.${data.status}`)}</Badge></dd>
+          <dd><Badge tone={itemStatusTone(data.status)}>{t(`collections.status.${data.status}`)}</Badge></dd>
         </div>
       </dl>
     {/if}
@@ -330,7 +343,7 @@
 
       <Field label={t('media.folder')} description={t('media.folderHint')} error={errors.folder}>
         {#snippet children(c)}
-          <Input {...c} list="{uid}-folders" autocomplete="off" disabled={!canEdit} value={typeof shared.folder === 'string' ? shared.folder : ''} oninput={(e) => { shared.folder = (e.currentTarget as HTMLInputElement).value; edited('folder'); }} />
+          <Input {...c} list="{uid}-folders" autocomplete="off" disabled={!canEdit} value={typeof shared.folder === 'string' ? shared.folder : ''} oninput={setFolder} />
           <datalist id="{uid}-folders">{#each folders as f (f)}<option value={f}></option>{/each}</datalist>
         {/snippet}
       </Field>
@@ -340,7 +353,7 @@
           <div class="h-tagbox">
             {#each tags as tag (tag)}
               <span class="h-tagbox__tag">{tag}
-                {#if canEdit}<button type="button" class="h-tagbox__x" aria-label={t('media.removeTag', { tag })} onclick={() => { shared.tags = tags.filter((x) => x !== tag); edited('tags'); }}><Icon name="x" size={12} /></button>{/if}
+                {#if canEdit}<button type="button" class="h-tagbox__x" aria-label={t('media.removeTag', { tag })} onclick={() => removeTag(tag)}><Icon name="x" size={12} /></button>{/if}
               </span>
             {/each}
             <Input {...c} class="h-tagbox__input" autocomplete="off" disabled={!canEdit} bind:value={tagText} onkeydown={tagKey} onblur={commitTag} />

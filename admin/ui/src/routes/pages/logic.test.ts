@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addableTypes, canHold, defaultParent, emptyFilter, filterText, matchesFilter, mountQuery, parseFilter, placeTarget, placement, urlChanges,
+  addableTypes, canHold, currentPath, defaultParent, emptyFilter, filterText, matchesFilter, mountQuery, parseFilter, placeTarget, placement, splitStep, urlChanges,
   visibleIds, type PNode,
 } from './logic';
 
@@ -140,5 +140,29 @@ describe('placing an existing page', () => {
     expect(placeTarget('main', '', true)).toEqual({ site: 'main' });
     expect(placeTarget('main', '', false)).toBeNull();
     expect(placeTarget('', 'p', false)).toBeNull();
+  });
+});
+
+describe('currentPath', () => {
+  const rows = [
+    { locale: 'de', path: '/de/a', state: 'current' },
+    { locale: 'en', path: '/en/old', state: 'old' },
+    { locale: 'en', path: '/en/a', state: 'current' },
+  ];
+  it('prefers the locale, then any current path, then the fallback', () => {
+    expect(currentPath(rows, 'en', '/x')).toBe('/en/a');
+    expect(currentPath(rows, 'fr', '/x')).toBe('/de/a');
+    expect(currentPath([rows[1]!], 'en', '/x')).toBe('/x');
+    expect(currentPath([], 'en')).toBeUndefined();
+  });
+});
+
+describe('splitStep', () => {
+  it('steps by arrows and jumps to the limits', () => {
+    expect(splitStep('ArrowLeft', 300, 280, 560)).toBe(-24);
+    expect(splitStep('ArrowRight', 300, 280, 560)).toBe(24);
+    expect(splitStep('Home', 300, 280, 560)).toBe(-20);
+    expect(splitStep('End', 300, 280, 560)).toBe(260);
+    expect(splitStep('a', 300, 280, 560)).toBe(0);
   });
 });
