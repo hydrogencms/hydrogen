@@ -1,13 +1,13 @@
 <script lang="ts">
   import '../../lib/messages/collections';
   import { tick } from 'svelte';
-  import { api, ApiError, type Schemas } from '../../lib/api/client';
+  import { api, type Schemas } from '../../lib/api/client';
   import { session } from '../../lib/auth/session.svelte';
   import { channels } from '../../lib/channels.svelte';
   import { errorMessage } from '../../lib/errors';
   import { cellText, runPool } from '../../lib/fields/logic';
   import { knownLocales } from '../../lib/fields/locales';
-    import { t } from '../../lib/i18n';
+  import { t } from '../../lib/i18n';
   import { link, href, router } from '../../lib/router.svelte';
   import { types, type CompiledField } from '../../lib/types.svelte';
   import Badge from '../../lib/ui/Badge.svelte';
@@ -35,6 +35,7 @@
   import StatusBadge from './StatusBadge.svelte';
   import FilterBar from './FilterBar.svelte';
   import ViewNameDialog from './ViewNameDialog.svelte';
+  import { bulkResults, type BulkResult } from './bulk';
   import { canonicalQuery, emptyQuery, nextSort, parseQuery, parseViews, renameView, sortState, toApiQuery, toUrlPatch, upsertView, type ListQuery, type SavedView } from './query';
 
   type Summary = Schemas['Summary'];
@@ -146,9 +147,16 @@
       return row;
     }),
   );
+  const fieldColumn = (f: CompiledField): Column<Row> => ({
+    key: `f:${f.name}`,
+    label: f.label,
+    sortable: !!f.index,
+    mobile: 'hide',
+    cell: cellTags.get(f.name) ? extCell : undefined,
+  });
   const columns = $derived<Column<Row>[]>([
     { key: 'name', label: t('collections.col.name'), sortable: true, cell: nameCell },
-    ...fieldCols.map((f) => ({ key: `f:${f.name}`, label: f.label, sortable: !!f.index, mobile: 'hide', cell: cellTags.get(f.name) ? extCell : undefined }) as Column<Row>),
+    ...fieldCols.map(fieldColumn),
     { key: 'status', label: t('collections.col.status'), cell: statusCell },
     { key: 'locales', label: t('collections.col.languages'), mobile: 'hide', cell: localesCell },
     { key: 'updated', label: t('collections.col.updated'), sortable: true, cell: updatedCell },
@@ -190,13 +198,7 @@
   }
 
   // ---- bulk actions
-  interface Result {
-    id: string;
-    name: string;
-    ok: boolean;
-    message: string;
-  }
-  let bulk = $state<{ kind: 'publish' | 'delete'; phase: 'confirm' | 'running' | 'done'; results: Result[] } | null>(null);
+  let bulk = $state<{ kind: 'publish' | 'delete'; phase: 'confirm' | 'running' | 'done'; results: BulkResult[] } | null>(null);
   let bulkOpen = $state(false);
   const selectedRows = $derived(rows.filter((r) => selected.has(r.id)));
 
@@ -204,26 +206,21 @@
     bulk = { kind, phase: 'confirm', results: [] };
     bulkOpen = true;
   }
-  function errText(e: unknown): string {
-    if (e instanceof ApiError) {
-      if (e.code === 'referenced') return t('collections.bulk.referenced', { n: String((e.body?.referrers as unknown[] | undefined)?.length ?? 0) });
-      if (e.status === 403) return t('app.forbidden');
-      return e.message;
+  async function bulkOne(kind: 'publish' | 'delete', r: Summary) {
+    if (kind === 'delete') {
+      await api.del('/items/{id}', { params: { id: r.id } });
+      return;
     }
-    return e instanceof Error ? e.message : String(e);
+    if (!r.draftParts.length) throw new Error(t('collections.bulk.nothing'));
+    await api.post('/items/{id}/publish', { params: { id: r.id }, body: {} as never });
   }
   async function runBulk() {
     if (!bulk) return;
     const kind = bulk.kind;
     const targets = [...selectedRows];
     bulk = { kind, phase: 'running', results: [] };
-    const res = await runPool(targets, 4, async (r) => {
-      if (kind === 'publish') {
-        if (!r.draftParts.length) throw new Error(t('collections.bulk.nothing'));
-        await api.post('/items/{id}/publish', { params: { id: r.id }, body: {} as never });
-      } else await api.del('/items/{id}', { params: { id: r.id } });
-    });
-    const results = targets.map((r, i) => ({ id: r.id, name: r.name || r.id, ok: res[i]!.ok, message: res[i]!.ok ? '' : errText((res[i] as { error: unknown }).error) }));
+    const outcomes = await runPool(targets, 4, (r) => bulkOne(kind, r));
+    const results = bulkResults(targets, outcomes);
     bulk = { kind, phase: 'done', results };
     await tick();
     document.getElementById('h-bulk-close')?.focus();

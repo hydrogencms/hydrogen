@@ -41,7 +41,13 @@
   let confirmDelete = $state(false);
   let holders = $state<{ a: Schemas['Assignment']; who: string; to: string }[] | null>(null);
 
-  const normalize = (ps: Schemas['RolePolicy'][]): RolePolicy[] => ps.map((p) => ({ policy: p.policy, limitations: p.limitations ?? {} }));
+  const normalize = (ps: Schemas['RolePolicy'][]): RolePolicy[] =>
+    ps.map((p) => ({ policy: p.policy, limitations: p.limitations ?? {} }));
+  const allFirst = (a: string, b: string) => (a === ALL ? -1 : b === ALL ? 1 : a.localeCompare(b));
+  const holderLink = (a: Schemas['Assignment']) =>
+    a.principalKind === 'user' ? `/settings/users/${a.principalId}`
+    : a.principalKind === 'group' ? `/settings/groups/${a.principalId}`
+    : '/settings/tokens';
 
   async function load() {
     failed = false;
@@ -63,12 +69,16 @@
   // The role's policies by module prefix, keeping each policy's index in the form.
   const sections = $derived.by(() => {
     const by = new Map<string, number[]>();
-    form.values.policies.forEach((p, i) => by.set(policyModule(p.policy), [...(by.get(policyModule(p.policy)) ?? []), i]));
-    return [...by.keys()].sort((a, b) => (a === ALL ? -1 : b === ALL ? 1 : a.localeCompare(b))).map((module) => ({ module, indices: by.get(module)! }));
+    form.values.policies.forEach((p, i) => {
+      const module = policyModule(p.policy);
+      by.set(module, [...(by.get(module) ?? []), i]);
+    });
+    return [...by.keys()].sort(allFirst).map((module) => ({ module, indices: by.get(module)! }));
   });
   const sentence = (m: string) => m.charAt(0).toUpperCase() + m.slice(1);
   const everything = $derived(form.values.policies.some((p) => p.policy === ALL));
-  const describe = (name: string) => (name === ALL ? t('settings.roles.everything') : catalog?.policies.find((p) => p.name === name)?.description ?? '');
+  const describe = (name: string) =>
+    name === ALL ? t('settings.roles.everything') : (catalog?.policies.find((p) => p.name === name)?.description ?? '');
 
   function add(policy: string, close: () => void) {
     form.values.policies = addPolicy(form.values.policies, policy);
@@ -126,7 +136,7 @@
       holders = as.items.map((a) => ({
         a,
         who: name.get(a.principalId) ?? a.principalId,
-        to: a.principalKind === 'user' ? `/settings/users/${a.principalId}` : a.principalKind === 'group' ? `/settings/groups/${a.principalId}` : '/settings/tokens',
+        to: holderLink(a),
       }));
     } catch (e) {
       reportError(e);

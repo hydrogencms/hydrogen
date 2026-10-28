@@ -18,6 +18,7 @@
   import { ext } from '../../lib/extensions.svelte';
   import Extension from '../../lib/ext/Extension.svelte';
   import Slot from '../../lib/ext/Slot.svelte';
+  import { foldEvents, lastActions, GONE, VERBS } from './recent';
 
   type Audit = Schemas['AuditEntry'];
   interface Row {
@@ -31,12 +32,6 @@
     name?: string;
     type?: string;
     at: string;
-  }
-  interface Rec {
-    e: Audit;
-    who: string;
-    icon?: string;
-    actions: string[];
   }
 
   const first = $derived((session.principal?.name ?? '').trim().split(/\s+/)[0] ?? '');
@@ -90,18 +85,18 @@
     return () => (live = false);
   });
 
-  const verbs = ['item.create', 'item.update', 'item.publish', 'item.unpublish', 'item.trash', 'item.restore', 'item.purge', 'item.delete', 'item.discard'];
-  const GONE = ['item.purge', 'item.delete'];
-  const TEN_MIN = 600_000;
-
   // Directory lookups are cached for the session: users and tokens are listed once.
-  let users: Promise<Map<string, string>> | undefined;
-  let tokens: Promise<Map<string, string>> | undefined;
-  session.onClear(() => {
-    users = tokens = undefined;
-  });
-  const loadUsers = () => (users ??= api.get('/users', { query: { limit: 200 } }).then((r) => new Map(r.items.map((u) => [u.id, u.name || u.login]))).catch(() => new Map<string, string>()));
-  const loadTokens = () => (tokens ??= api.get('/tokens', { query: { limit: 200 } }).then((r) => new Map(r.items.map((x) => [x.id, x.name]))).catch(() => new Map<string, string>()));
+  function cachedNames(list: () => Promise<[string, string][]>): () => Promise<Map<string, string>> {
+    let cache: Promise<Map<string, string>> | undefined;
+    session.onClear(() => (cache = undefined));
+    return () => (cache ??= list().then((pairs) => new Map(pairs)).catch(() => new Map<string, string>()));
+  }
+  const loadUsers = cachedNames(async () =>
+    (await api.get('/users', { query: { limit: 200 } })).items.map((u): [string, string] => [u.id, u.name || u.login]),
+  );
+  const loadTokens = cachedNames(async () =>
+    (await api.get('/tokens', { query: { limit: 200 } })).items.map((x): [string, string] => [x.id, x.name]),
+  );
 
   async function actorOf(e: Audit): Promise<{ who: string; icon?: string }> {
     const id = e.actorId ?? '';
@@ -122,25 +117,17 @@
   function verbText(actions: string[]): string {
     const set = new Set(actions);
     if (set.has('item.create')) set.delete('item.update');
-    const list = verbs.filter((v) => set.has(v)).map((v) => t(`dashboard.verb.${v}`));
+    const list = VERBS.filter((v) => set.has(v)).map((v) => t(`dashboard.verb.${v}`));
     return new Intl.ListFormat(undefined, { type: 'conjunction' }).format(list);
   }
 
   async function loadRecent() {
     failed = false;
     try {
-      const entries = (await api.get('/audit', { query: { action: 'item.*', limit: 50 } })).items.filter((e) => verbs.includes(e.action));
-      // Newest first; fold events of the same actor on the same item within ten minutes into one sentence.
-      const recs: Rec[] = [];
-      for (const e of entries) {
-        const hit = recs.find((r) => r.e.actorKind === e.actorKind && r.e.actorId === e.actorId && r.e.subject === e.subject && Math.abs(Date.parse(r.e.at) - Date.parse(e.at)) <= TEN_MIN);
-        if (hit) hit.actions.push(e.action);
-        else recs.push({ e, who: '', actions: [e.action] });
-      }
-      const feed = recs.slice(0, 8);
+      const entries = (await api.get('/audit', { query: { action: 'item.*', limit: 50 } })).items.filter((e) => VERBS.includes(e.action));
+      const feed = foldEvents(entries).slice(0, 8);
       // The newest action on each item says where it is now: purged items are not asked for, trashed ones from the trash.
-      const last = new Map<string, string>();
-      for (const e of entries) if (e.subject && !last.has(e.subject)) last.set(e.subject, e.action);
+      const last = lastActions(entries);
       const items = await Promise.all(
         [...new Set(feed.map((r) => r.e.subject).filter((x): x is string => !!x && !GONE.includes(last.get(x) ?? '')))].map((id) =>
           api
@@ -151,8 +138,19 @@
       ).then((r) => new Map(r.filter((x) => x !== null)));
       const actors = await Promise.all(feed.map((r) => actorOf(r.e)));
       rows = feed.map((r, i) => {
+        const subject = r.e.subject ?? '';
         const it = r.e.subject ? items.get(r.e.subject) : undefined;
-        return { key: r.e.id, ...actors[i]!, verb: verbText(r.actions), deleted: GONE.includes(last.get(r.e.subject ?? '') ?? ''), trashed: last.get(r.e.subject ?? '') === 'item.trash', id: it ? r.e.subject : undefined, name: it?.name, type: it?.type, at: r.e.at };
+        return {
+          key: r.e.id,
+          ...actors[i]!,
+          verb: verbText(r.actions),
+          deleted: GONE.includes(last.get(subject) ?? ''),
+          trashed: last.get(subject) === 'item.trash',
+          id: it ? r.e.subject : undefined,
+          name: it?.name,
+          type: it?.type,
+          at: r.e.at,
+        };
       });
     } catch {
       failed = true;
