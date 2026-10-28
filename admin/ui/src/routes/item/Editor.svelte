@@ -20,7 +20,7 @@
   import { setContext, untrack, type Component, type Snippet } from 'svelte';
   import '../../lib/messages/preview';
   import { copyTranslatable, fieldsPatch, isHomePage, hydrate, initialValues, cleanDoc, jsonEqual, overlayState, overrideValue, resolvedDoc, unroutedErrors, viewValues, type Doc } from '../../lib/fields/logic';
-  import { itemLocales, knownLocales, localeState, overlayNote } from '../../lib/fields/locales';
+  import { itemLocales, knownLocales, localeState, overlayNote, type LocaleState, type OverlayNote } from '../../lib/fields/locales';
   import { Form } from '../../lib/form.svelte';
   import { t } from '../../lib/i18n';
   import { href, link, router } from '../../lib/router.svelte';
@@ -95,7 +95,7 @@
   // Tells the server this write is the collaboration session's own: the others get `saved`, not `reset`. `seq` is
   // the highest update this client applied (its own acknowledged ones included); the others compare it with theirs.
   const collabHeaders = (seq?: number): Record<string, string> | undefined => {
-    const c = collab?.tr.client;
+    const c = collab?.transport.client;
     return c ? { 'X-Hydrogen-Collab-Client': c, 'X-Hydrogen-Collab-Seq': String(seq ?? collabBinding?.applied() ?? 0) } : undefined;
   };
   const cc = (noMatch = false, seq?: number): Concurrency => ({
@@ -125,7 +125,7 @@
 
   // ---- collaboration (presence, soft locks, co-editing): one session per loaded item, re-joined on every load
   const presence = new Presence();
-  let collab = $state.raw<{ tr: CollabConnection } | null>(null);
+  let collab = $state.raw<{ transport: CollabConnection } | null>(null);
   let collabBinding = $state.raw<BindingInfo>();
   // The session was given up on this page (a declined reset, a chunk that did not load): the banner stays.
   let collabLost = $state(false);
@@ -151,17 +151,17 @@
   function stopCollab(opts: { discard?: boolean } = {}) {
     collabGen++;
     lateSaved = undefined;
-    const b = collabBinding;
-    const c = collab;
+    const binding = collabBinding;
+    const live = collab;
     const keep = !!resumeClient;
     collabBinding = undefined;
     collab = null;
     // Unsent edits go out first; the leave waits for them.
-    b?.destroy(opts);
-    c?.tr.leave(keep ? { keep: true } : undefined);
+    binding?.destroy(opts);
+    live?.transport.leave(keep ? { keep: true } : undefined);
     presence.detach();
   }
-  async function startCollab(d: ItemData) {
+  async function startCollab(loaded: ItemData) {
     stopCollab();
     const resume = resumeClient;
     resumeClient = '';
@@ -169,22 +169,22 @@
     const resumeFrom = restartResume;
     restartMerge = restartResume = undefined;
     collabLost = false;
-    const g = collabGen;
-    const ty = types.get(d.type);
-    if (mode === 'new' || !d.id || !ty || !collabWanted()) return;
+    const generation = collabGen;
+    const itemType = types.get(loaded.type);
+    if (mode === 'new' || !loaded.id || !itemType || !collabWanted()) return;
     // The Yjs chunk loads before the join: nothing the session sends meanwhile has nobody to receive it.
     const chunk = import('../../lib/collab/bind.svelte');
-    const tr = connect(d.id, undefined, resume);
-    collab = { tr };
-    const loc = d.locale || locale;
-    presence.attach(tr, () => locale);
-    tr.onSaved((s) => void onCollabSaved(g, tr, s));
-    tr.onReset((r) => onCollabReset(g, r));
+    const transport = connect(loaded.id, undefined, resume);
+    collab = { transport };
+    const joinLocale = loaded.locale || locale;
+    presence.attach(transport, () => locale);
+    transport.onSaved((s) => void onCollabSaved(generation, transport, s));
+    transport.onReset((r) => onCollabReset(generation, r));
     try {
-      const m = await chunk;
-      if (g !== collabGen) return;
-      const join = await tr.join(loc, canEdit);
-      if (g !== collabGen) return;
+      const bind = await chunk;
+      if (generation !== collabGen) return;
+      const join = await transport.join(joinLocale, canEdit);
+      if (generation !== collabGen) return;
       // The draft changed between our read and the join: seeding from it would be stale.
       if (join.init.length && join.etag && etag && join.etag !== etag && joinReloads < 1) {
         joinReloads++;
@@ -193,44 +193,60 @@
         return;
       }
       joinReloads = 0;
-      collabBinding = m.bindForm({ form, transport: tr, join, type: ty, locale: loc, draft: { ...d, fields: viewValues(ty.fields, d) }, sparse: !!d.inherits, merge, resume: resumeFrom, onFatal: (r) => onCollabFatal(g, r) });
+      collabBinding = bind.bindForm({
+        form,
+        transport,
+        join,
+        type: itemType,
+        locale: joinLocale,
+        draft: { ...loaded, fields: viewValues(itemType.fields, loaded) },
+        sparse: !!loaded.inherits,
+        merge,
+        resume: resumeFrom,
+        onFatal: (r) => onCollabFatal(generation, r),
+      });
     } catch {
       // The transport reports `unavailable` (the banner) and retries what may pass; a chunk that failed to load
       // never reports anything, so say so here.
-      if (g === collabGen && tr.state !== 'unavailable') collabLost = true;
+      if (generation === collabGen && transport.state !== 'unavailable') collabLost = true;
     }
   }
   const sameValues = (a: Values, b: Values) => jsonEqual(JSON.parse(JSON.stringify(a)), JSON.parse(JSON.stringify(b)));
-  async function onCollabSaved(g: number, tr: CollabConnection, s: { etag: string; client: string; name: string; seq: number }) {
-    if (g !== collabGen || s.client === tr.client) return;
-    etag = s.etag;
+  type CollabSaved = { etag: string; client: string; name: string; seq: number };
+  async function onCollabSaved(generation: number, transport: CollabConnection, saver: CollabSaved) {
+    if (generation !== collabGen || saver.client === transport.client) return;
+    etag = saver.etag;
     gotTag = true;
-    toast.info(t('collab.saved', { name: s.name || t('collections.conflict.someone') }));
+    toast.info(t('collab.saved', { name: saver.name || t('collections.conflict.someone') }));
     if (!target || !type) return;
     const fresh = await itemApi.read(target, locale, undefined, cc()).catch(() => null);
-    if (!fresh || g !== collabGen) return;
+    if (!fresh || generation !== collabGen) return;
     data = fresh;
-    const fv: Values = { fields: viewValues(type.fields, fresh), key: fresh.key ?? '', alwaysAvailable: fresh.alwaysAvailable };
+    const freshValues: Values = {
+      fields: viewValues(type.fields, fresh),
+      key: fresh.key ?? '',
+      alwaysAvailable: fresh.alwaysAvailable,
+    };
     // What the draft holds now is what a later save must be measured against.
-    saved = structuredClone(fv);
+    saved = structuredClone(freshValues);
     // Clean only when nothing local is missing from the save, and the saved draft is what the form shows.
-    lateSaved = { fv, seq: s.seq };
+    lateSaved = { values: freshValues, seq: saver.seq };
     settleSaved();
   }
   // A save of another participant that did not make the form clean at once: an unsent or unacknowledged edit of
   // ours, or an update of theirs still on its way. It is looked at again whenever the binding or the form changes.
-  let lateSaved = $state.raw<{ fv: Values; seq: number } | undefined>();
+  let lateSaved = $state.raw<{ values: Values; seq: number } | undefined>();
   function settleSaved() {
-    const r = lateSaved;
-    const b = collabBinding;
-    if (!r || !b) return;
+    const late = lateSaved;
+    const binding = collabBinding;
+    if (!late || !binding) return;
     // The save lacks an update we hold: this form stays dirty (with the new ETag) until the next save.
-    if (b.applied() > r.seq) {
+    if (binding.applied() > late.seq) {
       lateSaved = undefined;
       return;
     }
-    if (b.unsynced() || form.pending) return;
-    if (sameValues(r.fv, $state.snapshot(form.values) as Values)) {
+    if (binding.unsynced() || form.pending) return;
+    if (sameValues(late.values, $state.snapshot(form.values) as Values)) {
       lateSaved = undefined;
       form.markSaved();
     }
@@ -243,30 +259,30 @@
     void $state.snapshot(form.values);
     untrack(settleSaved);
   });
-  function onCollabReset(g: number, reason: string) {
-    if (g !== collabGen) return;
+  function onCollabReset(generation: number, reason: string) {
+    if (generation !== collabGen) return;
     if (reason !== 'trashed' && collabBinding?.unsynced() && !confirm(t('collab.resetConfirm'))) {
       stopCollab();
       collabLost = true;
       return;
     }
     toast.info(t(`collab.reset.${reason}`));
-    resumeClient = collab?.tr.client ?? '';
+    resumeClient = collab?.transport.client ?? '';
     reloadTick++;
   }
   // The session cannot go on as it is.
-  function onCollabFatal(g: number, reason: 'claim_lost' | 'poison' | 'reset-failed') {
-    if (g !== collabGen) return;
+  function onCollabFatal(generation: number, reason: 'claim_lost' | 'poison' | 'reset-failed') {
+    if (generation !== collabGen) return;
     if (reason === 'poison') return; // the server's `reset` follows and reloads
     if (reason === 'claim_lost' && data && claimRestarts < 3) {
       // The part this client seeded went to someone else: join again from the draft; edits made meanwhile stay.
       claimRestarts++;
-      resumeClient = collab?.tr.client ?? '';
-      const d = data;
+      resumeClient = collab?.transport.client ?? '';
+      const current = data;
       restartMerge = collabBinding?.lostParts();
       restartResume = collabBinding?.ackedValues();
       stopCollab({ discard: true });
-      void startCollab(d);
+      void startCollab(current);
       return;
     }
     if (collabBinding?.unsynced() && !confirm(t('collab.resetConfirm'))) {
@@ -330,7 +346,9 @@
   const type = $derived(types.get(mode === 'item' ? (data?.type ?? '') : typeName));
   const isNew = $derived(mode === 'new' || data === null);
   const locale = $derived(data?.locale ?? (urlLocale || knownLocales()[0] || ''));
-  const target = $derived<Target | null>(mode === 'item' ? { kind: 'item', id } : mode === 'singleton' ? { kind: 'singleton', type: typeName } : null);
+  const target = $derived<Target | null>(
+    mode === 'item' ? { kind: 'item', id } : mode === 'singleton' ? { kind: 'singleton', type: typeName } : null,
+  );
   const canEdit = $derived(isNew ? session.can('content.create', { type: type?.name }) : (data?.actions?.edit ?? true));
   const locales = $derived(item ? itemLocales(knownLocales(), item) : [locale].filter(Boolean));
   const hasTranslatable = $derived(!!type?.fields.some((f) => f.translatable));
@@ -340,23 +358,25 @@
   let parentView = $state.raw<{ locale: string; fields: Doc; inheritedFrom?: Record<string, string> } | null>(null);
   $effect(() => {
     const d = data;
-    const tgt = target;
-    const ty = type;
-    if (!d?.inherits || !tgt || !ty) {
+    const itemTarget = target;
+    const itemType = type;
+    if (!d?.inherits || !itemTarget || !itemType) {
       parentView = null;
       return;
     }
     const ctl = new AbortController();
     const parent = d.inherits;
     itemApi
-      .read(tgt, parent, ctl.signal)
-      .then((v) => (parentView = { locale: parent, fields: hydrate(ty.fields, v.fields), inheritedFrom: v.inheritedFrom }))
+      .read(itemTarget, parent, ctl.signal)
+      .then((v) => (parentView = { locale: parent, fields: hydrate(itemType.fields, v.fields), inheritedFrom: v.inheritedFrom }))
       .catch(() => undefined);
     return () => ctl.abort();
   });
+  // The parent's view once it has loaded for the locale this item inherits from now.
+  const currentParentView = () => (parentView && parentView.locale === data?.inherits ? parentView : null);
   const inheritedValue = (name: string): unknown => {
-    const pv = parentView && parentView.locale === data?.inherits ? parentView : null;
-    return $state.snapshot(pv ? pv.fields[name] : data?.fields[name]);
+    const parent = currentParentView();
+    return $state.snapshot(parent ? parent.fields[name] : data?.fields[name]);
   };
   const overlay = $derived<OverlayCtx | undefined>(
     data?.inherits
@@ -364,8 +384,8 @@
           parent: data.inherits,
           state: (name) => overlayState(form.values.fields, name),
           source(name) {
-            const pv = parentView && parentView.locale === data?.inherits ? parentView : null;
-            return (pv ? pv.inheritedFrom?.[name] : data?.inheritedFrom?.[name]) ?? data?.inherits ?? '';
+            const parent = currentParentView();
+            return (parent ? parent.inheritedFrom?.[name] : data?.inheritedFrom?.[name]) ?? data?.inherits ?? '';
           },
           value: inheritedValue,
           resolved: () => resolvedDoc(type?.fields ?? [], form.values.fields, parentView?.fields ?? data?.fields),
@@ -798,24 +818,31 @@
     const d = data;
     if (d?.inherits && parents[d.locale] !== d.inherits) parents[d.locale] = d.inherits;
   });
-  const localeOptions = $derived(
-    locales.map((l) => {
-      const s = item ? localeState(l, item) : l === locale ? 'draft' : 'missing';
-      const parent = l === locale ? data?.inherits : parents[l];
-      const note = item && (parent || item.availableLocales?.includes(l)) ? overlayNote(l, item) : '';
-      const state = note ? (note === 'derived' ? (parent ? t('overlay.state.derived', { locale: parent }) : t('overlay.state.derivedPlain')) : t(`overlay.state.${note}`)) : '';
-      const dot = s === 'published' || note === 'derived' ? ('filled' as const) : s === 'draft' ? ('half' as const) : ('hollow' as const);
-      return {
-        value: l,
-        label: l,
-        sub: parent ? t('overlay.inherits', { locale: parent }) : undefined,
-        title: [parent ? t('overlay.inherits', { locale: parent }) : '', state].filter(Boolean).join(', ') || undefined,
-        dot,
-        status: t(`editor.locale.${s}`),
-        disabled: isNew && l !== locale,
-      };
-    }),
-  );
+  const overlayStateLabel = (note: OverlayNote, parent: string | undefined) => {
+    if (!note) return '';
+    if (note !== 'derived') return t(`overlay.state.${note}`);
+    return parent ? t('overlay.state.derived', { locale: parent }) : t('overlay.state.derivedPlain');
+  };
+  const localeDot = (state: LocaleState, note: OverlayNote) => {
+    if (state === 'published' || note === 'derived') return 'filled' as const;
+    return state === 'draft' ? ('half' as const) : ('hollow' as const);
+  };
+  const localeOption = (l: string) => {
+    const state = item ? localeState(l, item) : l === locale ? 'draft' : 'missing';
+    const parent = l === locale ? data?.inherits : parents[l];
+    const inherits = parent ? t('overlay.inherits', { locale: parent }) : '';
+    const note = item && (parent || item.availableLocales?.includes(l)) ? overlayNote(l, item) : '';
+    return {
+      value: l,
+      label: l,
+      sub: parent ? inherits : undefined,
+      title: [inherits, overlayStateLabel(note, parent)].filter(Boolean).join(', ') || undefined,
+      dot: localeDot(state, note),
+      status: t(`editor.locale.${state}`),
+      disabled: isNew && l !== locale,
+    };
+  };
+  const localeOptions = $derived(locales.map(localeOption));
 
   // More languages than this fit no pill row: one pill with the current language opens a menu.
   const LOCALE_MENU_FROM = 4;
@@ -905,26 +932,58 @@
   const isLive = $derived(!!data && (data.status === 'published' || data.status === 'changed'));
   const canUnpublish = $derived(!isNew && mode === 'item' && isLive && (data?.actions?.publish ?? true));
   const canSchedule = $derived(!isNew && mode === 'item' && (data?.actions?.publish ?? true) && session.can('release.manage'));
-  const overflow = $derived<MenuItem[]>([
-    ...(canDiscard ? [{ label: t('collections.discard'), icon: 'refresh', onselect: () => dialogs?.discard() }] : []),
-    ...(data ? [{ label: t('editor.copyId'), icon: 'copy', onselect: () => void copyId() }] : []),
-    ...(canUnpublish ? [{ label: t('release.unpublish'), icon: 'eye', separator: true, onselect: () => dialogs?.unpublish() }] : []),
-    ...(canUnpublish && canSchedule ? [{ label: t('schedule.unpublishMenu'), icon: 'clock', onselect: () => void withSaved(() => dialogs?.schedule('unpublish')) }] : []),
-    ...(canDelete ? [{ label: t('trash.move'), icon: 'trash', danger: true, separator: true, onselect: () => dialogs?.remove() }] : []),
-  ]);
   const nothingToPublish = $derived(!canPublish && !form.dirty);
   // A release or schedule would be refused by the review gate as well: off with the same reason.
   const menuOff = $derived(nothingToPublish || !!reviewBlock);
   const menuHint = $derived(reviewBlock ? reviewReason : nothingToPublish ? t('release.nothingToPublish') : undefined);
-  const publishMenu = $derived<MenuItem[]>([
-    ...(bypassItem && !isNew && (data?.actions?.publish ?? true) ? [{ label: t('review.bypass'), icon: 'send', disabled: nothingToPublish, hint: nothingToPublish ? t('release.nothingToPublish') : undefined, onselect: () => (bypassOpen = true) }] : []),
-    ...(canSchedule
-      ? [
-          { label: t('schedule.publishMenu'), icon: 'clock', disabled: menuOff, hint: menuHint, onselect: () => void withSaved(() => dialogs?.schedule('publish')) },
-          { label: t('releases.addMenu'), icon: 'send', disabled: menuOff, hint: menuHint, onselect: () => void withSaved(() => dialogs?.addToRelease()) },
-        ]
-      : []),
-  ]);
+  const canBypassPublish = $derived(!!bypassItem && !isNew && (data?.actions?.publish ?? true));
+
+  function overflowItems(): MenuItem[] {
+    const items: MenuItem[] = [];
+    if (canDiscard) items.push({ label: t('collections.discard'), icon: 'refresh', onselect: () => dialogs?.discard() });
+    if (data) items.push({ label: t('editor.copyId'), icon: 'copy', onselect: () => void copyId() });
+    if (canUnpublish) {
+      items.push({ label: t('release.unpublish'), icon: 'eye', separator: true, onselect: () => dialogs?.unpublish() });
+    }
+    if (canUnpublish && canSchedule) {
+      items.push({
+        label: t('schedule.unpublishMenu'),
+        icon: 'clock',
+        onselect: () => void withSaved(() => dialogs?.schedule('unpublish')),
+      });
+    }
+    if (canDelete) {
+      items.push({ label: t('trash.move'), icon: 'trash', danger: true, separator: true, onselect: () => dialogs?.remove() });
+    }
+    return items;
+  }
+  function publishMenuItems(): MenuItem[] {
+    const items: MenuItem[] = [];
+    if (canBypassPublish) {
+      items.push({
+        label: t('review.bypass'),
+        icon: 'send',
+        disabled: nothingToPublish,
+        hint: nothingToPublish ? t('release.nothingToPublish') : undefined,
+        onselect: () => (bypassOpen = true),
+      });
+    }
+    if (canSchedule) {
+      const gate = { disabled: menuOff, hint: menuHint };
+      items.push(
+        {
+          label: t('schedule.publishMenu'),
+          icon: 'clock',
+          ...gate,
+          onselect: () => void withSaved(() => dialogs?.schedule('publish')),
+        },
+        { label: t('releases.addMenu'), icon: 'send', ...gate, onselect: () => void withSaved(() => dialogs?.addToRelease()) },
+      );
+    }
+    return items;
+  }
+  const overflow = $derived<MenuItem[]>(overflowItems());
+  const publishMenu = $derived<MenuItem[]>(publishMenuItems());
   const saveLabel = $derived(!isNew && !form.dirty && !form.pending ? t('editor.saved') : t('common.save'));
 </script>
 
