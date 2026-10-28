@@ -630,12 +630,18 @@
   const hasBlocks = $derived(!!type?.fields.some((f) => baseOf(f) === 'blocks'));
   const canBuild = $derived(mode === 'item' && !!data && hasBlocks);
   const building = $derived(router.query.get('view') === 'build' && canBuild && !embedded && !previewReason);
-  const enterBuilder = () => router.setQuery({ view: 'build' }, { push: true });
-  const exitBuilder = () => router.setQuery({ view: null }, { push: true });
+  // The builder's history entry records the screen it was opened from: exiting goes back there (from this same
+  // item without the unsaved-changes prompt, since nothing is left). Opened from its URL, it exits in place.
   function openBuilder() {
-    if (!embedded) return enterBuilder();
+    const state = { builderFrom: router.path };
+    if (!embedded) return router.setQuery({ view: 'build' }, { push: true, state });
     const loc = data && locale !== data.mainLocale ? `&locale=${encodeURIComponent(locale)}` : '';
-    void router.navigate(`/items/${id}?view=build${loc}`);
+    void router.navigate(`/items/${id}?view=build${loc}`, { state });
+  }
+  function exitBuilder() {
+    const from = (history.state as { builderFrom?: string } | null)?.builderFrom;
+    if (from) router.back({ force: from === router.path });
+    else router.setQuery({ view: null });
   }
   $effect(() => {
     chrome.focus = building;

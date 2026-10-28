@@ -238,6 +238,26 @@ test.describe.serial('page builder', () => {
     await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Title' })).toBeVisible();
   });
+
+  test('exiting returns to the screen the builder was opened from', async ({ page }) => {
+    const roots = await manage('GET', '/pages/sites/main/tree?depth=1');
+    const node = (await manage('POST', '/pages/sites/main/nodes', { kind: 'page', item: other, parent: roots.items[0].id })).id as string;
+    await signIn(page, adminLogin, adminPassword);
+    await page.goto(`/admin/pages/main?node=${node}`);
+    await page.getByRole('button', { name: 'Page builder' }).click();
+    await expect(page).toHaveURL(new RegExp(`/items/${other}\\?view=build`));
+    await expect(page.getByRole('status').filter({ hasText: 'Live' })).toBeVisible();
+    await page.getByRole('button', { name: 'Exit page builder' }).click();
+    await expect(page).toHaveURL(new RegExp(`/pages/main\\?node=${node}$`));
+    await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+
+    // Opened from its URL, the builder exits to the item's editor.
+    await page.goto(`/admin/items/${other}?view=build`);
+    await expect(page.getByRole('status').filter({ hasText: 'Live' })).toBeVisible();
+    await page.getByRole('button', { name: 'Exit page builder' }).click();
+    await expect(page).toHaveURL(new RegExp(`/items/${other}$`));
+    await expect(page.getByRole('textbox', { name: 'Title' })).toBeVisible();
+  });
 });
 
 test.describe.serial('canvas editing, reload mode', () => {

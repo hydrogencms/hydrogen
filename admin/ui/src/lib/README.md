@@ -53,8 +53,9 @@ A 401 from any API call clears the session and goes to login the same way.
 | Member | Meaning |
 | --- | --- |
 | `router.path`, `router.params`, `router.query` | Reactive current path (no prefix), path params, `URLSearchParams` |
-| `router.navigate(path, {replace?, force?})` | Navigate (path may include `?query`). Asks registered blockers first unless `force` |
-| `router.setQuery({q: 'x', page: 2, status: undefined})` | Patch the query string in place (`replaceState`; `{push: true}` for history entries). `undefined`, `null`, `''`, `false` delete the key. This is how list state (`?q=&sort=&page=&where…`) stays in the URL |
+| `router.navigate(path, {replace?, force?, state?})` | Navigate (path may include `?query`). Asks registered blockers first unless `force`; `state` goes on the history entry |
+| `router.setQuery({q: 'x', page: 2, status: undefined})` | Patch the query string in place (`replaceState`; `{push: true}` for history entries). `undefined`, `null`, `''`, `false` delete the key. A replace keeps the entry's `history.state` unless `{state}` is given. This is how list state (`?q=&sort=&page=&where…`) stays in the URL |
+| `router.back({force?})` | `history.back()`; `force` skips the blockers (back to another view of the same screen, as the page builder's exit does) |
 | `router.block(fn)` | Register a "may we leave?" check (returns the unregister function). `Form.guard()` uses it |
 | `router.retry()` | Reload the current route (used by the error view) |
 | `href(path, query?)` | URL including the prefix, for `href=` attributes |

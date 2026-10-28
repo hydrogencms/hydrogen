@@ -10,7 +10,8 @@ All notable changes to Hydrogen are documented here. The format follows
 
 - Admin: a Page builder view for items with a blocks field (the Page builder button, or `?view=build` on the item's
   URL): the blocks fields and the live preview side by side on the whole window, without the sidebar, the topbar and
-  the other fields. Entering and leaving keep unsaved edits, the collaboration session and the preview frame.
+  the other fields. Entering and leaving keep unsaved edits, the collaboration session and the preview frame;
+  Exit goes back to the screen the builder was opened from (the item's editor, or the Pages screen).
 - Admin: a Cancel button on the full-page create screens (new content item, new role) that returns to the list,
   asking first when something was typed.
 - Admin: a user's page lists the roles they get through their groups (read-only, with the group and any

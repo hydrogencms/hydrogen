@@ -57,6 +57,7 @@ class Router {
   #blockers = new Set<() => boolean>();
   #dirty = new Set<() => boolean>();
   #seq = 0;
+  #force = false;
 
   get prefix() {
     return config().prefix;
@@ -98,7 +99,9 @@ class Router {
 
   start() {
     addEventListener('popstate', () => {
-      if (!this.#allowed()) {
+      const force = this.#force;
+      this.#force = false;
+      if (!force && !this.#allowed()) {
         history.pushState(null, '', this.href(this.path, this.query));
         return;
       }
@@ -120,16 +123,25 @@ class Router {
     return this.prefix + path + (s ? '?' + s : '');
   }
 
-  async navigate(to: string, opts: { replace?: boolean; force?: boolean } = {}) {
+  /** `state` is stored on the history entry (`history.state`). */
+  async navigate(to: string, opts: { replace?: boolean; force?: boolean; state?: unknown } = {}) {
     if (!opts.force && !this.#allowed()) return;
     const url = this.prefix + to;
-    if (opts.replace) history.replaceState(null, '', url);
-    else history.pushState(null, '', url);
+    const state = opts.state ?? null;
+    if (opts.replace) history.replaceState(state, '', url);
+    else history.pushState(state, '', url);
     await this.#resolve();
   }
 
-  /** Change query parameters in place (list state lives in the URL). undefined/''/null removes a key. */
-  setQuery(patch: Record<string, string | number | boolean | undefined | null>, opts: { push?: boolean } = {}) {
+  /** history.back(); `force` skips the "may we leave?" checks (going back to another view of the same screen). */
+  back(opts: { force?: boolean } = {}) {
+    this.#force = !!opts.force;
+    history.back();
+  }
+
+  /** Change query parameters in place (list state lives in the URL). undefined/''/null removes a key. Replacing keeps
+   * the entry's `history.state` unless `state` is given. */
+  setQuery(patch: Record<string, string | number | boolean | undefined | null>, opts: { push?: boolean; state?: unknown } = {}) {
     const qs = new URLSearchParams(this.query);
     for (const [k, v] of Object.entries(patch)) {
       if (v === undefined || v === null || v === '' || v === false) qs.delete(k);
@@ -137,8 +149,8 @@ class Router {
     }
     this.query = qs;
     const url = this.href(this.path, qs);
-    if (opts.push) history.pushState(null, '', url);
-    else history.replaceState(null, '', url);
+    if (opts.push) history.pushState(opts.state ?? null, '', url);
+    else history.replaceState(opts.state ?? history.state, '', url);
   }
 
   async #resolve(): Promise<void> {
