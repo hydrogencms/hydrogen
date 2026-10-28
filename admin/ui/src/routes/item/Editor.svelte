@@ -3,6 +3,7 @@
   import '../../lib/messages/editor';
   import '../../lib/messages/collab';
   import { config } from '../../lib/config';
+  import { chrome } from '../../lib/chrome.svelte';
   import { connect, type CollabConnection } from '../../lib/collab/transport';
   import { Presence, focusPath } from '../../lib/collab/presence.svelte';
   import { COLLAB_CTX, type CollabCtx } from '../../lib/collab/context';
@@ -19,7 +20,7 @@
   import Fields from '../../lib/fields/Fields.svelte';
   import { setContext, untrack, type Component, type Snippet } from 'svelte';
   import '../../lib/messages/preview';
-  import { copyTranslatable, fieldsPatch, isHomePage, hydrate, initialValues, cleanDoc, jsonEqual, overlayState, overrideValue, resolvedDoc, unroutedErrors, viewValues, type Doc } from '../../lib/fields/logic';
+  import { baseOf, copyTranslatable, fieldsPatch, isHomePage, hydrate, initialValues, cleanDoc, jsonEqual, overlayState, overrideValue, resolvedDoc, unroutedErrors, viewValues, type Doc } from '../../lib/fields/logic';
   import { itemLocales, knownLocales, localeState, overlayNote, type LocaleState, type OverlayNote } from '../../lib/fields/locales';
   import { Form } from '../../lib/form.svelte';
   import { t } from '../../lib/i18n';
@@ -567,7 +568,7 @@
   }
 
   function onkey(e: KeyboardEvent) {
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p' && !previewReason) {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p' && !previewReason && !building) {
       e.preventDefault();
       togglePreview();
       return;
@@ -625,6 +626,34 @@
   $effect(() => {
     if (previewOpen && !PreviewPane) void import('../../lib/preview/PreviewPane.svelte').then((m) => (PreviewPane = m.default));
   });
+  // ---- page builder: the blocks fields beside the live preview, on the whole viewport (`?view=build`)
+  const hasBlocks = $derived(!!type?.fields.some((f) => baseOf(f) === 'blocks'));
+  const canBuild = $derived(mode === 'item' && !!data && hasBlocks);
+  const building = $derived(router.query.get('view') === 'build' && canBuild && !embedded && !previewReason);
+  const enterBuilder = () => router.setQuery({ view: 'build' }, { push: true });
+  const exitBuilder = () => router.setQuery({ view: null }, { push: true });
+  function openBuilder() {
+    if (!embedded) return enterBuilder();
+    const loc = data && locale !== data.mainLocale ? `&locale=${encodeURIComponent(locale)}` : '';
+    void router.navigate(`/items/${id}?view=build${loc}`);
+  }
+  $effect(() => {
+    chrome.focus = building;
+    return () => (chrome.focus = false);
+  });
+  $effect(() => {
+    if (!building) return;
+    const was = untrack(() => previewOpen);
+    previewOpen = true;
+    paneTab = 'preview';
+    return () => {
+      if (!was) {
+        previewOpen = false;
+        paneMode = null;
+      }
+    };
+  });
+
   const previewChans = $derived<PreviewChannel[]>(previewChannels.map((c) => ({ name: c.name, languages: c.languages })));
   // The working document, as the pane and the relay see it.
   const shares = new ShareList();
@@ -780,7 +809,7 @@
   const bypassItem = $derived(needsReview && showBypass(true, reviewState, canBypassReview));
   const reviewReason = $derived(reviewBlock ? t('review.needsApproved') : '');
 
-  const unrouted = $derived(type ? unroutedErrors(type.fields, form.errors, overlay ? overlay.resolved() : form.values.fields) : {});
+  const unrouted = $derived(type ? unroutedErrors(building ? type.fields.filter((f) => baseOf(f) === 'blocks') : type.fields, form.errors, overlay ? overlay.resolved() : form.values.fields) : {});
   const title = $derived(isNew ? t('collections.newTitle', { type: type?.label ?? '' }) : data?.name || t('editor.untitled'));
   const crumbs = $derived(
     mode === 'singleton'
@@ -805,7 +834,7 @@
   const groups = $derived.by(() => {
     const m = new Map<string, CompiledField[]>();
     for (const f of type?.fields ?? []) {
-      if (f.admin?.hidden) continue;
+      if (f.admin?.hidden || (building && baseOf(f) !== 'blocks')) continue;
       const g = f.group ?? '';
       m.set(g, [...(m.get(g) ?? []), f]);
     }
@@ -859,18 +888,19 @@
   // The inspector sits beside the form when there is room (the window for a full page, the pane when embedded) and
   // is a slide-over otherwise.
   let root = $state<HTMLElement>();
-  let inline = $state(true);
+  let roomy = $state(true);
+  const inline = $derived(roomy || building);
   let panelOpen = $state(false);
   $effect(() => {
     if (!embedded) {
       const mq = matchMedia('(min-width: 1280px)');
-      const set = () => (inline = mq.matches);
+      const set = () => (roomy = mq.matches);
       set();
       mq.addEventListener('change', set);
       return () => mq.removeEventListener('change', set);
     }
     if (!root || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(([e]) => (inline = (e?.contentRect.width ?? 0) >= 1040));
+    const ro = new ResizeObserver(([e]) => (roomy = (e?.contentRect.width ?? 0) >= 1040));
     ro.observe(root);
     return () => ro.disconnect();
   });
@@ -883,10 +913,21 @@
   });
 
   // The preview pane's width: remembered, never narrower than 360 px nor wider than 80% of the editor.
-  const widthKey = 'h.preview.width';
+  // The builder remembers its own width: it has the whole viewport (preview at least 360 px, the form at least 320 px).
+  const previewKey = 'h.preview.width';
+  const builderKey = 'h.builder.width';
+  const widthKey = $derived(building ? builderKey : previewKey);
   let rootW = $state(1200);
-  let paneW = $state(Number(localStorage.getItem(widthKey)) || 0);
-  const paneWidth = $derived(Math.round(Math.max(360, Math.min(paneW || rootW * 0.45, rootW * 0.8))));
+  let paneW = $state(Number(localStorage.getItem(previewKey)) || 0);
+  let buildW = $state(Number(localStorage.getItem(builderKey)) || 0);
+  const paneWidth = $derived(
+    Math.round(
+      building
+        ? Math.max(360, Math.min(buildW || rootW * 0.55, rootW - 320))
+        : Math.max(360, Math.min(paneW || rootW * 0.45, rootW * 0.8)),
+    ),
+  );
+  const setPaneW = (w: number) => (building ? (buildW = w) : (paneW = w));
   $effect(() => {
     if (!root || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(([e]) => (rootW = e?.contentRect.width ?? rootW));
@@ -897,7 +938,7 @@
     e.preventDefault();
     const startX = e.clientX;
     const start = paneWidth;
-    const move = (ev: PointerEvent) => (paneW = start + (startX - ev.clientX));
+    const move = (ev: PointerEvent) => setPaneW(start + (startX - ev.clientX));
     const up = () => {
       removeEventListener('pointermove', move);
       removeEventListener('pointerup', up);
@@ -909,7 +950,7 @@
   function resizeKey(e: KeyboardEvent) {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     e.preventDefault();
-    paneW = paneWidth + (e.key === 'ArrowLeft' ? 24 : -24);
+    setPaneW(paneWidth + (e.key === 'ArrowLeft' ? 24 : -24));
     localStorage.setItem(widthKey, String(paneWidth));
   }
 
@@ -1011,10 +1052,28 @@
     </div>
   </div>
 {:else}
-  <div class="h-page h-item" class:h-item--embedded={embedded} class:h-item--inline={inline} bind:this={root}>
+  <div class="h-page h-item" class:h-item--embedded={embedded} class:h-item--inline={inline} class:h-item--build={building} bind:this={root}>
     <Slot at="editor.before" props={slotProps} />
     <div bind:this={headEl}>
-      {#if embedded}
+      {#if building}
+        <header class="h-item__bar h-item__bar--build">
+          <div class="h-item__bar-lead">
+            <Button icon="arrow-left" onclick={exitBuilder}>{t('builder.exit')}</Button>
+            <div class="h-item__bar-main">
+              <div class="h-item__bar-title">
+                <h2>{title}</h2>
+                {@render badge()}
+              </div>
+              <p class="h-pagehead__meta">{@render meta()}</p>
+            </div>
+          </div>
+          <div class="h-pagehead__actions">
+            {@render actions()}
+            {#if overflow.length}<Menu label={t('common.more')} items={overflow} />{/if}
+            {@render primary()}
+          </div>
+        </header>
+      {:else if embedded}
         <header class="h-item__bar">
           <div class="h-item__bar-main">
             <div class="h-item__bar-title">
@@ -1046,6 +1105,7 @@
     {#if form.formError}<p class="h-alert" role="alert">{form.formError}</p>{/if}
     {#if Object.keys(unrouted).length}
       <div class="h-alert h-item__unrouted" role="alert">
+        {#if building}<p>{t('builder.hiddenErrors')}</p>{/if}
         <ul>
           {#each Object.entries(unrouted) as [path, msg] (path)}<li><strong>{path}</strong>: {msg}</li>{/each}
         </ul>
@@ -1096,7 +1156,7 @@
         class="h-item__side"
         class:h-item__side--open={panelOpen}
         class:h-item__side--preview={previewOpen}
-        aria-label={previewOpen ? t('preview.tabs') : t('collections.details')}
+        aria-label={building ? t('preview.title') : previewOpen ? t('preview.tabs') : t('collections.details')}
       >
         {#if previewOpen}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
@@ -1118,19 +1178,21 @@
           </div>
         {/if}
         {#if previewOpen}
-          <div class="h-item__panetabs">
-            <Segmented
-              label={t('preview.tabs')}
-              size="sm"
-              options={[
-                { value: 'preview', label: t('preview.tabPreview'), icon: 'eye' },
-                { value: 'details', label: t('preview.tabDetails'), icon: 'panel-left' },
-              ]}
-              value={paneTab}
-              onchange={(v) => (paneTab = v as 'preview' | 'details')}
-            />
-            <IconButton icon="x" size="sm" label={t('preview.toggleHide')} onclick={togglePreview} />
-          </div>
+          {#if !building}
+            <div class="h-item__panetabs">
+              <Segmented
+                label={t('preview.tabs')}
+                size="sm"
+                options={[
+                  { value: 'preview', label: t('preview.tabPreview'), icon: 'eye' },
+                  { value: 'details', label: t('preview.tabDetails'), icon: 'panel-left' },
+                ]}
+                value={paneTab}
+                onchange={(v) => (paneTab = v as 'preview' | 'details')}
+              />
+              <IconButton icon="x" size="sm" label={t('preview.toggleHide')} onclick={togglePreview} />
+            </div>
+          {/if}
           <div class="h-item__panebody" class:h-item__panebody--off={paneTab !== 'preview'}>
             {#if PreviewPane && data}
               <PreviewPane
@@ -1155,14 +1217,14 @@
             {/if}
           </div>
         {/if}
-        <div class="h-item__panebody" hidden={previewOpen && paneTab !== 'details'}>
+        <div class="h-item__panebody" hidden={building || (previewOpen && paneTab !== 'details')}>
           <SidePanels {data} {item} {type} {locale} {locales} {form} {mode} onrefresh={extRefresh} />
         </div>
       </aside>
     </div>
     <Slot at="editor.after" props={slotProps} />
 
-    {#if form.dirty && headGone}
+    {#if form.dirty && headGone && !building}
       <div class="h-item__dirty" role="status">
         <span>{t('editor.unsavedBar')}</span>
         <Button variant="ghost" size="sm" onclick={discardEdits}>{t('editor.discardChanges')}</Button>
@@ -1226,13 +1288,24 @@
   {:else if locales.length > 1}
     <Segmented label={t('collections.languages')} options={localeOptions} bind:value={() => locale, (l) => void switchLocale(l)} />
   {/if}
-  {#if previewReason}
-    <span title={previewReason}>
-      <Button icon="eye" disabled>{t('collections.preview.button')}</Button>
-      <span class="h-sr">{previewReason}</span>
-    </span>
-  {:else}
-    <Button icon="eye" aria-pressed={previewOpen} title={t('preview.toggleTitle')} onclick={togglePreview}>{t('collections.preview.button')}</Button>
+  {#if !building}
+    {#if previewReason}
+      <span title={previewReason}>
+        <Button icon="eye" disabled>{t('collections.preview.button')}</Button>
+        <span class="h-sr">{previewReason}</span>
+      </span>
+    {:else}
+      <Button icon="eye" aria-pressed={previewOpen} title={t('preview.toggleTitle')} onclick={togglePreview}>{t('collections.preview.button')}</Button>
+    {/if}
+    {#if canBuild}
+      {#if previewReason}
+        <span title={previewReason}>
+          <Button icon="layout" disabled>{t('builder.enter')}</Button>
+        </span>
+      {:else}
+        <Button icon="layout" title={t('builder.enterTitle')} onclick={openBuilder}>{t('builder.enter')}</Button>
+      {/if}
+    {/if}
   {/if}
   {#if mode === 'new' && !embedded}
     <Button disabled={form.pending} onclick={() => void router.navigate(`/collections/${typeName}`)}>{t('common.cancel')}</Button>
@@ -1257,9 +1330,9 @@
 {#snippet primary()}
   {#if !isNew}
     {#if publishMenu.length}
-      <span class="h-split">
+      <span class="h-splitbtn">
         {@render publishButton()}
-        <Menu label={t('release.publishOptions')} items={publishMenu} triggerClass="h-button h-button--primary h-button--md h-split__more">
+        <Menu label={t('release.publishOptions')} items={publishMenu} triggerClass="h-button h-button--primary h-button--md h-splitbtn__more">
           {#snippet trigger()}<Icon name="chevron-down" size={16} /><span class="h-sr">{t('release.publishOptions')}</span>{/snippet}
         </Menu>
       </span>
@@ -1512,6 +1585,76 @@
     box-shadow: var(--h-shadow-dialog);
     font-size: var(--h-text-sm);
     font-weight: 500;
+  }
+
+  /* Page builder: the form and the preview side by side, each scrolling inside the viewport. */
+  .h-item.h-item--build {
+    height: 100dvh;
+    gap: var(--h-space-2);
+    padding: 0 var(--h-space-3) var(--h-space-3);
+    overflow: hidden;
+  }
+  .h-item__bar--build {
+    align-items: center;
+    padding-block: var(--h-space-2);
+    border-bottom: 1px solid var(--h-border);
+  }
+  .h-item__bar-lead {
+    display: flex;
+    align-items: center;
+    gap: var(--h-space-3);
+    min-width: 0;
+  }
+  .h-item__bar--build h2 {
+    font-size: var(--h-text-lg);
+  }
+  @media (min-width: 900px) {
+    .h-item__bar--build,
+    .h-item__bar--build .h-pagehead__actions {
+      flex-wrap: nowrap;
+    }
+    .h-item__bar--build .h-pagehead__actions {
+      flex-shrink: 0;
+    }
+    .h-item__bar--build h2,
+    .h-item__bar--build .h-pagehead__meta {
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+  }
+  .h-item.h-item--build .h-item__grid {
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr) var(--h-preview-w);
+    gap: var(--h-space-3);
+    align-items: stretch;
+  }
+  .h-item.h-item--build .h-item__main {
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .h-item.h-item--build .h-item__side {
+    position: relative;
+    top: auto;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    overflow: hidden;
+  }
+  @media (max-width: 899px) {
+    .h-item.h-item--build .h-item__grid {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: 55dvh minmax(0, 1fr);
+    }
+    .h-item.h-item--build .h-item__side {
+      order: -1;
+    }
+    .h-item.h-item--build .h-item__resize {
+      display: none;
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     .h-item:not(.h-item--inline) .h-item__side {

@@ -8,6 +8,9 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Added
 
+- Admin: a Page builder view for items with a blocks field (the Page builder button, or `?view=build` on the item's
+  URL): the blocks fields and the live preview side by side on the whole window, without the sidebar, the topbar and
+  the other fields. Entering and leaving keep unsaved edits, the collaboration session and the preview frame.
 - Admin: a Cancel button on the full-page create screens (new content item, new role) that returns to the list,
   asking first when something was typed.
 - Admin: a user's page lists the roles they get through their groups (read-only, with the group and any
@@ -113,6 +116,8 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Fixed
 
+- Admin: the Publish split button no longer takes the two-pane layout's 22.5rem column (it shared the `.h-split`
+  class).
 - Admin: with collaboration on, a rich text value the editor cannot load (a node or mark its schema lacks) was seeded
   as an empty document, so opening the item showed "Unsaved changes" and the next save removed the field. The value
   now stays as stored and the field shows as invalid, with its JSON to fix.

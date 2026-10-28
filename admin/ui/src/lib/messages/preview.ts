@@ -78,6 +78,10 @@ export const preview: Record<string, string> = {
   'preview.retry': 'Try again',
   'preview.saveFirst': 'Save the item once to preview it.',
   'preview.narrow': 'Open the preview in a wider window to see it next to the form.',
+  'builder.enter': 'Page builder',
+  'builder.enterTitle': 'Edit blocks beside the live preview',
+  'builder.exit': 'Exit page builder',
+  'builder.hiddenErrors': 'Errors in fields outside the page builder:',
   'preview.shortcut': 'Mod-Shift-P',
 };
 

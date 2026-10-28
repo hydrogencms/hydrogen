@@ -171,6 +171,8 @@ A group that uses itself, directly or not, is an error.
 The page builder composes pages from typed **blocks**. A block type has `props` (fields, with the same specs as
 above, but never `translatable` or `index`) and optional `slots` that hold child blocks. A `blocks` field on a type
 lists the block types an editor may add.
+In the admin, an item with a `blocks` field also opens in the **Page builder** (`?view=build` on the item's URL): its
+blocks fields beside the live preview on the whole window, without the sidebar and the other fields.
 
 ```yaml
 tokens:

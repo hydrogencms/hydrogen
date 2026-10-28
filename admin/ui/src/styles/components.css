@@ -1407,15 +1407,15 @@ a.h-name__title:hover {
 }
 
 /* Split button (Publish + options menu), scheduled badge link */
-.h-split {
+.h-splitbtn {
   display: inline-flex;
   align-items: stretch;
 }
-.h-split > .h-button {
+.h-splitbtn > .h-button {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
 }
-.h-split .h-split__more.h-button--primary {
+.h-splitbtn .h-splitbtn__more.h-button--primary {
   min-height: 0;
   padding: 0 var(--h-space-2);
   border-color: var(--h-accent);
@@ -1424,7 +1424,7 @@ a.h-name__title:hover {
   background: var(--h-accent);
   color: var(--h-accent-contrast);
 }
-.h-split .h-split__more.h-button--primary:hover {
+.h-splitbtn .h-splitbtn__more.h-button--primary:hover {
   background: var(--h-accent-strong);
 }
 .h-item__sched {

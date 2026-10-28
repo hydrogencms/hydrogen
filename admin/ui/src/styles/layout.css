@@ -139,6 +139,9 @@
   grid-template-columns: var(--h-nav-width) minmax(0, 1fr);
   min-height: 100vh;
 }
+.h-app.h-app--focus {
+  grid-template-columns: minmax(0, 1fr);
+}
 .h-shell {
   display: flex;
   flex-direction: column;

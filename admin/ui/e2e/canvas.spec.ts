@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { add, card, clickBlock, frameOf, frameOrder, toolbar } from './blocks-helpers';
+import { add, card, clickBlock, expand, frameOf, frameOrder, toolbar } from './blocks-helpers';
 import { adminLogin, adminPassword, draftOf, manage, signIn, tag, watchErrors } from './helpers';
 
 // Visual editing (H7) against examples/starter with the preview host in e2e/fixtures/preview-host: live mode on the
@@ -180,6 +180,64 @@ test('a page is built entirely on the canvas', async ({ page }) => {
   expect(body[2].slots.items.map((c: any) => c.props.title)).toEqual(['Solo']);
   expect(new Set(body.map((b) => b.id)).size).toBe(3);
   expect(errors).toEqual([]);
+});
+
+test.describe.serial('page builder', () => {
+  let id = '';
+  let other = '';
+
+  // The first test leaves an unsaved edit in the item's collaboration session: the second one needs a clean item.
+  test.beforeAll(async () => {
+    id = (await manage('POST', '/collections/landing/items', { locale: 'en', fields: { title: `Builder ${t}`, body: [hero('Alpha'), hero('Beta')] } })).id;
+    other = (await manage('POST', '/collections/landing/items', { locale: 'en', fields: { title: `Builder back ${t}`, body: [hero('Gamma')] } })).id;
+  });
+
+  test('takes the whole viewport with the blocks beside the preview; leaving keeps the edits', async ({ page }) => {
+    await signIn(page, adminLogin, adminPassword);
+    await page.goto(`/admin/items/${id}`);
+    const nav = page.getByRole('navigation', { name: 'Main' });
+    await expect(nav).toBeVisible();
+    await page.getByRole('button', { name: 'Page builder' }).click();
+    await expect(page).toHaveURL(/view=build/);
+    await expect(page.getByRole('status').filter({ hasText: 'Live' })).toBeVisible();
+    await expect(nav).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Search' })).toHaveCount(0);
+
+    const form = page.getByRole('form', { name: / fields$/ });
+    const blocks = page.locator('[data-blocks="body"]');
+    await expect(blocks).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Title' })).toHaveCount(0);
+    const frame = page.locator('iframe[title^="Preview of"]');
+    await expect(frame).toBeVisible();
+    const f = (await form.boundingBox())!;
+    const p = (await frame.boundingBox())!;
+    expect(p.x).toBeGreaterThanOrEqual(f.x + f.width);
+    expect(p.height).toBeGreaterThan(300);
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1)).toBe(true);
+
+    await expand(card(page, 'hero').first());
+    const heading = card(page, 'hero').first().getByLabel(/^Heading/);
+    await heading.fill(`Alpha ${t} built`);
+    await page.getByRole('button', { name: 'Exit page builder' }).click();
+    await expect(page).not.toHaveURL(/view=build/);
+    await expect(nav).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Title' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Unsaved' })).toBeVisible();
+    await expect(card(page, 'hero').first().getByLabel(/^Heading/)).toHaveValue(`Alpha ${t} built`);
+  });
+
+  test('browser Back leaves the builder', async ({ page }) => {
+    await signIn(page, adminLogin, adminPassword);
+    await page.goto(`/admin/items/${other}`);
+    await page.getByRole('button', { name: 'Page builder' }).click();
+    await expect(page).toHaveURL(/view=build/);
+    await expect(page.getByRole('status').filter({ hasText: 'Live' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Saved' })).toBeVisible();
+    await page.goBack();
+    await expect(page).not.toHaveURL(/view=build/);
+    await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Title' })).toBeVisible();
+  });
 });
 
 test.describe.serial('canvas editing, reload mode', () => {

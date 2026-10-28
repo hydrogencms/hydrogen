@@ -6,6 +6,7 @@
   import { types } from './lib/types.svelte';
   import { channels } from './lib/channels.svelte';
   import { router } from './lib/router.svelte';
+  import { chrome } from './lib/chrome.svelte';
   import { t } from './lib/i18n';
   import Sidebar from './Sidebar.svelte';
   import Topbar from './Topbar.svelte';
@@ -84,13 +85,17 @@
 
 <svelte:window onkeydown={keydown} />
 
-<div class="h-app" class:h-app--rail={collapsed}>
+<div class="h-app" class:h-app--rail={collapsed} class:h-app--focus={chrome.focus}>
   <a class="h-skip" href="#main">{t('app.skip')}</a>
 
-  <Sidebar {collapsed} open={navOpen} {sites} {loadError} ontoggle={toggleNav} onclose={() => (navOpen = false)} onretry={boot} onsignout={signOut} />
+  {#if !chrome.focus}
+    <Sidebar {collapsed} open={navOpen} {sites} {loadError} ontoggle={toggleNav} onclose={() => (navOpen = false)} onretry={boot} onsignout={signOut} />
+  {/if}
 
   <div class="h-shell">
-    <Topbar {scrolled} {navOpen} onmenu={() => (navOpen = !navOpen)} onsearch={openPalette} onsignout={signOut} />
+    {#if !chrome.focus}
+      <Topbar {scrolled} {navOpen} onmenu={() => (navOpen = !navOpen)} onsearch={openPalette} onsignout={signOut} />
+    {/if}
     <main class="h-main" id="main" tabindex="-1">{@render children()}</main>
   </div>
 </div>
