@@ -180,25 +180,49 @@ const humanKey = (key: string): string => {
 
 export const formatBytes = (n: number): string => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
+/** The name of `id` of `kind`: the looked-up name, else the name recorded with the entry, else a short id. */
+type NameOf = (kind: string, id: string, recorded?: string) => string;
+
+/** An entry's sentence: the message key suffix, its variables and the data keys it already shows. */
+interface Sentence {
+  suffix?: string;
+  vars: Record<string, string | number>;
+  shown?: string[];
+}
+
+type Data = Record<string, unknown>;
+
+/** A string in the entry's data, or ''. */
+const field = (data: Data, key: string): string => {
+  const v = data[key];
+  return typeof v === 'string' ? v : '';
+};
+
+/** The message for `key`, or '' when there is none (`t` returns the key itself then). */
+const message = (t: Translate, key: string, vars?: Record<string, string | number>): string => {
+  const s = t(key, vars);
+  return s === key ? '' : s;
+};
+
 /**
  * A plain-language description of an audit entry: a sentence and the changed fields. Ids become names where
- * `name` knows them (else a name recorded with the entry, else a short id). Unknown actions get the humanized
+ * `lookup` knows them (else a name recorded with the entry, else a short id). Unknown actions get the humanized
  * action and every data key as a generic row; odd data never throws.
  */
-export function describeEntry(e: Entry, name: Lookup, t: Translate): Description {
-  const d = dataOf(e);
-  const used = new Set<string>();
-  const str = (key: string): string => {
-    used.add(key);
-    const v = d[key];
-    return typeof v === 'string' ? v : '';
-  };
-  const nm = (kind: string, id: string, recorded = ''): string => (id && name(kind, id)) || recorded || (id ? shortId(id) : '');
-  const k = subjectKind(e.action);
-  const subject = e.subject ?? '';
-  const tt = (suffix: string, vars: Record<string, string | number>) => t(`settings.audit.d.${e.action}${suffix}`, vars);
+export function describeEntry(e: Entry, lookup: Lookup, t: Translate): Description {
+  const data = dataOf(e);
+  const nameOf: NameOf = (kind, id, recorded = '') => (id && lookup(kind, id)) || recorded || (id ? shortId(id) : '');
+  const s = sentence(e, data, nameOf, t);
+  const text = s ? message(t, `settings.audit.d.${e.action}${s.suffix ?? ''}`, s.vars) : '';
+  if (s && text) return { text, changes: changeRows(e, data, new Set(s.shown), nameOf, t) };
 
-  let text = '';
+  // No sentence: the action's verb or its humanized code, and every data key as a row.
+  const verb = message(t, `settings.audit.v.${e.action}`) || humanizeAction(e.action);
+  return { text: verb.charAt(0).toUpperCase() + verb.slice(1), changes: changeRows(e, data, new Set(), nameOf, t) };
+}
+
+function sentence(e: Entry, data: Data, nameOf: NameOf, t: Translate): Sentence | undefined {
+  const subject = e.subject ?? '';
   switch (e.action) {
     case 'item.create':
     case 'item.update':
@@ -216,78 +240,76 @@ export function describeEntry(e: Entry, name: Lookup, t: Translate): Description
     case 'review.withdrawn':
     case 'preview.share.create':
     case 'preview.share.revoke':
-      text = tt('', { item: nm('item', itemIdOf(e)) });
-      used.add('item');
-      break;
-    case 'item.restore_version':
-      text = tt('', { item: nm('item', itemIdOf(e)), n: typeof d.version === 'number' ? d.version : '?' });
-      used.add('version');
-      break;
+    case 'page.place':
+      return { vars: { item: nameOf('item', itemIdOf(e)) }, shown: ['item'] };
+    case 'item.restore_version': {
+      const n = typeof data.version === 'number' ? data.version : '?';
+      return { vars: { item: nameOf('item', itemIdOf(e)), n }, shown: ['version'] };
+    }
+
     case 'release.create':
-    case 'release.update':
     case 'release.delete':
     case 'release.publish':
     case 'release.fail':
     case 'release.cancel':
+      return { vars: { release: releaseName(data, t) }, shown: ['name'] };
     case 'release.schedule': {
-      const release = str('name') || t('settings.audit.d.release');
-      if (e.action === 'release.update' && typeof d.add === 'string') text = tt('.add', { item: nm('item', str('add')), release });
-      else if (e.action === 'release.update' && typeof d.remove === 'string') text = tt('.remove', { item: nm('item', str('remove')), release });
-      else if (e.action === 'release.update' && d.unscheduled === true) text = tt('.unscheduled', { release }), used.add('unscheduled');
-      else if (e.action === 'release.schedule') text = tt('', { release, at: typeof d.at === 'string' ? new Date(d.at).toLocaleString() : '?' }), used.add('at');
-      else text = tt('', { release });
-      break;
+      const at = typeof data.at === 'string' ? new Date(data.at).toLocaleString() : '?';
+      return { vars: { release: releaseName(data, t), at }, shown: ['name', 'at'] };
     }
-    case 'page.place':
-      text = tt('', { item: nm('item', str('item')) });
-      break;
+    case 'release.update': {
+      // An update adds an item, removes one or unschedules the release.
+      const release = releaseName(data, t);
+      const shown = ['name', 'add', 'remove'];
+      if (typeof data.add === 'string') return { suffix: '.add', vars: { item: nameOf('item', data.add), release }, shown };
+      if (typeof data.remove === 'string') return { suffix: '.remove', vars: { item: nameOf('item', data.remove), release }, shown };
+      if (data.unscheduled === true) return { suffix: '.unscheduled', vars: { release }, shown: [...shown, 'unscheduled'] };
+      return { vars: { release }, shown };
+    }
+
     case 'page.mount':
-      text = tt('', { collection: str('collection') });
-      break;
+      return { vars: { collection: field(data, 'collection') }, shown: ['collection'] };
     case 'media.gc':
-      text = tt('', { n: typeof d.count === 'number' ? d.count : 0 });
-      used.add('count');
-      break;
+      return { vars: { n: typeof data.count === 'number' ? data.count : 0 }, shown: ['count'] };
+
     case 'user.create':
     case 'user.delete':
     case 'auth.changed':
-      text = tt('', { user: nm('user', subject, str('login')) });
-      used.add('login');
-      break;
+      return { vars: { user: nameOf('user', subject, field(data, 'login')) }, shown: ['login'] };
     case 'user.update': {
-      const user = nm('user', subject, str('login'));
-      const onlyPassword = Array.isArray(d.fields) && d.fields.length === 1 && d.fields[0] === 'password';
-      text = tt(onlyPassword ? '.password' : '', { user });
-      used.add('login');
-      if (onlyPassword) used.add('fields');
-      break;
+      const user = nameOf('user', subject, field(data, 'login'));
+      const { fields } = data;
+      const onlyPassword = Array.isArray(fields) && fields.length === 1 && fields[0] === 'password';
+      if (onlyPassword) return { suffix: '.password', vars: { user }, shown: ['login', 'fields'] };
+      return { vars: { user }, shown: ['login'] };
     }
+
     case 'group.create':
     case 'group.update':
     case 'group.delete':
-      text = tt('', { group: nm('group', subject, str('name')) });
-      used.add('name');
-      break;
-    case 'group.member_add':
-    case 'group.member_remove':
-      text = tt('', { user: nm('user', str('user'), str('login')), group: nm('group', subject, str('group')) });
-      break;
     case 'role.create':
     case 'role.update':
     case 'role.delete':
-      text = tt('', { role: nm('role', subject, str('name')) });
-      used.add('name');
-      break;
     case 'token.create':
     case 'token.revoke':
-    case 'token.delete':
-      text = tt('', { token: nm('token', subject, str('name')) });
-      used.add('name');
-      break;
+    case 'token.delete': {
+      // The subject is the group, role or token; its message variable has the same name.
+      const kind = subjectKind(e.action);
+      return { vars: { [kind]: nameOf(kind, subject, field(data, 'name')) }, shown: ['name'] };
+    }
+    case 'group.member_add':
+    case 'group.member_remove': {
+      const user = nameOf('user', field(data, 'user'), field(data, 'login'));
+      const group = nameOf('group', subject, field(data, 'group'));
+      return { vars: { user, group }, shown: ['user', 'login', 'group'] };
+    }
     case 'assignment.create':
-    case 'assignment.delete':
-      text = tt('', { role: str('role') || nm('role', str('roleId')), who: nm(str('principalKind'), str('principalId')) || t('settings.audit.d.someone') });
-      break;
+    case 'assignment.delete': {
+      const role = assignmentRole(e);
+      const who = nameOf(field(data, 'principalKind'), field(data, 'principalId')) || t('settings.audit.d.someone');
+      return { vars: { role: role.name || nameOf('role', role.id ?? ''), who }, shown: ['role', 'roleId'] };
+    }
+
     case 'auth.login':
     case 'auth.logout':
     case 'auth.login_failed':
@@ -297,40 +319,43 @@ export function describeEntry(e: Entry, name: Lookup, t: Translate): Description
     case 'page.update':
     case 'page.move':
     case 'page.delete':
-      text = tt('', {});
-      break;
+      return { vars: {} };
   }
-  if (text.startsWith('settings.audit.d.')) text = '';
-  if (!text) {
-    const verb = t(`settings.audit.v.${e.action}`);
-    text = verb.startsWith('settings.audit.v.') ? humanizeAction(e.action) : verb;
-    text = text.charAt(0).toUpperCase() + text.slice(1);
-    used.clear();
-  }
+  return undefined;
+}
 
-  const label = (key: string): string => {
-    const l = t(`settings.audit.f.${key}`);
-    return l.startsWith('settings.audit.f.') ? humanKey(key) : l;
-  };
-  const value = (key: string, v: unknown): string => {
-    if (v === null || v === undefined || v === '') return '—';
-    if (typeof v === 'boolean') return t(v ? 'common.yes' : 'common.no');
-    if (typeof v === 'number') return key === 'size' ? formatBytes(v) : String(v);
-    if (typeof v === 'string') {
-      if (UUID.test(v)) return nm(KEY_KIND[key] ?? (key === 'items' ? 'item' : ''), v);
-      return ISO_TIME.test(v) ? new Date(v).toLocaleString() : v;
-    }
-    if (Array.isArray(v)) return v.length ? v.map((x) => (typeof x === 'string' && (key === 'fields' || key === 'changed') ? label(x).toLowerCase() : value(key, x))).join(', ') : '—';
-    return JSON.stringify(v);
-  };
-  const changes: Change[] = [];
-  for (const [key, v] of Object.entries(d)) {
-    if (used.has(key) || HIDDEN.has(key)) continue;
-    if (key === 'actor' && (k === 'review' || typeof v === 'object')) continue;
-    // The ids the sentence names, and the item an entry is about, are not repeated as rows.
-    if ((key === 'user' && e.action.startsWith('group.')) || (key === 'item' && (ITEM_KINDS.has(k) || k === 'page'))) continue;
-    if (e.action === 'release.update' && (key === 'add' || key === 'remove')) continue;
-    changes.push({ label: label(key), value: value(key, v) });
+const releaseName = (data: Data, t: Translate): string => field(data, 'name') || t('settings.audit.d.release');
+
+/** A row for every data key the sentence doesn't already show. */
+function changeRows(e: Entry, data: Data, shown: Set<string>, nameOf: NameOf, t: Translate): Change[] {
+  const kind = subjectKind(e.action);
+  const rows: Change[] = [];
+  for (const [key, v] of Object.entries(data)) {
+    if (shown.has(key) || HIDDEN.has(key)) continue;
+    if (key === 'actor' && (kind === 'review' || typeof v === 'object')) continue;
+    // The dialog links the item an entry is about (itemIdOf).
+    if (key === 'item' && (ITEM_KINDS.has(kind) || kind === 'page')) continue;
+    rows.push({ label: fieldLabel(key, t), value: fieldValue(key, v, nameOf, t) });
   }
-  return { text, changes };
+  return rows;
+}
+
+const fieldLabel = (key: string, t: Translate): string => message(t, `settings.audit.f.${key}`) || humanKey(key);
+
+function fieldValue(key: string, v: unknown, nameOf: NameOf, t: Translate): string {
+  if (v === null || v === undefined || v === '') return '—';
+  if (typeof v === 'boolean') return t(v ? 'common.yes' : 'common.no');
+  if (typeof v === 'number') return key === 'size' ? formatBytes(v) : String(v);
+  if (typeof v === 'string') {
+    if (UUID.test(v)) return nameOf(KEY_KIND[key] ?? (key === 'items' ? 'item' : ''), v);
+    return ISO_TIME.test(v) ? new Date(v).toLocaleString() : v;
+  }
+  if (Array.isArray(v)) {
+    if (!v.length) return '—';
+    // `fields` and `changed` hold field names, shown by their labels.
+    const fieldNames = key === 'fields' || key === 'changed';
+    const one = (x: unknown) => (fieldNames && typeof x === 'string' ? fieldLabel(x, t).toLowerCase() : fieldValue(key, x, nameOf, t));
+    return v.map(one).join(', ');
+  }
+  return JSON.stringify(v);
 }
