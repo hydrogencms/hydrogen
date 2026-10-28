@@ -117,6 +117,9 @@ All notable changes to Hydrogen are documented here. The format follows
 
 ### Fixed
 
+- Admin: selecting a page in the site tree no longer flashes the details panel (the embedded editor started with the
+  panel beside the form and slid it out once it measured its narrow pane); the same on item pages in windows
+  narrower than 1280 px.
 - Admin: the Publish split button no longer takes the two-pane layout's 22.5rem column (it shared the `.h-split`
   class).
 - Admin: with collaboration on, a rich text value the editor cannot load (a node or mark its schema lacks) was seeded

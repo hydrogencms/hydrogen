@@ -892,9 +892,10 @@
   );
 
   // The inspector sits beside the form when there is room (the window for a full page, the pane when embedded) and
-  // is a slide-over otherwise.
+  // is a slide-over otherwise. An embedded editor starts as a closed slide-over until its pane is measured: starting
+  // inline made the panel slide out on every mount in a narrow pane.
   let root = $state<HTMLElement>();
-  let roomy = $state(true);
+  let roomy = $state(!embedded && matchMedia('(min-width: 1280px)').matches);
   const inline = $derived(roomy || building);
   let panelOpen = $state(false);
   $effect(() => {
